@@ -9,6 +9,12 @@ const reviews = JSON.parse(readFileSync(join(root, "src/data/reviews.json"), "ut
 const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
 const idByHandle = new Map(products.map((p) => [p.h, p.id]));
 
+// รูปรีวิวที่เก็บมาไว้เองแล้ว → ชี้มาที่เว็บเรา (ที่เหลือชี้ต้นทางเดิมไปก่อน)
+const rvMap = JSON.parse(readFileSync(join(root, "src/data/review-image-map.json"), "utf8"));
+const localImg = (u) => rvMap[(u || "").split("?")[0]] || u;
+let ownImg = 0;
+let remoteImg = 0;
+
 const outDir = join(root, "public/rv");
 rmSync(outDir, { recursive: true, force: true });
 mkdirSync(outDir, { recursive: true });
@@ -30,7 +36,14 @@ for (const [handle, entry] of Object.entries(reviews)) {
   const items = kept
     .sort((a, b) => score(b) - score(a) || b.date.localeCompare(a.date))
     // ไม่ส่งชื่อแพลตฟอร์มออกไปให้ลูกค้าเห็น แม้ในข้อมูลดิบ — เก็บไว้แค่ในไฟล์ต้นทาง
-    .map(({ src, ...rest }) => rest);
+    .map(({ src, ...rest }) => ({
+      ...rest,
+      images: (rest.images || []).map((u) => {
+        const l = localImg(u);
+        l === u ? remoteImg++ : ownImg++;
+        return l;
+      }),
+    }));
   writeFileSync(
     join(outDir, `${short(id)}.json`),
     JSON.stringify({ avg: entry.avg, count: entry.count, items })
@@ -48,3 +61,4 @@ function short(gid) {
 
 console.log(`[reviews] เขียน ${files} ไฟล์ · ${cards} การ์ดรีวิว → public/rv/` +
   (dropped ? ` · ตัดรีวิวที่เอ่ยชื่อแพลตฟอร์ม ${dropped} ใบ` : ""));
+console.log(`[reviews] รูปในรีวิว — จากเราเอง ${ownImg} · ยังชี้ต้นทางเดิม ${remoteImg}`);

@@ -1,6 +1,7 @@
 // รีวิวจริงจากลูกค้าที่ซื้อสินค้าไปแล้ว รวมมาจากทุกช่องทางขายของร้าน
 // ใช้ได้เฉพาะฝั่ง server เหมือน catalog.ts (ห้าม import จาก client component)
 import data from "@/data/reviews.json";
+import rvImg from "@/data/review-image-map.json";
 import type { Review, ReviewSummary } from "./types";
 
 interface Entry {
@@ -12,10 +13,19 @@ interface Entry {
 // กันชื่อร้านค้าออนไลน์เจ้าอื่นหลุดออกหน้าเว็บ (ต้องตรงกับ scripts/gen-reviews.mjs)
 const PLATFORM = /shopee|lazada|tiktok|tik ?tok|ช้อปปี้|ช็อปปี้|ลาซาด้า|ติ๊กต๊อก|ติกต็อก|ทิกทอก/i;
 
+// รูปรีวิวที่เก็บมาไว้เองแล้ว → ชี้มาที่เว็บเรา (ที่เหลือชี้ต้นทางเดิมไปก่อน)
+const imgMap = rvImg as Record<string, string>;
+const localImg = (u: string) => imgMap[(u || "").split("?")[0]] ?? u;
+
 const raw = Object.fromEntries(
   Object.entries(data as unknown as Record<string, Entry>).map(([h, e]) => [
     h,
-    { ...e, items: e.items.filter((r) => !PLATFORM.test(r.text || "")) },
+    {
+      ...e,
+      items: e.items
+        .filter((r) => !PLATFORM.test(r.text || ""))
+        .map((r) => ({ ...r, images: (r.images || []).map(localImg) })),
+    },
   ])
 ) as Record<string, Entry>;
 
