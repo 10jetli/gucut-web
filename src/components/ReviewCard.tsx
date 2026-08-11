@@ -1,4 +1,3 @@
-import Image from "next/image";
 import Stars from "./Stars";
 import { durLabel, videoPoster, videoSrc, type Review } from "@/lib/types";
 
@@ -49,7 +48,16 @@ export default function ReviewCard({ r }: { r: Review }) {
               key={src}
               className="relative h-20 w-20 shrink-0 overflow-hidden rounded border border-steel-700 bg-white"
             >
-              <Image src={src} alt="" fill sizes="80px" loading="lazy" className="object-cover" />
+              {/* รูปรีวิวเก็บไว้เองเป็น WebP 480px อยู่แล้ว — เสิร์ฟตรงจาก CDN เร็วกว่า
+                  ส่งผ่านตัวย่อรูปอีกที (ตัวย่อครั้งแรกใช้ ~2.4 วิ ตรงนี้เหลือ ~50 ms) */}
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={src}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="absolute inset-0 h-full w-full object-cover"
+              />
             </div>
           ))}
         </div>
