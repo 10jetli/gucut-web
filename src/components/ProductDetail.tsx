@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import VariantSheet from "./VariantSheet";
+import ChatSheet from "./ChatSheet";
 import Stars from "./Stars";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, priceLabel, type Product } from "@/lib/types";
@@ -25,6 +26,7 @@ export default function ProductDetail({
 }) {
   const [i, setI] = useState(0);
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
+  const [chat, setChat] = useState(false);
   const off = discountPercent(p);
   const imgs = p.imgs.length ? p.imgs : [];
 
@@ -184,23 +186,51 @@ export default function ProductDetail({
         </section>
       )}
 
-      {/* แถบซื้อติดล่างจอ */}
-      <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-w-lg gap-2 border-t border-steel-700 bg-white p-2 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      {/* แถบซื้อติดล่างจอ — แชท | ตะกร้า | ซื้อเลย+ราคา */}
+      <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-w-lg items-stretch border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+        <button
+          onClick={() => setChat(true)}
+          className="flex w-[68px] shrink-0 flex-col items-center justify-center gap-0.5 border-r border-steel-700 py-1.5 text-safety"
+        >
+          <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] fill-none stroke-current stroke-[1.7]">
+            <path d="M21 11.5a8.4 8.4 0 01-9 8.4 9.5 9.5 0 01-3.3-.6L3 21l1.8-4.4A8.3 8.3 0 013 11.5 8.4 8.4 0 0112 3a8.4 8.4 0 019 8.5z" strokeLinejoin="round" />
+          </svg>
+          <span className="text-[10px] leading-none">แชทเลย</span>
+        </button>
         <button
           onClick={() => setSheet("cart")}
           disabled={shownStock <= 0}
-          className="flex-1 rounded-lg border border-safety py-3 font-heading text-sm font-semibold text-safety disabled:border-steel-600 disabled:text-steel-600"
+          className="flex w-[80px] shrink-0 flex-col items-center justify-center gap-0.5 border-r border-steel-700 py-1.5 text-safety disabled:text-steel-600"
         >
-          ใส่ตะกร้า
+          <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] fill-none stroke-current stroke-[1.7]">
+            <path d="M3 4h2l2.4 11.2a2 2 0 002 1.6h7.7a2 2 0 002-1.6L21 8H6" strokeLinecap="round" strokeLinejoin="round" />
+            <circle cx="10" cy="20" r="1.2" className="fill-current" />
+            <circle cx="18" cy="20" r="1.2" className="fill-current" />
+            <path d="M14 6.5h4M16 4.5v4" strokeLinecap="round" />
+          </svg>
+          <span className="text-[10px] leading-none">ใส่ตะกร้า</span>
         </button>
         <button
           onClick={() => setSheet("buy")}
           disabled={shownStock <= 0}
-          className="flex-1 rounded-lg bg-safety py-3 font-heading text-sm font-semibold text-white disabled:bg-steel-700 disabled:text-steel-300"
+          className="flex flex-1 flex-col items-center justify-center bg-safety py-2 font-heading leading-tight text-white disabled:bg-steel-700 disabled:text-steel-300"
         >
-          {shownStock <= 0 ? "สินค้าหมด" : "ซื้อเลย"}
+          {shownStock <= 0 ? (
+            <span className="text-sm font-semibold">สินค้าหมด</span>
+          ) : (
+            <>
+              <span className="text-[11px] font-medium opacity-90">ซื้อเลย</span>
+              <span className="text-[17px] font-bold">{live && p.pmax <= p.p ? formatPrice(live.p) : priceLabel(p)}</span>
+            </>
+          )}
         </button>
       </div>
+
+      <ChatSheet
+        open={chat}
+        onClose={() => setChat(false)}
+        product={{ h: p.h, t: p.t, img: imgs[0] ?? p.img, p: live?.p ?? p.p }}
+      />
 
       <VariantSheet
         product={p}
