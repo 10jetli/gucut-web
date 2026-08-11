@@ -16,6 +16,7 @@ const nextConfig = {
       { protocol: "https", hostname: "lzd-u.slatic.net" },
       { protocol: "https", hostname: "sg-test-11.slatic.net" },
       { protocol: "https", hostname: "cf.shopee.com" },
+      { protocol: "https", hostname: "down-th.img.susercontent.com" },
       { protocol: "https", hostname: "p16-oec-sg.ibyteimg.com" },
       { protocol: "https", hostname: "p16-oec-va.ibyteimg.com" },
     ],
