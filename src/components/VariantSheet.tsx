@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { addToCart } from "@/lib/cart";
-import { useLiveStock } from "@/lib/useLiveStock";
+import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
 
 // Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
@@ -37,7 +37,10 @@ export default function VariantSheet({
 
   // สต็อก/ราคาสดจาก ZORT — ยิงเฉพาะตอน sheet เปิด และเฉพาะตัวเลือกที่เลือกอยู่
   const querySku = open ? (sel?.k || product.v[0]?.k || product.sku || null) : null;
-  const live = useLiveStock(querySku, sel ? sel.p : product.p);
+  const refPrice = sel ? sel.p : product.p;
+  // โซ่แบบเส้น (เช่น '11.5" 22T ตัด') — ZORT นับเป็นข้อ ต้องหารเป็นจำนวนเส้น
+  const perUnit = teethOf(sel?.t ?? (product.v.length === 1 ? product.v[0]?.t : undefined));
+  const live = useLiveStock(querySku, { refPrice, perUnit });
 
   const price = live?.p ?? (sel ? sel.p : product.p);
   const stock = live?.st ?? (sel ? sel.s : product.st);

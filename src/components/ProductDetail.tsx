@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import VariantSheet from "./VariantSheet";
 import Stars from "./Stars";
-import { useLiveStock } from "@/lib/useLiveStock";
+import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, priceLabel, type Product } from "@/lib/types";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
@@ -28,7 +28,10 @@ export default function ProductDetail({
 
   // สินค้าตัวเลือกเดียว: เช็คสต็อก/ราคาสดจาก ZORT ทันทีที่เปิดหน้า
   // (สินค้าหลายตัวเลือกไปเช็คสดตอนเปิด sheet เลือกของแทน — ตรงตัวที่เลือกกว่า)
-  const live = useLiveStock(p.v.length <= 1 ? (p.sku || p.v[0]?.k || null) : null, p.p);
+  const live = useLiveStock(p.v.length <= 1 ? (p.sku || p.v[0]?.k || null) : null, {
+    refPrice: p.p,
+    perUnit: teethOf(p.v[0]?.t),
+  });
   const shownStock = live?.st ?? p.st;
 
   return (
