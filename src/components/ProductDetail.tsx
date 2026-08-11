@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState, type ReactNode } from "react";
 import VariantSheet from "./VariantSheet";
 import Stars from "./Stars";
+import { useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, priceLabel, type Product } from "@/lib/types";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
@@ -24,6 +25,11 @@ export default function ProductDetail({
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
   const off = discountPercent(p);
   const imgs = p.imgs.length ? p.imgs : [];
+
+  // สินค้าตัวเลือกเดียว: เช็คสต็อก/ราคาสดจาก ZORT ทันทีที่เปิดหน้า
+  // (สินค้าหลายตัวเลือกไปเช็คสดตอนเปิด sheet เลือกของแทน — ตรงตัวที่เลือกกว่า)
+  const live = useLiveStock(p.v.length <= 1 ? (p.sku || p.v[0]?.k || null) : null);
+  const shownStock = live?.st ?? p.st;
 
   return (
     <main className="pb-24">
@@ -67,7 +73,9 @@ export default function ProductDetail({
       {/* ราคา */}
       <section className="bg-steel-800 px-3 py-3">
         <div className="flex items-baseline gap-2">
-          <span className="font-heading text-2xl font-bold text-safety">{priceLabel(p)}</span>
+          <span className="font-heading text-2xl font-bold text-safety">
+            {live && p.pmax <= p.p ? formatPrice(live.p) : priceLabel(p)}
+          </span>
           {p.c && p.c > p.p && (
             <>
               <span className="text-sm text-steel-300 line-through">{formatPrice(p.c)}</span>
@@ -89,7 +97,10 @@ export default function ProductDetail({
           </a>
         )}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-steel-300">
-          <span>คงเหลือ {p.st.toLocaleString("th-TH")} ชิ้น</span>
+          <span>
+            คงเหลือ {shownStock.toLocaleString("th-TH")} ชิ้น
+            {live && <span className="ml-1 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
+          </span>
           {p.sku && <span>SKU {p.sku}</span>}
           <span className="text-safety">ส่งฟรีทั่วไทย</span>
         </div>
@@ -170,17 +181,17 @@ export default function ProductDetail({
       <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-w-lg gap-2 border-t border-steel-700 bg-white p-2 shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
         <button
           onClick={() => setSheet("cart")}
-          disabled={p.st <= 0}
+          disabled={shownStock <= 0}
           className="flex-1 rounded-lg border border-safety py-3 font-heading text-sm font-semibold text-safety disabled:border-steel-600 disabled:text-steel-600"
         >
           ใส่ตะกร้า
         </button>
         <button
           onClick={() => setSheet("buy")}
-          disabled={p.st <= 0}
+          disabled={shownStock <= 0}
           className="flex-1 rounded-lg bg-safety py-3 font-heading text-sm font-semibold text-white disabled:bg-steel-700 disabled:text-steel-300"
         >
-          {p.st <= 0 ? "สินค้าหมด" : "ซื้อเลย"}
+          {shownStock <= 0 ? "สินค้าหมด" : "ซื้อเลย"}
         </button>
       </div>
 

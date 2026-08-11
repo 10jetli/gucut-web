@@ -18,3 +18,7 @@
     "https://p16-oec-sg\\.ibyteimg\\.com/.*",
     "https://p16-oec-va\\.ibyteimg\\.com/.*",
   ]
+
+# Serverless function สต็อก/ราคาสดจาก ZORT (/api/stock)
+[functions]
+  directory = "netlify/functions"

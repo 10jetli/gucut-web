@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useState } from "react";
 import { addToCart } from "@/lib/cart";
+import { useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
 
 // Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
@@ -34,10 +35,19 @@ export default function VariantSheet({
     };
   }, [open]);
 
-  const price = sel ? sel.p : product.p;
-  const stock = sel ? sel.s : product.st;
+  // สต็อก/ราคาสดจาก ZORT — ยิงเฉพาะตอน sheet เปิด และเฉพาะตัวเลือกที่เลือกอยู่
+  const querySku = open ? (sel?.k || product.v[0]?.k || product.sku || null) : null;
+  const live = useLiveStock(querySku);
+
+  const price = live?.p ?? (sel ? sel.p : product.p);
+  const stock = live?.st ?? (sel ? sel.s : product.st);
   const img = sel?.i ?? product.img;
   const max = Math.max(1, stock);
+
+  // ถ้าสต็อกจริงน้อยกว่าจำนวนที่กดไว้ ให้ลดลงมาให้พอดี
+  useEffect(() => {
+    setQty((q) => Math.min(q, Math.max(1, stock)));
+  }, [stock]);
 
   function confirm() {
     if (hasVariants && !sel) return;
@@ -71,6 +81,7 @@ export default function VariantSheet({
             <p className="font-heading text-xl font-semibold text-safety">{formatPrice(price)}</p>
             <p className="mt-1 text-xs text-steel-300">
               คงเหลือ {stock.toLocaleString("th-TH")} ชิ้น
+              {live && <span className="ml-1.5 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
             </p>
             {sel && <p className="mt-0.5 truncate text-xs text-steel-300">SKU {sel.k}</p>}
           </div>
