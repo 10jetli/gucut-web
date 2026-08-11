@@ -45,6 +45,7 @@ H = {
  "saw5800":   "เลื่อยยนต์-kingkong",
  "saw8800":   "เลื่อยยนต์-newwave-8800-super-s-28-มีเอกสารพร้อมขึ้นทะเบียน",
  "saw9800":   "เลื่อยยนต์-newwave-9800-super-pro-30-มีเอกสารพร้อมขึ้นทะเบียน",
+ "mini":      "mini",
 }
 for k, v in H.items():
     if v not in handles:
@@ -103,7 +104,9 @@ def match(title: str):
         return None
 
     if "เลื่อยยนต์" in t and "โซ่เลื่อย" not in t and not t.strip().startswith("โซ่"):
-        if "MINI" in t: return None                    # ยัง draft บน Shopify
+        # MINI-ONE เป็นคนละเครื่องกับ MINI — และยังไม่มีในแคตตาล็อก
+        if "MINI-ONE" in t or "MINIONE" in t or "MINI ONE" in t: return None
+        if "MINI" in t: return H["mini"]
         for mod in F_MODELS:
             if mod in t: return F_HANDLE[mod]
         if "9800" in t: return H["saw9800"]
