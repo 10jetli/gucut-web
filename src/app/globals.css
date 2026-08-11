@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* พื้นหลังเหล็กเข้มทั้งเว็บ */
+body {
+  @apply bg-steel-900 font-body;
+  color: #222;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ซ่อน scrollbar แถวเลื่อนแนวนอน (Flash Sale) */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* ตัดชื่อสินค้า 2 บรรทัด */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}

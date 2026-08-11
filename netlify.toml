@@ -1,0 +1,8 @@
+# ให้ Netlify build เองจาก GitHub — push โค้ดขึ้น repo แล้วเว็บอัปเดตอัตโนมัติ
+[build]
+  command = "npm run build"      # prebuild (gen-reviews.mjs) รันเองอัตโนมัติ
+  publish = "out"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NPM_FLAGS = "--no-audit --no-fund"

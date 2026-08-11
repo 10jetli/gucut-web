@@ -1,0 +1,161 @@
+"use client";
+
+import Image from "next/image";
+import { useEffect, useState } from "react";
+import { addToCart } from "@/lib/cart";
+import { formatPrice, type Product, type Variant } from "@/lib/types";
+
+// Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
+// เด้งขึ้นจากล่างจอ · เลือกแล้วรูป+ราคา+สต็อกเปลี่ยนตาม · ปรับจำนวนได้
+export default function VariantSheet({
+  product,
+  open,
+  mode,
+  onClose,
+}: {
+  product: Product;
+  open: boolean;
+  mode: "cart" | "buy";
+  onClose: () => void;
+}) {
+  const hasVariants = product.v.length > 1;
+  const [sel, setSel] = useState<Variant | null>(hasVariants ? null : (product.v[0] ?? null));
+  const [qty, setQty] = useState(1);
+
+  useEffect(() => {
+    if (open) setQty(1);
+  }, [open]);
+
+  // ล็อกไม่ให้หน้าหลังเลื่อนตอนเปิด sheet
+  useEffect(() => {
+    document.body.style.overflow = open ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [open]);
+
+  const price = sel ? sel.p : product.p;
+  const stock = sel ? sel.s : product.st;
+  const img = sel?.i ?? product.img;
+  const max = Math.max(1, stock);
+
+  function confirm() {
+    if (hasVariants && !sel) return;
+    addToCart(
+      {
+        productId: product.id,
+        handle: product.h,
+        title: product.t,
+        variant: sel?.t ?? "-",
+        price,
+        image: img ?? "",
+      },
+      qty
+    );
+    onClose();
+    if (mode === "buy") window.location.href = "/cart/";
+  }
+
+  if (!open) return null;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
+      <button aria-label="ปิด" className="absolute inset-0 bg-black/60" onClick={onClose} />
+      <div className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-steel-800 pb-4">
+        {/* หัว sheet: รูป + ราคา + สต็อก */}
+        <div className="flex gap-3 p-3">
+          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-white">
+            {img && <Image src={img} alt={product.t} fill sizes="96px" className="object-contain" />}
+          </div>
+          <div className="min-w-0 flex-1 pt-1">
+            <p className="font-heading text-xl font-semibold text-safety">{formatPrice(price)}</p>
+            <p className="mt-1 text-xs text-steel-300">
+              คงเหลือ {stock.toLocaleString("th-TH")} ชิ้น
+            </p>
+            {sel && <p className="mt-0.5 truncate text-xs text-steel-300">SKU {sel.k}</p>}
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="ปิด"
+            className="h-8 w-8 shrink-0 rounded-full text-xl leading-none text-steel-300"
+          >
+            ×
+          </button>
+        </div>
+
+        <div className="h-px bg-steel-700" />
+
+        {/* ปุ่มตัวเลือก */}
+        {hasVariants && (
+          <div className="p-3">
+            <p className="mb-2 text-sm text-[#333]">{product.opt ?? "ตัวเลือก"}</p>
+            <div className="flex flex-wrap gap-2">
+              {product.v.map((v) => {
+                const out = v.s <= 0;
+                const active = sel?.t === v.t;
+                return (
+                  <button
+                    key={v.t + v.k}
+                    disabled={out}
+                    onClick={() => {
+                      setSel(v);
+                      setQty(1);
+                    }}
+                    className={[
+                      "rounded-md border px-3 py-1.5 text-[13px] transition-colors",
+                      out
+                        ? "cursor-not-allowed border-steel-700 text-steel-600 line-through"
+                        : active
+                          ? "border-safety bg-safety/10 text-safety"
+                          : "border-steel-600 text-[#333] active:border-safety",
+                    ].join(" ")}
+                  >
+                    {v.t}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* จำนวน */}
+        <div className="flex items-center justify-between px-3 py-2">
+          <span className="text-sm text-[#333]">จำนวน</span>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setQty((q) => Math.max(1, q - 1))}
+              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#333]"
+              aria-label="ลดจำนวน"
+            >
+              −
+            </button>
+            <span className="w-10 text-center text-base">{qty}</span>
+            <button
+              onClick={() => setQty((q) => Math.min(max, q + 1))}
+              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#333]"
+              aria-label="เพิ่มจำนวน"
+            >
+              +
+            </button>
+          </div>
+        </div>
+
+        <div className="px-3 pt-2">
+          <button
+            onClick={confirm}
+            disabled={(hasVariants && !sel) || stock <= 0}
+            className="w-full rounded-lg bg-safety py-3 font-heading text-base font-semibold text-white disabled:bg-steel-700 disabled:text-steel-300"
+          >
+            {stock <= 0
+              ? "สินค้าหมด"
+              : hasVariants && !sel
+                ? `กรุณาเลือก${product.opt ?? "ตัวเลือก"}`
+                : mode === "buy"
+                  ? "ซื้อเลย"
+                  : "ใส่ตะกร้า"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}

@@ -3,11 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/gen-reviews.mjs && next dev",
+    "prebuild": "node scripts/gen-reviews.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
-    "vercel-build": "tar -xzf bundle.tgz && next build"
+    "lint": "next lint"
   },
   "dependencies": {
     "next": "15.5.20",

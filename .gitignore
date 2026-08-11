@@ -1,0 +1,8 @@
+node_modules/
+.next/
+out/
+.netlify/
+*.tsbuildinfo
+.DS_Store
+.env*.local
+public/rv/

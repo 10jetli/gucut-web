@@ -1,0 +1,8 @@
+# new78.com = เว็บซ้อมชั่วคราว ยังไม่ให้ Google เก็บ
+# ห้ามให้ index เด็ดขาด ไม่งั้นจะกลายเป็นเนื้อหาซ้ำกับ gucut.com
+# ── เมื่อย้ายไปอยู่บน gucut.com จริงแล้ว ให้เปลี่ยนไฟล์นี้เป็น:
+#      User-agent: *
+#      Allow: /
+#      Sitemap: https://gucut.com/sitemap.xml
+User-agent: *
+Disallow: /
