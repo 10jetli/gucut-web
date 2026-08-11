@@ -5,6 +5,8 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const root = process.cwd();
+let partInfo = {};
+try { partInfo = JSON.parse(readFileSync(join(root, "src/data/part-info.json"), "utf8")); } catch {}
 const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
 const reviews = JSON.parse(readFileSync(join(root, "src/data/reviews.json"), "utf8"));
 
@@ -39,6 +41,9 @@ const items = products.map((p) => {
   // รวม SKU ของตัวเลือกไว้ค้นด้วย (เช่น 00894-22T) — เก็บเป็นสตริงเดียวประหยัดที่
   const vk = p.v.map((v) => v.k).filter(Boolean).join(" ");
   if (vk && vk !== e.k) e.vk = vk;
+  // ชื่อรุ่นแบบปกติ ให้ค้น "MS070" เจอสินค้าที่ชื่อเขียนแค่ "070" ได้
+  const fits = partInfo[p.h]?.fits;
+  if (fits?.length) e.f = fits.join(" ");
   return e;
 });
 

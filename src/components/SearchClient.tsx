@@ -10,9 +10,9 @@ import { compactCount, formatPrice } from "@/lib/types";
 
 interface Entry {
   h: string; t: string; k: string; p: number; m: number; s: number; n: number;
-  c?: number; i?: string; r?: [number, number]; vk?: string;
+  c?: number; i?: string; r?: [number, number]; vk?: string; f?: string;
   // เตรียมไว้ล่วงหน้าตอนโหลด — ค้นเร็วขึ้นมาก
-  lt?: string; lk?: string; lvk?: string;
+  lt?: string; lk?: string; lvk?: string; lf?: string;
 }
 
 const PAGE = 40;
@@ -43,6 +43,7 @@ export default function SearchClient() {
           e.lt = e.t.toLowerCase();
           e.lk = e.k.toLowerCase();
           if (e.vk) e.lvk = e.vk.toLowerCase();
+          if (e.f) e.lf = e.f.toLowerCase();
         }
         setData(d);
       })
@@ -74,6 +75,7 @@ export default function SearchClient() {
         else if (e.lt!.startsWith(w)) t = 150;                  // ชื่อขึ้นต้น
         else if (e.lt!.includes(" " + w)) t = 120;              // ต้นคำในชื่อ
         else if (e.lt!.includes(w)) t = 80;                     // อยู่ในชื่อ
+        else if (e.lf && e.lf.includes(w)) t = 70;              // ชื่อรุ่นแบบปกติ (MS070 = 070)
         if (!t) { ok = false; break; }
         sc += t;
       }
