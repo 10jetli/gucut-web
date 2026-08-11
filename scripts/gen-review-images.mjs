@@ -1,7 +1,7 @@
 // รูปในรีวิวลูกค้า — เตรียมรายชื่อให้ดาวน์โหลดมาเก็บเอง แล้วทำแผนที่ URL → ไฟล์ในเครื่อง
 //
 // ทำ 2 อย่าง:
-//   public/review-image-list.json   รายชื่อที่ต้องโหลด  [[ชื่อไฟล์, URL ต้นทาง], ...]
+//   src/data/review-image-list.json   รายชื่อที่ต้องโหลด  [[ชื่อไฟล์, URL ต้นทาง], ...]
 //   src/data/review-image-map.json  แผนที่เฉพาะรูปที่ "มีอยู่จริง" ใน public/rv-img แล้ว
 //
 // เป็นระบบ self-healing: รูปไหนยังไม่ได้โหลด เว็บก็ยังชี้ไปที่ต้นทางเดิม ไม่พัง
@@ -32,7 +32,7 @@ for (const entry of Object.values(reviews)) {
 }
 
 const list = [...urls.entries()].map(([u, n]) => [n, u]).sort((a, b) => a[0].localeCompare(b[0]));
-writeFileSync(join(root, "public/review-image-list.json"), JSON.stringify(list));
+writeFileSync(join(root, "src/data/review-image-list.json"), JSON.stringify(list));
 
 const have = new Set(readdirSync(IMG_DIR).filter((f) => f.endsWith(".webp")));
 const map = {};

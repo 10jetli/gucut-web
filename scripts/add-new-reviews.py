@@ -28,6 +28,12 @@ prods = json.load(open("src/data/products.json", encoding="utf-8"))
 handles = {p["h"] for p in prods}
 data = json.load(open("src/data/reviews.json", encoding="utf-8"))
 
+# รูปที่แพลตฟอร์มลบทิ้งไปแล้ว (โหลดมาได้แต่เป็น placeholder) — อย่าเอากลับเข้ามาอีก
+try:
+    DEAD = set(json.load(open("src/data/dead-images.json", encoding="utf-8")))
+except FileNotFoundError:
+    DEAD = set()
+
 
 def norm(s):
     return re.sub(r"\s+", " ", (s or "").strip().lower())
@@ -74,7 +80,7 @@ for src, path, base in SOURCES:
     cache = {}
     for r in rows:
         txt = (r.get("c") or "").strip()
-        imgs = [u for u in (img_url(u, base) for u in (r.get("m") or [])) if u][:MAX_IMG]
+        imgs = [u for u in (img_url(u, base) for u in (r.get("m") or [])) if u and u not in DEAD][:MAX_IMG]
         if not txt and not imgs:
             continue
         title = (r.get("p") or "").strip()

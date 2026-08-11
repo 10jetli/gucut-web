@@ -42,7 +42,10 @@ const items = products.map((p) => {
   return e;
 });
 
-const out = { v: 1, base: BASE, items };
+// ใส่ base เฉพาะตอนที่ยังมีสินค้าที่รูปยังไม่ได้เก็บมาไว้เอง
+// (ตอนนี้เก็บครบแล้ว ดัชนีเลยไม่มี URL ของ Shopify เหลืออยู่เลย)
+const needsBase = items.some((e) => e.i && !e.i.startsWith("/"));
+const out = needsBase ? { v: 1, base: BASE, items } : { v: 1, items };
 const json = JSON.stringify(out);
 writeFileSync(join(root, "public/search-index.json"), json);
 console.log(

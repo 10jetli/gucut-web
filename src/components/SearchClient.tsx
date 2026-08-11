@@ -20,7 +20,7 @@ const POPULAR = ["โซ่", "บาร์", "ตะไบ", "หัวเท�
 
 export default function SearchClient() {
   const [q, setQ] = useState("");
-  const [data, setData] = useState<{ base: string; items: Entry[] } | null>(null);
+  const [data, setData] = useState<{ base?: string; items: Entry[] } | null>(null);
   const [failed, setFailed] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -87,8 +87,13 @@ export default function SearchClient() {
     return out.map((x) => x.e);
   }, [data, q]);
 
-  const img = (e: Entry) =>
-    e.i ? (e.i.startsWith("http") ? e.i : data!.base + e.i) : null;
+  // e.i เป็นได้ 3 แบบ: "/img/xxx" (เก็บมาไว้เองแล้ว) · "http..." (เต็ม ๆ) ·
+  // หรือชื่อไฟล์เปล่า ๆ ที่ต้องเติม base ข้างหน้า (สินค้าใหม่ที่ยังไม่ได้เก็บรูป)
+  const img = (e: Entry) => {
+    if (!e.i) return null;
+    if (e.i.startsWith("/") || e.i.startsWith("http")) return e.i;
+    return data?.base ? data.base + e.i : null;
+  };
 
   return (
     <main className="pb-20">

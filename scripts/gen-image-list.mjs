@@ -1,4 +1,4 @@
-// สร้างรายชื่อรูปสินค้าทั้งหมดที่ต้องเก็บไว้เอง → public/image-list.json
+// สร้างรายชื่อรูปสินค้าทั้งหมดที่ต้องเก็บไว้เอง → src/data/image-list.json
 // ตัวอัปเดตบนเครื่องเจ้าของอ่านไฟล์นี้ แล้วโหลดเฉพาะรูปที่ยังไม่มีใน public/img
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -26,5 +26,5 @@ for (const p of products) {
 }
 
 const list = [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-writeFileSync(join(root, "public/image-list.json"), JSON.stringify(list));
+writeFileSync(join(root, "src/data/image-list.json"), JSON.stringify(list));
 console.log(`[image-list] รูปสินค้าที่ต้องเก็บเอง ${list.length} รูป`);
