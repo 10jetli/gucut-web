@@ -12,6 +12,7 @@ import { discountPercent, formatPrice, priceLabel, type Product } from "@/lib/ty
 // สไลด์รูป → ราคา+ป้ายลด → ตัวเลือก → สเปก → คำอธิบาย → แถบซื้อติดล่างจอ
 export default function ProductDetail({
   product: p,
+  specs,
   related,
   crumbs,
   reviews,
@@ -20,6 +21,7 @@ export default function ProductDetail({
   related: Product[];
   crumbs: { h: string; t: string }[];
   reviews?: ReactNode;   // บล็อกรีวิว render มาจากฝั่ง server
+  specs?: ReactNode;     // คุณลักษณะ + เอกสาร + ตารางสเปก (server เช่นกัน)
 }) {
   const [i, setI] = useState(0);
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
@@ -155,6 +157,8 @@ export default function ProductDetail({
           </div>
         </section>
       )}
+
+      {specs}
 
       {/* สินค้าใกล้เคียง */}
       {related.length > 0 && (

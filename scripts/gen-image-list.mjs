@@ -6,6 +6,8 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
+let details = {};
+try { details = JSON.parse(readFileSync(join(root, "src/data/details.json"), "utf8")); } catch {}
 
 const localName = (url) => {
   const base = url.split("?")[0].split("/").pop();
@@ -24,6 +26,8 @@ for (const p of products) {
   for (const u of p.imgs || []) add(u);
   for (const v of p.v || []) add(v.i);
 }
+// รูปตารางสเปกในรายละเอียดสินค้า ก็ต้องเก็บมาไว้เองเหมือนกัน
+for (const d of Object.values(details)) for (const s of d.specs || []) add(s.u);
 
 const list = [...seen.entries()].sort((a, b) => a[0].localeCompare(b[0]));
 writeFileSync(join(root, "src/data/image-list.json"), JSON.stringify(list));

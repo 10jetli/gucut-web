@@ -3,6 +3,8 @@ import ProductDetail from "@/components/ProductDetail";
 import ReviewSection from "@/components/ReviewSection";
 import { products, getProduct, getCollection, inCollection, sellable } from "@/lib/catalog";
 import { reviewItems } from "@/lib/reviews";
+import ProductSpecs from "@/components/ProductSpecs";
+import { detailOf, attrsOf } from "@/lib/details";
 
 export const dynamicParams = false;
 
@@ -98,6 +100,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
             />
           ) : null
         }
+        specs={<ProductSpecs d={detailOf(p.h)} attrs={attrsOf(p)} />}
       />
     </>
   );

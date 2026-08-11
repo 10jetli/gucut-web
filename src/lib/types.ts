@@ -61,6 +61,13 @@ export interface Product {
   tags: string[];
 }
 
+// รายละเอียดเพิ่มเติมที่ดึงมาจาก descriptionHtml ของร้านเดิม
+export interface Detail {
+  specs?: { u: string; w?: number; h?: number }[]; // รูปตารางสเปก
+  docs?: { label: string; url: string }[];         // ลิงก์เอกสารดาวน์โหลด
+  steps?: string[];                                // ขั้นตอนขอใบอนุญาต
+}
+
 export interface Collection {
   h: string;            // handle
   t: string;            // ชื่อ
