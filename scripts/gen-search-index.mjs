@@ -9,6 +9,17 @@ const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "
 const reviews = JSON.parse(readFileSync(join(root, "src/data/reviews.json"), "utf8"));
 
 const BASE = "https://cdn.shopify.com/s/files/1/0905/1081/9620/files/";
+const archived = new Set(
+  JSON.parse(readFileSync(join(root, "src/data/image-map.json"), "utf8"))
+);
+// ใช้รูปที่เก็บเองถ้ามี — ตรงกับที่ catalog.ts ทำ
+function pick(url) {
+  if (!url) return null;
+  const base = url.split("?")[0].split("/").pop();
+  const local = base && base.replace(/\.(jpe?g|png|webp|avif|gif)$/i, "") + ".webp";
+  if (local && archived.has(local)) return "/img/" + local;
+  return url;
+}
 
 const items = products.map((p) => {
   const e = {
@@ -21,7 +32,8 @@ const items = products.map((p) => {
     n: p.v.length,          // จำนวนตัวเลือก
   };
   if (p.c && p.c > p.p) e.c = p.c;                       // ราคาก่อนลด (ถ้ามี)
-  if (p.img) e.i = p.img.startsWith(BASE) ? p.img.slice(BASE.length) : p.img;
+  const src = pick(p.img);
+  if (src) e.i = src.startsWith(BASE) ? src.slice(BASE.length) : src;
   const rv = reviews[p.h];
   if (rv) e.r = [rv.avg, rv.count];                      // [ดาว, จำนวนรีวิว]
   // รวม SKU ของตัวเลือกไว้ค้นด้วย (เช่น 00894-22T) — เก็บเป็นสตริงเดียวประหยัดที่

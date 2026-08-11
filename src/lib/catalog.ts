@@ -4,11 +4,19 @@ import raw from "@/data/products.json";
 import cols from "@/data/collections.json";
 import type { Product, Collection } from "./types";
 import { reviewSummary } from "./reviews";
+import { toLocal } from "./local-images";
 
 // ผูกสรุปรีวิวเข้ากับสินค้าตั้งแต่ตอนโหลด การ์ดสินค้าจะได้โชว์ดาวโดยไม่ต้องส่ง prop เพิ่ม
 export const products = (raw as unknown as Product[]).map((p) => {
   const rv = reviewSummary(p.h);
-  return rv ? { ...p, rv } : p;
+  // สลับรูปมาใช้ของที่เก็บเอง (ถ้ามี) — ไม่ต้องพึ่ง Shopify CDN
+  const out: Product = {
+    ...p,
+    img: toLocal(p.img),
+    imgs: p.imgs.map((u) => toLocal(u) as string),
+    v: p.v.map((v) => (v.i ? { ...v, i: toLocal(v.i) } : v)),
+  };
+  return rv ? { ...out, rv } : out;
 });
 export const collections = cols as unknown as Collection[];
 

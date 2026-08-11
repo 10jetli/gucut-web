@@ -3,8 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "node scripts/gen-reviews.mjs && node scripts/gen-search-index.mjs && next dev",
-    "prebuild": "node scripts/gen-reviews.mjs && node scripts/gen-search-index.mjs",
+    "dev": "node scripts/gen-image-manifest.mjs && node scripts/gen-reviews.mjs && node scripts/gen-search-index.mjs && next dev",
+    "prebuild": "node scripts/gen-image-manifest.mjs && node scripts/gen-reviews.mjs && node scripts/gen-search-index.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
