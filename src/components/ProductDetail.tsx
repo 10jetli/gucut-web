@@ -28,7 +28,7 @@ export default function ProductDetail({
 
   // สินค้าตัวเลือกเดียว: เช็คสต็อก/ราคาสดจาก ZORT ทันทีที่เปิดหน้า
   // (สินค้าหลายตัวเลือกไปเช็คสดตอนเปิด sheet เลือกของแทน — ตรงตัวที่เลือกกว่า)
-  const live = useLiveStock(p.v.length <= 1 ? (p.sku || p.v[0]?.k || null) : null);
+  const live = useLiveStock(p.v.length <= 1 ? (p.sku || p.v[0]?.k || null) : null, p.p);
   const shownStock = live?.st ?? p.st;
 
   return (

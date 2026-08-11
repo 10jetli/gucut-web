@@ -37,7 +37,7 @@ export default function VariantSheet({
 
   // สต็อก/ราคาสดจาก ZORT — ยิงเฉพาะตอน sheet เปิด และเฉพาะตัวเลือกที่เลือกอยู่
   const querySku = open ? (sel?.k || product.v[0]?.k || product.sku || null) : null;
-  const live = useLiveStock(querySku);
+  const live = useLiveStock(querySku, sel ? sel.p : product.p);
 
   const price = live?.p ?? (sel ? sel.p : product.p);
   const stock = live?.st ?? (sel ? sel.s : product.st);

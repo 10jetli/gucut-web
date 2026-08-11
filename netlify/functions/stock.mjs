@@ -35,9 +35,38 @@ export default async function handler(req) {
   if (!res.ok) return json({ error: "zort " + res.status }, 502, 0);
 
   const data = await res.json().catch(() => ({}));
-  const list = data.list || data.List || [];
   const skuLower = sku.toLowerCase();
-  const hit = list.find((x) => String(x.sku || "").trim().toLowerCase() === skuLower);
+  const exact = (arr) =>
+    (arr || []).find((x) => String(x.sku || "").trim().toLowerCase() === skuLower);
+
+  let hit = exact(data.list || data.List);
+
+  // SKU แบบมีขีด (เช่น 00894-22T) — ZORT ค้นทั้งก้อนไม่เจอ
+  // ลองใหม่ด้วยรหัสฐานก่อนขีด แล้วจับคู่ SKU เต็มแบบเป๊ะ ๆ ในผลลัพธ์
+  if (!hit && sku.includes("-")) {
+    const base = sku.split("-")[0];
+    if (base.length >= 3) {
+      try {
+        const r2 = await fetch(
+          `${ZORT}?keyword=${encodeURIComponent(base)}&limit=100`,
+          {
+            headers: {
+              storename: ZORT_STORENAME,
+              apikey: ZORT_APIKEY,
+              apisecret: ZORT_APISECRET,
+            },
+            signal: AbortSignal.timeout(8000),
+          }
+        );
+        if (r2.ok) {
+          const d2 = await r2.json().catch(() => ({}));
+          hit = exact(d2.list || d2.List);
+        }
+      } catch {
+        /* ใช้ผลรอบแรกต่อ */
+      }
+    }
+  }
 
   if (!hit) return json({ found: false }, 200, 300);
 

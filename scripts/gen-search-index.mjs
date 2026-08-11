@@ -1,0 +1,38 @@
+// สร้างดัชนีค้นหา → public/search-index.json
+// โหลดครั้งเดียวตอนลูกค้าเปิดหน้า /search แล้วค้นในเครื่อง — เร็วระดับพิมพ์ปุ๊บเจอปั๊บ
+// บีบขนาด: รูปเก็บเฉพาะท้าย URL (prefix ซ้ำกัน 2,261 ตัว) + ใช้ key สั้น
+import { readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const root = process.cwd();
+const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
+const reviews = JSON.parse(readFileSync(join(root, "src/data/reviews.json"), "utf8"));
+
+const BASE = "https://cdn.shopify.com/s/files/1/0905/1081/9620/files/";
+
+const items = products.map((p) => {
+  const e = {
+    h: p.h,                 // handle → ลิงก์
+    t: p.t,                 // ชื่อ
+    k: p.sku || "",         // SKU หลัก
+    p: p.p,                 // ราคาต่ำสุด
+    m: p.pmax,              // ราคาสูงสุด
+    s: p.st,                // สต็อกรวม
+    n: p.v.length,          // จำนวนตัวเลือก
+  };
+  if (p.c && p.c > p.p) e.c = p.c;                       // ราคาก่อนลด (ถ้ามี)
+  if (p.img) e.i = p.img.startsWith(BASE) ? p.img.slice(BASE.length) : p.img;
+  const rv = reviews[p.h];
+  if (rv) e.r = [rv.avg, rv.count];                      // [ดาว, จำนวนรีวิว]
+  // รวม SKU ของตัวเลือกไว้ค้นด้วย (เช่น 00894-22T) — เก็บเป็นสตริงเดียวประหยัดที่
+  const vk = p.v.map((v) => v.k).filter(Boolean).join(" ");
+  if (vk && vk !== e.k) e.vk = vk;
+  return e;
+});
+
+const out = { v: 1, base: BASE, items };
+const json = JSON.stringify(out);
+writeFileSync(join(root, "public/search-index.json"), json);
+console.log(
+  `[search] ดัชนี ${items.length} สินค้า · ${(json.length / 1024).toFixed(0)} KB (ก่อนบีบอัด)`
+);
