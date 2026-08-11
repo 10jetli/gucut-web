@@ -15,7 +15,7 @@ export default function CategoryNav({ items }: { items: Collection[] }) {
         <Link
           key={c.h}
           href={`/c/${encodeURIComponent(c.h)}/`}
-          className="shrink-0 rounded-full border border-steel-700 bg-[#fafafa] px-3 py-1.5 text-[13px] text-[#333]"
+          className="shrink-0 rounded-full border border-steel-700 bg-[#f7f7f7] px-3 py-1.5 text-[13px] text-[#1a1a1a]"
         >
           {c.t}
         </Link>

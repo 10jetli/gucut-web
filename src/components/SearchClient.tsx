@@ -102,7 +102,7 @@ export default function SearchClient() {
         <div className="flex items-center gap-2">
           <Link href="/" aria-label="กลับหน้าแรก" className="shrink-0 px-1 text-xl text-white">‹</Link>
           <div className="flex flex-1 items-center gap-2 rounded-sm bg-white px-2.5 py-1.5">
-            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#757575] stroke-2">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#6b6b6b] stroke-2">
               <circle cx="11" cy="11" r="7" />
               <path d="M20 20l-3.5-3.5" strokeLinecap="round" />
             </svg>
@@ -112,11 +112,11 @@ export default function SearchClient() {
               value={q}
               onChange={(ev) => setQ(ev.target.value)}
               placeholder="ค้นหาเลื่อยยนต์ โซ่ อะไหล่ รหัสสินค้า..."
-              className="w-full bg-transparent text-[13px] text-[#222] outline-none placeholder:text-[#9a9a9a]"
+              className="w-full bg-transparent text-[13px] text-[#1a1a1a] outline-none placeholder:text-[#8a8a8a]"
             />
             {q && (
               <button onClick={() => { setQ(""); inputRef.current?.focus(); }} aria-label="ล้าง"
-                className="shrink-0 text-base leading-none text-[#9a9a9a]">×</button>
+                className="shrink-0 text-base leading-none text-[#8a8a8a]">×</button>
             )}
           </div>
         </div>
@@ -129,7 +129,7 @@ export default function SearchClient() {
           <div className="flex flex-wrap gap-2">
             {POPULAR.map((w) => (
               <button key={w} onClick={() => setQ(w)}
-                className="rounded-full border border-steel-600 px-3 py-1.5 text-[13px] text-[#333]">
+                className="rounded-full border border-steel-600 px-3 py-1.5 text-[13px] text-[#1a1a1a]">
                 {w}
               </button>
             ))}
@@ -175,7 +175,7 @@ export default function SearchClient() {
                   )}
                 </div>
                 <div className="p-2">
-                  <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#333]">{e.t}</p>
+                  <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#1a1a1a]">{e.t}</p>
                   <div className="mt-1.5 flex items-baseline gap-1.5">
                     <span className="font-heading text-[15px] font-semibold text-safety">
                       {e.m > e.p ? `${formatPrice(e.p)} - ${formatPrice(e.m)}` : formatPrice(e.p)}
@@ -201,7 +201,7 @@ export default function SearchClient() {
 
           {shown < results.length && (
             <button onClick={() => setShown((s) => s + PAGE)}
-              className="mt-3 w-full rounded-lg border border-steel-600 py-2.5 text-[13px] text-[#333]">
+              className="mt-3 w-full rounded-lg border border-steel-600 py-2.5 text-[13px] text-[#1a1a1a]">
               โหลดเพิ่ม ({(results.length - shown).toLocaleString("th-TH")} รายการ)
             </button>
           )}

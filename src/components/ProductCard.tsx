@@ -42,7 +42,7 @@ export default function ProductCard({ product: p }: { product: Product }) {
         )}
       </div>
       <div className="p-2">
-        <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#333]">{p.t}</p>
+        <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#1a1a1a]">{p.t}</p>
         <div className="mt-1.5 flex items-baseline gap-1.5">
           <span className="font-heading text-[15px] font-semibold text-safety">{priceLabel(p)}</span>
           {p.c && p.c > p.p && (

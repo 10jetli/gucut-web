@@ -6,10 +6,10 @@ export default function ReviewCard({ r }: { r: Review }) {
   return (
     <li className="py-3 first:pt-0">
       <div className="flex items-center gap-2">
-        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-steel-700 text-[10px] font-semibold text-[#555]">
+        <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-steel-700 text-[10px] font-semibold text-[#4a4a4a]">
           {initial(r.author)}
         </span>
-        <span className="truncate text-[13px] text-[#333]">{r.author}</span>
+        <span className="truncate text-[13px] text-[#1a1a1a]">{r.author}</span>
         <span className="ml-auto shrink-0 rounded bg-[#f0fbf3] px-1.5 py-0.5 text-[10px] font-medium text-[#1f9254]">
           ซื้อจริง
         </span>
@@ -20,7 +20,7 @@ export default function ReviewCard({ r }: { r: Review }) {
         <span className="text-[11px] text-steel-300">{thaiDate(r.date)}</span>
       </div>
 
-      {r.text && <p className="mt-1.5 text-[13px] leading-relaxed text-[#444]">{r.text}</p>}
+      {r.text && <p className="mt-1.5 text-[13px] leading-relaxed text-[#333333]">{r.text}</p>}
 
       {/* คลิปจากลูกค้า — เก็บไฟล์ไว้บนเว็บเราเอง เล่นได้ตลอด ไม่หมดอายุ */}
       {r.video && (

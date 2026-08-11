@@ -38,7 +38,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ handle
     <main className="pb-10">
       {/* หัวหน้า */}
       <header className="sticky top-0 z-40 flex h-[52px] items-center gap-2 border-b border-steel-700 bg-white px-2">
-        <Link href={productUrl} aria-label="ย้อนกลับ" className="px-1 text-xl text-[#333]">
+        <Link href={productUrl} aria-label="ย้อนกลับ" className="px-1 text-xl text-[#1a1a1a]">
           ‹
         </Link>
         <h1 className="font-heading text-[15px] font-semibold">รีวิวทั้งหมด</h1>
@@ -53,7 +53,7 @@ export default async function ReviewsPage({ params }: { params: Promise<{ handle
           {p.img && <Image src={p.img} alt={p.t} fill sizes="56px" className="object-contain" />}
         </div>
         <div className="min-w-0">
-          <p className="clamp-2 text-[13px] leading-tight text-[#333]">{p.t}</p>
+          <p className="clamp-2 text-[13px] leading-tight text-[#1a1a1a]">{p.t}</p>
           <p className="mt-0.5 text-[13px] font-semibold text-safety">{formatPrice(p.p)}</p>
         </div>
         <span className="ml-auto text-steel-300">›</span>

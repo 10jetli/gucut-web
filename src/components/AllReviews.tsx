@@ -76,7 +76,7 @@ export default function AllReviews({
   return (
     <>
       {/* สรุปคะแนน */}
-      <div className="flex items-center gap-3 bg-[#fffbf8] px-3 py-3">
+      <div className="flex items-center gap-3 bg-[#fff2ee] px-3 py-3">
         <div className="text-center">
           <div className="font-heading text-3xl font-bold leading-none text-safety">
             {avg.toFixed(1)}
@@ -103,10 +103,10 @@ export default function AllReviews({
               onClick={() => { setTab(t.k); setShown(PAGE); }}
               className={`shrink-0 rounded-full border px-3 py-1 text-xs transition-colors ${
                 tab === t.k
-                  ? "border-safety bg-[#fff5ef] text-safety"
+                  ? "border-safety bg-[#fff2ee] text-safety"
                   : off
                     ? "border-steel-700 text-steel-600"
-                    : "border-steel-600 text-[#444]"
+                    : "border-steel-600 text-[#333333]"
               }`}
             >
               {t.label}
@@ -143,7 +143,7 @@ export default function AllReviews({
             <div className="px-3 py-4">
               <button
                 onClick={() => setShown((s) => s + PAGE)}
-                className="w-full rounded-lg border border-steel-600 py-2.5 text-[13px] text-[#333]"
+                className="w-full rounded-lg border border-steel-600 py-2.5 text-[13px] text-[#1a1a1a]"
               >
                 โหลดเพิ่ม ({(list.length - shown).toLocaleString("th-TH")} รีวิว)
               </button>

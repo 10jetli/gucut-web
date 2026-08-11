@@ -18,8 +18,8 @@ function Star({ fill, size }: { fill: number; size: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" className="shrink-0">
       <defs>
         <linearGradient id={id}>
-          <stop offset={`${fill * 100}%`} stopColor="#ee4d2d" />
-          <stop offset={`${fill * 100}%`} stopColor="#e0e0e0" />
+          <stop offset={`${fill * 100}%`} stopColor="#ff3c00" />
+          <stop offset={`${fill * 100}%`} stopColor="#d8d8d8" />
         </linearGradient>
       </defs>
       <path d={d} fill={`url(#${id})`} />

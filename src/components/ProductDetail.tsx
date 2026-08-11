@@ -88,7 +88,7 @@ export default function ProductDetail({
             </>
           )}
         </div>
-        <h1 className="mt-2 text-[15px] leading-snug text-[#222]">{p.t}</h1>
+        <h1 className="mt-2 text-[15px] leading-snug text-[#1a1a1a]">{p.t}</h1>
         {p.rv && (
           <a href="#reviews" className="mt-2 flex items-center gap-1.5 text-xs">
             <Stars value={p.rv.a} size={13} />
@@ -117,7 +117,7 @@ export default function ProductDetail({
         >
           <span className="text-sm text-steel-300">
             {p.opt ?? "ตัวเลือก"}
-            <span className="ml-2 text-[#222]">มี {p.v.length} แบบให้เลือก</span>
+            <span className="ml-2 text-[#1a1a1a]">มี {p.v.length} แบบให้เลือก</span>
           </span>
           <span className="text-steel-300">›</span>
         </button>
@@ -132,7 +132,7 @@ export default function ProductDetail({
               <Link
                 key={c.h}
                 href={`/c/${encodeURIComponent(c.h)}/`}
-                className="rounded-full border border-steel-600 px-2.5 py-1 text-xs text-[#333]"
+                className="rounded-full border border-steel-600 px-2.5 py-1 text-xs text-[#1a1a1a]"
               >
                 {c.t}
               </Link>
@@ -148,7 +148,7 @@ export default function ProductDetail({
       {p.d && (
         <section className="mt-2 bg-steel-800 px-3 py-3">
           <h2 className="mb-2 font-heading text-base font-semibold">รายละเอียดสินค้า</h2>
-          <div className="space-y-1 text-[13px] leading-relaxed text-[#555]">
+          <div className="space-y-1 text-[13px] leading-relaxed text-[#4a4a4a]">
             {p.d.split("•").map((line, n) =>
               line.trim() ? <p key={n}>• {line.trim()}</p> : null
             )}
@@ -171,7 +171,7 @@ export default function ProductDetail({
                   {r.img && <Image src={r.img} alt={r.t} fill sizes="112px" className="object-contain" />}
                 </div>
                 <div className="p-1.5">
-                  <p className="clamp-2 text-[11px] leading-tight text-[#333]">{r.t}</p>
+                  <p className="clamp-2 text-[11px] leading-tight text-[#1a1a1a]">{r.t}</p>
                   <p className="mt-0.5 text-xs font-semibold text-safety">{formatPrice(r.p)}</p>
                 </div>
               </Link>

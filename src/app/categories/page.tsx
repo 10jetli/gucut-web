@@ -21,7 +21,7 @@ export default function CategoriesPage() {
               href={`/c/${encodeURIComponent(c.h)}/`}
               className="rounded-lg bg-steel-800 p-3 active:scale-[0.98]"
             >
-              <p className="font-heading text-[15px] font-semibold text-[#222]">{c.t}</p>
+              <p className="font-heading text-[15px] font-semibold text-[#1a1a1a]">{c.t}</p>
               <p className="mt-0.5 text-xs text-steel-300">{c.n} รายการ</p>
             </Link>
           ))}
@@ -38,7 +38,7 @@ export default function CategoriesPage() {
                 href={`/c/${encodeURIComponent(c.h)}/`}
                 className="rounded-lg bg-steel-800 p-3 active:scale-[0.98]"
               >
-                <p className="text-[13px] leading-tight text-[#222]">{c.t}</p>
+                <p className="text-[13px] leading-tight text-[#1a1a1a]">{c.t}</p>
                 <p className="mt-0.5 text-xs text-steel-300">{c.n} รายการ</p>
               </Link>
             ))}

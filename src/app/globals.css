@@ -5,7 +5,7 @@
 /* พื้นหลังเหล็กเข้มทั้งเว็บ */
 body {
   @apply bg-steel-900 font-body;
-  color: #222;
+  color: #1a1a1a;
   -webkit-tap-highlight-color: transparent;
 }
 

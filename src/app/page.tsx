@@ -57,7 +57,7 @@ export default function HomePage() {
         </div>
         <Link
           href="/categories/"
-          className="mt-3 block rounded-lg border border-steel-700 py-2.5 text-center text-sm text-[#333]"
+          className="mt-3 block rounded-lg border border-steel-700 py-2.5 text-center text-sm text-[#1a1a1a]"
         >
           ดูสินค้าทั้งหมด 2,482 รายการ ›
         </Link>

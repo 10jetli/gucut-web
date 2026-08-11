@@ -40,7 +40,7 @@ export default function BottomNav() {
               key={href}
               href={href}
               className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
-                active ? "text-safety" : "text-steel-300 hover:text-[#222]"
+                active ? "text-safety" : "text-steel-300 hover:text-[#1a1a1a]"
               }`}
             >
               <span className="relative">

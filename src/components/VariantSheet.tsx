@@ -102,7 +102,7 @@ export default function VariantSheet({
         {/* ปุ่มตัวเลือก */}
         {hasVariants && (
           <div className="p-3">
-            <p className="mb-2 text-sm text-[#333]">{product.opt ?? "ตัวเลือก"}</p>
+            <p className="mb-2 text-sm text-[#1a1a1a]">{product.opt ?? "ตัวเลือก"}</p>
             <div className="flex flex-wrap gap-2">
               {product.v.map((v) => {
                 const out = v.s <= 0;
@@ -121,7 +121,7 @@ export default function VariantSheet({
                         ? "cursor-not-allowed border-steel-700 text-steel-600 line-through"
                         : active
                           ? "border-safety bg-safety/10 text-safety"
-                          : "border-steel-600 text-[#333] active:border-safety",
+                          : "border-steel-600 text-[#1a1a1a] active:border-safety",
                     ].join(" ")}
                   >
                     {v.t}
@@ -134,11 +134,11 @@ export default function VariantSheet({
 
         {/* จำนวน */}
         <div className="flex items-center justify-between px-3 py-2">
-          <span className="text-sm text-[#333]">จำนวน</span>
+          <span className="text-sm text-[#1a1a1a]">จำนวน</span>
           <div className="flex items-center gap-3">
             <button
               onClick={() => setQty((q) => Math.max(1, q - 1))}
-              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#333]"
+              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#1a1a1a]"
               aria-label="ลดจำนวน"
             >
               −
@@ -146,7 +146,7 @@ export default function VariantSheet({
             <span className="w-10 text-center text-base">{qty}</span>
             <button
               onClick={() => setQty((q) => Math.min(max, q + 1))}
-              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#333]"
+              className="h-8 w-8 rounded border border-steel-600 text-lg leading-none text-[#1a1a1a]"
               aria-label="เพิ่มจำนวน"
             >
               +

@@ -3,21 +3,27 @@ import Link from "next/link";
 // หัวเว็บแบบ Shopee — แถบส้มเต็มความกว้าง โลโก้ + ช่องค้นหาขาว + ไอคอนตะกร้า
 export default function SearchBar() {
   return (
-    <header className="sticky top-0 z-40 bg-safety px-3 pb-2 pt-3 shadow-sm">
+    <header className="sticky top-0 z-40 bg-ink px-3 pb-2 pt-3 shadow-sm">
       <div className="flex items-center gap-2">
-        <Link href="/" className="shrink-0 font-heading text-lg font-bold tracking-tight text-white">
-          GUCUT
+        {/* โลโก้ตามอาร์ตเวิร์กจริง: GU ส้ม + CUT เทา บนแถบดำ */}
+        <Link
+          href="/"
+          aria-label="GUCUT หน้าแรก"
+          className="shrink-0 font-heading text-[19px] font-extrabold italic leading-none tracking-tight"
+        >
+          <span className="text-safety">GU</span>
+          <span className="text-[#c9cacc]">CUT</span>
         </Link>
         {/* แตะแล้วไปหน้า /search ที่มีช่องพิมพ์จริง (ดัชนีโหลดที่นั่นทีเดียว) */}
         <Link
           href="/search/"
           className="flex flex-1 items-center gap-2 rounded-sm bg-white px-2.5 py-1.5"
         >
-          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#757575] stroke-2">
+          <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#6b6b6b] stroke-2">
             <circle cx="11" cy="11" r="7" />
             <path d="M20 20l-3.5-3.5" strokeLinecap="round" />
           </svg>
-          <span className="w-full truncate text-[13px] text-[#9a9a9a]">
+          <span className="w-full truncate text-[13px] text-[#8a8a8a]">
             ค้นหาเลื่อยยนต์ โซ่ อะไหล่ รหัสสินค้า...
           </span>
         </Link>

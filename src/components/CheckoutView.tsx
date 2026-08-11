@@ -135,7 +135,7 @@ export default function CheckoutView() {
           <div className="rounded-lg bg-steel-800 p-3 text-sm">
             {items.map((i) => (
               <div key={`${i.productId}-${i.variant}`} className="flex justify-between py-0.5">
-                <span className="min-w-0 flex-1 truncate pr-2 text-[#555]">
+                <span className="min-w-0 flex-1 truncate pr-2 text-[#4a4a4a]">
                   {i.title} ({i.variant}) ×{i.qty}
                 </span>
                 <span className="shrink-0">{formatPrice(i.price * i.qty)}</span>

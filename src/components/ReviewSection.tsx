@@ -25,7 +25,7 @@ export default function ReviewSection({
       </div>
 
       {/* สรุปคะแนน */}
-      <div className="mt-2 flex items-center gap-3 rounded-sm bg-[#fffbf8] px-3 py-2.5">
+      <div className="mt-2 flex items-center gap-3 rounded-sm bg-[#fff2ee] px-3 py-2.5">
         <div className="text-center">
           <div className="font-heading text-2xl font-bold leading-none text-safety">
             {summary.a.toFixed(1)}
@@ -51,7 +51,7 @@ export default function ReviewSection({
 
       <Link
         href={href}
-        className="mt-3 block rounded-lg border border-steel-600 py-2.5 text-center text-[13px] text-[#333]"
+        className="mt-3 block rounded-lg border border-steel-600 py-2.5 text-center text-[13px] text-[#1a1a1a]"
       >
         ดูรีวิวทั้งหมด ({summary.n.toLocaleString("th-TH")})
       </Link>
