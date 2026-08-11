@@ -6,3 +6,15 @@
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--no-audit --no-fund"
+
+# Image CDN — อนุญาตให้ย่อรูปจากโดเมนภายนอกเหล่านี้
+# (รูปสินค้าจาก Shopify + รูปรีวิวจากแพลตฟอร์มต่าง ๆ)
+[images]
+  remote_images = [
+    "https://cdn\\.shopify\\.com/.*",
+    "https://lzd-u\\.slatic\\.net/.*",
+    "https://sg-test-11\\.slatic\\.net/.*",
+    "https://cf\\.shopee\\.com/.*",
+    "https://p16-oec-sg\\.ibyteimg\\.com/.*",
+    "https://p16-oec-va\\.ibyteimg\\.com/.*",
+  ]

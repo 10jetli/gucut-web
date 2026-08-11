@@ -5,7 +5,10 @@ const nextConfig = {
   output: "export",
   trailingSlash: true,
   images: {
-    unoptimized: true,
+    // ทุกรูปผ่าน Netlify Image CDN — ย่อ/แปลง WebP ตามจอจริง (ดู src/lib/image-loader.js)
+    // หมายเหตุ: ตอน `npm run dev` ในเครื่อง รูปจะไม่ขึ้น (ไม่มี /.netlify/images) — ปกติ
+    loader: "custom",
+    loaderFile: "./src/lib/image-loader.js",
     // อนุญาตรูปสินค้าจาก Shopify CDN
     remotePatterns: [
       { protocol: "https", hostname: "cdn.shopify.com" },
