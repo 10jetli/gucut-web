@@ -13,7 +13,8 @@
 //
 // env ที่ใช้
 //   CHAT_ADMIN_KEY   รหัสเข้าหน้าแชทของร้าน (ตั้งเองยาว ๆ)
-//   CHAT_NOTIFY_URL  (ไม่บังคับ) ยิง POST ไปเตือนเวลามีข้อความใหม่ เช่น LINE Notify / Make.com
+//   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID  เตือนเข้ากลุ่ม Telegram + ตอบกลับจากกลุ่มได้
+//   CHAT_NOTIFY_URL  (ไม่บังคับ) ยิง POST ไปที่อื่นเพิ่ม เช่น Make.com
 import { getStore } from "@netlify/blobs";
 
 const MAX_TEXT = 2000;
@@ -91,17 +92,31 @@ export default async function handler(req) {
     if (t.messages.length > MAX_MSGS) t.messages = t.messages.slice(-MAX_MSGS);
     await store.setJSON(id, t);
 
-    // เตือนร้านว่ามีข้อความใหม่ (ถ้าตั้ง URL ไว้)
-    if (!asAdmin && process.env.CHAT_NOTIFY_URL) {
+    // เตือนร้านว่ามีข้อความใหม่
+    if (!asAdmin) {
       const who = t.name || "ลูกค้า";
-      const about = t.product?.t ? ` (${t.product.t})` : "";
-      req.waitUntil?.(
-        fetch(process.env.CHAT_NOTIFY_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ message: `💬 ${who}${about}: ${text}`, cid: id, text, name: t.name, phone: t.phone }),
-        }).catch(() => {})
-      );
+      const about = t.product?.t ? `\n📦 ${t.product.t}` : "";
+      const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+      if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+        // ท้ายข้อความมี #รหัสห้อง — แอดมินกด Reply แล้วบอทจะรู้ว่าตอบใคร
+        const body = `💬 ${who}${about}\n\n${text}\n\n↩️ กด Reply ข้อความนี้เพื่อตอบลูกค้า\n#${id}`;
+        req.waitUntil?.(
+          fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: body, disable_web_page_preview: true }),
+          }).catch(() => {})
+        );
+      }
+      if (process.env.CHAT_NOTIFY_URL) {
+        req.waitUntil?.(
+          fetch(process.env.CHAT_NOTIFY_URL, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ message: `💬 ${who}: ${text}`, cid: id, text, name: t.name, phone: t.phone }),
+          }).catch(() => {})
+        );
+      }
     }
     return json({ ok: true, thread: t });
   }

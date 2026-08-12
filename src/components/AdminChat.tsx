@@ -10,7 +10,7 @@ interface Room {
   last: { from: string; text: string; at: number } | null;
   unread: number; n: number;
 }
-interface Msg { from: "c" | "s"; text: string; at: number }
+interface Msg { from: "c" | "s"; text: string; at: number; by?: string }
 
 const KEY = "gucut-admin-key";
 const POLL_MS = 5000;
@@ -144,7 +144,7 @@ export default function AdminChat() {
                 (m.from === "s" ? "rounded-br-sm bg-safety text-white" : "rounded-bl-sm bg-white text-ink")}>
                 <p className="whitespace-pre-wrap break-words">{m.text}</p>
                 <p className={"mt-0.5 text-right text-[10px] " + (m.from === "s" ? "text-white/70" : "text-steel-300")}>
-                  {when(m.at)}
+                  {m.by ? `${m.by} · ` : ""}{when(m.at)}
                 </p>
               </div>
             </div>
