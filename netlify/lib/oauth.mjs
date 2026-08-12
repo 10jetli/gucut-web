@@ -1,4 +1,4 @@
-// เข้าสู่ระบบด้วยบัญชีภายนอก (LINE / Facebook) — ตัวกลางที่ใช้ร่วมกัน
+// เข้าสู่ระบบด้วยบัญชีภายนอก (LINE / Facebook / Google) — ตัวกลางที่ใช้ร่วมกัน
 //
 //   GET /api/oauth/<เจ้า>?next=/cart/   พาไปหน้าอนุญาตของเจ้านั้น
 //   GET /api/oauth/<เจ้า>/callback      เจ้านั้นส่งกลับมาพร้อม code
@@ -132,8 +132,8 @@ async function postForm(url, body) {
   if (!r.ok) throw new Error(d.error_description || d.error?.message || "request failed");
   return d;
 }
-async function getJson(url) {
-  const r = await fetch(url);
+async function getJson(url, headers) {
+  const r = await fetch(url, headers ? { headers } : undefined);
   const d = await r.json();
   if (!r.ok) throw new Error(d.error?.message || d.error_description || "request failed");
   return d;
@@ -215,3 +215,37 @@ export const FACEBOOK = {
 
 // Facebook เลิกใช้เวอร์ชันเก่าเป็นรอบ ๆ เปลี่ยนที่ env ได้ไม่ต้องแก้โค้ด
 const fbVersion = () => process.env.FACEBOOK_API_VERSION || "v23.0";
+
+export const GOOGLE = {
+  id: "google",
+  label: "Google",
+  envId: "GOOGLE_CLIENT_ID",
+  envSecret: "GOOGLE_CLIENT_SECRET",
+
+  authorizeUrl({ clientId, callback, state }) {
+    const u = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    u.searchParams.set("response_type", "code");
+    u.searchParams.set("client_id", clientId);
+    u.searchParams.set("redirect_uri", callback);
+    u.searchParams.set("state", state);
+    u.searchParams.set("scope", "openid profile");  // ขอแค่ชื่อกับรูป ไม่ขออีเมล
+    u.searchParams.set("prompt", "select_account"); // ให้เลือกบัญชีได้ทุกครั้ง กันเข้าผิดบัญชี
+    return u.toString();
+  },
+
+  async getProfile({ code, callback, clientId, clientSecret }) {
+    const tok = await postForm("https://oauth2.googleapis.com/token", {
+      grant_type: "authorization_code",
+      code,
+      redirect_uri: callback,
+      client_id: clientId,
+      client_secret: clientSecret,
+    });
+    if (!tok.access_token) throw new Error("no access_token");
+    // token ได้มาจากการคุยกับ Google ตรง ๆ ด้วย client_secret ของเรา จึงเชื่อถือได้
+    const p = await getJson("https://openidconnect.googleapis.com/v1/userinfo", {
+      authorization: `Bearer ${tok.access_token}`,
+    });
+    return { id: p.sub, name: p.name, picture: p.picture };
+  },
+};

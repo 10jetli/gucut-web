@@ -6,7 +6,7 @@ export interface Addr {
   name: string; phone: string; address: string; province: string; zip: string;
 }
 /** ชื่อเจ้าของบัญชีภายนอกที่รองรับ */
-export type Provider = "line" | "facebook";
+export type Provider = "line" | "facebook" | "google";
 
 export interface User {
   phone: string; name: string; addr: Addr | null;
