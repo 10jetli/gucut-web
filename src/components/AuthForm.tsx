@@ -14,13 +14,14 @@ const digits = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 10);
 const okPhone = (v: string) => /^0\d{8,9}$/.test(v);
 
 // ---------- ปุ่มเข้าสู่ระบบด้วยบัญชีอื่น ----------
-// เปิดใช้จริง: ตั้ง env NEXT_PUBLIC_SOCIAL_LOGIN=1 แล้วเขียน netlify function
-// รับ /api/oauth/[provider] → แลก token → ผูกกับบัญชีใน Blobs → ตั้ง cookie gu_sess
-const SOCIAL_ON = process.env.NEXT_PUBLIC_SOCIAL_LOGIN === "1";
+// LINE ต่อเสร็จแล้ว (netlify/functions/oauth-line.mjs) — เปิดใช้โดยตั้ง env
+// NEXT_PUBLIC_LINE_LOGIN=1 คู่กับ LINE_CHANNEL_ID / LINE_CHANNEL_SECRET ฝั่งเซิร์ฟเวอร์
+// Facebook กับ Google ยังไม่ได้ต่อ กดแล้วจะขึ้นกล่องอธิบายแทน
+const LINE_ON = process.env.NEXT_PUBLIC_LINE_LOGIN === "1";
 const SOCIAL = [
-  { id: "facebook", label: "Facebook", Icon: FacebookIcon },
-  { id: "google", label: "Google", Icon: GoogleIcon },
-  { id: "line", label: "LINE", Icon: LineIcon },
+  { id: "facebook", label: "Facebook", Icon: FacebookIcon, on: false },
+  { id: "google", label: "Google", Icon: GoogleIcon, on: false },
+  { id: "line", label: "LINE", Icon: LineIcon, on: LINE_ON },
 ] as const;
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -37,9 +38,13 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   const [back, setBack] = useState("/account/");
 
   // สมัคร/ล็อกอินเสร็จแล้วพากลับหน้าที่มาจาก (เช่น หน้าเช็คเอาต์)
+  // และถ้าเพิ่งถูกส่งกลับมาจาก LINE พร้อมข้อความผิดพลาด ให้แสดงด้วย
   useEffect(() => {
-    const n = new URLSearchParams(window.location.search).get("next") || "";
+    const q = new URLSearchParams(window.location.search);
+    const n = q.get("next") || "";
     if (/^\/[a-z0-9\-/]*$/i.test(n)) setBack(n);
+    const e = q.get("err");
+    if (e) setErr(e.slice(0, 200));
   }, []);
 
   async function submit() {
@@ -274,12 +279,12 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             </div>
 
             <div className="mt-5 space-y-3">
-              {SOCIAL.map(({ id, label, Icon }) => (
+              {SOCIAL.map(({ id, label, Icon, on }) => (
                 <button
                   key={id}
                   type="button"
                   onClick={() => {
-                    if (SOCIAL_ON) window.location.href = `/api/oauth/${id}?next=${encodeURIComponent(back)}`;
+                    if (on) window.location.href = `/api/oauth/${id}?next=${encodeURIComponent(back)}`;
                     else soon(`เข้าสู่ระบบด้วย ${label}`);
                   }}
                   className="relative flex w-full items-center justify-center rounded-sm border border-steel-700 py-3 text-[14px] text-ink active:bg-steel-900"

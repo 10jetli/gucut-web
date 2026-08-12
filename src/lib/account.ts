@@ -7,6 +7,10 @@ export interface Addr {
 }
 export interface User {
   phone: string; name: string; addr: Addr | null;
+  /** ผูกกับ LINE ไว้ไหม */
+  line?: { name: string; picture: string } | null;
+  /** บัญชีที่มาจาก LINE ล้วน ๆ จะยังไม่มีรหัสผ่าน */
+  hasPassword?: boolean;
 }
 
 const CACHE = "gucut-user";   // จำไว้ให้หน้าโหลดแล้วไม่กระพริบ (ไม่ใช่ตัวยืนยันสิทธิ์)
@@ -30,7 +34,11 @@ async function call(body: Record<string, unknown>) {
     body: JSON.stringify(body),
   });
   const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || "ระบบขัดข้อง ลองใหม่อีกครั้ง");
+  if (!r.ok) {
+    const e = new Error(d.error || "ระบบขัดข้อง ลองใหม่อีกครั้ง") as Error & { status?: number };
+    e.status = r.status;
+    throw e;
+  }
   return d;
 }
 
@@ -71,3 +79,31 @@ export async function saveProfile(patch: { name?: string; addr?: Addr }) {
 export async function changePassword(old: string, next: string) {
   await call({ action: "password", old, next });
 }
+
+/* ---------- เข้าสู่ระบบด้วย LINE ---------- */
+
+export interface PendingLine { name: string; picture: string }
+
+/** หลังกลับจาก LINE — ถามว่ามีบัญชี LINE รอผูกเบอร์อยู่ไหม */
+export async function pendingLine(): Promise<PendingLine | null> {
+  try {
+    const r = await fetch("/api/auth?pending=1", { credentials: "same-origin", cache: "no-store" });
+    const d = await r.json();
+    return d.pending || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * ผูกบัญชี LINE เข้ากับเบอร์โทร
+ * ถ้าเบอร์นั้นมีบัญชีเดิมที่ตั้งรหัสผ่านไว้ จะโยน error code "need-password"
+ * ให้ถามรหัสผ่านแล้วเรียกซ้ำ — กันคนอื่นสวมเบอร์เรา
+ */
+export async function linkLine(phone: string, password?: string, keep = true) {
+  const d = await call({ action: "line-link", phone, password, remember: keep });
+  remember(d.user); return d.user as User;
+}
+
+export const needsPassword = (e: unknown) =>
+  e instanceof Error && (e as Error & { status?: number }).status === 428;

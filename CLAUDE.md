@@ -72,9 +72,13 @@ src/
 > **ตัดสินใจแล้ว: เลิกใช้ Shopify** — ห้ามเสนอให้ต่อ Storefront API หรือย้ายกลับไป Shopify
 > เว็บนี้ยืนด้วยตัวเองครบแล้ว (สินค้า/รูป/รีวิวอยู่ในโปรเจกต์ · สต็อกจาก ZORT · สมาชิกเก็บที่ Netlify Blobs · เก็บเงินด้วย QR PromptPay)
 
-1. เข้าสู่ระบบด้วย LINE / Facebook / Google — โครงหน้าเว็บพร้อมแล้วใน `AuthForm.tsx` รอเขียน `/api/oauth/[provider]` + ใส่คีย์
-2. คูปอง / โค้ดส่วนลด
-3. รีเซ็ตรหัสผ่านเองได้ (ตอนนี้ต้องทักแชทให้ร้านตั้งให้)
+1. **เข้าสู่ระบบด้วย LINE — เขียนเสร็จแล้ว** (`netlify/functions/oauth-line.mjs`)
+   รอแค่ใส่ `LINE_CHANNEL_ID` / `LINE_CHANNEL_SECRET` / `NEXT_PUBLIC_LINE_LOGIN=1` ที่ Netlify (ดู `.env.example`)
+   ลูกค้าใหม่กด LINE → กรอกเบอร์ครั้งเดียวที่ `/account/link/` → ครั้งต่อไปกดปุ่มเดียวเข้าเลย
+   บัญชียังผูกกับ **เบอร์โทร** เป็นหลักเหมือนเดิม ออร์เดอร์เก่าจึงตามมาครบ
+2. Facebook / Google login — ยังไม่ได้ต่อ ปุ่มมีแต่หน้าตา
+3. คูปอง / โค้ดส่วนลด
+4. รีเซ็ตรหัสผ่านเองได้ (ตอนนี้ต้องทักแชทให้ร้านตั้งให้)
 
 ## Deploy ขึ้น Netlify (step-by-step)
 1. push โค้ดขึ้น GitHub (`git init && git add -A && git commit -m "init"` → สร้าง repo แล้ว push)
