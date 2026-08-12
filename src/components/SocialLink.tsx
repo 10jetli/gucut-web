@@ -12,8 +12,9 @@ const digits = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 10);
 const okPhone = (v: string) => /^0\d{8,9}$/.test(v);
 
 const BRAND = {
-  line: { bg: "#06C755", icon: LineGlyph },
-  facebook: { bg: "#1877F2", icon: FacebookGlyph },
+  line: { bg: "#06C755", icon: LineGlyph, ring: false },
+  facebook: { bg: "#1877F2", icon: FacebookGlyph, ring: false },
+  google: { bg: "#ffffff", icon: GoogleGlyph, ring: true },  // โลโก้ Google ต้องอยู่บนพื้นขาว
 } as const;
 
 export default function SocialLink() {
@@ -82,7 +83,9 @@ export default function SocialLink() {
         {/* ---------- ทักทายด้วยชื่อจากบัญชีนั้น ---------- */}
         <div className="mt-10 flex flex-col items-center">
           <span
-            className="grid h-16 w-16 place-items-center overflow-hidden rounded-full"
+            className={`grid h-16 w-16 place-items-center overflow-hidden rounded-full${
+              brand.ring ? " border border-steel-700" : ""
+            }`}
             style={{ background: brand.bg }}
           >
             {me.picture ? (
@@ -158,6 +161,17 @@ function LineGlyph() {
   return (
     <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white" aria-hidden>
       <path d="M20 11.06C20 7.5 16.41 4.6 12 4.6S4 7.5 4 11.06c0 3.19 2.85 5.86 6.69 6.37.26.06.61.17.7.39.08.2.05.51.03.71l-.11.68c-.04.2-.16.79.69.43s4.58-2.7 6.25-4.62c1.15-1.26 1.7-2.54 1.7-3.96z" />
+    </svg>
+  );
+}
+
+function GoogleGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-8 w-8" aria-hidden>
+      <path fill="#4285F4" d="M23.5 12.27c0-.85-.08-1.67-.22-2.45H12v4.63h6.46a5.53 5.53 0 01-2.4 3.63v3h3.87c2.26-2.09 3.57-5.17 3.57-8.81z" />
+      <path fill="#34A853" d="M12 24c3.24 0 5.96-1.08 7.94-2.92l-3.88-3c-1.07.72-2.45 1.15-4.06 1.15-3.12 0-5.77-2.11-6.71-4.95H1.28v3.09A12 12 0 0012 24z" />
+      <path fill="#FBBC05" d="M5.29 14.28a7.2 7.2 0 010-4.56V6.63H1.28a12 12 0 000 10.74l4.01-3.09z" />
+      <path fill="#EA4335" d="M12 4.77c1.76 0 3.35.61 4.6 1.8l3.44-3.44C17.95 1.18 15.24 0 12 0A12 12 0 001.28 6.63l4.01 3.09C6.23 6.88 8.88 4.77 12 4.77z" />
     </svg>
   );
 }
