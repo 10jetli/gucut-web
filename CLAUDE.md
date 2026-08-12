@@ -27,13 +27,18 @@ src/
 │   └── manifest.ts           # PWA manifest
 ├── components/               # SearchBar, BannerSlider, FlashSale, ProductCard, BottomNav
 └── lib/
-    ├── products.ts           # ข้อมูลสินค้า snapshot จาก Shopify จริง (ก.ค. 2026)
-    └── shopify.ts            # layer Storefront API — สลับ mock/จริงตาม .env อัตโนมัติ
+    ├── catalog.ts            # ข้อมูลสินค้า 2,482 รายการ (อยู่ในโค้ด ไม่เรียก API ใคร)
+    ├── local-images.ts       # สลับ URL รูปมาเป็นไฟล์ใน public/img/
+    └── useLiveStock.ts       # ดึงสต็อก/ราคาสดจาก ZORT ผ่าน /api/stock
 ```
 
-## ข้อมูลสินค้า
-`lib/products.ts` เป็น snapshot จากร้าน Shopify จริง: ชื่อ ราคา รูป (Shopify CDN) และ product GID เป็นของจริง
-**หมายเหตุ:** ยอดขาย (`sold`) และราคาก่อนลด (`compareAtPrice`) เป็นตัวเลขตัวอย่างสำหรับ demo — แก้ให้ตรงจริงได้ในไฟล์นี้
+## ข้อมูลสินค้า — ไม่พึ่ง Shopify แล้ว
+สินค้า รูป และรีวิว **เก็บไว้ในโปรเจกต์นี้ทั้งหมด** ปิดร้าน Shopify ได้โดยเว็บไม่กระทบ:
+- สินค้า 2,482 รายการ → `src/lib/catalog.ts` + `src/data/`
+- รูปสินค้า 5,595 ไฟล์ → `public/img/` · รูปรีวิว 3,117 ไฟล์ → `public/rv/`
+- สต็อก/ราคาสด → ZORT ผ่าน `netlify/functions/stock.mjs`
+
+สคริปต์ใน `scripts/` ที่มีชื่อ Shopify เป็นเครื่องมือ **ย้ายข้อมูลออกมาครั้งเดียว** ไม่ได้รันตอนเว็บทำงาน
 
 ## สถานะ Phase 1 — ครบแล้ว ✅
 - [x] หน้าแรก feed สไตล์ Shopee (แบนเนอร์ / Flash Sale countdown / grid สินค้า)
@@ -47,12 +52,15 @@ src/
 1. `NEXT_PUBLIC_PROMPTPAY_ID` — เบอร์ PromptPay รับเงิน
 2. `NEXT_PUBLIC_ORDER_WEBHOOK_URL` — webhook จาก Make.com
 3. id คลิป YouTube Shorts ใน `src/lib/videos.ts`
-4. ตัวเลข "ขายแล้ว" และราคาก่อนลดจริงใน `src/lib/products.ts`
+4. ตัวเลข "ขายแล้ว" และราคาก่อนลดจริงใน `src/lib/catalog.ts`
 
 ## Phase 2
-1. **ต่อ Shopify จริง**: สร้าง Storefront access token (Shopify admin → Settings → Apps → Develop apps) → ใส่ใน `.env` ตาม `.env.example` → `lib/shopify.ts` จะดึงข้อมูลสดเองอัตโนมัติ (ลดแผนเหลือ Basic ได้ ไม่กระทบ API)
-2. ระบบสมาชิก
-3. คูปอง / โค้ดส่วนลด
+> **ตัดสินใจแล้ว: เลิกใช้ Shopify** — ห้ามเสนอให้ต่อ Storefront API หรือย้ายกลับไป Shopify
+> เว็บนี้ยืนด้วยตัวเองครบแล้ว (สินค้า/รูป/รีวิวอยู่ในโปรเจกต์ · สต็อกจาก ZORT · สมาชิกเก็บที่ Netlify Blobs · เก็บเงินด้วย QR PromptPay)
+
+1. เข้าสู่ระบบด้วย LINE / Facebook / Google — โครงหน้าเว็บพร้อมแล้วใน `AuthForm.tsx` รอเขียน `/api/oauth/[provider]` + ใส่คีย์
+2. คูปอง / โค้ดส่วนลด
+3. รีเซ็ตรหัสผ่านเองได้ (ตอนนี้ต้องทักแชทให้ร้านตั้งให้)
 
 ## Deploy ขึ้น Netlify (step-by-step)
 1. push โค้ดขึ้น GitHub (`git init && git add -A && git commit -m "init"` → สร้าง repo แล้ว push)

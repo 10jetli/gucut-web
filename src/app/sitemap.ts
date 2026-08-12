@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 import { products, collections } from "@/lib/catalog";
 
 // sitemap สำหรับ 2,482 หน้าสินค้า + 30 หมวด
-// พร้อมใช้ทันทีที่ย้ายไป gucut.com — แค่เปลี่ยน NEXT_PUBLIC_SITE_URL
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
+// โดเมนจริงคือ gucut.com — ทับด้วย NEXT_PUBLIC_SITE_URL ได้ถ้าต้องทดสอบบนโดเมนอื่น
+const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://gucut.com";
 
 export const dynamic = "force-static";
 
