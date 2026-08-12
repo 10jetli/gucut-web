@@ -22,7 +22,7 @@ const MAX_TEXT = 2000;
 const MAX_MSGS = 300;
 const clean = (s, n) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
-export default async function handler(req) {
+export default async function handler(req, context) {
   const url = new URL(req.url);
   const adminKey = process.env.CHAT_ADMIN_KEY || "";
   // รหัสร้านส่งมาทาง header ไม่ใช่ query string — กันรหัสไปโผล่ใน log
@@ -30,6 +30,16 @@ export default async function handler(req) {
   const wantsAdmin = sent.length > 0;
   const asAdmin = adminKey.length > 0 && sent === adminKey;
   if (wantsAdmin && !asAdmin) return json({ error: "unauthorized" }, 401);
+
+  // ---------- เช็คสุขภาพระบบ (ไม่เปิดเผยค่าลับ) ----------
+  if (req.method === "GET" && url.searchParams.get("health") === "1") {
+    return json({
+      telegram: Boolean(process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID),
+      telegramHook: Boolean(process.env.TELEGRAM_WEBHOOK_SECRET),
+      adminKey: Boolean(process.env.CHAT_ADMIN_KEY),
+      waitUntil: Boolean(context?.waitUntil),
+    });
+  }
 
   let store;
   try {
@@ -94,6 +104,10 @@ export default async function handler(req) {
     await store.setJSON(id, t);
 
     // เตือนร้านว่ามีข้อความใหม่
+    // ต้องรอให้ยิงเสร็จก่อนตอบกลับ ไม่งั้น serverless ดับก่อน แจ้งเตือนไม่ออก
+    // (waitUntil อยู่ที่ context ไม่ใช่ req — เคยเขียนผิดแล้วแจ้งเตือนหายเงียบ ๆ)
+    const jobs = [];
+    const later = (p) => (context?.waitUntil ? context.waitUntil(p) : jobs.push(p));
     if (!asAdmin) {
       const who = t.name || "ลูกค้า";
       const about = t.product?.t ? `\n📦 ${t.product.t}` : "";
@@ -101,7 +115,7 @@ export default async function handler(req) {
       if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
         // ท้ายข้อความมี #รหัสห้อง — แอดมินกด Reply แล้วบอทจะรู้ว่าตอบใคร
         const body = `💬 ${who}${about}\n\n${text}\n\n↩️ กด Reply ข้อความนี้เพื่อตอบลูกค้า\n#${id}`;
-        req.waitUntil?.(
+        later(
           fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -110,7 +124,7 @@ export default async function handler(req) {
         );
       }
       // เด้งเข้ามือถือแอดมินทุกเครื่องที่เปิดการแจ้งเตือนไว้
-      req.waitUntil?.(
+      later(
         pushToAdmins({
           title: `💬 ${who}`,
           body: (t.product?.t ? t.product.t + "\n" : "") + text,
@@ -119,7 +133,7 @@ export default async function handler(req) {
         }).catch(() => {})
       );
       if (process.env.CHAT_NOTIFY_URL) {
-        req.waitUntil?.(
+        later(
           fetch(process.env.CHAT_NOTIFY_URL, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -128,6 +142,7 @@ export default async function handler(req) {
         );
       }
     }
+    if (jobs.length) await Promise.allSettled(jobs);
     return json({ ok: true, thread: t });
   }
 
