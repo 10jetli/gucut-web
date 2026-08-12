@@ -1,19 +1,24 @@
 "use client";
 
-// หลังกดเข้าสู่ระบบด้วย LINE ครั้งแรก — ขอเบอร์โทรเพื่อผูกกับบัญชีร้าน
+// หลังกดเข้าสู่ระบบด้วย LINE / Facebook ครั้งแรก — ขอเบอร์โทรเพื่อผูกกับบัญชีร้าน
 // ทำไมต้องขอ: ออร์เดอร์ทั้งหมดของร้านผูกกับเบอร์โทร ถ้าไม่มีเบอร์
 // ลูกค้าเก่าจะเห็นประวัติการสั่งซื้อของตัวเองไม่ได้
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { linkLine, needsPassword, pendingLine, type PendingLine } from "@/lib/account";
+import { linkSocial, needsPassword, pendingSocial, type PendingSocial } from "@/lib/account";
 
 const digits = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 10);
 const okPhone = (v: string) => /^0\d{8,9}$/.test(v);
 
-export default function LineLink() {
+const BRAND = {
+  line: { bg: "#06C755", icon: LineGlyph },
+  facebook: { bg: "#1877F2", icon: FacebookGlyph },
+} as const;
+
+export default function SocialLink() {
   const router = useRouter();
-  const [me, setMe] = useState<PendingLine | null>(null);
+  const [me, setMe] = useState<PendingSocial | null>(null);
   const [ready, setReady] = useState(false);
   const [phone, setPhone] = useState("");
   const [pw, setPw] = useState("");
@@ -21,9 +26,9 @@ export default function LineLink() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // ไม่มีบัญชี LINE ค้างอยู่ = เข้าหน้านี้ตรง ๆ หรือหมดเวลา → กลับไปหน้าล็อกอิน
+  // ไม่มีบัญชีค้างอยู่ = เข้าหน้านี้ตรง ๆ หรือหมดเวลา → กลับไปหน้าล็อกอิน
   useEffect(() => {
-    pendingLine().then((p) => {
+    pendingSocial().then((p) => {
       if (p) setMe(p);
       else router.replace("/account/login/");
       setReady(true);
@@ -34,7 +39,7 @@ export default function LineLink() {
     if (busy) return;
     setBusy(true); setErr("");
     try {
-      await linkLine(phone, askPw ? pw : undefined);
+      await linkSocial(phone, askPw ? pw : undefined);
       router.replace("/account/");
     } catch (e) {
       if (needsPassword(e)) {
@@ -59,6 +64,9 @@ export default function LineLink() {
   }
   if (!me) return null;
 
+  const brand = BRAND[me.provider] ?? BRAND.line;
+  const Glyph = brand.icon;
+
   return (
     <main className="flex min-h-[100dvh] flex-col bg-steel-800">
       <header className="flex items-center gap-1 border-b border-steel-700 px-1 py-2.5">
@@ -67,26 +75,27 @@ export default function LineLink() {
             <path d="M20 12H4m0 0l7-7m-7 7l7 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
         </Link>
-        <h1 className="text-[17px] font-medium text-ink">ผูกบัญชี LINE</h1>
+        <h1 className="text-[17px] font-medium text-ink">ผูกบัญชี {me.label}</h1>
       </header>
 
       <div className="mx-auto flex w-full max-w-sm flex-1 flex-col px-6">
-        {/* ---------- ทักทายด้วยชื่อ LINE ---------- */}
+        {/* ---------- ทักทายด้วยชื่อจากบัญชีนั้น ---------- */}
         <div className="mt-10 flex flex-col items-center">
-          <span className="grid h-16 w-16 place-items-center overflow-hidden rounded-full bg-[#06C755]">
+          <span
+            className="grid h-16 w-16 place-items-center overflow-hidden rounded-full"
+            style={{ background: brand.bg }}
+          >
             {me.picture ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img src={me.picture} alt="" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
             ) : (
-              <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white">
-                <path d="M20 11.06C20 7.5 16.41 4.6 12 4.6S4 7.5 4 11.06c0 3.19 2.85 5.86 6.69 6.37.26.06.61.17.7.39.08.2.05.51.03.71l-.11.68c-.04.2-.16.79.69.43s4.58-2.7 6.25-4.62c1.15-1.26 1.7-2.54 1.7-3.96z" />
-              </svg>
+              <Glyph />
             )}
           </span>
           <p className="mt-3 text-[17px] font-medium text-ink">สวัสดีครับ {me.name || "คุณลูกค้า"}</p>
           <p className="mt-1 text-center text-[13px] leading-relaxed text-ink-500">
             อีกขั้นเดียว — กรอกเบอร์โทรเพื่อผูกกับบัญชีร้าน
-            <br />ครั้งต่อไปกดปุ่ม LINE ปุ่มเดียวเข้าได้เลย
+            <br />ครั้งต่อไปกดปุ่ม {me.label} ปุ่มเดียวเข้าได้เลย
           </p>
         </div>
 
@@ -126,9 +135,7 @@ export default function LineLink() {
           </label>
         )}
 
-        {err && (
-          <p role="alert" className="mt-3 text-[13px] font-medium text-safety">{err}</p>
-        )}
+        {err && <p role="alert" className="mt-3 text-[13px] font-medium text-safety">{err}</p>}
 
         <button
           onClick={submit}
@@ -144,5 +151,21 @@ export default function LineLink() {
         </p>
       </div>
     </main>
+  );
+}
+
+function LineGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white" aria-hidden>
+      <path d="M20 11.06C20 7.5 16.41 4.6 12 4.6S4 7.5 4 11.06c0 3.19 2.85 5.86 6.69 6.37.26.06.61.17.7.39.08.2.05.51.03.71l-.11.68c-.04.2-.16.79.69.43s4.58-2.7 6.25-4.62c1.15-1.26 1.7-2.54 1.7-3.96z" />
+    </svg>
+  );
+}
+
+function FacebookGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white" aria-hidden>
+      <path d="M15.1 12.5l.4-2.6h-2.5V8.2c0-.7.35-1.4 1.46-1.4h1.14V4.6s-1.03-.18-2.02-.18c-2.06 0-3.4 1.25-3.4 3.5v1.98H7.9v2.6h2.28V19h2.82v-6.5h2.1z" />
+    </svg>
   );
 }

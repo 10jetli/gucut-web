@@ -5,11 +5,14 @@
 export interface Addr {
   name: string; phone: string; address: string; province: string; zip: string;
 }
+/** ชื่อเจ้าของบัญชีภายนอกที่รองรับ */
+export type Provider = "line" | "facebook";
+
 export interface User {
   phone: string; name: string; addr: Addr | null;
-  /** ผูกกับ LINE ไว้ไหม */
-  line?: { name: string; picture: string } | null;
-  /** บัญชีที่มาจาก LINE ล้วน ๆ จะยังไม่มีรหัสผ่าน */
+  /** ผูกกับบัญชีภายนอกเจ้าไหนไว้บ้าง */
+  social?: Partial<Record<Provider, { name: string; picture: string }>>;
+  /** บัญชีที่มาจากบัญชีภายนอกล้วน ๆ จะยังไม่มีรหัสผ่าน */
   hasPassword?: boolean;
 }
 
@@ -80,12 +83,18 @@ export async function changePassword(old: string, next: string) {
   await call({ action: "password", old, next });
 }
 
-/* ---------- เข้าสู่ระบบด้วย LINE ---------- */
+/* ---------- เข้าสู่ระบบด้วยบัญชีภายนอก (LINE / Facebook) ---------- */
 
-export interface PendingLine { name: string; picture: string }
+export interface PendingSocial {
+  provider: Provider;
+  /** ชื่อที่เอาไปแสดง เช่น "LINE" / "Facebook" */
+  label: string;
+  name: string;
+  picture: string;
+}
 
-/** หลังกลับจาก LINE — ถามว่ามีบัญชี LINE รอผูกเบอร์อยู่ไหม */
-export async function pendingLine(): Promise<PendingLine | null> {
+/** หลังกลับจากเจ้าของบัญชี — ถามว่ามีบัญชีรอผูกเบอร์อยู่ไหม */
+export async function pendingSocial(): Promise<PendingSocial | null> {
   try {
     const r = await fetch("/api/auth?pending=1", { credentials: "same-origin", cache: "no-store" });
     const d = await r.json();
@@ -96,12 +105,12 @@ export async function pendingLine(): Promise<PendingLine | null> {
 }
 
 /**
- * ผูกบัญชี LINE เข้ากับเบอร์โทร
- * ถ้าเบอร์นั้นมีบัญชีเดิมที่ตั้งรหัสผ่านไว้ จะโยน error code "need-password"
+ * ผูกบัญชีภายนอกเข้ากับเบอร์โทร
+ * ถ้าเบอร์นั้นมีบัญชีเดิมที่ตั้งรหัสผ่านไว้ จะโยน error ที่ needsPassword() จับได้
  * ให้ถามรหัสผ่านแล้วเรียกซ้ำ — กันคนอื่นสวมเบอร์เรา
  */
-export async function linkLine(phone: string, password?: string, keep = true) {
-  const d = await call({ action: "line-link", phone, password, remember: keep });
+export async function linkSocial(phone: string, password?: string, keep = true) {
+  const d = await call({ action: "social-link", phone, password, remember: keep });
   remember(d.user); return d.user as User;
 }
 
