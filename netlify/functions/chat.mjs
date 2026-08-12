@@ -8,7 +8,8 @@
 //   ส่ง header  x-admin-key: <CHAT_ADMIN_KEY>  มาด้วยทุกครั้ง
 //   GET  /api/chat                    รายการห้องแชททั้งหมด
 //   GET  /api/chat?cid=xxx            อ่านห้องนั้น
-//   POST /api/chat  {cid,text}        ตอบลูกค้า
+//   POST   /api/chat  {cid,text}      ตอบลูกค้า
+//   DELETE /api/chat?cid=xxx          ลบห้องแชททิ้ง
 //
 // env ที่ใช้
 //   CHAT_ADMIN_KEY   รหัสเข้าหน้าแชทของร้าน (ตั้งเองยาว ๆ)
@@ -103,6 +104,14 @@ export default async function handler(req) {
       );
     }
     return json({ ok: true, thread: t });
+  }
+
+  // ---------- ลบห้องแชท (เฉพาะร้าน) ----------
+  if (req.method === "DELETE") {
+    if (!asAdmin) return json({ error: "unauthorized" }, 401);
+    if (!/^[a-z0-9-]{8,40}$/.test(cid)) return json({ error: "bad cid" }, 400);
+    await store.delete(cid).catch(() => {});
+    return json({ ok: true });
   }
 
   return json({ error: "method not allowed" }, 405);

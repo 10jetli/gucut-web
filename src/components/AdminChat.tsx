@@ -77,6 +77,14 @@ export default function AdminChat() {
     loadRooms(key);
   }
 
+  async function removeRoom(target: string) {
+    if (!confirm("ลบห้องแชทนี้ทิ้ง? ข้อความทั้งหมดจะหายถาวร")) return;
+    await fetch(`/api/chat?cid=${target}`, { method: "DELETE", headers: { "x-admin-key": key } }).catch(() => {});
+    setOpen(null);
+    setRooms((r) => r.filter((x) => x.cid !== target));
+    loadRooms(key);
+  }
+
   // ---------- ยังไม่ได้ใส่รหัส ----------
   if (!key) {
     return (
@@ -122,6 +130,11 @@ export default function AdminChat() {
               โทร
             </a>
           )}
+          <button onClick={() => removeRoom(open)} aria-label="ลบห้องแชท" className="shrink-0 p-1 text-white/60">
+            <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[1.7]">
+              <path d="M4 7h16M9 7V5h6v2M6 7l1 13h10l1-13" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </header>
 
         <div className="flex-1 space-y-2 overflow-y-auto bg-steel-900 px-3 py-3">
