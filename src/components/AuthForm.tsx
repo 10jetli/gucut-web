@@ -3,8 +3,7 @@
 // เข้าสู่ระบบ / สมัครสมาชิก — เลย์เอาต์เดียวกับ Shopee
 // สมัครแบ่ง 2 จังหวะ: ใส่เบอร์ → ถัดไป → ตั้งชื่อกับรหัสผ่าน
 //
-// ปุ่ม social กับ SMS: หน้าตาพร้อมแล้ว แต่ยังไม่ได้ต่อผู้ให้บริการ
-// เปิดใช้ได้เมื่อใส่คีย์ครบ — ดูวิธีต่อในหมายเหตุตรง SOCIAL ด้านล่าง
+// ปุ่มเข้าสู่ระบบด้วยบัญชีอื่น: เปิด/ปิดรายเจ้าด้วย env — ดูตรง SOCIAL ด้านล่าง
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -14,12 +13,13 @@ const digits = (v: string) => v.replace(/[^0-9]/g, "").slice(0, 10);
 const okPhone = (v: string) => /^0\d{8,9}$/.test(v);
 
 // ---------- ปุ่มเข้าสู่ระบบด้วยบัญชีอื่น ----------
-// LINE ต่อเสร็จแล้ว (netlify/functions/oauth-line.mjs) — เปิดใช้โดยตั้ง env
-// NEXT_PUBLIC_LINE_LOGIN=1 คู่กับ LINE_CHANNEL_ID / LINE_CHANNEL_SECRET ฝั่งเซิร์ฟเวอร์
-// Facebook กับ Google ยังไม่ได้ต่อ กดแล้วจะขึ้นกล่องอธิบายแทน
+// LINE กับ Facebook ต่อเสร็จแล้ว (netlify/lib/oauth.mjs)
+// เปิดใช้ทีละเจ้าโดยตั้ง env ฝั่งหน้าเว็บคู่กับคีย์ฝั่งเซิร์ฟเวอร์ — ดู .env.example
+// เจ้าไหนยังไม่เปิด กดแล้วจะขึ้นกล่องอธิบายแทน ไม่ใช่กดแล้วเงียบ
 const LINE_ON = process.env.NEXT_PUBLIC_LINE_LOGIN === "1";
+const FACEBOOK_ON = process.env.NEXT_PUBLIC_FACEBOOK_LOGIN === "1";
 const SOCIAL = [
-  { id: "facebook", label: "Facebook", Icon: FacebookIcon, on: false },
+  { id: "facebook", label: "Facebook", Icon: FacebookIcon, on: FACEBOOK_ON },
   { id: "google", label: "Google", Icon: GoogleIcon, on: false },
   { id: "line", label: "LINE", Icon: LineIcon, on: LINE_ON },
 ] as const;

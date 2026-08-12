@@ -1,11 +1,11 @@
 import type { Metadata } from "next";
-import LineLink from "@/components/LineLink";
+import SocialLink from "@/components/SocialLink";
 
 export const metadata: Metadata = {
-  title: "ผูกบัญชี LINE | GUCUT",
+  title: "ผูกบัญชี | GUCUT",
   robots: { index: false, follow: false },
 };
 
 export default function Page() {
-  return <LineLink />;
+  return <SocialLink />;
 }

@@ -1,5 +1,5 @@
 // บัญชีลูกค้า — /api/auth
-// สมัคร/เข้าสู่ระบบด้วย เบอร์โทร + รหัสผ่าน  เก็บที่ Netlify Blobs (ของ Netlify เอง ไม่มีค่าใช้จ่าย)
+// สมัคร/เข้าสู่ระบบด้วย เบอร์โทร + รหัสผ่าน (หรือผูกกับ LINE/Facebook)  เก็บที่ Netlify Blobs (ของ Netlify เอง ไม่มีค่าใช้จ่าย)
 //
 //   GET  /api/auth                                  ฉันเป็นใคร (อ่านจาก cookie)
 //   POST /api/auth {action:"register",phone,name,password,remember}
@@ -7,8 +7,8 @@
 //   POST /api/auth {action:"logout"}
 //   POST /api/auth {action:"profile",name,addr}     แก้ชื่อ / ที่อยู่จัดส่ง
 //   POST /api/auth {action:"password",old,next}     ตั้ง/เปลี่ยนรหัสผ่าน
-//   POST /api/auth {action:"line-link",phone,password?}  ผูกบัญชี LINE เข้ากับเบอร์ (ดู oauth-line.mjs)
-//   GET  /api/auth?pending=1                        ดูว่ามีบัญชี LINE รออยู่ไหม
+//   POST /api/auth {action:"social-link",phone,password?} ผูกบัญชี LINE/Facebook เข้ากับเบอร์ (ดู lib/oauth.mjs)
+//   GET  /api/auth?pending=1                        ดูว่ามีบัญชีภายนอกรอผูกเบอร์อยู่ไหม
 //
 // รหัสผ่านไม่ถูกเก็บเป็นตัวหนังสือ — เก็บเป็น scrypt hash + salt สุ่มรายคน
 // ถึงใครหลุดเข้ามาดูฐานข้อมูลก็อ่านรหัสลูกค้าไม่ได้
@@ -20,7 +20,7 @@ import {
 
 const MAX_FAILS = 8;              // ใส่รหัสผิดเกินนี้ พักไว้ 15 นาที
 const LOCK_MS = 15 * 60 * 1000;
-const LINK_TTL = 20 * 60 * 1000;  // บัญชี LINE ที่รอผูกเบอร์ อยู่ได้ 20 นาที
+const LINK_TTL = 20 * 60 * 1000;  // บัญชีภายนอกที่รอผูกเบอร์ อยู่ได้ 20 นาที
 
 function hashPw(pw, salt = randomBytes(16).toString("hex")) {
   return { salt, hash: scryptSync(pw, salt, 64).toString("hex") };
@@ -40,7 +40,9 @@ export default async function handler(req) {
     // หน้า /account/link/ ถามว่ามีบัญชี LINE ค้างรอผูกเบอร์อยู่ไหม
     if (new URL(req.url).searchParams.get("pending")) {
       const p = await pendingLink(req, s);
-      return json({ pending: p ? { name: p.name, picture: p.picture } : null });
+      return json({
+        pending: p ? { provider: p.provider, label: p.label, name: p.name, picture: p.picture } : null,
+      });
     }
     const me = await currentUser(req, s);
     return json({ user: me ? publicUser(me.user) : null });
@@ -98,11 +100,11 @@ export default async function handler(req) {
     return json({ ok: true, user: publicUser(u) }, 200, setCookie(token, keep));
   }
 
-  // ---------- ผูกบัญชี LINE เข้ากับเบอร์โทร ----------
-  // มาจาก /api/oauth/line/callback ที่ยังไม่รู้จัก LINE id นี้
-  if (action === "line-link") {
+  // ---------- ผูกบัญชีภายนอก (LINE / Facebook) เข้ากับเบอร์โทร ----------
+  // มาจาก /api/oauth/<เจ้า>/callback ที่ยังไม่รู้จักบัญชีนี้
+  if (action === "social-link") {
     const p = await pendingLink(req, s);
-    if (!p) return json({ error: "หมดเวลาผูกบัญชีแล้ว กดเข้าสู่ระบบด้วย LINE ใหม่อีกครั้ง" }, 400);
+    if (!p) return json({ error: "หมดเวลาผูกบัญชีแล้ว กดเข้าสู่ระบบใหม่อีกครั้ง" }, 400);
 
     const phone = normPhone(body.phone);
     if (!phone) return json({ error: "เบอร์โทรไม่ถูกต้อง" }, 400);
@@ -110,9 +112,10 @@ export default async function handler(req) {
     const locked = await checkLock(s, phone);
     if (locked) return locked;
 
+    const info = { id: p.id, name: p.name, picture: p.picture };
     let u = await s.get(`u/${phone}`, { type: "json" }).catch(() => null);
     if (u) {
-      // เบอร์นี้มีบัญชีอยู่แล้ว — ต้องยืนยันรหัสผ่านก่อน กันคนอื่นสวมเบอร์คนอื่น
+      // เบอร์นี้มีบัญชีอยู่แล้ว — ต้องยืนยันรหัสผ่านก่อน กันคนอื่นสวมเบอร์เรา
       if (u.pass) {
         const pw = String(body.password ?? "");
         if (!pw) return json({ error: "need-password", phone }, 428);
@@ -121,25 +124,28 @@ export default async function handler(req) {
           return json({ error: "รหัสผ่านไม่ถูกต้อง" }, 401);
         }
       }
-      // บัญชีเดิมไม่มีรหัสผ่าน (สร้างผ่าน LINE) และยังไม่ได้ผูก LINE ตัวอื่น
-      else if (u.line && u.line.id !== p.lineId) {
-        return json({ error: "เบอร์นี้ผูกกับบัญชี LINE อื่นอยู่แล้ว" }, 409);
+      // บัญชีเดิมไม่มีรหัสผ่าน (สร้างจากบัญชีภายนอก) และผูกกับคนอื่นของเจ้าเดียวกันอยู่
+      else {
+        const cur = (u.social || {})[p.provider] || (p.provider === "line" ? u.line : null);
+        if (cur && cur.id !== p.id) {
+          return json({ error: `เบอร์นี้ผูกกับบัญชี ${p.label} อื่นอยู่แล้ว` }, 409);
+        }
       }
-      u.line = { id: p.lineId, name: p.name, picture: p.picture };
+      u.social = { ...(u.social || {}), [p.provider]: info };
       if (!u.name) u.name = p.name;
     } else {
       u = {
         phone,
         name: p.name || "",
-        pass: null,                 // ล็อกอินด้วย LINE อย่างเดียว ตั้งรหัสทีหลังได้
+        pass: null,                 // ล็อกอินด้วยบัญชีภายนอกอย่างเดียว ตั้งรหัสทีหลังได้
         created: Date.now(),
         addr: null,
-        line: { id: p.lineId, name: p.name, picture: p.picture },
+        social: { [p.provider]: info },
       };
     }
 
     await s.setJSON(`u/${phone}`, u);
-    await s.setJSON(`l/${p.lineId}`, { phone });
+    await s.setJSON(`oa/${p.provider}/${p.id}`, { phone });
     await s.delete(`pl/${p.token}`).catch(() => {});
     await s.delete(`rl/${phone}`).catch(() => {});
 
@@ -188,12 +194,12 @@ export default async function handler(req) {
   return json({ error: "unknown action" }, 400);
 }
 
-/** อ่านบัญชี LINE ที่รอผูกเบอร์ จาก cookie ชั่วคราว */
+/** อ่านบัญชีภายนอกที่รอผูกเบอร์ จาก cookie ชั่วคราว */
 async function pendingLink(req, s) {
   const tok = readCookie(req, LINK_COOKIE);
   if (!/^[A-Za-z0-9_-]{20,64}$/.test(tok)) return null;
   const p = await s.get(`pl/${tok}`, { type: "json" }).catch(() => null);
-  if (!p?.lineId) return null;
+  if (!p?.id || !p?.provider) return null;
   if (Date.now() - (p.at || 0) > LINK_TTL) {
     await s.delete(`pl/${tok}`).catch(() => {});
     return null;

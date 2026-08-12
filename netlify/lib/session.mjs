@@ -19,13 +19,21 @@ export function normPhone(v) {
   return /^0\d{8,9}$/.test(d) ? d : "";
 }
 
-export const publicUser = (u) => ({
-  phone: u.phone,
-  name: u.name || "",
-  addr: u.addr || null,
-  line: u.line ? { name: u.line.name || "", picture: u.line.picture || "" } : null,
-  hasPassword: !!u.pass,
-});
+export const publicUser = (u) => {
+  // u.line คือรูปแบบเดิมสมัยมีแต่ LINE — ยังอ่านให้คนที่ผูกไว้ก่อนหน้า
+  const all = { ...(u.line ? { line: u.line } : {}), ...(u.social || {}) };
+  const social = {};
+  for (const [k, v] of Object.entries(all)) {
+    social[k] = { name: v?.name || "", picture: v?.picture || "" };
+  }
+  return {
+    phone: u.phone,
+    name: u.name || "",
+    addr: u.addr || null,
+    social,
+    hasPassword: !!u.pass,
+  };
+};
 
 export function readCookie(req, name) {
   const raw = req.headers.get("cookie") || "";
