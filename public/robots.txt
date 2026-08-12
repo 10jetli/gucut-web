@@ -1,8 +1,9 @@
-# gucut.com — เว็บจริง เปิดให้ Google เก็บได้แล้ว
-# /admin/ = หลังร้าน ห้ามขึ้น Google เด็ดขาด
+# new78.com = เว็บซ้อมชั่วคราว ยังไม่ให้ Google เก็บ
+# ห้ามให้ index เด็ดขาด ไม่งั้นจะกลายเป็นเนื้อหาซ้ำกับ gucut.com
+# ── เมื่อย้ายไปอยู่บน gucut.com จริงแล้ว ให้เปลี่ยนไฟล์นี้เป็น:
+#      User-agent: *
+#      Allow: /
+#      Disallow: /admin/          ← ห้ามลืมบรรทัดนี้ หลังร้านห้ามขึ้น Google
+#      Sitemap: https://gucut.com/sitemap.xml
 User-agent: *
-Allow: /
-Disallow: /admin/
-Disallow: /account/
-
-Sitemap: https://gucut.com/sitemap.xml
+Disallow: /

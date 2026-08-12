@@ -64,7 +64,7 @@ export default function HomePage() {
       </section>
 
       <footer className="mt-8 px-3 pb-4 text-center text-xs text-steel-600">
-        GUCUT — เลื่อยยนต์ NEWWAVE / KingKong ของแท้ &middot; gucut.com
+        GUCUT — เลื่อยยนต์ NEWWAVE / KingKong ของแท้ &middot; new78.com
       </footer>
     </main>
   );

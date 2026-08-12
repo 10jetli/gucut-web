@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Shell from "@/components/Shell";
 
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://gucut.com";
+const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),

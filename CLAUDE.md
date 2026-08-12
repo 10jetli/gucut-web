@@ -1,6 +1,20 @@
 # GUCUT Storefront
 
-เว็บขายเลื่อยยนต์ NEWWAVE / KingKong ของร้าน GUCUT (gucut.com) — สไตล์ Shopee + TikTok Shop, mobile-first, ภาษาไทย, ราคาบาท
+เว็บขายเลื่อยยนต์ NEWWAVE / KingKong ของร้าน GUCUT — สไตล์ Shopee + TikTok Shop, mobile-first, ภาษาไทย, ราคาบาท
+
+## โดเมน — อ่านก่อนแตะ robots.txt / sitemap
+| | โดเมน | สถานะ |
+|---|---|---|
+| ตอนนี้ | **new78.com** | เว็บซ้อม · `robots.txt` ปิด Google ทั้งเว็บ (`Disallow: /`) |
+| ภายหลัง | gucut.com | ยังไม่ย้าย — **เว็บยังไม่สมบูรณ์** |
+
+**ห้ามเปิด `robots.txt` ให้ Google เก็บ จนกว่าเจ้าของร้านจะสั่งเอง** ถ้าเปิดตอนเว็บยังไม่เสร็จ Google จะเก็บหน้าที่ยังไม่พร้อม และลบออกทีหลังยาก
+
+เมื่อเจ้าของร้านสั่งย้ายจริง ให้แก้ 4 จุดพร้อมกัน:
+1. `src/app/layout.tsx` — ค่า `SITE`
+2. `src/app/sitemap.ts` — ค่า `BASE`
+3. `src/app/page.tsx` — ข้อความท้ายหน้าแรก
+4. `public/robots.txt` — เปลี่ยนตามตัวอย่างที่คอมเมนต์ไว้ในไฟล์ (อย่าลืม `Disallow: /admin/` และ `/account/`)
 
 ## Tech Stack
 - Next.js 15 (App Router) + TypeScript + Tailwind CSS 3
