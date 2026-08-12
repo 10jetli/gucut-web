@@ -16,6 +16,7 @@
 //   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID  เตือนเข้ากลุ่ม Telegram + ตอบกลับจากกลุ่มได้
 //   CHAT_NOTIFY_URL  (ไม่บังคับ) ยิง POST ไปที่อื่นเพิ่ม เช่น Make.com
 import { getStore } from "@netlify/blobs";
+import { pushToAdmins } from "../lib/push.mjs";
 
 const MAX_TEXT = 2000;
 const MAX_MSGS = 300;
@@ -108,6 +109,15 @@ export default async function handler(req) {
           }).catch(() => {})
         );
       }
+      // เด้งเข้ามือถือแอดมินทุกเครื่องที่เปิดการแจ้งเตือนไว้
+      req.waitUntil?.(
+        pushToAdmins({
+          title: `💬 ${who}`,
+          body: (t.product?.t ? t.product.t + "\n" : "") + text,
+          url: "/admin/chat/",
+          tag: id,
+        }).catch(() => {})
+      );
       if (process.env.CHAT_NOTIFY_URL) {
         req.waitUntil?.(
           fetch(process.env.CHAT_NOTIFY_URL, {
