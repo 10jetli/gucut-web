@@ -2,8 +2,8 @@
 // สมัคร/เข้าสู่ระบบด้วย เบอร์โทร + รหัสผ่าน  เก็บที่ Netlify Blobs (ของ Netlify เอง ไม่มีค่าใช้จ่าย)
 //
 //   GET  /api/auth                                  ฉันเป็นใคร (อ่านจาก cookie)
-//   POST /api/auth {action:"register",phone,name,password}
-//   POST /api/auth {action:"login",phone,password}
+//   POST /api/auth {action:"register",phone,name,password,remember}
+//   POST /api/auth {action:"login",phone,password,remember}   remember:false = ปิดเบราว์เซอร์แล้วหลุด
 //   POST /api/auth {action:"logout"}
 //   POST /api/auth {action:"profile",name,addr}     แก้ชื่อ / ที่อยู่จัดส่ง
 //   POST /api/auth {action:"password",old,next}     เปลี่ยนรหัสผ่าน
@@ -50,8 +50,10 @@ function readCookie(req, name) {
   return "";
 }
 
-const setCookie = (token) =>
-  `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${SESSION_DAYS * 86400}`;
+// keep=true → อยู่ 90 วัน · keep=false → หายตอนปิดเบราว์เซอร์ (ไม่ใส่ Max-Age)
+const setCookie = (token, keep = true) =>
+  `${COOKIE}=${token}; Path=/; HttpOnly; Secure; SameSite=Lax` +
+  (keep ? `; Max-Age=${SESSION_DAYS * 86400}` : "");
 const killCookie = () => `${COOKIE}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 
 async function currentUser(req, s) {
@@ -100,7 +102,7 @@ export default async function handler(req) {
     const u = { phone, name, pass: hashPw(pw), created: Date.now(), addr: null };
     await s.setJSON(`u/${phone}`, u);
     const token = await newSession(s, phone);
-    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token));
+    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token, body.remember !== false));
   }
 
   // ---------- เข้าสู่ระบบ ----------
@@ -128,7 +130,7 @@ export default async function handler(req) {
     }
     await s.delete(`rl/${phone}`).catch(() => {});
     const token = await newSession(s, phone);
-    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token));
+    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token, body.remember !== false));
   }
 
   // ---------- ที่เหลือต้องล็อกอินก่อน ----------
