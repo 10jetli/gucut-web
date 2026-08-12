@@ -3,6 +3,7 @@
 # ── เมื่อย้ายไปอยู่บน gucut.com จริงแล้ว ให้เปลี่ยนไฟล์นี้เป็น:
 #      User-agent: *
 #      Allow: /
+#      Disallow: /admin/          ← ห้ามลืมบรรทัดนี้ หลังร้านห้ามขึ้น Google
 #      Sitemap: https://gucut.com/sitemap.xml
 User-agent: *
 Disallow: /

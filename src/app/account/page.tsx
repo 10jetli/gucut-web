@@ -1,5 +1,8 @@
-import ComingSoon from "@/components/ComingSoon";
+import type { Metadata } from "next";
+import AccountHome from "@/components/AccountHome";
+
+export const metadata: Metadata = { title: "บัญชีของฉัน | GUCUT" };
 
 export default function AccountPage() {
-  return <ComingSoon title="บัญชีของฉัน" note="ระบบสมาชิก — แผน Phase 2" />;
+  return <AccountHome />;
 }

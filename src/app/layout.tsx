@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
-import BottomNav from "@/components/BottomNav";
+import Shell from "@/components/Shell";
 
 const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
 
@@ -24,8 +24,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="th">
       <body className="font-body">
-        <div className="mx-auto min-h-screen max-w-lg pb-20">{children}</div>
-        <BottomNav />
+        <Shell>{children}</Shell>
       </body>
     </html>
   );

@@ -1,0 +1,11 @@
+import type { Metadata } from "next";
+import AuthForm from "@/components/AuthForm";
+
+export const metadata: Metadata = {
+  title: "เข้าสู่ระบบ | GUCUT",
+  robots: { index: false, follow: true },
+};
+
+export default function Page() {
+  return <AuthForm mode="login" />;
+}

@@ -1,8 +1,10 @@
 "use client";
 
-// หน้าแชทฝั่งร้าน — เปิดที่ /admin/chat/ ใส่รหัสครั้งเดียว จำไว้ในเครื่อง
-// รหัสตั้งที่ Netlify → Environment variables → CHAT_ADMIN_KEY
+// หน้าแชทฝั่งร้าน — เปิดที่ /admin/chat/
+// ต้องล็อกอินที่ /admin/ ก่อน (ยังไม่ล็อกอินจะเด้งไปเอง)
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { adminFetch, clearKey, requireKey } from "@/lib/admin";
 
 interface Room {
   cid: string; name: string; phone: string;
@@ -12,7 +14,6 @@ interface Room {
 }
 interface Msg { from: "c" | "s"; text: string; at: number; by?: string }
 
-const KEY = "gucut-admin-key";
 const POLL_MS = 5000;
 
 const when = (ms: number) => {
@@ -25,7 +26,6 @@ const when = (ms: number) => {
 
 export default function AdminChat() {
   const [key, setKey] = useState("");
-  const [input, setInput] = useState("");
   const [rooms, setRooms] = useState<Room[]>([]);
   const [open, setOpen] = useState<string | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
@@ -34,7 +34,8 @@ export default function AdminChat() {
   const [push, setPush] = useState<"off" | "on" | "busy" | "blocked" | "ios">("off");
   const endRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => { setKey(localStorage.getItem(KEY) || ""); }, []);
+  // ยังไม่ล็อกอิน requireKey จะพาไปหน้า /admin/ ให้เอง
+  useEffect(() => { setKey(requireKey()); }, []);
 
   // เช็คว่าเครื่องนี้เปิดการแจ้งเตือนไว้หรือยัง
   useEffect(() => {
@@ -72,15 +73,15 @@ export default function AdminChat() {
       const sub =
         (await reg.pushManager.getSubscription()) ||
         (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64(pub) }));
-      const r = await fetch("/api/push", {
+      const r = await adminFetch("/api/push", key, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-key": key },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ subscription: sub.toJSON() }),
       });
       if (!r.ok) throw new Error();
-      await fetch("/api/push", {
+      await adminFetch("/api/push", key, {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-admin-key": key },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ test: true }),
       });
       setPush("on");
@@ -93,9 +94,9 @@ export default function AdminChat() {
       const reg = await navigator.serviceWorker.getRegistration();
       const sub = await reg?.pushManager.getSubscription();
       if (sub) {
-        await fetch("/api/push", {
+        await adminFetch("/api/push", key, {
           method: "DELETE",
-          headers: { "Content-Type": "application/json", "x-admin-key": key },
+          headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ endpoint: sub.endpoint }),
         }).catch(() => {});
         await sub.unsubscribe();
@@ -106,8 +107,8 @@ export default function AdminChat() {
 
   const loadRooms = useCallback(async (k: string) => {
     try {
-      const r = await fetch("/api/chat", { headers: { "x-admin-key": k } });
-      if (r.status === 401) { setErr("รหัสไม่ถูกต้อง"); localStorage.removeItem(KEY); setKey(""); return; }
+      const r = await adminFetch("/api/chat", k);
+      if (r.status === 401) { clearKey(); window.location.replace("/admin/"); return; }
       if (!r.ok) throw new Error();
       setRooms((await r.json()).rooms || []);
       setErr("");
@@ -116,7 +117,7 @@ export default function AdminChat() {
 
   const loadThread = useCallback(async (k: string, cid: string) => {
     try {
-      const r = await fetch(`/api/chat?cid=${cid}`, { headers: { "x-admin-key": k } });
+      const r = await adminFetch(`/api/chat?cid=${cid}`, k);
       if (!r.ok) throw new Error();
       setMsgs((await r.json()).thread?.messages || []);
     } catch { /* เงียบไว้ รอบหน้าค่อยลองใหม่ */ }
@@ -137,9 +138,9 @@ export default function AdminChat() {
     if (!text || !open) return;
     setReply("");
     setMsgs((m) => [...m, { from: "s", text, at: Date.now() }]);
-    await fetch("/api/chat", {
+    await adminFetch("/api/chat", key, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-key": key },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ cid: open, text }),
     }).catch(() => {});
     loadThread(key, open);
@@ -148,38 +149,14 @@ export default function AdminChat() {
 
   async function removeRoom(target: string) {
     if (!confirm("ลบห้องแชทนี้ทิ้ง? ข้อความทั้งหมดจะหายถาวร")) return;
-    await fetch(`/api/chat?cid=${target}`, { method: "DELETE", headers: { "x-admin-key": key } }).catch(() => {});
+    await adminFetch(`/api/chat?cid=${target}`, key, { method: "DELETE" }).catch(() => {});
     setOpen(null);
     setRooms((r) => r.filter((x) => x.cid !== target));
     loadRooms(key);
   }
 
-  // ---------- ยังไม่ได้ใส่รหัส ----------
-  if (!key) {
-    return (
-      <main className="mx-auto max-w-sm px-4 py-16">
-        <h1 className="mb-1 font-heading text-lg font-bold">แชทลูกค้า</h1>
-        <p className="mb-4 text-[13px] text-steel-300">
-          ใส่รหัสร้านครั้งเดียว เครื่องนี้จะจำไว้ให้
-        </p>
-        <input
-          type="password"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && input.trim()) { localStorage.setItem(KEY, input.trim()); setKey(input.trim()); } }}
-          placeholder="รหัสร้าน"
-          className="w-full rounded-sm border border-steel-700 px-3 py-2.5 text-[14px] outline-none focus:border-safety"
-        />
-        {err && <p className="mt-2 text-[13px] text-safety">{err}</p>}
-        <button
-          onClick={() => { if (input.trim()) { localStorage.setItem(KEY, input.trim()); setKey(input.trim()); } }}
-          className="mt-3 w-full rounded-sm bg-safety py-2.5 font-heading text-sm font-semibold text-white"
-        >
-          เข้าใช้งาน
-        </button>
-      </main>
-    );
-  }
+  // ---------- ยังไม่ล็อกอิน (requireKey กำลังพาไปหน้า /admin/) ----------
+  if (!key) return <main className="min-h-[100dvh] bg-steel-900" />;
 
   const room = rooms.find((r) => r.cid === open);
   const totalUnread = rooms.reduce((a, r) => a + r.unread, 0);
@@ -243,15 +220,14 @@ export default function AdminChat() {
   return (
     <main className="mx-auto min-h-screen max-w-lg bg-steel-900">
       <header className="sticky top-0 z-10 flex items-center gap-2 bg-ink px-3 py-3">
-        <span className="font-heading text-[15px] font-extrabold italic leading-none">
-          <span className="text-safety">GU</span><span className="text-[#c9cacc]">CUT</span>
-        </span>
+        <Link href="/admin/" aria-label="กลับหน้ารวมหลังร้าน" className="-ml-1 p-1 text-xl leading-none text-white">‹</Link>
         <span className="text-[14px] font-semibold text-white">แชทลูกค้า</span>
         {totalUnread > 0 && (
           <span className="rounded-full bg-safety px-2 py-0.5 text-[11px] font-bold text-white">{totalUnread}</span>
         )}
-        <button onClick={() => { localStorage.removeItem(KEY); setKey(""); }}
-          className="ml-auto text-[12px] text-white/60">ออก</button>
+        <span className="ml-auto font-heading text-[15px] font-extrabold italic leading-none">
+          <span className="text-safety">GU</span><span className="text-[#c9cacc]">CUT</span>
+        </span>
       </header>
 
       {err && <p className="bg-safety-tint px-3 py-2 text-[13px] text-safety">{err}</p>}

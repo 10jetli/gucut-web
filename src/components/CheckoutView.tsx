@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { getCart, cartTotal, updateQty, type CartItem } from "@/lib/cart";
 import { formatPrice } from "@/lib/types";
 import { promptPayPayload } from "@/lib/promptpay";
+import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 
 // เช็คเอาต์ 3 ขั้น: ที่อยู่ → ชำระเงิน (QR PromptPay + แนบสลิป) → สำเร็จ
 type Step = "address" | "payment" | "done";
@@ -34,8 +35,31 @@ export default function CheckoutView() {
   const [sending, setSending] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [error, setError] = useState("");
+  const [user, setUser] = useState<User | null>(null);
+  const [remember, setRemember] = useState(true);
 
   useEffect(() => setItems(getCart()), []);
+
+  // ล็อกอินอยู่แล้วก็เติมที่อยู่ที่เคยบันทึกไว้ให้เลย ไม่ต้องพิมพ์ใหม่
+  useEffect(() => {
+    const fill = (u: User | null) => {
+      setUser(u);
+      if (!u) return;
+      setAddr((a) => {
+        if (a.name || a.address) return a;   // พิมพ์ไปแล้วห้ามทับ
+        return {
+          ...a,
+          name: u.addr?.name || u.name || "",
+          phone: u.addr?.phone || u.phone || "",
+          address: u.addr?.address || "",
+          province: u.addr?.province || "",
+          zip: u.addr?.zip || "",
+        };
+      });
+    };
+    fill(cachedUser());
+    fetchMe().then(fill);
+  }, []);
   const total = items.reduce((s, i) => s + i.price * i.qty, 0);
 
   // สร้างรูป QR เมื่อเข้าขั้นชำระเงิน
@@ -122,6 +146,17 @@ export default function CheckoutView() {
 
       {step === "address" && (
         <div className="space-y-3 px-4 pt-2">
+          {user ? (
+            <label className="flex items-center gap-2 rounded-lg bg-safety-tint px-3 py-2.5">
+              <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-4 w-4 accent-safety" />
+              <span className="text-[13px] text-ink-700">บันทึกที่อยู่นี้ไว้ในบัญชี ครั้งหน้าไม่ต้องพิมพ์ใหม่</span>
+            </label>
+          ) : (
+            <div className="flex items-center gap-2 rounded-lg bg-safety-tint px-3 py-2.5">
+              <span className="flex-1 text-[13px] text-ink-700">มีบัญชีแล้ว? เข้าสู่ระบบแล้วที่อยู่จะเติมให้อัตโนมัติ</span>
+              <Link href="/account/login/?next=/checkout" className="shrink-0 text-[13px] font-semibold text-safety">เข้าสู่ระบบ</Link>
+            </div>
+          )}
           <Field label="ชื่อ-นามสกุล ผู้รับ" value={addr.name} onChange={(v) => setAddr({ ...addr, name: v })} />
           <Field label="เบอร์โทรศัพท์" value={addr.phone} inputMode="tel" onChange={(v) => setAddr({ ...addr, phone: v })} />
           <Field label="ที่อยู่ (บ้านเลขที่ หมู่ ตำบล อำเภอ)" value={addr.address} textarea onChange={(v) => setAddr({ ...addr, address: v })} />
@@ -149,7 +184,12 @@ export default function CheckoutView() {
 
           <button
             disabled={!valid}
-            onClick={() => setStep("payment")}
+            onClick={() => {
+              if (user && remember) {
+                saveProfile({ addr: { name: addr.name, phone: addr.phone, address: addr.address, province: addr.province, zip: addr.zip } }).catch(() => {});
+              }
+              setStep("payment");
+            }}
             className="w-full rounded-lg bg-safety py-3 font-heading font-bold text-white disabled:opacity-40"
           >
             ถัดไป: ชำระเงิน
