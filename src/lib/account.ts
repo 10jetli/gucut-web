@@ -46,13 +46,15 @@ export async function fetchMe(): Promise<User | null> {
   }
 }
 
-export async function register(phone: string, name: string, password: string) {
-  const d = await call({ action: "register", phone, name, password });
+// keep = ติ๊ก "จดจำการเข้าสู่ระบบ" → cookie อยู่ 90 วัน
+// ไม่ติ๊ก → cookie หายตอนปิดเบราว์เซอร์ (เหมาะกับเครื่องที่ใช้ร่วมกัน)
+export async function register(phone: string, name: string, password: string, keep = true) {
+  const d = await call({ action: "register", phone, name, password, remember: keep });
   remember(d.user); return d.user as User;
 }
 
-export async function login(phone: string, password: string) {
-  const d = await call({ action: "login", phone, password });
+export async function login(phone: string, password: string, keep = true) {
+  const d = await call({ action: "login", phone, password, remember: keep });
   remember(d.user); return d.user as User;
 }
 
