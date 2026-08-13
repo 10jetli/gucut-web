@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import SectionHead from "@/components/SectionHead";
 import { formatPrice, discountPercent, type Product } from "@/lib/types";
 
 // นับถอยหลังถึงเที่ยงคืนวันนี้
@@ -27,27 +28,21 @@ export default function FlashSale({ items }: { items: Product[] }) {
   const [h, m, s] = useCountdown();
 
   return (
-    <section className="mt-3">
-      {/* หัวแถบ + ตัวนับถอยหลัง */}
-      <div className="flex items-center justify-between px-3">
-        <div className="flex items-center gap-2">
-          <h2 className="font-heading text-lg font-bold italic text-safety">⚡ FLASH SALE</h2>
-          <div className="flex items-center gap-0.5 text-xs font-bold">
-            {[h, m, s].map((v, i) => (
-              <span key={i} className="flex items-center gap-0.5">
-                {i > 0 && <span className="text-safety">:</span>}
-                <span className="rounded bg-steel-800 px-1.5 py-0.5 tabular-nums">{v}</span>
-              </span>
-            ))}
-          </div>
+    <section className="mt-5">
+      <SectionHead title="FLASH SALE" href="/categories/">
+        {/* ตัวนับถอยหลังถึงเที่ยงคืน — ตัวเลขขาวบนพื้นส้ม อ่านชัดบนมือถือ */}
+        <div className="flex shrink-0 items-center gap-0.5 text-[11px] font-bold">
+          {[h, m, s].map((v, i) => (
+            <span key={i} className="flex items-center gap-0.5">
+              {i > 0 && <span className="text-safety">:</span>}
+              <span className="rounded-sm bg-safety px-1.5 py-1 tabular-nums text-white">{v}</span>
+            </span>
+          ))}
         </div>
-        <Link href="/categories" className="text-xs text-steel-300">
-          ดูทั้งหมด ›
-        </Link>
-      </div>
+      </SectionHead>
 
       {/* แถวสินค้าเลื่อนแนวนอน */}
-      <div className="no-scrollbar mt-2 flex gap-2 overflow-x-auto px-3 pb-1">
+      <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-1">
         {items.map((p) => (
           <Link
             key={p.id}

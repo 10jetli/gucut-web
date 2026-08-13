@@ -1,9 +1,10 @@
 import Link from "next/link";
 
-// หัวเว็บแบบ Shopee — แถบส้มเต็มความกว้าง โลโก้ + ช่องค้นหาขาว + ไอคอนตะกร้า
+// หัวเว็บ — แถบเข้มเต็มความกว้าง โลโก้ + ช่องค้นหาขาว + ไอคอนตะกร้า
+// เส้นส้มใต้แถบคือลายเซ็นของแบรนด์ ใช้ซ้ำที่ท้ายเว็บและหัวข้อทุกหมวด
 export default function SearchBar() {
   return (
-    <header className="sticky top-0 z-40 bg-ink px-3 pb-2 pt-3 shadow-sm">
+    <header className="sticky top-0 z-40 border-b-[3px] border-safety bg-carbon px-3 pb-2 pt-3">
       <div className="flex items-center gap-2">
         {/* โลโก้ตามอาร์ตเวิร์กจริง: GU ส้ม + CUT เทา บนแถบดำ */}
         <Link
