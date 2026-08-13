@@ -133,14 +133,21 @@ for (const c of out) {
   groups.get(key).push(c);
   delete c.ms;
 }
-// ลำดับความสำคัญ: ผูกกับสินค้าแล้ว (กดซื้อได้) → คลิปจากแอป Vizup ที่ร้านใช้อยู่ตอนนี้ → ที่เหลือ
+// ลำดับความสำคัญ:
+//   0 คลิปแนวตั้ง = ถ่ายด้วยมือถือหน้างาน คลิปคนตัดไม้จริงอยู่กลุ่มนี้ (Vizup ขึ้นก่อน)
+//   1 คลิปที่ผูกกับสินค้า = คลิปโชว์สินค้าในสตูดิโอ ทรงจัตุรัสหมด แต่กดซื้อจากคลิปได้
+//   2 ที่เหลือ
 // เรียงตามชั้นก่อน แล้วค่อยวนหยิบกันไม่ให้ใบซ้ำอยู่ติดกัน "ภายในชั้นเดียวกัน"
-const rank = (c) => (c.h ? 0 : c.a === "vizup" ? 1 : 2);
+const upright = (c) => c.vw / c.vh < 0.85;
+const rank = (c) => (upright(c) ? 0 : c.h ? 1 : 2);
 const tiers = [[], [], []];
+// ในชั้นแนวตั้ง เอา Vizup ขึ้นก่อน (เป็นแอปที่ร้านใช้อยู่ คลิปใหม่สุด)
+const within = (a, b) => rank(a) - rank(b) || (a.a === "vizup" ? 0 : 1) - (b.a === "vizup" ? 0 : 1);
 for (const g of groups.values()) {
-  g.sort((a, b) => rank(a) - rank(b));
+  g.sort(within);
   tiers[rank(g[0])].push(g);
 }
+for (const t of tiers) t.sort((a, b) => within(a[0], b[0]));
 
 const kept = [];
 for (const tier of tiers) {
