@@ -8,7 +8,7 @@ export default function VideosPage() {
   // ผูกคลิปกับสินค้าตั้งแต่ฝั่ง server แล้วส่งเฉพาะข้อมูลที่ฟีดใช้จริง
   // (เดิมส่ง products ทั้งก้อนไปให้ client — แคตตาล็อก 4MB ติดไปกับหน้าเว็บ)
   const items: FeedItem[] = videos.map((v) => {
-    const p = getProduct(v.h);
+    const p = v.h ? getProduct(v.h) : undefined;
     return p ? { v, p: { h: p.h, t: p.t, img: p.img, p: p.p } } : { v };
   });
 

@@ -1,87 +1,144 @@
-// สร้าง src/data/videos.json — รายการคลิปสินค้าทั้งหมด
+// สร้าง src/data/videos.json — คลิปทั้งหมดของร้าน
 //
 // รันครั้งเดียวตอนย้ายข้อมูลออกจาก Shopify ไม่ได้รันตอน build
-//   node scripts/gen-videos.mjs <ไฟล์.jsonl>
+//   node scripts/gen-videos.mjs <files.jsonl> <products.jsonl>
 //
-// ไฟล์ jsonl ได้จาก bulk operation ของ Shopify Admin API:
+// ต้องใช้ผลจาก bulk operation ของ Shopify Admin API สองชุด เพราะคลิปอยู่สองที่:
 //
-//   mutation {
-//     bulkOperationRunQuery(query: """
-//       { products { edges { node { id handle title status
-//           media { edges { node { mediaContentType
-//             ... on Video { id duration originalSource { url }
-//                            sources { url format mimeType width height }
-//                            preview { image { url } } } } } } } } } }
-//     """) { bulkOperation { id status } userErrors { field message } }
-//   }
+//   1) files.jsonl — คลังไฟล์ทั้งร้าน (คลิปส่วนใหญ่อยู่ตรงนี้ แต่ไม่รู้ว่าเป็นของสินค้าไหน)
+//      { files { edges { node { __typename createdAt fileStatus alt
+//          ... on Video { id duration originalSource { url }
+//                         sources { url format mimeType width height }
+//                         preview { image { url } } } } } } }
 //
-// แล้วรอจน currentBulkOperation.status = COMPLETED ค่อยโหลดไฟล์จาก .url
+//   2) products.jsonl — คลิปที่ติดอยู่กับสินค้า (ได้ชื่อสินค้ากับ handle มาด้วย)
+//      { products { edges { node { id handle title status
+//          media { edges { node { mediaContentType
+//            ... on Video { id duration originalSource { url }
+//                           sources { url format mimeType width height }
+//                           preview { image { url } } } } } } } } } }
 //
-// ⚠️ ตอนนี้ src กับ poster ยังชี้ไปที่ cdn.shopify.com
-// ถ้าวันหนึ่งย้ายไฟล์มาเก็บเอง (แบบ public/rv-video/) ให้แก้ที่ toLocal ใน
-// src/lib/videos.ts จุดเดียว ไม่ต้องรันสคริปต์นี้ใหม่
+// รันด้วย bulkOperationRunQuery ทีละชุด รอจน currentBulkOperation.status = COMPLETED
+// แล้วโหลดไฟล์จาก .url (ทำได้ทีละชุด Shopify ให้รัน bulk พร้อมกันไม่ได้)
+//
+// ⚠️ ไฟล์คลิปยังอยู่บน Shopify CDN — ถ้าย้ายที่เก็บ แก้ที่ videoSrc/videoPoster
+// ใน src/lib/videos.ts จุดเดียว ไม่ต้องรันสคริปต์นี้ใหม่
 
 import { readFileSync, writeFileSync } from "node:fs";
 
-const src = process.argv[2];
-if (!src) {
-  console.error("ใช้: node scripts/gen-videos.mjs <ไฟล์.jsonl>");
+const [filesPath, productsPath] = process.argv.slice(2);
+if (!filesPath || !productsPath) {
+  console.error("ใช้: node scripts/gen-videos.mjs <files.jsonl> <products.jsonl>");
   process.exit(1);
 }
 
-const lines = readFileSync(src, "utf8").trim().split("\n").map((l) => JSON.parse(l));
+const read = (p) => readFileSync(p, "utf8").trim().split("\n").map((l) => JSON.parse(l));
 
-// bulk operation คายผลออกมาเป็นบรรทัดแบน ๆ ลูกผูกกับพ่อผ่าน __parentId
+// คลิปสั้นกว่านี้ไม่ใช่คลิปจริง — เป็นไฟล์ 3 วินาทีที่แอปวิดีโอในร้าน Shopify สร้างทิ้งไว้
+const MIN_MS = 5000;
+
+// URL ของ Shopify มีแพตเทิร์นตายตัว เก็บแค่ส่วนที่ต่างกันจริง
+// เต็ม ๆ: https://cdn.shopify.com/videos/c/vp/<hash>/<hash>.<suffix>.mp4
+const MP4 = /^https:\/\/cdn\.shopify\.com\/videos\/c\/vp\/([0-9a-f]{32})\/\1\.(.+)\.mp4$/;
+const POSTER_PREFIX = "https://cdn.shopify.com/s/files/1/0905/1081/9620/files/preview_images/";
+const POSTER = /^([0-9a-f]{32})\.thumbnail\.0+\.jpg\?v=(\d+)$/;
+
+// ---------- อ่านคลิปที่ติดกับสินค้า (มีชื่อ + handle) ----------
 const products = new Map();
-const clips = [];
-for (const l of lines) {
+const attached = new Map();          // video id → { handle, title }
+for (const l of read(productsPath)) {
   if (l.id?.includes("/Product/")) products.set(l.id, l);
-  else if (l.mediaContentType === "VIDEO") clips.push(l);
 }
+for (const l of read(productsPath)) {
+  if (l.mediaContentType !== "VIDEO") continue;
+  const p = products.get(l.__parentId);
+  if (p?.status === "ACTIVE") attached.set(l.id, { h: p.handle, t: p.title, media: l });
+}
+
+// ---------- รวมคลิปจากทั้งสองที่ ----------
+const clips = new Map();             // video id → node
+for (const l of read(filesPath)) {
+  if (l.__typename === "Video" && l.fileStatus === "READY") clips.set(l.id, l);
+}
+for (const [id, a] of attached) if (!clips.has(id)) clips.set(id, a.media);
 
 // เลือกไฟล์ mp4 ที่ความกว้างใกล้ค่าที่ขอที่สุด (ไม่เอา m3u8 เพราะมีแค่บางคลิป)
 const pick = (sources, want) => {
-  const mp4 = (sources ?? []).filter((s) => s.format === "mp4");
+  const mp4 = (sources ?? []).filter((s) => s.format === "mp4" && MP4.test(s.url));
   if (!mp4.length) return null;
-  return mp4.reduce((best, s) =>
-    Math.abs(s.width - want) < Math.abs(best.width - want) ? s : best
-  );
+  return mp4.reduce((best, s) => (Math.abs(s.width - want) < Math.abs(best.width - want) ? s : best));
 };
 
 const out = [];
-const skipped = { noProduct: 0, notActive: 0, noMp4: 0 };
+const skipped = { tooShort: 0, noMp4: 0 };
 
-for (const c of clips) {
-  const p = products.get(c.__parentId);
-  if (!p) { skipped.noProduct++; continue; }
-  if (p.status !== "ACTIVE") { skipped.notActive++; continue; }
+for (const [id, c] of clips) {
+  const dur = c.duration ?? 0;
+  if (dur < MIN_MS) { skipped.tooShort++; continue; }
 
   // 480p พอสำหรับฟีดบนมือถือ — คลิปเล่นเองตอนเลื่อน ถ้าใช้ 720p กินเน็ตลูกค้า 3 เท่า
   const sd = pick(c.sources, 480);
   const hd = pick(c.sources, 720);
   if (!sd) { skipped.noMp4++; continue; }
 
+  const [, hash, suffix] = sd.url.match(MP4);
+  const hdSuffix = hd && hd.url !== sd.url ? hd.url.match(MP4)[2] : undefined;
+
+  let pv;
+  const purl = c.preview?.image?.url;
+  if (purl?.startsWith(POSTER_PREFIX)) {
+    const m = purl.slice(POSTER_PREFIX.length).match(POSTER);
+    if (m && m[1] === hash) pv = Number(m[2]);   // ปกใช้ hash เดียวกับคลิป เก็บแค่เลขเวอร์ชัน
+  }
+
+  const link = attached.get(id);
   out.push({
-    id: c.id.split("/").pop(),
-    h: p.handle,
-    t: p.title,
-    dur: Math.round((c.duration ?? 0) / 1000),
+    ms: dur,                       // ความยาวเต็ม ๆ ใช้ตอนตัดไฟล์ซ้ำ แล้วลบทิ้ง
+    v: hash,                       // ตัวไฟล์คลิป
+    s: suffix,                     // ส่วนท้ายไฟล์ 480p
+    hd: hdSuffix,                  // ส่วนท้ายไฟล์ 720p (มีบางคลิป)
+    pv,                            // เลขเวอร์ชันรูปปก
+    dur: Math.round(dur / 1000),
     vw: sd.width,
     vh: sd.height,
-    src: sd.url,
-    hd: hd && hd.url !== sd.url ? hd.url : undefined,
-    poster: c.preview?.image?.url ?? undefined,
+    h: link?.h,                    // handle สินค้า (มีเฉพาะคลิปที่ติดกับสินค้า)
+    t: link?.t,                    // ชื่อสินค้า
   });
 }
 
-// เรียงตามลำดับสินค้าใน Shopify — คลิปของสินค้าเดียวกันจะอยู่ติดกัน
-const order = new Map([...products.keys()].map((id, i) => [id, i]));
-out.sort((a, b) => {
-  const pa = [...products.values()].find((p) => p.handle === a.h);
-  const pb = [...products.values()].find((p) => p.handle === b.h);
-  return order.get(pa.id) - order.get(pb.id);
-});
+// ---------- จัดลำดับ ----------
+// ไม่ตัดคลิปไหนทิ้งเลย เจ้าของร้านสั่งว่าเอามาทั้งหมด
+//
+// แต่แอปวิดีโอในร้าน (reelUp / vizup / shopgracias) อัปคลิปเดิมซ้ำหลายรอบตลอดปี
+// ทุกครั้งที่อัปใหม่ Shopify ให้ไฟล์ใหม่คนละ hash เทียบว่าเป็นคลิปเดียวกันตรง ๆ ไม่ได้
+// เดาจาก "ความยาวเท่ากันเป๊ะระดับมิลลิวินาที + ขนาดภาพเท่ากัน" ได้อย่างเดียว
+//
+// จึงไม่ตัด แต่จัดลำดับแทน — หยิบทีละใบวนไปทุกกลุ่ม ใบที่หน้าตาเหมือนกัน
+// จะไม่มาอยู่ติดกัน ฟีดช่วงแรกได้คลิปที่ต่างกันหมด ใบที่ซ้ำไปต่อท้าย
+const groups = new Map();
+for (const c of out) {
+  const key = `${c.ms}|${c.vw}x${c.vh}`;
+  if (!groups.has(key)) groups.set(key, []);
+  groups.get(key).push(c);
+  delete c.ms;
+}
+// ในกลุ่ม: ใบที่ผูกกับสินค้าอยู่ก่อน · ระหว่างกลุ่ม: กลุ่มที่มีสินค้าอยู่ก่อน
+const byProduct = (a, b) => (a.h ? 0 : 1) - (b.h ? 0 : 1);
+const order = [...groups.values()];
+for (const g of order) g.sort(byProduct);
+order.sort((a, b) => byProduct(a[0], b[0]));
 
-writeFileSync("src/data/videos.json", JSON.stringify(out, null, 1) + "\n");
-console.log(`เขียน src/data/videos.json — ${out.length} คลิป จาก ${new Set(out.map((v) => v.h)).size} สินค้า`);
-console.log("ข้าม:", skipped);
+const kept = [];
+for (let round = 0; ; round++) {
+  const before = kept.length;
+  for (const g of order) if (g[round]) kept.push(g[round]);
+  if (kept.length === before) break;
+}
+const dupes = order.reduce((s, g) => s + g.length - 1, 0);
+
+writeFileSync("src/data/videos.json", JSON.stringify(kept) + "\n");
+console.log(`เขียน src/data/videos.json — ${kept.length} คลิป`);
+console.log(`  ผูกกับสินค้า ${kept.filter((c) => c.h).length} คลิป (${new Set(kept.filter((c) => c.h).map((c) => c.h)).size} สินค้า)`);
+console.log(`  รวมความยาว ${Math.round(kept.reduce((s, c) => s + c.dur, 0) / 60)} นาที`);
+console.log("  ข้าม:", skipped);
+console.log(`  น่าจะเป็นคลิปเดิมที่แอปอัปซ้ำ ${dupes} ใบ — ไม่ได้ตัดทิ้ง แค่ดันไปไว้ท้ายฟีด`);
