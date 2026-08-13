@@ -15,10 +15,16 @@ import { useEffect, useState } from "react";
 //    2) เปลี่ยน HERO ข้างล่างเป็น  "/img/cover-all.png"
 // แล้วเว็บจะเลิกพึ่ง Shopify ทันที (ปิดร้าน Shopify แล้วปกไม่หาย)
 // ---------------------------------------------------------------------------
+// ในร้าน Shopify มีรูปชุดนี้ 3 ไฟล์ — ใช้ใบยาวแบนเพราะเป็นทรงแบนเนอร์
+//   ใบยาวแบน  all-Final.png                5000 × 1791  ← ใช้อยู่
+//   ใบจัตุรัส  all-Final_24a8f3a3….png      5000 × 5000
+//   ใบจัตุรัส  all-Final_24a8f3a3….webp     1500 × 1500  (เบาสุด)
 const HERO = "https://cdn.shopify.com/s/files/1/0905/1081/9620/files/all-Final.png?v=1728437874";
 
-// สัดส่วนรูปจริง 5000 × 1791 — ล็อกกรอบตามนี้ รูปจะไม่โดนตัดหัวตัดท้าย
-const HERO_RATIO = "5000 / 1791";
+// ขนาดจริงของไฟล์ — เอาไปล็อกสัดส่วนกรอบ รูปจะไม่โดนตัดหัวตัดท้าย
+// เปลี่ยนรูปเมื่อไหร่ อย่าลืมแก้สองค่านี้ตาม กรอบจะปรับให้เอง
+const HERO_W = 5000;
+const HERO_H = 1791;
 
 type Slide =
   | { kind: "img"; src: string; alt: string; href: string }
@@ -60,7 +66,7 @@ export default function BannerSlider() {
     <div className="px-3 pt-2">
       <div
         className="relative overflow-hidden rounded-xl bg-steel-700"
-        style={{ aspectRatio: HERO_RATIO }}
+        style={{ aspectRatio: `${HERO_W} / ${HERO_H}` }}
       >
         {banners.map((b, idx) => {
           const shown = idx === i;
@@ -77,6 +83,8 @@ export default function BannerSlider() {
                   fill
                   // หน้าเว็บกว้างสุด max-w-lg (512px) หักขอบซ้ายขวาอย่างละ 12px
                   sizes="(max-width: 536px) 100vw, 488px"
+                  // รูปถ่ายฉากร้าน ลดคุณภาพลงหน่อยตาเปล่าดูไม่ออก แต่ไฟล์เบาลงราวหนึ่งในสาม
+                  quality={60}
                   className="object-cover"
                   // ใบแรกอยู่บนสุดของหน้า โหลดก่อนเพื่อนเพื่อให้หน้าแรกดูเร็ว
                   priority
