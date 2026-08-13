@@ -12,6 +12,8 @@
 [images]
   remote_images = [
     "https://cdn\\.shopify\\.com/.*",
+    # รูปปกคลิปหลังย้ายไปเก็บที่ R2 ของเราเอง (ดู HOST ใน src/lib/videos.ts)
+    "https://video\\.gucut\\.com/.*",
     "https://lzd-u\\.slatic\\.net/.*",
     "https://sg-test-11\\.slatic\\.net/.*",
     "https://cf\\.shopee\\.com/.*",

@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
-import { durLabel, videoPoster, videoSrc, type FeedItem } from "@/lib/videos";
+import { durLabel, usingHls, videoPoster, videoSrc, type FeedItem } from "@/lib/videos";
 
 // ใส่ <video> จริงกี่ใบรอบ ๆ ใบที่กำลังดู — ใบถัดไปโหลดรออยู่แล้ว เลื่อนถึงเล่นทันที
 // เผื่อไปข้างหน้ามากกว่าข้างหลัง เพราะคนดูเลื่อนลงเป็นหลัก
@@ -218,8 +218,39 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
 
 type Mode = "video" | "poster" | "blank";
 
+// ---------------------------------------------------------------------------
+// ต่อคลิปแบบ HLS เข้ากับ <video>
+//   Safari (iPhone/Mac) เล่น .m3u8 ได้เองในตัว ใส่ src ตรง ๆ ได้เลย
+//   Chrome / Android เล่นเองไม่ได้ ต้องพึ่ง hls.js — โหลดตอนใช้จริงเท่านั้น
+//   คนใช้ iPhone (ลูกค้าส่วนใหญ่) จึงไม่ต้องโหลดไลบรารีนี้เลย
+// ตอนยังใช้ไฟล์ mp4 ของ Shopify อยู่ ฟังก์ชันนี้ไม่ทำอะไรทั้งนั้น
+// ---------------------------------------------------------------------------
+function useHls(el: HTMLVideoElement | null, src: string) {
+  useEffect(() => {
+    if (!usingHls || !el) return;
+    if (el.canPlayType("application/vnd.apple.mpegurl")) return;   // Safari จัดการเองแล้ว
+
+    let dead = false;
+    let hls: { destroy(): void } | null = null;
+    import("hls.js").then(({ default: Hls }) => {
+      if (dead || !Hls.isSupported()) return;
+      const h = new Hls({ maxBufferLength: 12, capLevelToPlayerSize: true });
+      h.loadSource(src);
+      h.attachMedia(el);
+      hls = h;
+    }).catch(() => {});   // โหลดไลบรารีไม่ได้ ปล่อยให้เบราว์เซอร์ลองเอง
+
+    return () => { dead = true; hls?.destroy(); };
+  }, [el, src]);
+}
+
 // แยกเป็นคอมโพเนนต์ที่จำค่าไว้ — เลื่อนทีนึงจะได้วาดใหม่แค่ไม่กี่ใบ
 // ไม่งั้นเลื่อนทุกครั้งต้องวาดใหม่ทั้ง 459 ใบ ฟีดจะกระตุก
+// เช็คว่าเบราว์เซอร์เล่น HLS ได้เองไหม (เรียกได้เฉพาะฝั่ง client)
+const isSafariHls = () =>
+  typeof document !== "undefined" &&
+  !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
+
 const Slide = memo(function Slide({
   item: { v, p },
   i,
@@ -243,6 +274,10 @@ const Slide = memo(function Slide({
   onTap: (el: HTMLVideoElement) => void;
   onReady: (b: boolean) => void;
 }) {
+  const [el, setEl] = useState<HTMLVideoElement | null>(null);
+  const src = videoSrc(v);
+  useHls(el, src);
+
   const poster = mode === "blank" ? undefined : videoPoster(v, 480);
   // คลิปแนวตั้งขยายเต็มจอแบบ TikTok · คลิปจัตุรัส/แนวนอนย่อให้เห็นครบ ไม่ตัดหัวตัดท้าย
   const fit = v.vw / v.vh < 0.85 ? "object-cover" : "object-contain";
@@ -251,8 +286,9 @@ const Slide = memo(function Slide({
     <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always]">
       {mode === "video" ? (
         <video
-          ref={(el) => register(i, el)}
-          src={videoSrc(v)}
+          ref={(node) => { setEl(node); register(i, node); }}
+          // Safari ใส่ src ตรง ๆ ได้ · Chrome/Android ให้ hls.js เป็นคนป้อนให้แทน
+          src={usingHls && !isSafariHls() ? undefined : src}
           poster={poster}
           // โหลดรอไว้ล่วงหน้า เลื่อนถึงแล้วเล่นทันทีไม่ต้องรอ
           preload={eager ? "auto" : "metadata"}
