@@ -9,8 +9,6 @@ import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog"
 // หน้าแรก — feed สไตล์ Shopee / TikTok Shop
 export default function HomePage() {
   const nav = collections.filter((c) => c.n > 0).slice(0, 12);
-  const best = bestSellers(30);
-
   // แถวสินค้าตามหมวดเด่น
   const rows = ["เลื่อยยนต์", "โซ่นิวเวฟ", "โซ่คิงคอง", "guidebar"]
     .map((h) => {
@@ -39,20 +37,15 @@ export default function HomePage() {
         </section>
       ))}
 
-      <section className="mt-6">
-        <SectionHead title="สินค้าแนะนำ" />
-        <div className="grid grid-cols-2 gap-2 px-3">
-          {best.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
-        </div>
-        <Link
-          href="/categories/"
-          className="mx-3 mt-3 block rounded-sm border-2 border-safety py-2.5 text-center text-sm font-medium text-safety active:bg-safety active:text-white"
-        >
-          ดูสินค้าทั้งหมด 2,482 รายการ ›
-        </Link>
-      </section>
+      {/* ทางไปดูสินค้าทั้งหมด — เดิมมีตาราง "สินค้าแนะนำ" 30 ชิ้นอยู่เหนือปุ่มนี้
+          เอาออกแล้วเพราะโหลดรูปทีเดียว 30 ใบ ทำให้หน้าแรกช้า
+          ลูกค้าเลือกจากหมวดหรือค้นหาตรง ๆ เร็วกว่าเลื่อนดูของสุ่ม ๆ */}
+      <Link
+        href="/categories/"
+        className="mx-3 mt-7 block rounded-sm border-2 border-safety py-3 text-center text-[15px] font-medium text-safety active:bg-safety active:text-white"
+      >
+        ดูสินค้าทั้งหมด 2,482 รายการ ›
+      </Link>
 
     </main>
   );
