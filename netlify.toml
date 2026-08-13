@@ -13,6 +13,9 @@
   remote_images = [
     "https://cdn\\.shopify\\.com/.*",
     # รูปปกคลิปหลังย้ายไปเก็บที่ R2 ของเราเอง (ดู HOST ใน src/lib/videos.ts)
+    # ช่วงแรกใช้ลิงก์ฟรีของ Cloudflare (pub-xxxx.r2.dev) ก่อน
+    # วันที่ย้าย gucut.com มาอยู่ Cloudflare ค่อยเปลี่ยนไปใช้ video.gucut.com
+    "https://pub-[a-z0-9]+\\.r2\\.dev/.*",
     "https://video\\.gucut\\.com/.*",
     "https://lzd-u\\.slatic\\.net/.*",
     "https://sg-test-11\\.slatic\\.net/.*",
