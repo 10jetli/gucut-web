@@ -17,7 +17,19 @@ export interface ShopVideo {
   vh: number;    // ความสูงไฟล์วิดีโอ
   h?: string;    // handle สินค้า — มีเฉพาะคลิปที่ติดอยู่กับสินค้าใน Shopify
   t?: string;    // ชื่อสินค้า
+  a?: VideoApp;  // แอปที่อัปคลิปนี้ขึ้นร้าน (ไม่มี = อัปกับตัวสินค้าโดยตรง)
 }
+
+// คลิปในร้านมาจากหลายแอปคนละยุค
+//   vizup   244 ใบ · แอปที่ร้านใช้อยู่ตอนนี้ (ก.พ.–ส.ค. 2026)
+//   gracias 122 ใบ · แอปเก่า shopgracias
+//   reelup    1 ใบ
+//   ไม่มีค่า  92 ใบ · อัปติดกับตัวสินค้าโดยตรง (พวกนี้กดซื้อจากคลิปได้)
+export type VideoApp = "vizup" | "gracias" | "reelup";
+
+// อยากโชว์เฉพาะคลิปของบางแอป ใส่ชื่อแอปที่ "ไม่เอา" ตรงนี้ เช่น ["gracias", "reelup"]
+// คลิปที่ผูกกับสินค้าไว้แล้วไม่โดนกรอง เพราะเป็นคลิปที่กดซื้อได้
+const HIDE: VideoApp[] = [];
 
 // สินค้าเท่าที่ฟีดต้องใช้ — ไม่ส่งทั้งก้อน Product มาให้ client
 export interface FeedProduct {
@@ -32,7 +44,9 @@ export interface FeedItem {
   p?: FeedProduct;
 }
 
-export const videos = raw as ShopVideo[];
+export const videos = (raw as ShopVideo[]).filter(
+  (v) => v.h || !v.a || !HIDE.includes(v.a),
+);
 
 export const CHANNEL_URL = "https://www.youtube.com/@NEWWAVELegends";
 

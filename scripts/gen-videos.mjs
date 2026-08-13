@@ -37,6 +37,16 @@ const read = (p) => readFileSync(p, "utf8").trim().split("\n").map((l) => JSON.p
 // คลิปสั้นกว่านี้ไม่ใช่คลิปจริง — เป็นไฟล์ 3 วินาทีที่แอปวิดีโอในร้าน Shopify สร้างทิ้งไว้
 const MIN_MS = 5000;
 
+// คลิปในร้านมาจากหลายแอป ดูได้จากชื่อไฟล์ (alt) ที่แอปเขียนไว้
+// เก็บไว้ด้วยเพื่อให้เลือกได้ทีหลังว่าจะเอาของแอปไหนขึ้นเว็บบ้าง
+function appOf(alt) {
+  const a = String(alt ?? "").toLowerCase();
+  if (a.includes("vizup")) return "vizup";
+  if (a.includes("shopgracias")) return "gracias";
+  if (a.includes("reelup")) return "reelup";
+  return undefined;          // ไม่มี alt = อัปกับตัวสินค้าโดยตรง ไม่ได้ผ่านแอป
+}
+
 // URL ของ Shopify มีแพตเทิร์นตายตัว เก็บแค่ส่วนที่ต่างกันจริง
 // เต็ม ๆ: https://cdn.shopify.com/videos/c/vp/<hash>/<hash>.<suffix>.mp4
 const MP4 = /^https:\/\/cdn\.shopify\.com\/videos\/c\/vp\/([0-9a-f]{32})\/\1\.(.+)\.mp4$/;
@@ -103,6 +113,7 @@ for (const [id, c] of clips) {
     vh: sd.height,
     h: link?.h,                    // handle สินค้า (มีเฉพาะคลิปที่ติดกับสินค้า)
     t: link?.t,                    // ชื่อสินค้า
+    a: appOf(c.alt),               // แอปที่อัปคลิปนี้ขึ้นร้าน
   });
 }
 
@@ -122,23 +133,31 @@ for (const c of out) {
   groups.get(key).push(c);
   delete c.ms;
 }
-// ในกลุ่ม: ใบที่ผูกกับสินค้าอยู่ก่อน · ระหว่างกลุ่ม: กลุ่มที่มีสินค้าอยู่ก่อน
-const byProduct = (a, b) => (a.h ? 0 : 1) - (b.h ? 0 : 1);
-const order = [...groups.values()];
-for (const g of order) g.sort(byProduct);
-order.sort((a, b) => byProduct(a[0], b[0]));
+// ลำดับความสำคัญ: ผูกกับสินค้าแล้ว (กดซื้อได้) → คลิปจากแอป Vizup ที่ร้านใช้อยู่ตอนนี้ → ที่เหลือ
+// เรียงตามชั้นก่อน แล้วค่อยวนหยิบกันไม่ให้ใบซ้ำอยู่ติดกัน "ภายในชั้นเดียวกัน"
+const rank = (c) => (c.h ? 0 : c.a === "vizup" ? 1 : 2);
+const tiers = [[], [], []];
+for (const g of groups.values()) {
+  g.sort((a, b) => rank(a) - rank(b));
+  tiers[rank(g[0])].push(g);
+}
 
 const kept = [];
-for (let round = 0; ; round++) {
-  const before = kept.length;
-  for (const g of order) if (g[round]) kept.push(g[round]);
-  if (kept.length === before) break;
+for (const tier of tiers) {
+  for (let round = 0; ; round++) {
+    const before = kept.length;
+    for (const g of tier) if (g[round]) kept.push(g[round]);
+    if (kept.length === before) break;
+  }
 }
-const dupes = order.reduce((s, g) => s + g.length - 1, 0);
+const dupes = [...groups.values()].reduce((s, g) => s + g.length - 1, 0);
 
 writeFileSync("src/data/videos.json", JSON.stringify(kept) + "\n");
 console.log(`เขียน src/data/videos.json — ${kept.length} คลิป`);
 console.log(`  ผูกกับสินค้า ${kept.filter((c) => c.h).length} คลิป (${new Set(kept.filter((c) => c.h).map((c) => c.h)).size} สินค้า)`);
 console.log(`  รวมความยาว ${Math.round(kept.reduce((s, c) => s + c.dur, 0) / 60)} นาที`);
+const byApp = {};
+for (const c of kept) byApp[c.a ?? "อัปกับสินค้าโดยตรง"] = (byApp[c.a ?? "อัปกับสินค้าโดยตรง"] ?? 0) + 1;
+console.log("  แยกตามแอปที่อัป:", byApp);
 console.log("  ข้าม:", skipped);
 console.log(`  น่าจะเป็นคลิปเดิมที่แอปอัปซ้ำ ${dupes} ใบ — ไม่ได้ตัดทิ้ง แค่ดันไปไว้ท้ายฟีด`);
