@@ -4,6 +4,7 @@
 import { usePathname } from "next/navigation";
 import BottomNav from "@/components/BottomNav";
 import SiteFooter from "@/components/SiteFooter";
+import PwaSetup from "@/components/PwaSetup";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "";
@@ -13,6 +14,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const bare = admin || path.startsWith("/videos");
   return (
     <>
+      <PwaSetup />
       <div className={"mx-auto min-h-screen max-w-lg" + (admin ? "" : " pb-20")}>
         {children}
         {!bare && <SiteFooter />}

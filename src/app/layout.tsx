@@ -14,10 +14,11 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#1a1a1a",
+  themeColor: "#333333",   // ให้ตรงกับแถบหัวเว็บ เวลาติดตั้งเป็นแอปจะกลมกลืน
   width: "device-width",
   initialScale: 1,
   maximumScale: 1,
+  viewportFit: "cover",   // ให้เนื้อหายืดถึงขอบจอบนมือถือมีติ่ง
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

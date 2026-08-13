@@ -1,21 +1,26 @@
 {
+  "id": "/",
   "name": "GUCUT — เลื่อยยนต์ NEWWAVE / KingKong",
   "short_name": "GUCUT",
-  "description": "ร้านเลื่อยยนต์ NEWWAVE / KingKong ของแท้",
+  "description": "ร้านเลื่อยยนต์ NEWWAVE / KingKong ของแท้ โซ่ บาร์ อะไหล่ครบทุกรุ่น ส่งฟรีทั่วไทย",
+  "lang": "th",
+  "dir": "ltr",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#efefef",
-  "theme_color": "#1a1a1a",
+  "orientation": "portrait",
+  "background_color": "#ececec",
+  "theme_color": "#333333",
+  "categories": ["shopping", "business"],
   "icons": [
-    {
-      "src": "/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png"
-    },
-    {
-      "src": "/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png"
-    }
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "หมวดหมู่สินค้า", "url": "/categories/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "ตะกร้าของฉัน", "url": "/cart/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] },
+    { "name": "คำสั่งซื้อของฉัน", "url": "/account/orders/", "icons": [{ "src": "/icon-192.png", "sizes": "192x192" }] }
   ]
 }

@@ -18,9 +18,9 @@
 
 ## Tech Stack
 - Next.js 15 (App Router) + TypeScript + Tailwind CSS 3
-- ธีม: industrial steel (`#1a1d21`, `#2a2e33`) + safety orange (`#ff6b00`) — ดู `tailwind.config.ts`
-- ฟอนต์: Kanit (หัวข้อ) + IBM Plex Sans Thai (เนื้อหา) โหลดผ่าน Google Fonts `<link>` ใน `layout.tsx`
-- PWA: `src/app/manifest.ts` + `public/icon-192.png`, `icon-512.png`
+- จานสี 4 สี: ส้มแดง `#FF3C00` · เข้ม `#333333` · เทาอ่อน `#ECECEC` · ขาว — ดู `tailwind.config.ts`
+- ฟอนต์: ใช้ฟอนต์ระบบของเครื่องลูกค้า ไม่โหลดจากข้างนอก (ตัวหนังสือขึ้นตั้งแต่เฟรมแรก)
+- PWA: `public/manifest.webmanifest` + `public/sw.js` + `public/icon-192.png`, `icon-512.png`
 - Deploy: Netlify (`netlify.toml` พร้อมแล้ว)
 
 ## วิธีรัน
@@ -34,12 +34,13 @@ npm run build    # ตรวจ build ก่อน deploy
 ```
 src/
 ├── app/
-│   ├── layout.tsx            # โครงหลัก + ฟอนต์ + BottomNav
+│   ├── layout.tsx            # โครงหลัก + Shell (เมนูล่าง ท้ายเว็บ ลงทะเบียน sw)
 │   ├── page.tsx              # หน้าแรก: ค้นหา / แบนเนอร์ / Flash Sale / grid สินค้า
 │   ├── products/[handle]/    # หน้าสินค้า (เวอร์ชันย่อ — ทำเต็มขั้นถัดไป)
-│   ├── categories|videos|cart|account/  # placeholder รอขั้นถัดไป
-│   └── manifest.ts           # PWA manifest
-├── components/               # SearchBar, BannerSlider, FlashSale, ProductCard, BottomNav
+│   ├── categories|videos|cart|account/  # หมวดหมู่ / วิดีโอ / ตะกร้า / บัญชี
+│   └── offline/              # หน้าที่ขึ้นตอนเน็ตหลุด (service worker หยิบมาใช้)
+├── components/               # SectionHead (หัวข้อประจำแบรนด์), SiteFooter, PwaSetup,
+│                             # SearchBar, BannerSlider, FlashSale, ProductCard, BottomNav
 └── lib/
     ├── catalog.ts            # ข้อมูลสินค้า 2,482 รายการ (อยู่ในโค้ด ไม่เรียก API ใคร)
     ├── local-images.ts       # สลับ URL รูปมาเป็นไฟล์ใน public/img/
@@ -86,6 +87,30 @@ src/
 3. รีเซ็ตรหัสผ่านเองได้ (ตอนนี้ต้องทักแชทให้ร้านตั้งให้)
 4. หน้า นโยบายความเป็นส่วนตัว / เงื่อนไขการใช้บริการ
    (Meta กับ Google บังคับตอนขอเปิดใช้จริง · ตอนนี้ลิงก์ท้ายหน้า login ชี้ `/account/` ชั่วคราว)
+
+## ทำเป็นแอปในอนาคต — ออกแบบเผื่อไว้แล้ว
+เว็บนี้เป็น **PWA** ตั้งแต่ต้น ลูกค้ากด "เพิ่มลงหน้าจอโฮม" ได้เลย ไม่ต้องผ่านสโตร์
+
+ของที่พร้อมแล้ว
+- `public/manifest.webmanifest` — ชื่อ ไอคอน สีแถบ ทางลัด (หมวดหมู่ / ตะกร้า / คำสั่งซื้อ)
+- `public/sw.js` — แคชไฟล์ให้เปิดได้ตอนเน็ตหลุด + รับ push
+- `src/components/PwaSetup.tsx` — ลงทะเบียน service worker ให้ลูกค้าทุกคน
+- `src/app/offline/page.tsx` — หน้าที่ขึ้นแทนจอขาวตอนไม่มีเน็ต
+- ระยะหลบขอบจอ (`env(safe-area-inset-bottom)`) ที่เมนูล่างและแถบซื้อ
+
+**กฎการแคชใน sw.js — อย่าแก้มั่ว**
+- `/api/*` ห้ามแคชเด็ดขาด (ล็อกอิน สต็อก ราคา ต้องสด)
+- หน้าเว็บ = ขอเน็ตก่อน ไม่ได้ค่อยใช้ของเก่า → deploy แล้วลูกค้าเห็นทันที
+- ไฟล์ใน `/_next/static/`, `/img/`, `/rv/` = ใช้ของเก่าก่อน (ชื่อมี hash อยู่แล้ว)
+- ขึ้นเวอร์ชันที่ตัวแปร `VERSION` เมื่อแก้กติกาแคช ของเก่าจะถูกลบให้เอง
+
+ถ้าวันหนึ่งอยากขึ้น App Store / Play Store
+- **Play Store**: ห่อด้วย TWA (Bubblewrap) ใช้เว็บเดิมทั้งหมด ไม่ต้องเขียนใหม่
+- **App Store**: ห่อด้วย Capacitor — ต้องแก้เรื่องเดียวคือ **session cookie**
+  ตอนนี้ใช้ cookie แบบ HttpOnly (`gu_sess`) ซึ่งดีที่สุดสำหรับเว็บ
+  ถ้าทำแอปเนทีฟจริง ให้เพิ่มทางเลือกรับ token ผ่าน header ที่ `netlify/lib/session.mjs`
+  ไม่ต้องรื้อของเดิม เพิ่มเป็นทางที่สองได้เลย
+- API แยกจากหน้าเว็บอยู่แล้ว (`/api/auth`, `/api/stock`, `/api/oauth/*`) แอปเรียกใช้ชุดเดียวกันได้
 
 ## Deploy ขึ้น Netlify (step-by-step)
 1. push โค้ดขึ้น GitHub (`git init && git add -A && git commit -m "init"` → สร้าง repo แล้ว push)
