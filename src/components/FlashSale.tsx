@@ -1,5 +1,11 @@
 "use client";
 
+// ปิดใช้อยู่ — เจ้าของร้านให้เอาออกจากหน้าแรก (ดูรกไป)
+// เอากลับมาเมื่อมีโปรจริง: ที่ src/app/page.tsx เพิ่ม 3 บรรทัด
+//   import FlashSale from "@/components/FlashSale";
+//   const flash = flashSale(10);            // นำเข้า flashSale จาก lib/catalog ด้วย
+//   <FlashSale items={flash} />             // วางไว้ใต้ <BannerSlider />
+
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";

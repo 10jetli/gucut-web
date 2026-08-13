@@ -1,16 +1,14 @@
 import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import BannerSlider from "@/components/BannerSlider";
-import FlashSale from "@/components/FlashSale";
 import CategoryNav from "@/components/CategoryNav";
 import ProductCard from "@/components/ProductCard";
 import SectionHead from "@/components/SectionHead";
-import { bestSellers, collections, flashSale, inCollection, sellable } from "@/lib/catalog";
+import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog";
 
 // หน้าแรก — feed สไตล์ Shopee / TikTok Shop
 export default function HomePage() {
   const nav = collections.filter((c) => c.n > 0).slice(0, 12);
-  const flash = flashSale(10);
   const best = bestSellers(30);
 
   // แถวสินค้าตามหมวดเด่น
@@ -27,7 +25,6 @@ export default function HomePage() {
       <SearchBar />
       <CategoryNav items={nav} />
       <BannerSlider />
-      <FlashSale items={flash} />
 
       {rows.map(({ c, items }) => (
         <section key={c.h} className="mt-5">
