@@ -6,7 +6,7 @@
 //   /api/*        ห้ามแคชเด็ดขาด (ล็อกอิน สต็อก ราคา ต้องสดเสมอ)
 //   หน้าเว็บ      ขอเน็ตก่อน ถ้าไม่ได้ค่อยใช้ของเก่า → deploy ใหม่แล้วเห็นทันที
 //   ไฟล์คงที่     ใช้ของเก่าก่อน (ชื่อไฟล์มี hash อยู่แล้ว เปลี่ยนเมื่อไหร่ชื่อเปลี่ยน)
-const VERSION = "gucut-v1";
+const VERSION = "gucut-v2";
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const ASSETS = `${VERSION}-assets`;
@@ -58,8 +58,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // ---------- หน้าเว็บ: ขอเน็ตก่อน ไม่ได้ค่อยใช้ของเก่า ----------
-  if (request.mode === "navigate") {
+  // ---------- หน้าเว็บ + รายการคลิป: ขอเน็ตก่อน ไม่ได้ค่อยใช้ของเก่า ----------
+  // /feed.json คือรายการคลิปทั้งหมด ต้องได้ของสดเมื่อ deploy คลิปใหม่
+  // แต่เก็บสำรองไว้ให้ด้วย เน็ตหลุดแล้วยังเลื่อนดูฟีดต่อได้
+  if (request.mode === "navigate" || url.pathname === "/feed.json") {
     event.respondWith(
       fetch(request)
         .then((res) => {
