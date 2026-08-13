@@ -6,13 +6,28 @@
 
 const KEY = "gucut-admin-key";
 
+// เครื่องจำรหัสไว้ได้นานเท่านี้ แล้วต้องใส่ใหม่
+// กันกรณีมือถือหาย/ให้คนอื่นยืม แล้วรหัสร้านค้างอยู่ในเครื่องตลอดไป
+const MAX_AGE = 30 * 24 * 60 * 60 * 1000;
+
 export function getKey(): string {
   if (typeof window === "undefined") return "";
-  return localStorage.getItem(KEY) || "";
+  const raw = localStorage.getItem(KEY);
+  if (!raw) return "";
+  // ของเดิมเก็บเป็นข้อความล้วน — บันทึกใหม่ให้มีวันหมดอายุ แล้วใช้ต่อได้เลย
+  if (!raw.startsWith("{")) { saveKey(raw); return raw; }
+  try {
+    const { k, at } = JSON.parse(raw) as { k?: string; at?: number };
+    if (!k || !at || Date.now() - at > MAX_AGE) { clearKey(); return ""; }
+    return k;
+  } catch {
+    clearKey();
+    return "";
+  }
 }
 
 export function saveKey(k: string) {
-  localStorage.setItem(KEY, k.trim());
+  localStorage.setItem(KEY, JSON.stringify({ k: k.trim(), at: Date.now() }));
 }
 
 export function clearKey() {
