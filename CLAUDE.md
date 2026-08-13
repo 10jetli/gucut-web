@@ -55,9 +55,10 @@ src/
 
 สคริปต์ใน `scripts/` ที่มีชื่อ Shopify เป็นเครื่องมือ **ย้ายข้อมูลออกมาครั้งเดียว** ไม่ได้รันตอนเว็บทำงาน
 
-> ⚠️ **ค้างอยู่จุดเดียว** — รูปปกหน้าแรก (`all-Final.png`) ยังชี้ไปที่ `cdn.shopify.com`
+> ⚠️ **ค้างอยู่จุดเดียว** — รูปปกหน้าแรกยังชี้ไปที่ `cdn.shopify.com`
 > ดูตัวแปร `HERO` ใน `src/components/BannerSlider.tsx`
-> เอาไฟล์มาวางที่ `public/img/cover-all.png` แล้วแก้ `HERO` เป็น `/img/cover-all.png` = จบ ไม่เหลือ Shopify แล้ว
+> เอาไฟล์มาวางที่ `public/img/cover-all.webp` แล้วแก้ `HERO` เป็น `/img/cover-all.webp` = จบ ไม่เหลือ Shopify แล้ว
+> (ตัวแบนเนอร์ผ่ารูปจัตุรัสใบเดียวเป็นครึ่งบน/ครึ่งล่างด้วย Netlify Image CDN — ใช้กับไฟล์ในเครื่องได้เหมือนกัน)
 
 ## สถานะ Phase 1 — ครบแล้ว ✅
 - [x] หน้าแรก feed สไตล์ Shopee (แบนเนอร์ / Flash Sale countdown / grid สินค้า)
