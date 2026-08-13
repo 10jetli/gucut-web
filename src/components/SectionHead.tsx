@@ -6,21 +6,27 @@ export default function SectionHead({
   title,
   href,
   count,
+  as: Tag = "h2",
+  bare = false,
   children,
 }: {
   title: string;
   href?: string;
   count?: number;
+  /** ใช้ h1 เมื่อเป็นหัวข้อหลักของหน้า */
+  as?: "h1" | "h2";
+  /** true = ไม่ใส่ระยะขอบซ้ายขวา (ใช้ในกล่องที่มี padding อยู่แล้ว) */
+  bare?: boolean;
   /** ของแถมข้าง ๆ ชื่อ เช่น ตัวนับถอยหลังของ Flash Sale */
   children?: React.ReactNode;
 }) {
   return (
-    <div className="mb-2 flex items-center justify-between gap-2 px-3">
+    <div className={`mb-2 flex items-center justify-between gap-2${bare ? "" : " px-3"}`}>
       <div className="flex min-w-0 items-center gap-2">
-        <h2 className="flex items-center gap-2 truncate font-heading text-[17px] font-bold leading-none text-ink">
+        <Tag className="flex items-center gap-2 truncate font-heading text-[17px] font-bold leading-none text-ink">
           <span aria-hidden className="h-[19px] w-[4px] shrink-0 rounded-full bg-safety" />
           {title}
-        </h2>
+        </Tag>
         {children}
       </div>
       {href && (

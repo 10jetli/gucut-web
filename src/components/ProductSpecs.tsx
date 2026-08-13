@@ -1,3 +1,4 @@
+import SectionHead from "@/components/SectionHead";
 import Image from "next/image";
 import type { Detail } from "@/lib/types";
 
@@ -11,7 +12,7 @@ export default function ProductSpecs({ d, attrs }: { d?: Detail; attrs: [string,
       {/* ตารางคุณลักษณะย่อ */}
       {attrs.length > 0 && (
         <section className="mt-3 bg-steel-800 px-3 py-3">
-          <h2 className="mb-2 font-heading text-base font-semibold">คุณลักษณะ</h2>
+          <SectionHead title="คุณลักษณะ" bare />
           <dl className="divide-y divide-steel-700 text-[13px]">
             {attrs.map(([k, v]) => (
               <div key={k} className="flex gap-3 py-2">
@@ -26,7 +27,7 @@ export default function ProductSpecs({ d, attrs }: { d?: Detail; attrs: [string,
       {/* เอกสารดาวน์โหลด — แบบฟอร์ม ลซ.1 / คู่มืออะไหล่ */}
       {d?.docs && d.docs.length > 0 && (
         <section className="mt-3 bg-steel-800 px-3 py-3">
-          <h2 className="mb-2 font-heading text-base font-semibold">เอกสารดาวน์โหลด</h2>
+          <SectionHead title="เอกสารดาวน์โหลด" bare />
           <ul className="space-y-2">
             {d.docs.map((doc) => (
               <li key={doc.url}>

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SectionHead from "@/components/SectionHead";
 import { menuGroups } from "@/lib/catalog";
 
 export const metadata = { title: "หมวดหมู่สินค้า | GUCUT" };
@@ -9,8 +10,8 @@ export default function CategoriesPage() {
 
   return (
     <main className="pb-4">
-      <header className="border-b border-steel-800 px-3 py-3">
-        <h1 className="font-heading text-lg font-bold">หมวดหมู่สินค้า</h1>
+      <header className="border-b border-steel-700 bg-steel-800 py-3.5">
+        <SectionHead title="หมวดหมู่สินค้า" as="h1" />
       </header>
 
       <section className="px-3 pt-3">
@@ -29,8 +30,8 @@ export default function CategoriesPage() {
       </section>
 
       {[...groups.entries()].map(([group, items]) => (
-        <section key={group} className="px-3 pt-5">
-          <h2 className="mb-2 font-heading text-base font-bold text-safety">{group}</h2>
+        <section key={group} className="px-3 pt-6">
+          <SectionHead title={group} bare />
           <div className="grid grid-cols-2 gap-2">
             {items.map((c) => (
               <Link

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import SectionHead from "@/components/SectionHead";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { collections, getCollection, inCollection } from "@/lib/catalog";
@@ -39,7 +40,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ han
           &lsaquo;
         </Link>
         <div>
-          <h1 className="font-heading text-lg font-bold">{c.t}</h1>
+          <SectionHead title={c.t} as="h1" bare />
           <p className="text-xs text-steel-300">{items.length.toLocaleString("th-TH")} รายการ</p>
         </div>
       </header>
