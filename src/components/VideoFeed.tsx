@@ -17,8 +17,16 @@ const POSTER = 8;
 
 const SOUND_KEY = "gucut-video-sound";
 
-export default function VideoFeed({ items }: { items: FeedItem[] }) {
+// วางกล่องคลิปในหน้าทีละกี่ใบ — เลื่อนใกล้หมดค่อยเติมชุดถัดไป
+// ถ้าวางครบทุกใบตั้งแต่แรก พอคลิปขึ้นหลักพันมือถือจะอืดตั้งแต่เปิดหน้า
+const CHUNK = 20;
+const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะเติมชุดใหม่
+
+export default function VideoFeed({ first, total }: { first: FeedItem[]; total: number }) {
   const rootRef = useRef<HTMLElement>(null);
+  const [items, setItems] = useState(first);
+  const [shown, setShown] = useState(() => Math.min(CHUNK, first.length));
+  const loading = useRef(false);
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
@@ -59,7 +67,20 @@ export default function VideoFeed({ items }: { items: FeedItem[] }) {
     );
     root.querySelectorAll("section[data-i]").forEach((s) => io.observe(s));
     return () => io.disconnect();
-  }, []);
+  }, [shown]);
+
+  // เลื่อนใกล้หมดชุดที่วางไว้ → เติมอีกชุด
+  // ถ้ากล่องที่มีในมือใกล้หมดด้วย ค่อยไปดึงรายการที่เหลือทั้งหมดมาทีเดียว
+  useEffect(() => {
+    if (active + GROW_AT < shown) return;
+    if (shown < items.length) { setShown((n) => Math.min(n + CHUNK, items.length)); return; }
+    if (items.length >= total || loading.current) return;
+    loading.current = true;
+    fetch("/feed.json")
+      .then((r) => r.json())
+      .then((all: FeedItem[]) => { setItems(all); setShown((n) => Math.min(n + CHUNK, all.length)); })
+      .catch(() => { loading.current = false; });   // เน็ตสะดุด ครั้งหน้าค่อยลองใหม่
+  }, [active, shown, items.length, total]);
 
   // ตั้งต้นคือ "เอาเสียง" เว้นแต่ลูกค้าเคยกดปิดไว้เอง
   // ถ้าเบราว์เซอร์ไม่ยอมให้เปิดเสียงเอง เดี๋ยวโค้ดข้างล่างจะถอยไปเล่นแบบเงียบให้เอง
@@ -131,7 +152,7 @@ export default function VideoFeed({ items }: { items: FeedItem[] }) {
         </svg>
       </button>
 
-      {items.map((item, i) => {
+      {items.slice(0, shown).map((item, i) => {
         const d = i - active;
         const mode = d >= -BACK && d <= FWD ? "video" : Math.abs(d) <= POSTER ? "poster" : "blank";
         return (
@@ -139,7 +160,7 @@ export default function VideoFeed({ items }: { items: FeedItem[] }) {
             key={item.v.v}
             item={item}
             i={i}
-            total={items.length}
+            total={total}
             mode={mode}
             live={i === active}
             busy={i === active && !ready}
