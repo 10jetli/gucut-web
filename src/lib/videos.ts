@@ -50,19 +50,37 @@ export const videos = (raw as ShopVideo[]).filter(
 
 export const CHANNEL_URL = "https://www.youtube.com/@NEWWAVELegends";
 
-// ⚠️ ไฟล์คลิปกับรูปปกยังอยู่บน CDN ของ Shopify (459 คลิป รวม 588 นาที)
-// เอามาเก็บเองไม่ไหวเพราะรวมแล้วหลาย GB — โปรเจกต์นี้มีรูปอยู่แล้ว 289MB
-// ถ้าวันหนึ่งย้ายไปโฮสต์ที่อื่น (R2 / Bunny / YouTube) แก้สามฟังก์ชันข้างล่างจุดเดียว
+// ---------------------------------------------------------------------------
+// ที่เก็บคลิป — สลับทั้งเว็บด้วยบรรทัดเดียว
+//
+//   ""                          = ยังใช้ของ Shopify (ไฟล์ mp4 480p ตายตัว)
+//   "https://video.gucut.com"   = ใช้ R2 ของเราเอง (HLS ปรับความคมชัดตามเน็ต)
+//
+// ก่อนเปลี่ยนต้องย้ายไฟล์ขึ้น R2 ให้ครบก่อน — ดู scripts/video-to-r2.mjs
+// (ตัวเล่นรองรับทั้งสองแบบอยู่แล้ว ไม่ต้องแก้อะไรเพิ่ม)
+// ---------------------------------------------------------------------------
+const HOST = "";
+
+export const usingHls = HOST !== "";
+
 const file = (x: ShopVideo, suffix: string) => `${CDN}/videos/c/vp/${x.v}/${x.v}.${suffix}.mp4`;
 
-// 480p — ฟีดเล่นคลิปเองตอนเลื่อน ถ้าใช้ 720p กินเน็ตลูกค้าราว 3 เท่า
-export const videoSrc = (x: ShopVideo) => file(x, x.s);
-export const videoHd = (x: ShopVideo) => (x.hd ? file(x, x.hd) : undefined);
+// R2: ไฟล์ HLS ตัวเดียวจบ เบราว์เซอร์เลือกความคมชัดเองตามเน็ตลูกค้า
+// Shopify: ได้แค่ 480p ตายตัว ถ้าใช้ 720p คนเน็ตอ่อนจะค้าง
+export const videoSrc = (x: ShopVideo) =>
+  HOST ? `${HOST}/v/${x.v}/master.m3u8` : file(x, x.s);
+
+export const videoHd = (x: ShopVideo) =>
+  HOST ? undefined : x.hd ? file(x, x.hd) : undefined;   // HLS ปรับเองไม่ต้องมีลิงก์ HD แยก
 
 // รูปปกวิ่งผ่าน Netlify Image CDN — ย่อตามจอจริงแล้วแปลง WebP ให้เอง
 export function videoPoster(x: ShopVideo, w = 480) {
-  if (!x.pv) return undefined;
-  const url = `${CDN}/s/files/${SHOP}/files/preview_images/${x.v}.thumbnail.0000000000.jpg?v=${x.pv}`;
+  const url = HOST
+    ? `${HOST}/v/${x.v}/poster.jpg`
+    : x.pv
+      ? `${CDN}/s/files/${SHOP}/files/preview_images/${x.v}.thumbnail.0000000000.jpg?v=${x.pv}`
+      : undefined;
+  if (!url) return undefined;
   return `/.netlify/images?${new URLSearchParams({ url, w: String(w), q: "60" })}`;
 }
 
