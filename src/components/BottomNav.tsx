@@ -31,7 +31,7 @@ export default function BottomNav() {
   if (pathname?.startsWith("/products/")) return null;
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-steel-700 bg-white backdrop-blur">
+    <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] backdrop-blur">
       <div className="mx-auto flex max-w-lg">
         {items.map(({ href, label, icon: Icon }) => {
           const active = pathname === href;
