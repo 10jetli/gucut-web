@@ -66,6 +66,19 @@ src/
 > ถ้าจะย้าย ให้เลือกที่เก็บใหม่ก่อน (Cloudflare R2 / Bunny / YouTube) แล้วแก้ `videoSrc` กับ `videoPoster`
 > ใน `src/lib/videos.ts` จุดเดียว — ไม่ต้องรัน `scripts/gen-videos.mjs` ใหม่
 
+**ตามหาคลิปเพิ่ม — ค้นมาหมดแล้ว อย่าเสียเวลาค้นซ้ำ**
+เจ้าของร้านบอกว่าแอป Vizup มีคลิปแนวตั้งราว 500 ใบ แต่ในมือเรามี 347 ใบ ที่หายไปอยู่ในแอป Vizup เอง
+ค้นมาแล้วทุกทาง ไม่เจอที่อื่นอีก:
+- Shopify Files (bulk ทั้ง 7,260 ไฟล์) → วิดีโอ 562 ใบ · ยาว ≥5 วิ 459 ใบ · แนวตั้ง 347 ใบ
+- media ที่ติดกับสินค้า 113 รายการ → เป็นชุดเดียวกับใน Files ทั้งหมด ไม่มีใบใหม่
+- GenericFile 396 ไฟล์ → Vizup อัปแต่ **รูป** .avif 330 ใบ ไม่มีวิดีโอ
+- shop metafield `vizup.videos` → เป็นแค่รายชื่อ hash ที่ mirror มาจาก Shopify Files (ชุดเดิม)
+- Cloudflare Worker `gucut-pwa` → โค้ดที่ deploy อยู่ **ไม่มี route `/vizup-api/` แล้ว** (เหลือแต่ auth + pwa-api)
+  ถึงแม้ `snippets/vizup-popup.liquid` ในธีมเก่าจะยังอ้างถึงอยู่
+- metaobject / metafield ของสินค้า / app embed ในธีมหลัก → ไม่มีข้อมูลผูกคลิป-สินค้าของ Vizup
+
+จะได้คลิปที่เหลือต้องให้ Vizup ดันเข้า Shopify Files ก่อน แล้วรัน `scripts/gen-videos.mjs` ใหม่
+
 ## สถานะ Phase 1 — ครบแล้ว ✅
 - [x] หน้าแรก feed สไตล์ Shopee (แบนเนอร์ / Flash Sale countdown / grid สินค้า)
 - [x] หน้าสินค้าเต็ม: รูปสไลด์ / variant / ปุ่มวิดีโอ / สเปกตาราง / ปุ่มซื้อติดล่างจอ
