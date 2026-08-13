@@ -8,7 +8,7 @@ import { formatPrice, type Product } from "@/lib/types";
 // feed วิดีโอแนวตั้งแบบ TikTok — เลื่อนทีละคลิป (snap)
 export default function VideoFeed({ products }: { products: Product[] }) {
   return (
-    <main className="no-scrollbar h-[calc(100dvh-57px)] snap-y snap-mandatory overflow-y-auto bg-black">
+    <main className="no-scrollbar h-[calc(100dvh-57px-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-auto bg-black">
       {videos.map((v, i) => {
         const product = products.find((p) => p.h === v.productHandle);
         return (

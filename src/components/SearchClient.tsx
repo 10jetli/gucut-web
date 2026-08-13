@@ -100,7 +100,7 @@ export default function SearchClient() {
   return (
     <main className="pb-20">
       {/* หัวค้นหา — ช่องพิมพ์จริง */}
-      <header className="sticky top-0 z-40 bg-safety px-3 pb-2 pt-3 shadow-sm">
+      <header className="sticky top-0 z-40 bg-safety px-3 pb-2 shadow-sm pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <div className="flex items-center gap-2">
           <Link href="/" aria-label="กลับหน้าแรก" className="shrink-0 px-1 text-xl text-white">‹</Link>
           <div className="flex flex-1 items-center gap-2 rounded-sm bg-white px-2.5 py-1.5">
