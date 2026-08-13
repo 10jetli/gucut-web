@@ -52,6 +52,7 @@ src/
 - สินค้า 2,482 รายการ → `src/lib/catalog.ts` + `src/data/`
 - รูปสินค้า 5,595 ไฟล์ → `public/img/` · รูปรีวิว 3,117 ไฟล์ → `public/rv/`
 - สต็อก/ราคาสด → ZORT ผ่าน `netlify/functions/stock.mjs`
+- คลิปสินค้า 113 คลิป → `src/data/videos.json` (**ตัวไฟล์ .mp4 ยังอยู่บน Shopify CDN** ดูด้านล่าง)
 
 สคริปต์ใน `scripts/` ที่มีชื่อ Shopify เป็นเครื่องมือ **ย้ายข้อมูลออกมาครั้งเดียว** ไม่ได้รันตอนเว็บทำงาน
 
@@ -60,19 +61,23 @@ src/
 > เอาไฟล์มาวางที่ `public/img/cover-all.webp` แล้วแก้ `HERO` เป็น `/img/cover-all.webp` = จบ ไม่เหลือ Shopify แล้ว
 > (ตัวแบนเนอร์ผ่ารูปจัตุรัสใบเดียวเป็นครึ่งบน/ครึ่งล่างด้วย Netlify Image CDN — ใช้กับไฟล์ในเครื่องได้เหมือนกัน)
 
+> ⚠️ **คลิปวิดีโอ** — รายชื่อคลิปอยู่ในโปรเจกต์แล้ว (`src/data/videos.json`) แต่ **ตัวไฟล์ .mp4 ยังอยู่บน Shopify CDN**
+> เอามาเก็บเองไม่ไหวเพราะ 113 คลิปรวมหลายร้อย MB (โปรเจกต์นี้มีรูปอยู่แล้ว 289MB)
+> ถ้าจะย้าย ให้เลือกที่เก็บใหม่ก่อน (Cloudflare R2 / Bunny / YouTube) แล้วแก้ `videoSrc` กับ `videoPoster`
+> ใน `src/lib/videos.ts` จุดเดียว — ไม่ต้องรัน `scripts/gen-videos.mjs` ใหม่
+
 ## สถานะ Phase 1 — ครบแล้ว ✅
 - [x] หน้าแรก feed สไตล์ Shopee (แบนเนอร์ / Flash Sale countdown / grid สินค้า)
 - [x] หน้าสินค้าเต็ม: รูปสไลด์ / variant / ปุ่มวิดีโอ / สเปกตาราง / ปุ่มซื้อติดล่างจอ
 - [x] ตะกร้า localStorage + badge ที่ bottom nav
 - [x] เช็คเอาต์: ฟอร์มที่อยู่ → QR PromptPay (gen เองใน `lib/promptpay.ts`) → แนบสลิป → POST `NEXT_PUBLIC_ORDER_WEBHOOK_URL`
-- [x] หน้าวิดีโอ feed แนวตั้ง — ใส่ id คลิปจริงใน `src/lib/videos.ts` (ดูวิธีในไฟล์)
+- [x] หน้าวิดีโอ feed แนวตั้ง — คลิปจริง 113 คลิป จาก 101 สินค้า (`src/data/videos.json`)
 - [x] หมวดหมู่ + ตัวกรองราคา
 
 ## สิ่งที่เจ้าของร้านต้องใส่ก่อนเปิดใช้จริง
 1. `NEXT_PUBLIC_PROMPTPAY_ID` — เบอร์ PromptPay รับเงิน
 2. `NEXT_PUBLIC_ORDER_WEBHOOK_URL` — webhook จาก Make.com
-3. id คลิป YouTube Shorts ใน `src/lib/videos.ts`
-4. ตัวเลข "ขายแล้ว" และราคาก่อนลดจริงใน `src/lib/catalog.ts`
+3. ตัวเลข "ขายแล้ว" และราคาก่อนลดจริงใน `src/lib/catalog.ts`
 
 ## Phase 2
 > **ตัดสินใจแล้ว: เลิกใช้ Shopify** — ห้ามเสนอให้ต่อ Storefront API หรือย้ายกลับไป Shopify
