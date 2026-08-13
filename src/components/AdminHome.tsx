@@ -103,7 +103,13 @@ export default function AdminHome() {
   // ---------- ล็อกอินแล้ว ----------
   const menu = [
     { href: "/admin/chat/", title: "แชทลูกค้า", note: "อ่าน / ตอบข้อความจากหน้าเว็บ", badge: unread, icon: "chat" as const },
+    { href: "/admin/videos/", title: "เลือกคลิป", note: "เลือกว่าคลิปไหนขึ้นหน้าวิดีโอ", badge: 0, icon: "video" as const },
   ];
+
+  const ICON = {
+    chat: "M21 12a8 8 0 01-11.6 7.1L4 20l1-4.5A8 8 0 1121 12z",
+    video: "M3.5 7.5h11a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1v-7a1 1 0 011-1zm12 3.5l5-3v9l-5-3z",
+  };
 
   return (
     <main className="min-h-[100dvh] bg-steel-900">
@@ -127,7 +133,7 @@ export default function AdminHome() {
               <Link href={m.href} className="flex items-center gap-3 px-3.5 py-4">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-sm bg-safety-tint">
                   <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-safety stroke-[1.7]">
-                    <path d="M21 12a8 8 0 01-11.6 7.1L4 20l1-4.5A8 8 0 1121 12z" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d={ICON[m.icon]} strokeLinecap="round" strokeLinejoin="round" />
                   </svg>
                 </span>
                 <span className="min-w-0 flex-1">
