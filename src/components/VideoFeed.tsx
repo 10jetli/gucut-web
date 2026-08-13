@@ -16,6 +16,16 @@ const FWD = 2;
 const POSTER = 8;
 
 const SOUND_KEY = "gucut-video-sound";
+const SEEN_KEY = "gucut-video-seen";
+
+// ดูคลิปค้างไว้นานเท่านี้ถือว่า "ดูแล้ว" — ครั้งหน้าจะไม่เอามาวนซ้ำต้นฟีด
+const SEEN_SEC = 5;
+// จำได้สูงสุดกี่ใบ กันไม่ให้ localStorage บวม (ร้านจะมีคลิปเป็นพัน)
+const SEEN_MAX = 3000;
+
+const readSeen = (): string[] => {
+  try { return JSON.parse(localStorage.getItem(SEEN_KEY) ?? "[]"); } catch { return []; }
+};
 
 // วางกล่องคลิปในหน้าทีละกี่ใบ — เลื่อนใกล้หมดค่อยเติมชุดถัดไป
 // ถ้าวางครบทุกใบตั้งแต่แรก พอคลิปขึ้นหลักพันมือถือจะอืดตั้งแต่เปิดหน้า
@@ -25,8 +35,10 @@ const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะ�
 export default function VideoFeed({ first, total }: { first: FeedItem[]; total: number }) {
   const rootRef = useRef<HTMLElement>(null);
   const [items, setItems] = useState(first);
+  const seen = useRef<Set<string>>(new Set());
   const [shown, setShown] = useState(() => Math.min(CHUNK, first.length));
   const loading = useRef(false);
+  const itemsRef = useRef(first);
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
   const [muted, setMuted] = useState(true);
@@ -43,6 +55,8 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     for (const el of players.current.values()) el.muted = m;
     if (remember) localStorage.setItem(SOUND_KEY, m ? "off" : "on");
   }, []);
+
+  itemsRef.current = items;
 
   const register = useCallback((i: number, el: HTMLVideoElement | null) => {
     // ต้องตั้งตอนนี้ ไม่งั้นคลิปใบที่เพิ่งโผล่มาจะเปิดเสียงค้างไว้ทั้งที่ทั้งฟีดปิดเสียงอยู่
@@ -82,6 +96,23 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       .catch(() => { loading.current = false; });   // เน็ตสะดุด ครั้งหน้าค่อยลองใหม่
   }, [active, shown, items.length, total]);
 
+  // เคยดูคลิปไปแล้ว = ไปเอารายการเต็มมาเรียงใหม่ ให้ใบที่ยังไม่เคยดูขึ้นก่อน
+  // ลูกค้าที่กลับมาครั้งที่สองจะได้เจอของใหม่ทันที ไม่ใช่คลิปเดิมที่เพิ่งดูไป
+  // (ใบที่ดูแล้วไม่ได้ถูกลบ แค่ย้ายไปต่อท้าย เลื่อนไปดูซ้ำได้)
+  useEffect(() => {
+    const list = readSeen();
+    seen.current = new Set(list);
+    if (!list.length) return;
+    fetch("/feed.json")
+      .then((r) => r.json())
+      .then((all: FeedItem[]) => {
+        const fresh = all.filter((x) => !seen.current.has(x.v.v));
+        const old = all.filter((x) => seen.current.has(x.v.v));
+        setItems([...fresh, ...old]);
+      })
+      .catch(() => {});   // เน็ตสะดุด ใช้ชุดที่ฝังมากับหน้าไปก่อน
+  }, []);
+
   // ตั้งต้นคือ "เอาเสียง" เว้นแต่ลูกค้าเคยกดปิดไว้เอง
   // ถ้าเบราว์เซอร์ไม่ยอมให้เปิดเสียงเอง เดี๋ยวโค้ดข้างล่างจะถอยไปเล่นแบบเงียบให้เอง
   useEffect(() => {
@@ -92,6 +123,14 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   useEffect(() => {
     for (const [i, el] of players.current) {
       if (i !== active && !el.paused) {
+        // ดูค้างไว้นานพอ = ถือว่าดูแล้ว จดไว้ก่อนกรอกลับต้นคลิป
+        const id = itemsRef.current[i]?.v.v;
+        if (id && el.currentTime >= Math.min(SEEN_SEC, (el.duration || SEEN_SEC) * 0.6)) {
+          seen.current.add(id);
+          const keep = [...seen.current].slice(-SEEN_MAX);
+          seen.current = new Set(keep);
+          try { localStorage.setItem(SEEN_KEY, JSON.stringify(keep)); } catch { /* เต็ม ข้ามไป */ }
+        }
         el.pause();
         el.currentTime = 0;
       }
