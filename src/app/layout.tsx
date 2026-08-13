@@ -11,6 +11,8 @@ export const metadata: Metadata = {
     "ร้าน GUCUT ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่ บาร์ อะไหล่ครบทุกรุ่น ส่งฟรีทั่วไทย",
   manifest: "/manifest.webmanifest",
   appleWebApp: { capable: true, title: "GUCUT", statusBarStyle: "black-translucent" },
+  // iOS ใช้ apple-touch-icon เป็นไอคอนบนหน้าจอโฮม ไม่ได้อ่านจาก manifest
+  icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };
 
 export const viewport: Viewport = {

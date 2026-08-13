@@ -70,7 +70,7 @@ export default function SocialLink() {
 
   return (
     <main className="flex min-h-[100dvh] flex-col bg-steel-800">
-      <header className="flex items-center gap-1 border-b border-steel-700 px-1 py-2.5">
+      <header className="flex items-center gap-1 border-b border-steel-700 px-1 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
         <Link href="/account/login/" aria-label="ย้อนกลับ" className="-m-1 p-3 text-safety active:opacity-60">
           <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-[2]">
             <path d="M20 12H4m0 0l7-7m-7 7l7 7" strokeLinecap="round" strokeLinejoin="round" />

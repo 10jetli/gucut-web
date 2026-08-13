@@ -219,7 +219,7 @@ export default function AdminChat() {
   // ---------- รายการห้องแชท ----------
   return (
     <main className="mx-auto min-h-screen max-w-lg bg-steel-900">
-      <header className="sticky top-0 z-10 flex items-center gap-2 bg-ink px-3 py-3">
+      <header className="sticky top-0 z-10 flex items-center gap-2 bg-ink px-3 pb-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
         <Link href="/admin/" aria-label="กลับหน้ารวมหลังร้าน" className="-ml-1 p-1 text-xl leading-none text-white">‹</Link>
         <span className="text-[14px] font-semibold text-white">แชทลูกค้า</span>
         {totalUnread > 0 && (

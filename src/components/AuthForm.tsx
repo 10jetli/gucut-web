@@ -80,7 +80,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
   return (
     <main className="flex min-h-[100dvh] flex-col bg-steel-800">
       {/* ---------- แถบหัว ---------- */}
-      <header className="flex items-center gap-1 border-b border-steel-700 px-1 py-2.5">
+      <header className="flex items-center gap-1 border-b border-steel-700 px-1 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.625rem)]">
         <button
           onClick={() => (step === 2 ? setStep(1) : router.back())}
           aria-label="ย้อนกลับ"
