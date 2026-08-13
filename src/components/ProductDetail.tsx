@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import SectionHead from "@/components/SectionHead";
 import { useState, type ReactNode } from "react";
 import VariantSheet from "./VariantSheet";
 import ChatSheet from "./ChatSheet";
@@ -151,7 +152,7 @@ export default function ProductDetail({
       {/* คำอธิบาย */}
       {p.d && (
         <section className="mt-2 bg-steel-800 px-3 py-3">
-          <h2 className="mb-2 font-heading text-base font-semibold">รายละเอียดสินค้า</h2>
+          <SectionHead title="รายละเอียดสินค้า" bare />
           <div className="space-y-1 text-[13px] leading-relaxed text-[#4a4a4a]">
             {p.d.split("•").map((line, n) =>
               line.trim() ? <p key={n}>• {line.trim()}</p> : null
@@ -165,7 +166,7 @@ export default function ProductDetail({
       {/* สินค้าใกล้เคียง */}
       {related.length > 0 && (
         <section className="mt-3 px-3">
-          <h2 className="mb-2 font-heading text-base font-semibold">สินค้าที่เกี่ยวข้อง</h2>
+          <SectionHead title="สินค้าที่เกี่ยวข้อง" bare />
           <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
             {related.map((r) => (
               <Link
