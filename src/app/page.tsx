@@ -4,6 +4,7 @@ import BannerSlider from "@/components/BannerSlider";
 import FlashSale from "@/components/FlashSale";
 import CategoryNav from "@/components/CategoryNav";
 import ProductCard from "@/components/ProductCard";
+import SectionHead from "@/components/SectionHead";
 import { bestSellers, collections, flashSale, inCollection, sellable } from "@/lib/catalog";
 
 // หน้าแรก — feed สไตล์ Shopee / TikTok Shop
@@ -29,14 +30,9 @@ export default function HomePage() {
       <FlashSale items={flash} />
 
       {rows.map(({ c, items }) => (
-        <section key={c.h} className="mt-4 px-3">
-          <div className="mb-2 flex items-baseline justify-between">
-            <h2 className="font-heading text-base font-bold">{c.t}</h2>
-            <Link href={`/c/${encodeURIComponent(c.h)}/`} className="text-xs text-safety">
-              ดูทั้งหมด ({c.n}) ›
-            </Link>
-          </div>
-          <div className="no-scrollbar flex gap-2 overflow-x-auto pb-1">
+        <section key={c.h} className="mt-5">
+          <SectionHead title={c.t} href={`/c/${encodeURIComponent(c.h)}/`} count={c.n} />
+          <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-1">
             {items.map((p) => (
               <div key={p.id} className="w-36 shrink-0">
                 <ProductCard product={p} />
@@ -46,25 +42,34 @@ export default function HomePage() {
         </section>
       ))}
 
-      <section className="mt-5 px-3">
-        <h2 className="font-heading text-lg font-bold">
-          สินค้าแนะนำ <span className="text-safety">&#128293;</span>
-        </h2>
-        <div className="mt-2 grid grid-cols-2 gap-2">
+      <section className="mt-6">
+        <SectionHead title="สินค้าแนะนำ" />
+        <div className="grid grid-cols-2 gap-2 px-3">
           {best.map((p) => (
             <ProductCard key={p.id} product={p} />
           ))}
         </div>
         <Link
           href="/categories/"
-          className="mt-3 block rounded-lg border border-steel-700 py-2.5 text-center text-sm text-[#1a1a1a]"
+          className="mx-3 mt-3 block rounded-sm border-2 border-safety py-2.5 text-center text-sm font-medium text-safety active:bg-safety active:text-white"
         >
           ดูสินค้าทั้งหมด 2,482 รายการ ›
         </Link>
       </section>
 
-      <footer className="mt-8 px-3 pb-4 text-center text-xs text-steel-600">
-        GUCUT — เลื่อยยนต์ NEWWAVE / KingKong ของแท้ &middot; new78.com
+      {/* ท้ายเว็บ — บล็อกเข้มปิดท้าย ใช้เส้นส้มเดียวกับหัวเว็บ */}
+      <footer className="mt-8 border-t-[3px] border-safety bg-carbon px-5 py-7 text-center">
+        <p className="font-heading text-[26px] font-extrabold italic leading-none tracking-tight">
+          <span className="text-safety">GU</span><span className="text-white">CUT</span>
+        </p>
+        <p className="mt-2.5 text-[13px] font-medium text-white">
+          เลื่อยยนต์ NEWWAVE / KingKong ของแท้
+        </p>
+        <p className="mt-1 text-[12px] leading-relaxed text-[#a9a9a9]">
+          โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งฟรีทั่วไทย
+        </p>
+        <span aria-hidden className="mx-auto mt-5 block h-px w-10 bg-safety" />
+        <p className="mt-4 text-[11px] text-[#8a8a8a]">new78.com</p>
       </footer>
     </main>
   );
