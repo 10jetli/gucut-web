@@ -3,18 +3,18 @@
 //   POST   {subscription}     สมัครเครื่องนี้   (ต้องมี x-admin-key)
 //   DELETE {endpoint}         ยกเลิกเครื่องนี้  (ต้องมี x-admin-key)
 import { vapid, addSub, removeSub, listSubs, pushToAdmins } from "../lib/push.mjs";
+import { adminGate } from "../lib/admin-gate.mjs";
 
-export default async function handler(req) {
-  const adminKey = process.env.CHAT_ADMIN_KEY || "";
-  const sent = req.headers.get("x-admin-key") || "";
-  const ok = adminKey.length > 0 && sent === adminKey;
-
+export default async function handler(req, context) {
+  // ขอกุญแจสาธารณะไม่ต้องใช้รหัส ตรวจก่อนเข้าด่านจะได้ไม่โดนนับครั้งที่ผิดฟรี ๆ
   if (req.method === "GET") {
     const k = await vapid();
     return json({ key: k.publicKey });
   }
 
-  if (!ok) return json({ error: "unauthorized" }, 401);
+  const gate = await adminGate(req, context);
+  if (gate.deny) return gate.deny;
+  if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   if (req.method === "POST") {
     let body;

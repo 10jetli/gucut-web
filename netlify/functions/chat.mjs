@@ -17,6 +17,7 @@
 //   CHAT_NOTIFY_URL  (ไม่บังคับ) ยิง POST ไปที่อื่นเพิ่ม เช่น Make.com
 import { getStore } from "@netlify/blobs";
 import { pushToAdmins } from "../lib/push.mjs";
+import { adminGate } from "../lib/admin-gate.mjs";
 
 const MAX_TEXT = 2000;
 const MAX_MSGS = 300;
@@ -24,12 +25,11 @@ const clean = (s, n) => String(s ?? "").replace(/\s+/g, " ").trim().slice(0, n);
 
 export default async function handler(req, context) {
   const url = new URL(req.url);
-  const adminKey = process.env.CHAT_ADMIN_KEY || "";
   // รหัสร้านส่งมาทาง header ไม่ใช่ query string — กันรหัสไปโผล่ใน log
-  const sent = req.headers.get("x-admin-key") || "";
-  const wantsAdmin = sent.length > 0;
-  const asAdmin = adminKey.length > 0 && sent === adminKey;
-  if (wantsAdmin && !asAdmin) return json({ error: "unauthorized" }, 401);
+  // ด่านตรวจอยู่ที่ lib/admin-gate.mjs — มีกันเดารหัสรัว ๆ ให้ด้วย
+  const gate = await adminGate(req, context);
+  if (gate.deny) return gate.deny;
+  const asAdmin = gate.ok;
 
   // ---------- เช็คสุขภาพระบบ (ไม่เปิดเผยค่าลับ) ----------
   if (req.method === "GET" && url.searchParams.get("health") === "1") {
