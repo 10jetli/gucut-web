@@ -9,38 +9,49 @@ import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 
-// หน้าสั่งซื้อแบบ Shopee — เห็นทุกอย่างในหน้าเดียว แล้วกดสั่งซื้อจากแถบล่าง
-//   order    ที่อยู่ / รายการสินค้า / ช่องทางชำระเงิน / สรุปยอด
+// หน้าสั่งซื้อแบบ Shopee — เห็นทุกอย่างในหน้าเดียว แล้วกดเช็คเอาต์จากแถบล่าง
+//   order    ที่อยู่ / สินค้า (ปรับจำนวนได้) / หมายเหตุ / ใบกำกับภาษี / การจัดส่ง /
+//            ช่องทางชำระเงิน / สรุปยอด
 //   pay      เฉพาะคนจ่ายด้วย QR — สแกนจ่ายแล้วแนบสลิป (เก็บปลายทางข้ามขั้นนี้)
 //   done     สั่งซื้อสำเร็จ
 type Step = "order" | "pay" | "done";
-type Pay = "promptpay" | "cod";
+type Pay = "cod" | "promptpay";
 
 interface Address {
-  name: string;
-  phone: string;
-  address: string;
-  province: string;
-  zip: string;
-  note: string;
+  name: string; phone: string; address: string; province: string; zip: string;
+}
+interface TaxInfo {
+  name: string; taxId: string; address: string;
 }
 
 const PROMPTPAY_ID = process.env.NEXT_PUBLIC_PROMPTPAY_ID ?? "";
 const WEBHOOK_URL = process.env.NEXT_PUBLIC_ORDER_WEBHOOK_URL ?? "";
 
-// ค่าจัดส่ง / ค่าบริการเก็บเงินปลายทาง — ร้านส่งฟรีทั่วไทยจึงเป็น 0 ทั้งคู่
-// ถ้าวันหนึ่งอยากคิดเงินเพิ่ม แก้ตัวเลขสองบรรทัดนี้ที่เดียว หน้าสรุปยอดขึ้นให้เอง
-const SHIPPING_FEE = 0;
-const COD_FEE = 0;
+// ---------------------------------------------------------------------------
+// ตัวเลขเรื่องจัดส่ง — แก้ที่นี่ที่เดียว หน้าสรุปยอดกับกล่องจัดส่งขึ้นตามให้เอง
+// ---------------------------------------------------------------------------
+const SHIPPING_FEE: number = 0;        // ค่าส่งที่เก็บจริง (ร้านส่งฟรีทั่วไทย)
+const SHIPPING_LIST: number = 0;       // ค่าส่งปกติที่จะขีดฆ่าโชว์ข้าง ๆ · 0 = ไม่โชว์
+                               // ⚠️ ใส่เฉพาะราคาที่เก็บจริงถ้าไม่ส่งฟรี ห้ามใส่เลขมั่ว
+const COD_FEE: number = 0;             // ค่าบริการเก็บเงินปลายทาง
+const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
+const SHIP_MAX_DAYS = 4;
+const SHIP_NAME = "ส่งธรรมดาในประเทศ";
+const CARRIER = "";            // ชื่อบริษัทขนส่ง เช่น "Flash Express" · ว่าง = ไม่โชว์
+
+const DAY = 24 * 60 * 60 * 1000;
+const thaiDate = (d: Date) =>
+  d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
 export default function CheckoutView() {
   const [step, setStep] = useState<Step>("order");
   const [items, setItems] = useState<CartItem[]>([]);
-  const [addr, setAddr] = useState<Address>({
-    name: "", phone: "", address: "", province: "", zip: "", note: "",
-  });
+  const [addr, setAddr] = useState<Address>({ name: "", phone: "", address: "", province: "", zip: "" });
   const [editAddr, setEditAddr] = useState(true);
-  const [pay, setPay] = useState<Pay>("promptpay");
+  const [note, setNote] = useState("");
+  const [editNote, setEditNote] = useState(false);
+  const [tax, setTax] = useState<TaxInfo | null>(null);
+  const [pay, setPay] = useState<Pay>("cod");
   const [qr, setQr] = useState("");
   const [slip, setSlip] = useState<{ name: string; data: string } | null>(null);
   const [sending, setSending] = useState(false);
@@ -48,8 +59,15 @@ export default function CheckoutView() {
   const [error, setError] = useState("");
   const [user, setUser] = useState<User | null>(null);
   const [remember, setRemember] = useState(true);
+  const [eta, setEta] = useState("");
 
   useEffect(() => setItems(getCart()), []);
+
+  // ช่วงวันที่ส่งถึงโดยประมาณ — คิดตอนเปิดหน้าเท่านั้น ไม่งั้น HTML ฝั่ง server ไม่ตรงกับ client
+  useEffect(() => {
+    const now = Date.now();
+    setEta(`${thaiDate(new Date(now + SHIP_MIN_DAYS * DAY))} – ${thaiDate(new Date(now + SHIP_MAX_DAYS * DAY))}`);
+  }, []);
 
   // ล็อกอินอยู่แล้วก็เติมที่อยู่ที่เคยบันทึกไว้ให้เลย ไม่ต้องพิมพ์ใหม่
   useEffect(() => {
@@ -59,15 +77,13 @@ export default function CheckoutView() {
       setAddr((a) => {
         if (a.name || a.address) return a;   // พิมพ์ไปแล้วห้ามทับ
         const next = {
-          ...a,
           name: u.addr?.name || u.name || "",
           phone: u.addr?.phone || u.phone || "",
           address: u.addr?.address || "",
           province: u.addr?.province || "",
           zip: u.addr?.zip || "",
         };
-        // ที่อยู่ครบอยู่แล้ว → พับเก็บให้เหมือน Shopee ไม่ต้องเห็นฟอร์มยาว ๆ
-        if (ok(next)) setEditAddr(false);
+        if (ok(next)) setEditAddr(false);    // ครบแล้วก็พับเก็บให้เหมือน Shopee
         return next;
       });
     };
@@ -75,17 +91,15 @@ export default function CheckoutView() {
     fetchMe().then(fill);
   }, []);
 
-  const valid0 = ok(addr);
+  const valid = ok(addr);
   useEffect(() => {
-    if (valid0) setError((e) => (e.startsWith("กรอกที่อยู่") ? "" : e));
-  }, [valid0]);
+    if (valid) setError((e) => (e.startsWith("กรอกที่อยู่") ? "" : e));
+  }, [valid]);
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const codFee = pay === "cod" ? COD_FEE : 0;
   const total = subtotal + SHIPPING_FEE + codFee;
-  const valid = valid0;
 
-  // สร้างรูป QR เมื่อเข้าขั้นชำระเงิน
   useEffect(() => {
     if (step === "pay" && PROMPTPAY_ID) {
       QRCode.toDataURL(promptPayPayload(PROMPTPAY_ID, total), { width: 280, margin: 2 })
@@ -94,7 +108,12 @@ export default function CheckoutView() {
     }
   }, [step, total]);
 
-  // อ่านไฟล์สลิปเป็น base64
+  // ปรับจำนวน / ลบของ ได้จากหน้านี้เลยแบบ Shopee
+  const setQty = (i: CartItem, q: number) => {
+    updateQty(i.productId, i.variant, q);
+    setItems(getCart());
+  };
+
   const onSlip = (f: File) => {
     if (f.size > 3 * 1024 * 1024) { setError("ไฟล์สลิปต้องไม่เกิน 3MB"); return; }
     const r = new FileReader();
@@ -103,7 +122,7 @@ export default function CheckoutView() {
     setError("");
   };
 
-  // กดสั่งซื้อจากแถบล่าง — โอนก่อนไปหน้า QR · เก็บปลายทางส่งออเดอร์เลย
+  // กดเช็คเอาต์จากแถบล่าง — โอนก่อนไปหน้า QR · เก็บปลายทางส่งออเดอร์เลย
   const placeOrder = () => {
     if (!valid) {
       setEditAddr(true);
@@ -112,16 +131,11 @@ export default function CheckoutView() {
       return;
     }
     setError("");
-    if (user && remember) {
-      saveProfile({
-        addr: { name: addr.name, phone: addr.phone, address: addr.address, province: addr.province, zip: addr.zip },
-      }).catch(() => {});
-    }
+    if (user && remember) saveProfile({ addr }).catch(() => {});
     if (pay === "cod") submit();
     else setStep("pay");
   };
 
-  // ส่งออเดอร์เข้า webhook (Make.com)
   const submit = async () => {
     setSending(true);
     setError("");
@@ -129,10 +143,13 @@ export default function CheckoutView() {
     const order = {
       orderId: id,
       createdAt: new Date().toISOString(),
-      customer: addr,
+      customer: { ...addr, note },
       items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty })),
-      payment: pay,                                   // "promptpay" | "cod"
-      paymentLabel: pay === "cod" ? "เก็บเงินปลายทาง" : "โอน/สแกน QR PromptPay",
+      payment: pay,                                   // "cod" | "promptpay"
+      paymentLabel: pay === "cod" ? "เก็บเงินปลายทาง" : "QR พร้อมเพย์",
+      shippingName: SHIP_NAME,
+      shippingEta: eta,
+      taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
       subtotal,
       shipping: SHIPPING_FEE,
       codFee,
@@ -149,8 +166,7 @@ export default function CheckoutView() {
         });
         if (!res.ok) throw new Error(`webhook ${res.status}`);
       } else {
-        // ยังไม่ตั้งค่า webhook — จำลองสำเร็จ (ตั้งค่าใน .env: NEXT_PUBLIC_ORDER_WEBHOOK_URL)
-        await new Promise((r) => setTimeout(r, 600));
+        await new Promise((r) => setTimeout(r, 600));   // ยังไม่ตั้ง webhook — จำลองสำเร็จ
       }
       setOrderId(id);
       items.forEach((i) => updateQty(i.productId, i.variant, 0));   // ล้างตะกร้า
@@ -204,19 +220,19 @@ export default function CheckoutView() {
   if (step === "pay") {
     return (
       <main className="pb-28">
-        <Head title="สแกนจ่ายด้วย PromptPay" onBack={() => setStep("order")} />
-        <div className="space-y-3 p-3">
-          <div className="rounded-xl bg-white p-4 text-center">
+        <Head title="QR พร้อมเพย์" onBack={() => setStep("order")} />
+        <div className="space-y-2 p-3">
+          <div className="rounded-lg bg-white p-4 text-center">
             {PROMPTPAY_ID && qr ? (
               <>
-                {/* QR ใช้ได้กับแอพธนาคารทุกแอพ ยอดใส่มาให้แล้ว */}
+                {/* QR ใช้ได้กับแอปธนาคารทุกแอป ยอดใส่มาให้แล้ว */}
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={qr} alt="PromptPay QR" className="mx-auto h-60 w-60" />
-                <p className="text-[13px] text-steel-300">PromptPay: {PROMPTPAY_ID}</p>
+                <img src={qr} alt="QR พร้อมเพย์" className="mx-auto h-60 w-60" />
+                <p className="text-[13px] text-steel-300">พร้อมเพย์: {PROMPTPAY_ID}</p>
               </>
             ) : (
               <p className="rounded-lg bg-amber-100 p-3 text-sm text-amber-800">
-                ⚠️ ร้านยังไม่ได้ตั้งค่าเบอร์ PromptPay
+                ⚠️ ร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์
                 <br />
                 (ใส่ NEXT_PUBLIC_PROMPTPAY_ID ที่ Netlify แล้ว deploy ใหม่)
               </p>
@@ -226,19 +242,14 @@ export default function CheckoutView() {
 
           <label className="block rounded-lg border-2 border-dashed border-steel-600 bg-white p-4 text-center text-sm text-steel-300">
             {slip ? <span className="font-semibold text-safety">📎 {slip.name} ✓</span> : <>📎 แตะเพื่อแนบสลิปโอนเงิน</>}
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={(e) => e.target.files?.[0] && onSlip(e.target.files[0])}
-            />
+            <input type="file" accept="image/*" className="hidden" onChange={(e) => e.target.files?.[0] && onSlip(e.target.files[0])} />
           </label>
           {error && <p className="text-center text-[13px] text-safety">{error}</p>}
         </div>
 
         <BottomBar
           total={total}
-          label={sending ? "กำลังส่งออเดอร์…" : "ยืนยันการสั่งซื้อ"}
+          label={sending ? "กำลังส่ง…" : "ยืนยันการสั่งซื้อ"}
           disabled={sending || !slip}
           hint={!slip ? "แนบสลิปก่อนกดยืนยัน" : undefined}
           onClick={submit}
@@ -249,37 +260,23 @@ export default function CheckoutView() {
 
   // -------------------------------------------------------------- หน้าสั่งซื้อ
   return (
-    <main className="pb-28">
+    <main className="bg-steel-900 pb-28">
       <Head title="สั่งซื้อ" />
 
-      {/* 1. ที่อยู่จัดส่ง */}
-      <section className="mb-2 bg-white">
-        <div className="flex items-start gap-2 border-b border-steel-700 px-3 py-2.5">
-          <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 fill-none stroke-safety stroke-2">
-            <path d="M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z" strokeLinejoin="round" />
-            <circle cx="12" cy="10" r="2.4" />
-          </svg>
-          <span className="flex-1 text-[13px] font-semibold text-[#1a1a1a]">ที่อยู่จัดส่ง</span>
-          {!editAddr && (
-            <button onClick={() => setEditAddr(true)} className="text-[13px] font-semibold text-safety">
-              แก้ไข
-            </button>
-          )}
-        </div>
-
+      {/* ที่อยู่จัดส่ง */}
+      <Card>
         {editAddr ? (
           <div className="space-y-2.5 p-3">
+            <p className="text-[13px] font-semibold text-[#1a1a1a]">ที่อยู่จัดส่ง</p>
             {user ? (
-              <label className="flex items-center gap-2 rounded-lg bg-safety-tint px-3 py-2">
+              <label className="flex items-center gap-2 rounded-sm bg-safety-tint px-3 py-2">
                 <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="h-4 w-4 accent-safety" />
                 <span className="text-[12px] text-ink-700">บันทึกที่อยู่นี้ไว้ ครั้งหน้าไม่ต้องพิมพ์ใหม่</span>
               </label>
             ) : (
-              <div className="flex items-center gap-2 rounded-lg bg-safety-tint px-3 py-2">
+              <div className="flex items-center gap-2 rounded-sm bg-safety-tint px-3 py-2">
                 <span className="flex-1 text-[12px] text-ink-700">มีบัญชีแล้ว? เข้าสู่ระบบแล้วที่อยู่จะเติมให้เอง</span>
-                <Link href="/account/login/?next=/checkout" className="shrink-0 text-[12px] font-semibold text-safety">
-                  เข้าสู่ระบบ
-                </Link>
+                <Link href="/account/login/?next=/checkout" className="shrink-0 text-[12px] font-semibold text-safety">เข้าสู่ระบบ</Link>
               </div>
             )}
             <Field label="ชื่อ-นามสกุล ผู้รับ" value={addr.name} onChange={(v) => setAddr({ ...addr, name: v })} />
@@ -289,98 +286,155 @@ export default function CheckoutView() {
               <Field label="จังหวัด" value={addr.province} onChange={(v) => setAddr({ ...addr, province: v })} />
               <Field label="รหัสไปรษณีย์" value={addr.zip} inputMode="numeric" onChange={(v) => setAddr({ ...addr, zip: v })} />
             </div>
-            <Field label="หมายเหตุถึงร้าน (ถ้ามี)" value={addr.note} onChange={(v) => setAddr({ ...addr, note: v })} />
             {valid && (
-              <button
-                onClick={() => setEditAddr(false)}
-                className="w-full rounded-sm border border-safety py-2 text-[13px] font-semibold text-safety"
-              >
+              <button onClick={() => setEditAddr(false)} className="w-full rounded-sm border border-safety py-2 text-[13px] font-semibold text-safety">
                 ใช้ที่อยู่นี้
               </button>
             )}
           </div>
         ) : (
-          <button onClick={() => setEditAddr(true)} className="block w-full px-3 py-2.5 text-left">
-            <p className="text-[13px] font-semibold text-[#1a1a1a]">
-              {addr.name} <span className="font-normal text-steel-300">{addr.phone}</span>
-            </p>
-            <p className="mt-0.5 text-[12px] leading-snug text-steel-300">
-              {addr.address} {addr.province} {addr.zip}
-            </p>
+          <button onClick={() => setEditAddr(true)} className="flex w-full items-start gap-2 p-3 text-left">
+            <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 fill-none stroke-safety stroke-2">
+              <path d="M12 21s7-5.5 7-11a7 7 0 10-14 0c0 5.5 7 11 7 11z" strokeLinejoin="round" />
+              <circle cx="12" cy="10" r="2.4" />
+            </svg>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-semibold text-[#1a1a1a]">
+                {addr.name} <span className="font-normal text-steel-300">({addr.phone})</span>
+              </span>
+              <span className="mt-0.5 block text-[12px] leading-snug text-steel-300">
+                {addr.address}
+                <br />
+                {addr.province} {addr.zip}
+              </span>
+            </span>
+            <Chevron />
           </button>
         )}
-      </section>
+      </Card>
 
-      {/* 2. รายการสินค้า */}
-      <section className="mb-2 bg-white">
-        <p className="border-b border-steel-700 px-3 py-2.5 text-[13px] font-semibold text-[#1a1a1a]">
-          รายการสินค้า ({items.reduce((s, i) => s + i.qty, 0)} ชิ้น)
-        </p>
+      {/* สินค้า — ปรับจำนวน / ลบได้จากหน้านี้เลย */}
+      <Card>
         {items.map((i) => (
           <div key={`${i.productId}-${i.variant}`} className="flex gap-2.5 border-b border-steel-800 p-3 last:border-0">
             <div className="relative h-16 w-16 shrink-0 overflow-hidden rounded border border-steel-700 bg-white">
               {i.image && <Image src={i.image} alt={i.title} fill sizes="64px" className="object-contain" />}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="clamp-2 text-[13px] leading-snug text-[#1a1a1a]">{i.title}</p>
-              {i.variant && i.variant !== "-" && (
-                <p className="mt-0.5 text-[11px] text-steel-300">ตัวเลือก: {i.variant}</p>
-              )}
-              <div className="mt-1 flex items-baseline justify-between">
-                <Price value={i.price} className="text-[13px] font-semibold text-safety" />
-                <span className="text-[12px] text-steel-300">×{i.qty}</span>
+              <Link href={`/products/${encodeURIComponent(i.handle)}`} className="clamp-2 block text-[13px] leading-snug text-[#1a1a1a]">
+                {i.title}
+              </Link>
+              {i.variant && i.variant !== "-" && <p className="mt-0.5 text-[11px] text-steel-300">{i.variant}</p>}
+              <div className="mt-1.5 flex items-center gap-2">
+                <Price value={i.price} className="flex-1 font-heading text-[15px] font-semibold text-safety" />
+                <Stepper qty={i.qty} onChange={(q) => setQty(i, q)} />
+                <button onClick={() => setQty(i, 0)} className="text-[12px] text-steel-300 underline">ลบ</button>
               </div>
             </div>
           </div>
         ))}
-      </section>
+      </Card>
 
-      {/* 3. ช่องทางชำระเงิน */}
-      <section className="mb-2 bg-white">
+      {/* หมายเหตุ + ใบกำกับภาษี */}
+      <Card>
+        {editNote ? (
+          <div className="space-y-2 p-3">
+            <p className="text-[13px] font-semibold text-[#1a1a1a]">หมายเหตุ</p>
+            <textarea
+              rows={3}
+              autoFocus
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="ฝากข้อความถึงร้านหรือบริษัทขนส่ง"
+              className="w-full rounded-sm border border-steel-700 px-2.5 py-2 text-[13px] outline-none focus:border-safety"
+            />
+            <button onClick={() => setEditNote(false)} className="w-full rounded-sm border border-safety py-2 text-[13px] font-semibold text-safety">
+              บันทึกหมายเหตุ
+            </button>
+          </div>
+        ) : (
+          <RowLink label="หมายเหตุ" value={note || "ฝากข้อความถึงร้านหรือบริษัทขนส่ง"} muted={!note} onClick={() => setEditNote(true)} />
+        )}
+        <TaxRow tax={tax} setTax={setTax} />
+      </Card>
+
+      {/* ตัวเลือกการจัดส่ง */}
+      <Card>
         <p className="border-b border-steel-700 px-3 py-2.5 text-[13px] font-semibold text-[#1a1a1a]">
-          ช่องทางชำระเงิน
+          ตัวเลือกการจัดส่ง
         </p>
-        <PayOption
-          on={pay === "promptpay"}
-          onClick={() => setPay("promptpay")}
-          title="โอน / สแกน QR PromptPay"
-          note="สแกนจ่ายด้วยแอปธนาคาร แล้วแนบสลิป — ร้านจัดส่งทันทีที่ตรวจสลิปเสร็จ"
-        />
+        <div className="m-3 rounded-sm border border-[#1f9254]/50 bg-[#1f9254]/[0.06] p-2.5">
+          <div className="flex items-center gap-2">
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#1f9254] stroke-[1.8]">
+              <path d="M3 6h11v9H3zM14 9h4l3 3v3h-7z" strokeLinejoin="round" />
+              <circle cx="7" cy="17.5" r="1.6" />
+              <circle cx="17" cy="17.5" r="1.6" />
+            </svg>
+            <span className="flex-1 text-[13px] font-semibold text-[#1f9254]">{eta || " "}</span>
+            {SHIPPING_LIST > SHIPPING_FEE && (
+              <span className="text-[12px] text-steel-300 line-through">฿{SHIPPING_LIST.toLocaleString("th-TH")}</span>
+            )}
+            <span className="text-[13px] font-semibold text-[#1f9254]">
+              {SHIPPING_FEE ? `฿${SHIPPING_FEE.toLocaleString("th-TH")}` : "ส่งฟรี"}
+            </span>
+          </div>
+          <p className="mt-0.5 text-[12px] text-steel-300">
+            {SHIP_NAME}
+            {CARRIER && ` · ${CARRIER}`}
+          </p>
+        </div>
+      </Card>
+
+      {/* ช่องทางการชำระเงิน */}
+      <Card>
+        <p className="border-b border-steel-700 px-3 py-2.5 text-[13px] font-semibold text-[#1a1a1a]">
+          ช่องทางการชำระเงิน
+        </p>
         <PayOption
           on={pay === "cod"}
           onClick={() => setPay("cod")}
+          badge="COD"
           title="เก็บเงินปลายทาง"
           note="จ่ายเงินสดตอนรับของที่บ้าน ร้านจะโทรยืนยันก่อนส่ง"
         />
-      </section>
+        <PayOption
+          on={pay === "promptpay"}
+          onClick={() => setPay("promptpay")}
+          badge="QR"
+          title="QR พร้อมเพย์"
+          note="สแกนจ่ายด้วยแอปธนาคาร แล้วแนบสลิป — ร้านจัดส่งทันทีที่ตรวจสลิปเสร็จ"
+        />
+      </Card>
 
-      {/* 4. สรุปยอด */}
-      <section className="mb-2 bg-white">
+      {/* สรุปการชำระเงิน */}
+      <Card>
         <p className="border-b border-steel-700 px-3 py-2.5 text-[13px] font-semibold text-[#1a1a1a]">
           สรุปการชำระเงิน
         </p>
         <div className="space-y-1.5 px-3 py-2.5 text-[13px]">
-          <Row label="ค่าสินค้า" value={subtotal} />
-          <Row label="ค่าจัดส่ง" value={SHIPPING_FEE ? SHIPPING_FEE : "ฟรี"} free={!SHIPPING_FEE} />
+          <Row label={`ค่าสินค้า (${items.reduce((s, i) => s + i.qty, 0)} ชิ้น)`} value={subtotal} />
+          <Row label="ค่าจัดส่ง" value={SHIPPING_FEE || "ฟรี"} free={!SHIPPING_FEE} />
           {codFee > 0 && <Row label="ค่าบริการเก็บเงินปลายทาง" value={codFee} />}
           <div className="flex items-center justify-between border-t border-steel-700 pt-2">
-            <span className="font-semibold text-[#1a1a1a]">ยอดที่ต้องชำระ</span>
+            <span className="font-semibold text-[#1a1a1a]">ยอดรวมทั้งหมด</span>
             <Price value={total} className="font-heading text-[17px] font-bold text-safety" />
           </div>
         </div>
-      </section>
+      </Card>
 
       {error && <p className="px-3 pb-2 text-center text-[13px] text-safety">{error}</p>}
 
       <BottomBar
         total={total}
-        label={sending ? "กำลังส่งออเดอร์…" : pay === "cod" ? "สั่งซื้อ" : "ไปชำระเงิน"}
+        label={sending ? "กำลังส่ง…" : pay === "cod" ? "สั่งซื้อ" : "เช็คเอาต์"}
         disabled={sending}
         onClick={placeOrder}
       />
     </main>
   );
 }
+
+// ------------------------------------------------------------------ ชิ้นส่วน
 
 const ok = (a: Address) =>
   !!a.name.trim() &&
@@ -389,11 +443,21 @@ const ok = (a: Address) =>
   !!a.province.trim() &&
   /^\d{5}$/.test(a.zip);
 
+const Card = ({ children }: { children: React.ReactNode }) => (
+  <section className="mb-2 bg-white">{children}</section>
+);
+
+const Chevron = () => (
+  <svg viewBox="0 0 24 24" className="mt-0.5 h-4 w-4 shrink-0 fill-none stroke-steel-600 stroke-2">
+    <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
 function Head({ title, onBack }: { title: string; onBack?: () => void }) {
   return (
     <header className="sticky top-0 z-40 flex items-center gap-2 border-b-[3px] border-safety bg-carbon px-3 pb-2.5 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
       {onBack && (
-        <button onClick={onBack} aria-label="ย้อนกลับ" className="-ml-1 p-1 text-white">
+        <button onClick={onBack} aria-label="ย้อนกลับ" className="-ml-1 p-1">
           <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-white stroke-2">
             <path d="M15 5l-7 7 7 7" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
@@ -404,21 +468,82 @@ function Head({ title, onBack }: { title: string; onBack?: () => void }) {
   );
 }
 
-// แถบสั่งซื้อติดล่างจอแบบ Shopee — ยอดรวมซ้าย ปุ่มส้มขวา
+// ปุ่ม − จำนวน + แบบ Shopee (ปรับได้จากหน้าสั่งซื้อเลย ไม่ต้องย้อนกลับไปตะกร้า)
+function Stepper({ qty, onChange }: { qty: number; onChange: (q: number) => void }) {
+  const btn = "flex h-7 w-7 items-center justify-center border border-steel-700 text-[15px] leading-none text-[#1a1a1a] disabled:text-steel-600";
+  return (
+    <span className="flex items-center">
+      <button onClick={() => onChange(qty - 1)} disabled={qty <= 1} aria-label="ลดจำนวน" className={btn + " rounded-l-sm"}>−</button>
+      <span className="flex h-7 min-w-9 items-center justify-center border-y border-steel-700 px-1 text-[13px]">{qty}</span>
+      <button onClick={() => onChange(qty + 1)} aria-label="เพิ่มจำนวน" className={btn + " rounded-r-sm"}>+</button>
+    </span>
+  );
+}
+
+function RowLink({
+  label, value, muted, onClick,
+}: { label: string; value: string; muted?: boolean; onClick: () => void }) {
+  return (
+    <button onClick={onClick} className="flex w-full items-center gap-2 border-b border-steel-800 px-3 py-2.5 text-left last:border-0">
+      <span className="shrink-0 text-[13px] text-[#1a1a1a]">{label}</span>
+      <span className={"min-w-0 flex-1 truncate text-right text-[12px] " + (muted ? "text-steel-300" : "text-[#1a1a1a]")}>
+        {value}
+      </span>
+      <Chevron />
+    </button>
+  );
+}
+
+// ใบกำกับภาษีแบบเต็มรูป — เก็บข้อมูลส่งไปกับออเดอร์ ร้านออกให้ทีหลัง
+function TaxRow({ tax, setTax }: { tax: TaxInfo | null; setTax: (t: TaxInfo | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [f, setF] = useState<TaxInfo>(tax ?? { name: "", taxId: "", address: "" });
+  const valid = f.name.trim() && /^\d{13}$/.test(f.taxId.replace(/\D/g, "")) && f.address.trim();
+
+  if (!open) {
+    return (
+      <RowLink
+        label="ใบกำกับภาษีแบบเต็มรูป"
+        value={tax ? tax.name : "ขอใบกำกับภาษี"}
+        muted={!tax}
+        onClick={() => setOpen(true)}
+      />
+    );
+  }
+  return (
+    <div className="space-y-2 border-t border-steel-800 p-3">
+      <p className="text-[13px] font-semibold text-[#1a1a1a]">ใบกำกับภาษีแบบเต็มรูป</p>
+      <Field label="ชื่อบริษัท / ชื่อผู้เสียภาษี" value={f.name} onChange={(v) => setF({ ...f, name: v })} />
+      <Field label="เลขประจำตัวผู้เสียภาษี (13 หลัก)" value={f.taxId} inputMode="numeric" onChange={(v) => setF({ ...f, taxId: v })} />
+      <Field label="ที่อยู่สำหรับออกใบกำกับภาษี" value={f.address} textarea onChange={(v) => setF({ ...f, address: v })} />
+      <div className="flex gap-2">
+        <button
+          onClick={() => { setTax(null); setOpen(false); }}
+          className="flex-1 rounded-sm border border-steel-700 py-2 text-[13px] text-steel-300"
+        >
+          ไม่ขอ
+        </button>
+        <button
+          disabled={!valid}
+          onClick={() => { setTax(f); setOpen(false); }}
+          className="flex-1 rounded-sm bg-safety py-2 text-[13px] font-semibold text-white disabled:bg-steel-600"
+        >
+          บันทึก
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// แถบเช็คเอาต์ติดล่างจอแบบ Shopee — ยอดรวมซ้าย ปุ่มส้มขวา
 function BottomBar({
   total, label, disabled, hint, onClick,
-}: {
-  total: number;
-  label: string;
-  disabled?: boolean;
-  hint?: string;
-  onClick: () => void;
-}) {
+}: { total: number; label: string; disabled?: boolean; hint?: string; onClick: () => void }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-lg border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]">
       <div className="flex items-center gap-3 px-3 py-2">
         <div className="min-w-0 flex-1">
-          <p className="text-[11px] text-steel-300">{hint ?? "ยอดที่ต้องชำระ"}</p>
+          <p className="text-[11px] text-steel-300">{hint ?? "ยอดรวม"}</p>
           <Price value={total} className="font-heading text-[18px] font-bold text-safety" />
         </div>
         <button
@@ -434,26 +559,23 @@ function BottomBar({
 }
 
 function PayOption({
-  on, onClick, title, note,
-}: {
-  on: boolean;
-  onClick: () => void;
-  title: string;
-  note: string;
-}) {
+  on, onClick, badge, title, note,
+}: { on: boolean; onClick: () => void; badge: string; title: string; note: string }) {
   return (
     <button onClick={onClick} className="flex w-full items-start gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left last:border-0">
-      <span
-        className={
-          "mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full border-2 " +
-          (on ? "border-safety" : "border-steel-600")
-        }
-      >
-        {on && <span className="h-2.5 w-2.5 rounded-full bg-safety" />}
+      <span className="mt-0.5 shrink-0 rounded-sm border border-safety px-1 py-px text-[9px] font-bold leading-tight text-safety">
+        {badge}
       </span>
       <span className="min-w-0 flex-1">
         <span className={"block text-[13px] " + (on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>{title}</span>
         <span className="mt-0.5 block text-[11px] leading-snug text-steel-300">{note}</span>
+      </span>
+      <span className={"mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full " + (on ? "bg-safety" : "border-2 border-steel-600")}>
+        {on && (
+          <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-white stroke-[3.5]">
+            <path d="M5 12.5l5 5 9-10" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
       </span>
     </button>
   );
@@ -481,8 +603,7 @@ function Field({
   textarea?: boolean;
   inputMode?: "tel" | "numeric";
 }) {
-  const cls =
-    "w-full rounded-sm border border-steel-700 bg-white px-2.5 py-2 text-[13px] outline-none focus:border-safety";
+  const cls = "w-full rounded-sm border border-steel-700 bg-white px-2.5 py-2 text-[13px] outline-none focus:border-safety";
   return (
     <label className="block min-w-0 flex-1">
       <span className="mb-1 block text-[11px] text-steel-300">{label}</span>
