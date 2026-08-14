@@ -1,5 +1,22 @@
 // ดาวแบบ Shopee — เติมสีตามคะแนนจริง รองรับครึ่งดาว
-export default function Stars({ value, size = 12 }: { value: number; size?: number }) {
+//
+// count = 1 คือแบบ Lazada (ดาวดวงเดียวเต็มดวง แล้วเขียนคะแนนต่อท้าย)
+// ใช้ตอนที่พื้นที่แคบ เช่น การ์ดสินค้าที่ต้องมีตัวเลข "ขายได้" ต่อบรรทัดเดียวกัน
+export default function Stars({
+  value,
+  size = 12,
+  count = 5,
+}: {
+  value: number;
+  size?: number;
+  count?: 1 | 5;
+}) {
+  if (count === 1)
+    return (
+      <span className="inline-flex align-middle" aria-label={`${value} ดาว`}>
+        <Star fill={1} size={size} />
+      </span>
+    );
   return (
     <span className="inline-flex items-center gap-[1px] align-middle" aria-label={`${value} ดาว`}>
       {[0, 1, 2, 3, 4].map((i) => {

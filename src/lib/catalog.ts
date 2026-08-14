@@ -2,13 +2,20 @@
 // ห้าม import จาก client component เด็ดขาด ไม่งั้น JSON 4MB จะติดไปกับ bundle
 import raw from "@/data/products.json";
 import cols from "@/data/collections.json";
+import soldMap from "@/data/sold.json";
 import type { Product, Collection } from "./types";
 import { reviewSummary } from "./reviews";
 import { toLocal } from "./local-images";
 
+// ยอดขายจริงรวมทุกช่องทาง (Shopee/Lazada/TikTok/หน้าร้าน) — เจ้าของร้านกรอกเองที่
+// src/data/sold.json รูปแบบ { "<handle ของสินค้า>": 22300 }
+// ไฟล์นี้ว่างอยู่ = การ์ดไม่โชว์บรรทัด "ขายได้" (ห้ามใส่ตัวเลขมั่ว)
+const sold = soldMap as Record<string, number>;
+
 // ผูกสรุปรีวิวเข้ากับสินค้าตั้งแต่ตอนโหลด การ์ดสินค้าจะได้โชว์ดาวโดยไม่ต้องส่ง prop เพิ่ม
 export const products = (raw as unknown as Product[]).map((p) => {
   const rv = reviewSummary(p.h);
+  const n = sold[p.h];
   // สลับรูปมาใช้ของที่เก็บเอง (ถ้ามี) — ไม่ต้องพึ่ง Shopify CDN
   const out: Product = {
     ...p,
@@ -16,6 +23,7 @@ export const products = (raw as unknown as Product[]).map((p) => {
     imgs: p.imgs.map((u) => toLocal(u) as string),
     v: p.v.map((v) => (v.i ? { ...v, i: toLocal(v.i) } : v)),
   };
+  if (n) out.sold = n;
   return rv ? { ...out, rv } : out;
 });
 export const collections = cols as unknown as Collection[];

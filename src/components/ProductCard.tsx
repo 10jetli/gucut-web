@@ -43,7 +43,9 @@ export default function ProductCard({ product: p }: { product: Product }) {
         )}
       </div>
       <div className="p-2">
-        <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#1a1a1a]">{p.t}</p>
+        {/* leading-5 (20px) × 2 บรรทัด = 40px = min-h-10 พอดี
+            ถ้า min-h สูงกว่าความสูง 2 บรรทัด บรรทัดที่ 3 จะโผล่ครึ่งตัวออกมา */}
+        <p className="clamp-2 min-h-10 text-[13px] leading-5 text-[#1a1a1a]">{p.t}</p>
         <div className="mt-1.5 flex items-baseline gap-1.5">
           <Price value={p.p} className="font-heading text-[15px] font-semibold text-safety" />
           {p.c && p.c > p.p && (
@@ -52,12 +54,24 @@ export default function ProductCard({ product: p }: { product: Product }) {
             </span>
           )}
         </div>
-        {p.rv ? (
+        {/* ใต้ราคา 2 บรรทัดแบบ Lazada/Shopee
+            บรรทัดบน = จำนวนรีวิว · บรรทัดล่าง = ดาว | จำนวนที่ขายได้ */}
+        {p.rv && (
+          <p className="mt-1 truncate text-[11px] text-steel-300">
+            {compactCount(p.rv.n)}+ รีวิวที่ดี
+          </p>
+        )}
+        {p.rv || p.sold ? (
           <p className="mt-0.5 flex items-center gap-1 overflow-hidden whitespace-nowrap text-[11px] text-steel-300">
-            <Stars value={p.rv.a} size={11} />
-            <span>{p.rv.a.toFixed(1)}</span>
-            <span className="text-steel-600">|</span>
-            <span>{compactCount(p.rv.n)} รีวิว</span>
+            {p.rv && (
+              <>
+                {/* มีตัวเลข "ขายได้" ด้วย → ใช้ดาวดวงเดียวแบบ Lazada ไม่งั้นบรรทัดล้นการ์ด */}
+                <Stars value={p.rv.a} size={11} count={p.sold ? 1 : 5} />
+                <span className="font-medium text-[#1a1a1a]">{p.rv.a.toFixed(1)}</span>
+              </>
+            )}
+            {p.rv && p.sold ? <span className="text-steel-600">|</span> : null}
+            {p.sold ? <span className="truncate">ขายได้ {compactCount(p.sold)} ชิ้น</span> : null}
           </p>
         ) : (
           <p className="mt-0.5 text-[11px] text-steel-300">
