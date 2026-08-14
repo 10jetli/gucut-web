@@ -10,6 +10,8 @@ import Stars from "./Stars";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, type Product } from "@/lib/types";
 import Price from "@/components/Price";
+import ProductVideoFloat from "./ProductVideoFloat";
+import { videoForProduct } from "@/lib/videos";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
 // สไลด์รูป → ราคา+ป้ายลด → ตัวเลือก → สเปก → คำอธิบาย → แถบซื้อติดล่างจอ
@@ -30,6 +32,7 @@ export default function ProductDetail({
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
   const [chat, setChat] = useState(false);
   const off = discountPercent(p);
+  const clip = videoForProduct(p.h);   // มีเฉพาะสินค้าที่ผูกคลิปไว้จริง
   const imgs = p.imgs.length ? p.imgs : [];
 
   // สินค้าตัวเลือกเดียว: เช็คสต็อก/ราคาสดจาก ZORT ทันทีที่เปิดหน้า
@@ -188,6 +191,9 @@ export default function ProductDetail({
           </div>
         </section>
       )}
+
+      {/* คลิปลอยมุมจอแบบ Shopee — ลอยเหนือแถบซื้อ ปิดทิ้งได้ */}
+      {clip && <ProductVideoFloat video={clip} />}
 
       {/* แถบซื้อติดล่างจอ — แชท | ตะกร้า | ซื้อเลย+ราคา */}
       <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-w-lg items-stretch border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">

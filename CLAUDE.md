@@ -113,6 +113,8 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
 ## สถานะ Phase 1 — ครบแล้ว ✅
 - [x] หน้าแรก feed สไตล์ Shopee (แบนเนอร์ / Flash Sale countdown / grid สินค้า)
 - [x] หน้าสินค้าเต็ม: รูปสไลด์ / variant / ปุ่มวิดีโอ / สเปกตาราง / ปุ่มซื้อติดล่างจอ
+      คลิปลอยมุมจอแบบ Shopee (`ProductVideoFloat`) — ขึ้นเฉพาะ **90 สินค้า** ที่ผูกคลิปไว้ใน Shopify
+      อยากให้ขึ้นมากกว่านี้ต้องผูกคลิปที่เหลือ (368 ใบ) กับสินค้าก่อน
 - [x] ตะกร้า localStorage + badge ที่ bottom nav
 - [x] เช็คเอาต์: ฟอร์มที่อยู่ → QR PromptPay (gen เองใน `lib/promptpay.ts`) → แนบสลิป → POST `NEXT_PUBLIC_ORDER_WEBHOOK_URL`
 - [x] หน้าวิดีโอ feed แนวตั้ง — คลิปจริง 459 คลิป (91 คลิปผูกกับสินค้า กดซื้อจากคลิปได้)

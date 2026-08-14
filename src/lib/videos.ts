@@ -50,6 +50,12 @@ export const videos = (raw as ShopVideo[]).filter(
 
 export const CHANNEL_URL = "https://www.youtube.com/@NEWWAVELegends";
 
+// คลิปประจำสินค้า — ใช้กับคลิปลอยมุมจอในหน้าสินค้า (แบบ Shopee)
+// มีแค่ 90 สินค้าที่ผูกคลิปไว้ใน Shopify ที่เหลือไม่โชว์อะไรเลย ไม่ต้องเดา
+const byProduct = new Map<string, ShopVideo>();
+for (const v of videos) if (v.h && !byProduct.has(v.h)) byProduct.set(v.h, v);
+export const videoForProduct = (handle: string) => byProduct.get(handle);
+
 // ---------------------------------------------------------------------------
 // ที่เก็บคลิป — สลับทั้งเว็บด้วยบรรทัดเดียว
 //
