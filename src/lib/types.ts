@@ -80,9 +80,11 @@ export const formatPrice = (n: number) => `฿${n.toLocaleString("th-TH")}`;
 export const discountPercent = (p: Pick<Product, "p" | "c">) =>
   p.c && p.c > p.p ? Math.round((1 - p.p / p.c) * 100) : 0;
 
-// ช่วงราคา เช่น ฿300 - ฿970 ถ้ามีหลายตัวเลือก
+// โชว์ราคาถูกสุดตัวเดียว แบบ Shopee — สินค้าที่มีหลายตัวเลือกก็ไม่ขึ้นเป็นช่วง
+// (เดิมขึ้นว่า ฿5,200 - ฿6,700 ซึ่งอ่านแล้วสะดุด ตัวเลขยาว และดูแพงกว่าความจริง)
+// ราคาจริงของแต่ละตัวเลือกโชว์ตอนลูกค้าเลือกขนาดในแผ่นสั่งซื้อ
 export function priceLabel(p: Pick<Product, "p" | "pmax">) {
-  return p.pmax > p.p ? `${formatPrice(p.p)} - ${formatPrice(p.pmax)}` : formatPrice(p.p);
+  return formatPrice(p.p);
 }
 
 // 1,556 → "1.5พัน" แบบ Shopee (ตัวเลขยาวทำให้การ์ดสินค้าล้น)
