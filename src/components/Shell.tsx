@@ -21,7 +21,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   // หน้าหลังร้าน + หน้าล็อกอิน/สมัคร = เต็มจอ ไม่ต้องมีเมนูล่าง
   const admin = adminHost || path.startsWith("/admin") || /^\/account\/(login|register|link)/.test(path);
   // หน้าวิดีโอเป็นฟีดเต็มจอเลื่อนทีละคลิป ท้ายเว็บจะไปขวางจังหวะเลื่อน
-  const bare = admin || path.startsWith("/videos");
+  // หน้าสั่งซื้อมีแถบสรุปยอดติดล่างจอแล้ว ท้ายเว็บจะไปแย่งที่แบบไม่มีเหตุผล
+  const bare = admin || path.startsWith("/videos") || path.startsWith("/checkout");
   return (
     <>
       <PwaSetup />

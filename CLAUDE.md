@@ -116,7 +116,11 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
       คลิปลอยมุมจอแบบ Shopee (`ProductVideoFloat`) — ขึ้นเฉพาะ **90 สินค้า** ที่ผูกคลิปไว้ใน Shopify
       อยากให้ขึ้นมากกว่านี้ต้องผูกคลิปที่เหลือ (368 ใบ) กับสินค้าก่อน
 - [x] ตะกร้า localStorage + badge ที่ bottom nav
-- [x] เช็คเอาต์: ฟอร์มที่อยู่ → QR PromptPay (gen เองใน `lib/promptpay.ts`) → แนบสลิป → POST `NEXT_PUBLIC_ORDER_WEBHOOK_URL`
+- [x] เช็คเอาต์แบบ Shopee หน้าเดียวจบ: ที่อยู่ / รายการสินค้า / **เลือกช่องทางชำระเงิน** / สรุปยอด
+      + แถบสั่งซื้อติดล่างจอ → POST `NEXT_PUBLIC_ORDER_WEBHOOK_URL`
+      - **โอน/QR PromptPay** (gen QR เองใน `lib/promptpay.ts`) → แนบสลิป → ยืนยัน
+      - **เก็บเงินปลายทาง (COD)** → สั่งเลย ไม่ต้องแนบสลิป
+      ค่าส่ง/ค่าบริการ COD อยู่ที่ `SHIPPING_FEE` กับ `COD_FEE` ใน `CheckoutView.tsx` (ตอนนี้ 0 ทั้งคู่)
 - [x] หน้าวิดีโอ feed แนวตั้ง — คลิปจริง 459 คลิป (91 คลิปผูกกับสินค้า กดซื้อจากคลิปได้)
       คลิปมาจากหลายแอปคนละยุค: **vizup 244** (ที่ร้านใช้อยู่) · gracias 122 · reelup 1 · อัปกับสินค้าตรง ๆ 92
       ฟีดเรียง ผูกสินค้า → vizup → ที่เหลือ · อยากซ่อนของแอปไหนใส่ที่ `HIDE` ใน `src/lib/videos.ts`
