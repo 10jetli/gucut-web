@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { addToCart } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
+import Portal from "./Portal";
 
 // Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
 // เด้งขึ้นจากล่างจอ · เลือกแล้วรูป+ราคา+สต็อกเปลี่ยนตาม · ปรับจำนวนได้
@@ -71,8 +72,11 @@ export default function VariantSheet({
 
   if (!open) return null;
 
+  // z ต้องสูงกว่าแถบซื้อที่ติดล่างจอ (z-[60]) ไม่งั้นแถบซื้อทับปุ่มยืนยันจนกดไม่ได้
+  // และต้องแขวนที่ body ผ่าน Portal เผื่ออนาคตมีตัวไหนสร้างชั้นซ้อนคร่อมไว้
   return (
-    <div className="fixed inset-0 z-50 flex items-end justify-center" role="dialog" aria-modal="true">
+    <Portal>
+    <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true">
       <button aria-label="ปิด" className="absolute inset-0 bg-black/60" onClick={onClose} />
       <div className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-steel-800 pb-4">
         {/* หัว sheet: รูป + ราคา + สต็อก */}
@@ -171,5 +175,6 @@ export default function VariantSheet({
         </div>
       </div>
     </div>
+    </Portal>
   );
 }
