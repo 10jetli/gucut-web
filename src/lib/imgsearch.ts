@@ -39,38 +39,65 @@ type Ready = {
 
 let loading: Promise<Ready> | null = null;
 
-/** โหลดตัวคิด + ลายนิ้วมือ (ครั้งเดียวต่อการเปิดเว็บ) */
-export function prepare(onStep?: (msg: string) => void): Promise<Ready> {
+// บอกให้รู้ว่าพังตรงขั้นไหน — ไม่งั้นได้แต่ "ค้นหาไม่สำเร็จ" เฉย ๆ หาสาเหตุไม่ได้
+export class ScanError extends Error {
+  constructor(public step: string, cause: unknown) {
+    const raw = cause instanceof Error ? cause.message : String(cause);
+    super(`${step}: ${raw.slice(0, 180)}`);
+    this.name = "ScanError";
+  }
+}
+const at = async <T>(step: string, fn: () => Promise<T>): Promise<T> => {
+  try {
+    return await fn();
+  } catch (e) {
+    throw new ScanError(step, e);
+  }
+};
+
+/**
+ * โหลดตัวคิด + ลายนิ้วมือ (ครั้งเดียวต่อการเปิดเว็บ)
+ * cpuOnly = ข้ามการ์ดจอไปเลย ใช้ตอนลองรอบสองหลังจากรอบแรกพัง
+ */
+export function prepare(onStep?: (msg: string) => void, cpuOnly = false): Promise<Ready> {
   if (loading) return loading;
   loading = (async () => {
     onStep?.("กำลังเตรียมตัวค้นหา...");
-    const [tf, , , layers] = await Promise.all([
-      import("@tensorflow/tfjs-core"),
-      import("@tensorflow/tfjs-backend-webgl"),
-      import("@tensorflow/tfjs-backend-cpu"),
-      import("@tensorflow/tfjs-layers"),
-    ]);
-    // การ์ดจอเร็วกว่ามาก แต่บางเครื่อง/บางเบราว์เซอร์ใช้ไม่ได้ ก็ถอยไปใช้ CPU
-    try {
-      await tf.setBackend("webgl");
-    } catch {
-      await tf.setBackend("cpu");
+    const [tf, , , layers] = await at("โหลดตัวคิดไม่ได้", () =>
+      Promise.all([
+        import("@tensorflow/tfjs-core"),
+        import("@tensorflow/tfjs-backend-webgl"),
+        import("@tensorflow/tfjs-backend-cpu"),
+        import("@tensorflow/tfjs-layers"),
+      ]),
+    );
+
+    // การ์ดจอเร็วกว่ามาก แต่ Safari บนมือถือบางรุ่นใช้ไม่ได้ ก็ถอยไปใช้ CPU
+    // setBackend คืน false เมื่อใช้ไม่ได้ (ไม่ได้ throw) — ต้องเช็คค่าที่คืนมาด้วย
+    let backend = "cpu";
+    if (!cpuOnly) {
+      try {
+        if (await tf.setBackend("webgl")) backend = "webgl";
+      } catch {
+        /* ถอยไป CPU ข้างล่าง */
+      }
     }
-    await tf.ready();
+    if (backend !== "webgl") await at("ใช้ CPU ไม่ได้", () => tf.setBackend("cpu"));
+    await at("เตรียมตัวคิดไม่สำเร็จ", () => tf.ready());
 
     onStep?.("กำลังโหลดตัวคิด...");
-    const base = await layers.loadLayersModel(MODEL_URL);
-    const model = layers.model({
-      inputs: base.inputs,
-      outputs: base.getLayer(EMBED_LAYER).output,
+    const model = await at("โหลดโมเดลไม่ได้", async () => {
+      const b = await layers.loadLayersModel(MODEL_URL);
+      return layers.model({ inputs: b.inputs, outputs: b.getLayer(EMBED_LAYER).output });
     });
 
     onStep?.("กำลังโหลดข้อมูลสินค้า...");
-    const [binRes, idxRes] = await Promise.all([
-      fetch("/img-vectors.bin"),
-      fetch("/search-index.json"),
-    ]);
-    if (!binRes.ok || !idxRes.ok) throw new Error("โหลดข้อมูลไม่สำเร็จ");
+    const [binRes, idxRes] = await at("โหลดข้อมูลสินค้าไม่ได้", () =>
+      Promise.all([fetch("/img-vectors.bin"), fetch("/search-index.json")]),
+    );
+    if (!binRes.ok || !idxRes.ok) {
+      throw new ScanError("โหลดข้อมูลสินค้าไม่ได้", `${binRes.status}/${idxRes.status}`);
+    }
     const bin = await binRes.arrayBuffer();
     const head = new DataView(bin);
     const n = head.getUint32(0, true);
@@ -98,10 +125,13 @@ export function prepare(onStep?: (msg: string) => void): Promise<Ready> {
         f[j++] = px[i + 1] / 127.5 - 1;
         f[j++] = px[i + 2] / 127.5 - 1;
       }
-      const x = tf.tensor4d(f, [1, SIZE, SIZE, 3]);
-      const y = model.predict(x) as import("@tensorflow/tfjs-core").Tensor;
-      const v = (await y.data()) as Float32Array;
-      tf.dispose([x, y]);
+      const v = await at("อ่านรูปไม่สำเร็จ", async () => {
+        const x = tf.tensor4d(f, [1, SIZE, SIZE, 3]);
+        const y = model.predict(x) as import("@tensorflow/tfjs-core").Tensor;
+        const r = (await y.data()) as Float32Array;
+        tf.dispose([x, y]);
+        return r;
+      });
       let norm = 0;
       for (const q of v) norm += q * q;
       norm = Math.sqrt(norm) || 1;
@@ -122,15 +152,30 @@ export async function findByImage(
   onStep?: (msg: string) => void,
   take = 24,
 ): Promise<Hit[]> {
-  const { embed, vecs, dim, items } = await prepare(onStep);
+  let ready = await prepare(onStep);
   onStep?.("กำลังดูรูป...");
-  const q = await embed(src);
+  let q: Float32Array;
+  try {
+    q = await ready.embed(src);
+  } catch (e) {
+    // การ์ดจอของมือถือบางรุ่นพังกลางทาง — ล้างของเก่าแล้วลองใหม่แบบใช้ CPU ล้วน
+    // (ช้ากว่า แต่ได้คำตอบ ดีกว่าขึ้นว่าค้นหาไม่สำเร็จเฉย ๆ)
+    loading = null;
+    onStep?.("การ์ดจอไม่รองรับ — กำลังลองแบบช้าหน่อย...");
+    ready = await prepare(onStep, true);
+    try {
+      q = await ready.embed(src);
+    } catch {
+      throw e;   // พังทั้งสองทาง คืน error ตัวแรกที่มีรายละเอียดครบกว่า
+    }
+  }
+  const { vecs, dim, items } = ready;
 
   const scored: { i: number; score: number }[] = [];
   for (let i = 0; i < items.length; i++) {
-    const at = i * dim;
+    const row = i * dim;
     let dot = 0;
-    for (let d = 0; d < dim; d++) dot += q[d] * vecs[at + d];
+    for (let d = 0; d < dim; d++) dot += q[d] * vecs[row + d];
     dot /= 127;
     if (dot >= MIN_SCORE) scored.push({ i, score: dot });
   }

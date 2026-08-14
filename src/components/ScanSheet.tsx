@@ -83,8 +83,10 @@ export default function ScanSheet({ open, onClose }: { open: boolean; onClose: (
       const r = await findByImage(src, setStep);
       setHits(r);
       setStage("result");
-    } catch {
-      setError("ค้นหาไม่สำเร็จ — ลองใหม่อีกครั้ง");
+    } catch (e) {
+      // โชว์สาเหตุจริงออกมาเลย — เครื่องลูกค้าแต่ละรุ่นพังคนละจุด
+      // ถ้าเก็บเงียบไว้จะไล่หาสาเหตุไม่ได้ (เจอมาแล้วบน Safari iPhone)
+      setError(e instanceof Error ? e.message : "ค้นหาไม่สำเร็จ");
       setStage("result");
     }
   }
@@ -215,7 +217,7 @@ export default function ScanSheet({ open, onClose }: { open: boolean; onClose: (
             <p className="text-[14px] font-semibold text-[#1a1a1a]">
               {error ? "ค้นหาไม่สำเร็จ" : hits.length ? `น่าจะเป็นตัวนี้ (${hits.length})` : "ไม่เจอตัวที่ใกล้เคียง"}
             </p>
-            <p className="mt-0.5 text-[11px] text-steel-300">
+            <p className={"mt-0.5 text-[11px] " + (error ? "break-words text-safety" : "text-steel-300")}>
               {error
                 ? error
                 : hits.length
