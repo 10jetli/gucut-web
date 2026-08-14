@@ -20,6 +20,7 @@
 import { getStore } from "@netlify/blobs";
 import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -195,6 +196,30 @@ export default async function handler(req, context) {
     if (jobs.length) await Promise.allSettled(jobs);
 
     return json({ ok: true, orderId: id });
+  }
+
+  // ---------- ลูกค้า: การซื้อของฉัน ----------
+  // จับคู่ด้วยเบอร์โทรของบัญชีที่ล็อกอิน กับเบอร์ผู้รับในออเดอร์
+  // (ไม่ส่งสลิปกลับไป — หน้าลูกค้าไม่ต้องใช้ และกันข้อมูลรั่วเกินจำเป็น)
+  if (req.method === "GET" && url.searchParams.get("mine") === "1") {
+    let me = null;
+    try { me = await currentUser(req, usersStore()); } catch { /* ถือว่าไม่ได้ล็อกอิน */ }
+    if (!me) return json({ error: "login" }, 401);
+    const myPhone = normPhone(me.user.phone);
+
+    const { blobs } = await store.list({ prefix: "o/" });
+    const mine = [];
+    for (const b of blobs) {
+      const o = await store.get(b.key, { type: "json" }).catch(() => null);
+      if (!o || normPhone(o.customer?.phone) !== myPhone) continue;
+      mine.push({
+        id: o.id, at: o.at, status: o.status,
+        items: o.items, paymentLabel: o.paymentLabel,
+        discount: o.discount, shipping: o.shipping, codFee: o.codFee, total: o.total,
+      });
+    }
+    mine.sort((a, b) => b.at - a.at);
+    return json({ orders: mine });
   }
 
   // ---------- ฝั่งร้าน ----------
