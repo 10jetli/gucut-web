@@ -23,6 +23,10 @@ interface Address {
 interface TaxInfo {
   name: string; taxId: string; address: string;
 }
+interface Coupon {
+  code: string; label: string; discount: number;
+  subtotal: number;   // ยอดที่ใช้คิดส่วนลดตอนนั้น — ตะกร้าเปลี่ยนแล้วต้องกดใหม่
+}
 
 const PROMPTPAY_ID = process.env.NEXT_PUBLIC_PROMPTPAY_ID ?? "";
 const WEBHOOK_URL = process.env.NEXT_PUBLIC_ORDER_WEBHOOK_URL ?? "";
@@ -31,13 +35,13 @@ const WEBHOOK_URL = process.env.NEXT_PUBLIC_ORDER_WEBHOOK_URL ?? "";
 // ตัวเลขเรื่องจัดส่ง — แก้ที่นี่ที่เดียว หน้าสรุปยอดกับกล่องจัดส่งขึ้นตามให้เอง
 // ---------------------------------------------------------------------------
 const SHIPPING_FEE: number = 0;        // ค่าส่งที่เก็บจริง (ร้านส่งฟรีทั่วไทย)
-const SHIPPING_LIST: number = 0;       // ค่าส่งปกติที่จะขีดฆ่าโชว์ข้าง ๆ · 0 = ไม่โชว์
-                               // ⚠️ ใส่เฉพาะราคาที่เก็บจริงถ้าไม่ส่งฟรี ห้ามใส่เลขมั่ว
+const SHIPPING_LIST: number = 35;      // ค่าส่งปกติที่ขีดฆ่าโชว์ข้าง ๆ · 0 = ไม่โชว์
+                               // ⚠️ ต้องเป็นราคาที่ร้านเก็บจริงถ้าไม่ยกเว้นให้ ห้ามใส่เลขมั่ว
 const COD_FEE: number = 0;             // ค่าบริการเก็บเงินปลายทาง
 const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
 const SHIP_MAX_DAYS = 4;
 const SHIP_NAME = "ส่งธรรมดาในประเทศ";
-const CARRIER = "";            // ชื่อบริษัทขนส่ง เช่น "Flash Express" · ว่าง = ไม่โชว์
+const CARRIER = "Flash Express";   // ชื่อบริษัทขนส่ง · ว่าง = ไม่โชว์
 
 const DAY = 24 * 60 * 60 * 1000;
 const thaiDate = (d: Date) =>
@@ -60,6 +64,7 @@ export default function CheckoutView() {
   const [user, setUser] = useState<User | null>(null);
   const [remember, setRemember] = useState(true);
   const [eta, setEta] = useState("");
+  const [coupon, setCoupon] = useState<Coupon | null>(null);
 
   useEffect(() => setItems(getCart()), []);
 
@@ -98,7 +103,13 @@ export default function CheckoutView() {
 
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const codFee = pay === "cod" ? COD_FEE : 0;
-  const total = subtotal + SHIPPING_FEE + codFee;
+  const discount = Math.min(coupon?.discount ?? 0, subtotal);
+  const total = Math.max(0, subtotal - discount) + SHIPPING_FEE + codFee;
+
+  // ตะกร้าเปลี่ยนแล้วส่วนลดเดิมอาจใช้ไม่ได้ (เช่นมียอดขั้นต่ำ) — ให้กดใช้โค้ดใหม่
+  useEffect(() => {
+    setCoupon((c) => (c && c.subtotal !== subtotal ? null : c));
+  }, [subtotal]);
 
   useEffect(() => {
     if (step === "pay" && PROMPTPAY_ID) {
@@ -150,6 +161,8 @@ export default function CheckoutView() {
       shippingName: SHIP_NAME,
       shippingEta: eta,
       taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
+      couponCode: coupon?.code ?? null,
+      discount,
       subtotal,
       shipping: SHIPPING_FEE,
       codFee,
@@ -337,6 +350,7 @@ export default function CheckoutView() {
 
       {/* หมายเหตุ + ใบกำกับภาษี */}
       <Card>
+        <CouponRow subtotal={subtotal} coupon={coupon} setCoupon={setCoupon} />
         {editNote ? (
           <div className="space-y-2 p-3">
             <p className="text-[13px] font-semibold text-[#1a1a1a]">หมายเหตุ</p>
@@ -413,6 +427,9 @@ export default function CheckoutView() {
         </p>
         <div className="space-y-1.5 px-3 py-2.5 text-[13px]">
           <Row label={`ค่าสินค้า (${items.reduce((s, i) => s + i.qty, 0)} ชิ้น)`} value={subtotal} />
+          {discount > 0 && (
+            <Row label={`ส่วนลดร้านค้า (${coupon?.code})`} value={`-฿${discount.toLocaleString("th-TH")}`} free />
+          )}
           <Row label="ค่าจัดส่ง" value={SHIPPING_FEE || "ฟรี"} free={!SHIPPING_FEE} />
           {codFee > 0 && <Row label="ค่าบริการเก็บเงินปลายทาง" value={codFee} />}
           <div className="flex items-center justify-between border-t border-steel-700 pt-2">
@@ -491,6 +508,87 @@ function RowLink({
       </span>
       <Chevron />
     </button>
+  );
+}
+
+// โค้ดส่วนลดร้านค้า
+// ⚠️ ตรวจโค้ดที่ Netlify Function (/api/coupon) เท่านั้น — รายชื่อโค้ดอยู่ในตัวแปรลับ
+//    ฝั่งนี้แค่ส่งโค้ดไปถามแล้วเอาผลมาโชว์ ลูกค้าเปิดซอร์สก็ไม่เห็นว่ามีโค้ดอะไรบ้าง
+function CouponRow({
+  subtotal, coupon, setCoupon,
+}: { subtotal: number; coupon: Coupon | null; setCoupon: (c: Coupon | null) => void }) {
+  const [open, setOpen] = useState(false);
+  const [code, setCode] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function apply() {
+    const c = code.trim();
+    if (!c || busy) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await fetch("/api/coupon", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: c, subtotal }),
+      });
+      const j = await r.json();
+      if (!j.ok) { setErr(j.error || "ใช้โค้ดนี้ไม่ได้"); return; }
+      setCoupon({ code: j.code, label: j.label, discount: j.discount, subtotal });
+      setOpen(false);
+      setCode("");
+    } catch {
+      setErr("ต่อกับร้านไม่ได้ ลองใหม่อีกครั้ง");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <RowLink
+        label="โค้ดส่วนลดร้านค้า"
+        value={coupon ? `${coupon.code} · ${coupon.label}` : "กดใช้โค้ด"}
+        muted={!coupon}
+        onClick={() => setOpen(true)}
+      />
+    );
+  }
+  return (
+    <div className="space-y-2 border-b border-steel-800 p-3">
+      <p className="text-[13px] font-semibold text-[#1a1a1a]">โค้ดส่วนลดร้านค้า</p>
+      <div className="flex gap-2">
+        <input
+          autoFocus
+          value={code}
+          onChange={(e) => setCode(e.target.value.toUpperCase())}
+          placeholder="กรอกโค้ดส่วนลด"
+          className="min-w-0 flex-1 rounded-sm border border-steel-700 px-2.5 py-2 text-[13px] uppercase outline-none focus:border-safety"
+        />
+        <button
+          onClick={apply}
+          disabled={!code.trim() || busy}
+          className="shrink-0 rounded-sm bg-safety px-4 py-2 text-[13px] font-semibold text-white disabled:bg-steel-600"
+        >
+          {busy ? "..." : "ใช้โค้ด"}
+        </button>
+      </div>
+      {err && <p className="text-[12px] text-safety">{err}</p>}
+      <div className="flex gap-2">
+        {coupon && (
+          <button
+            onClick={() => { setCoupon(null); setOpen(false); setErr(""); }}
+            className="flex-1 rounded-sm border border-steel-700 py-2 text-[13px] text-steel-300"
+          >
+            เอาโค้ดออก
+          </button>
+        )}
+        <button onClick={() => { setOpen(false); setErr(""); }} className="flex-1 rounded-sm border border-steel-700 py-2 text-[13px] text-steel-300">
+          ปิด
+        </button>
+      </div>
+    </div>
   );
 }
 
