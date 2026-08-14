@@ -12,6 +12,7 @@ export default function AdminHome() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [unread, setUnread] = useState(0);
+  const [newOrders, setNewOrders] = useState(0);
   const [next, setNext] = useState("");
 
   useEffect(() => {
@@ -31,6 +32,12 @@ export default function AdminHome() {
         if (r.status === 401) { clearKey(); setKey(""); setErr("รหัสถูกเปลี่ยนแล้ว — ใส่รหัสใหม่อีกครั้ง"); return; }
         const d = await r.json();
         if (live) setUnread((d.rooms || []).reduce((a: number, x: { unread: number }) => a + x.unread, 0));
+        // นับออเดอร์ใหม่มาโชว์บนปุ่มออเดอร์ด้วย (คำขอเบา ๆ ตอบแค่ตัวเลข)
+        const ro = await adminFetch("/api/orders?stat=1", key);
+        if (ro.ok) {
+          const od = await ro.json();
+          if (live) setNewOrders(od.newCount || 0);
+        }
       } catch { /* เน็ตสะดุด รอบหน้าค่อยลองใหม่ */ }
     };
     tick();
@@ -102,11 +109,13 @@ export default function AdminHome() {
 
   // ---------- ล็อกอินแล้ว ----------
   const menu = [
+    { href: "/admin/orders/", title: "ออเดอร์", note: "รายการสั่งซื้อจากหน้าเว็บ", badge: newOrders, icon: "order" as const },
     { href: "/admin/chat/", title: "แชทลูกค้า", note: "อ่าน / ตอบข้อความจากหน้าเว็บ", badge: unread, icon: "chat" as const },
     { href: "/admin/videos/", title: "เลือกคลิป", note: "เลือกว่าคลิปไหนขึ้นหน้าวิดีโอ", badge: 0, icon: "video" as const },
   ];
 
   const ICON = {
+    order: "M7 4h10l1 16H6L7 4zm2.5 4a2.5 2.5 0 005 0",
     chat: "M21 12a8 8 0 01-11.6 7.1L4 20l1-4.5A8 8 0 1121 12z",
     video: "M3.5 7.5h11a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1v-7a1 1 0 011-1zm12 3.5l5-3v9l-5-3z",
   };
@@ -151,7 +160,7 @@ export default function AdminHome() {
           ))}
         </ul>
 
-        <p className="mt-3 px-1 text-[12px] text-ink-300">เมนูอื่น ๆ (ออเดอร์ / สินค้า) จะทยอยเพิ่มให้</p>
+        <p className="mt-3 px-1 text-[12px] text-ink-300">เมนูอื่น ๆ (สินค้า / สต็อก) จะทยอยเพิ่มให้</p>
 
         <Link href="/" className="mt-6 block text-center text-[13px] text-ink-500 underline">
           กลับหน้าร้าน
