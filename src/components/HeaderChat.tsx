@@ -9,6 +9,7 @@
 //    (ไม่มี cid ในเครื่อง = ไม่มีห้องแชท) และตอนสลับไปแท็บอื่นก็หยุดถาม
 import { useEffect, useState } from "react";
 import ChatSheet from "./ChatSheet";
+import Portal from "./Portal";
 
 const CID_KEY = "gucut-chat-id";
 const SEEN_KEY = "gucut-chat-seen";
@@ -71,7 +72,12 @@ export default function HeaderChat() {
           </span>
         )}
       </button>
-      <ChatSheet open={open} onClose={() => setOpen(false)} />
+      {/* ต้องผ่าน Portal — ไม่งั้นโดนเมนูล่างทับ (หัวเว็บ sticky z-40 กดชั้นซ้อนไว้) */}
+      {open && (
+        <Portal>
+          <ChatSheet open={open} onClose={() => setOpen(false)} />
+        </Portal>
+      )}
     </>
   );
 }
