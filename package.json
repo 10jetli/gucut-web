@@ -11,6 +11,10 @@
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.12",
+    "@tensorflow/tfjs-backend-cpu": "^4.22.0",
+    "@tensorflow/tfjs-backend-webgl": "^4.22.0",
+    "@tensorflow/tfjs-core": "^4.22.0",
+    "@tensorflow/tfjs-layers": "^4.22.0",
     "hls.js": "^1.7.0",
     "next": "15.5.20",
     "qrcode": "^1.5.4",
@@ -19,12 +23,14 @@
     "web-push": "^3.6.7"
   },
   "devDependencies": {
+    "@tensorflow/tfjs-node": "^4.22.0",
     "@types/node": "^22",
     "@types/qrcode": "^1.5.5",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "autoprefixer": "^10.4.20",
     "postcss": "^8.4.49",
+    "sharp": "^0.35.3",
     "tailwindcss": "^3.4.17",
     "typescript": "^5"
   }
