@@ -8,7 +8,8 @@ import VariantSheet from "./VariantSheet";
 import ChatSheet from "./ChatSheet";
 import Stars from "./Stars";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
-import { discountPercent, formatPrice, priceLabel, type Product } from "@/lib/types";
+import { discountPercent, formatPrice, type Product } from "@/lib/types";
+import Price from "@/components/Price";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
 // สไลด์รูป → ราคา+ป้ายลด → ตัวเลือก → สเปก → คำอธิบาย → แถบซื้อติดล่างจอ
@@ -81,9 +82,10 @@ export default function ProductDetail({
       {/* ราคา */}
       <section className="bg-steel-800 px-3 py-3">
         <div className="flex items-baseline gap-2">
-          <span className="font-heading text-2xl font-bold text-safety">
-            {live && p.pmax <= p.p ? formatPrice(live.p) : priceLabel(p)}
-          </span>
+          <Price
+            value={live && p.pmax <= p.p ? live.p : p.p}
+            className="font-heading text-2xl font-bold text-safety"
+          />
           {p.c && p.c > p.p && (
             <>
               <span className="text-sm text-steel-300 line-through">{formatPrice(p.c)}</span>
@@ -221,7 +223,7 @@ export default function ProductDetail({
           ) : (
             <>
               <span className="text-[11px] font-medium opacity-90">ซื้อเลย</span>
-              <span className="text-[17px] font-bold">{live && p.pmax <= p.p ? formatPrice(live.p) : priceLabel(p)}</span>
+              <Price value={live && p.pmax <= p.p ? live.p : p.p} className="text-[17px] font-bold" />
             </>
           )}
         </button>

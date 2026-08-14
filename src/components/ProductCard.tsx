@@ -1,7 +1,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import Stars from "./Stars";
-import { compactCount, discountPercent, priceLabel, type Product } from "@/lib/types";
+import { compactCount, discountPercent, type Product } from "@/lib/types";
+import Price from "@/components/Price";
 
 // การ์ดสินค้าแบบ Shopee/TikTok Shop — รูปสี่เหลี่ยมจัตุรัส ป้าย %ลด ราคาส้ม สต็อกจริง
 export default function ProductCard({ product: p }: { product: Product }) {
@@ -44,7 +45,7 @@ export default function ProductCard({ product: p }: { product: Product }) {
       <div className="p-2">
         <p className="clamp-2 min-h-[2.5rem] text-[13px] leading-tight text-[#1a1a1a]">{p.t}</p>
         <div className="mt-1.5 flex items-baseline gap-1.5">
-          <span className="font-heading text-[15px] font-semibold text-safety">{priceLabel(p)}</span>
+          <Price value={p.p} className="font-heading text-[15px] font-semibold text-safety" />
           {p.c && p.c > p.p && (
             <span className="text-[11px] text-steel-300 line-through">
               ฿{p.c.toLocaleString("th-TH")}
