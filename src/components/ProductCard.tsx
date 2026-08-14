@@ -61,23 +61,24 @@ export default function ProductCard({ product: p }: { product: Product }) {
             {compactCount(p.rv.n)}+ รีวิวที่ดี
           </p>
         )}
-        {p.rv || p.sold ? (
-          <p className="mt-0.5 flex items-center gap-1 overflow-hidden whitespace-nowrap text-[11px] text-steel-300">
-            {p.rv && (
-              <>
-                {/* มีตัวเลข "ขายได้" ด้วย → ใช้ดาวดวงเดียวแบบ Lazada ไม่งั้นบรรทัดล้นการ์ด */}
-                <Stars value={p.rv.a} size={11} count={p.sold ? 1 : 5} />
-                <span className="font-medium text-[#1a1a1a]">{p.rv.a.toFixed(1)}</span>
-              </>
-            )}
-            {p.rv && p.sold ? <span className="text-steel-600">|</span> : null}
-            {p.sold ? <span className="truncate">ขายได้ {compactCount(p.sold)} ชิ้น</span> : null}
-          </p>
-        ) : (
-          <p className="mt-0.5 text-[11px] text-steel-300">
-            {p.st > 0 ? `คงเหลือ ${p.st.toLocaleString("th-TH")} ชิ้น` : "สินค้าหมด"}
-          </p>
-        )}
+        <p className="mt-0.5 flex items-center gap-1 overflow-hidden whitespace-nowrap text-[11px] text-steel-300">
+          {p.rv && (
+            <>
+              {/* ดาวดวงเดียวแบบ Lazada — 5 ดวงกินที่จนตัวเลขต่อท้ายล้นการ์ด */}
+              <Stars value={p.rv.a} size={12} count={1} />
+              <span className="font-medium text-[#1a1a1a]">{p.rv.a.toFixed(1)}</span>
+              <span className="text-steel-600">|</span>
+            </>
+          )}
+          {/* ยังไม่มีตัวเลข "ขายได้" จริง ก็โชว์สต็อกจริงไปก่อน ไม่ปล่อยบรรทัดโล่ง */}
+          <span className="truncate">
+            {p.sold
+              ? `ขายได้ ${compactCount(p.sold)} ชิ้น`
+              : p.st > 0
+                ? `คงเหลือ ${compactCount(p.st)} ชิ้น`
+                : "สินค้าหมด"}
+          </span>
+        </p>
       </div>
     </Link>
   );
