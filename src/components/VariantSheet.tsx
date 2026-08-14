@@ -63,6 +63,7 @@ export default function VariantSheet({
         variant: sel?.t ?? "-",
         price,
         image: img ?? "",
+        sku: sel?.k || product.sku || product.v[0]?.k || "",
       },
       qty
     );

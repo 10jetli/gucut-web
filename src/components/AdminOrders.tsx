@@ -26,6 +26,7 @@ interface Order {
   total: number;
   taxInvoice: { name: string; taxId: string; address: string } | null;
   hasSlip: boolean;
+  zort?: { ok: boolean; skipped?: boolean; message?: string };
 }
 
 // ป้ายสถานะ — ชื่อไทย + สี ใช้ทั้งตัวกรองและปุ่มเปลี่ยนสถานะ
@@ -82,6 +83,26 @@ export default function AdminOrders() {
       } catch {
         setSlip((m) => ({ ...m, [o.id]: null }));
       }
+    }
+  }
+
+  // ส่งเข้า ZORT ซ้ำ — ใช้ตอนรอบแรกพัง (เช่น ZORT ล่มพอดี)
+  async function retryZort(o: Order) {
+    if (busyId) return;
+    setBusyId(o.id);
+    try {
+      const r = await adminFetch("/api/orders", key, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: o.id, action: "zort" }),
+      });
+      const d = await r.json();
+      if (d.order) setOrders((list) => (list ?? []).map((x) => (x.id === o.id ? d.order : x)));
+      if (!d.ok) setErr("ส่งเข้า ZORT ยังไม่สำเร็จ: " + (d.order?.zort?.message || "ไม่ทราบสาเหตุ"));
+    } catch {
+      setErr("ส่งเข้า ZORT ไม่สำเร็จ ลองใหม่อีกครั้ง");
+    } finally {
+      setBusyId("");
     }
   }
 
@@ -193,6 +214,28 @@ export default function AdminOrders() {
                       <p>{o.customer.address} {o.customer.province} {o.customer.zip}</p>
                       {o.customer.note && <p className="mt-1">📝 {o.customer.note}</p>}
                     </div>
+
+                    {/* สถานะ ZORT — เข้าแล้ว / พัง (พร้อมปุ่มส่งซ้ำ) / ยังไม่ได้ตั้งค่า */}
+                    {o.zort && (
+                      <div className="mt-2 flex items-center gap-2 text-[12px]">
+                        {o.zort.ok ? (
+                          <span className="text-[#1f9254]">✅ เข้า ZORT แล้ว (ตัดสต็อกอัตโนมัติ)</span>
+                        ) : o.zort.skipped ? (
+                          <span className="text-ink-300">ZORT: ยังไม่ได้ตั้งค่า</span>
+                        ) : (
+                          <>
+                            <span className="min-w-0 flex-1 text-safety">⚠️ ยังไม่เข้า ZORT ({o.zort.message || "?"})</span>
+                            <button
+                              disabled={busyId === o.id}
+                              onClick={() => retryZort(o)}
+                              className="shrink-0 rounded-sm border border-safety px-2.5 py-1 font-semibold text-safety disabled:opacity-40"
+                            >
+                              ส่งซ้ำ
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    )}
 
                     {o.taxInvoice && (
                       <div className="mt-2 rounded-sm bg-amber-50 p-2.5 text-[12px] leading-relaxed text-amber-900">
