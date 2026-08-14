@@ -56,6 +56,7 @@ export interface Product {
   st: number;           // สต็อกรวม
   opt: string | null;   // ชื่อกลุ่มตัวเลือก เช่น "ขนาดฟัน"
   v: Variant[];         // ตัวเลือก (ว่าง = ไม่มีตัวเลือก)
+  sold?: number;        // จำนวนที่ขายได้ (รวมทุกช่องทาง) — ไม่มี = ไม่โชว์บรรทัดนี้
   sku: string;
   cols: string[];       // handle ของหมวดที่สังกัด
   tags: string[];
@@ -87,9 +88,9 @@ export function priceLabel(p: Pick<Product, "p" | "pmax">) {
   return formatPrice(p.p);
 }
 
-// 1,556 → "1.5พัน" แบบ Shopee (ตัวเลขยาวทำให้การ์ดสินค้าล้น)
+// 22,300 → "22.3K" แบบ Lazada/Shopee (ตัวเลขยาวทำให้การ์ดสินค้าล้น)
 export function compactCount(n: number) {
-  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}พัน`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K`;
   return n.toLocaleString("th-TH");
 }
 
