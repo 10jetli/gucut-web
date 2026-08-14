@@ -29,7 +29,6 @@ interface Coupon {
 }
 
 const PROMPTPAY_ID = process.env.NEXT_PUBLIC_PROMPTPAY_ID ?? "";
-const WEBHOOK_URL = process.env.NEXT_PUBLIC_ORDER_WEBHOOK_URL ?? "";
 
 // ---------------------------------------------------------------------------
 // ตัวเลขเรื่องจัดส่ง — แก้ที่นี่ที่เดียว หน้าสรุปยอดกับกล่องจัดส่งขึ้นตามให้เอง
@@ -147,45 +146,39 @@ export default function CheckoutView() {
     else setStep("pay");
   };
 
+  // ส่งออเดอร์เข้า /api/orders — เก็บที่ Netlify + เด้งแจ้งเตือนเข้ากลุ่ม Telegram ของร้าน
+  // (เลขออเดอร์ออกจากเซิร์ฟเวอร์ ฝั่งนี้แค่รอรับ)
   const submit = async () => {
     setSending(true);
     setError("");
-    const id = "GC" + Date.now().toString(36).toUpperCase();
-    const order = {
-      orderId: id,
-      createdAt: new Date().toISOString(),
-      customer: { ...addr, note },
-      items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty })),
-      payment: pay,                                   // "cod" | "promptpay"
-      paymentLabel: pay === "cod" ? "เก็บเงินปลายทาง" : "QR พร้อมเพย์",
-      shippingName: SHIP_NAME,
-      shippingEta: eta,
-      taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
-      couponCode: coupon?.code ?? null,
-      discount,
-      subtotal,
-      shipping: SHIPPING_FEE,
-      codFee,
-      total,
-      slipFilename: slip?.name ?? null,
-      slipBase64: slip?.data ?? null,
-    };
     try {
-      if (WEBHOOK_URL) {
-        const res = await fetch(WEBHOOK_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(order),
-        });
-        if (!res.ok) throw new Error(`webhook ${res.status}`);
-      } else {
-        await new Promise((r) => setTimeout(r, 600));   // ยังไม่ตั้ง webhook — จำลองสำเร็จ
-      }
-      setOrderId(id);
+      const res = await fetch("/api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          customer: { ...addr, note },
+          items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty })),
+          payment: pay,                                   // "cod" | "promptpay"
+          couponCode: coupon?.code ?? null,
+          discount,
+          shipping: SHIPPING_FEE,
+          codFee,
+          taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
+          slipBase64: slip?.data ?? null,
+        }),
+      });
+      const j = await res.json().catch(() => null);
+      if (!res.ok || !j?.ok) throw new Error(j?.error || `orders ${res.status}`);
+      setOrderId(j.orderId);
       items.forEach((i) => updateQty(i.productId, i.variant, 0));   // ล้างตะกร้า
       setStep("done");
-    } catch {
-      setError("ส่งออเดอร์ไม่สำเร็จ ลองใหม่อีกครั้ง หรือทักร้านทางแชท");
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "";
+      setError(
+        /สลิป|ถี่เกินไป|ไม่ครบ/.test(msg)
+          ? msg
+          : "ส่งออเดอร์ไม่สำเร็จ ลองใหม่อีกครั้ง หรือทักร้านทางแชท",
+      );
     } finally {
       setSending(false);
     }
@@ -215,12 +208,6 @@ export default function CheckoutView() {
           {pay === "cod"
             ? "ร้านจะโทรยืนยันก่อนจัดส่ง จ่ายเงินตอนรับของได้เลย"
             : "ร้านจะตรวจสอบสลิปและจัดส่งให้เร็วที่สุด"}
-          {!WEBHOOK_URL && (
-            <>
-              <br />
-              <span className="text-xs">(โหมดทดสอบ — ยังไม่ได้ต่อ webhook จริง)</span>
-            </>
-          )}
         </p>
         <Link href="/" className="mt-3 rounded-lg bg-safety px-6 py-2.5 font-heading text-sm font-bold text-white">
           กลับหน้าแรก
