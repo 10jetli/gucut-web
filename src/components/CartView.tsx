@@ -45,7 +45,8 @@ export default function CartView() {
         </h1>
       </header>
 
-      <section className="bg-white">
+      {/* การ์ดขาวขอบมนลอยบนพื้นเทา — ชุดเดียวกับหน้าสั่งซื้อ */}
+      <section className="mx-2 mt-2 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
         {items.map((it, n) => (
           // ใส่ลำดับไว้ในคีย์ด้วย — กันแถวหายถ้าข้อมูลเก่ามีบรรทัดซ้ำกัน
           <div key={`${n}-${it.productId}-${it.variant}`} className="flex gap-2.5 border-b border-steel-800 p-3 last:border-0">

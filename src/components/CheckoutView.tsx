@@ -273,8 +273,9 @@ export default function CheckoutView() {
 
   // -------------------------------------------------------------- หน้าสั่งซื้อ
   return (
-    <main className="bg-steel-900 pb-28">
+    <main className="min-h-[100dvh] bg-steel-900 pb-28">
       <Head title="สั่งซื้อ" />
+      <div className="pt-2" />
 
       {/* ที่อยู่จัดส่ง */}
       <Card>
@@ -460,8 +461,9 @@ const ok = (a: Address) =>
   !!a.province.trim() &&
   /^\d{5}$/.test(a.zip);
 
+// การ์ดขาวขอบมนลอยบนพื้นเทา — ตามหน้าเช็คเอาต์ Shopee ที่เจ้าของร้านส่งมา
 const Card = ({ children }: { children: React.ReactNode }) => (
-  <section className="mb-2 bg-white">{children}</section>
+  <section className="mx-2 mb-2 overflow-hidden rounded-xl bg-white shadow-[0_1px_2px_rgba(0,0,0,0.04)]">{children}</section>
 );
 
 const Chevron = () => (
