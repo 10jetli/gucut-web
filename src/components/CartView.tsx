@@ -93,7 +93,7 @@ export default function CartView() {
             href="/checkout"
             className="shrink-0 rounded-sm bg-safety px-10 py-3 font-heading text-[15px] font-bold text-white active:scale-[0.98]"
           >
-            เช็คเอาต์
+            สั่งสินค้า
           </Link>
         </div>
       </div>
