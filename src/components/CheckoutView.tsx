@@ -444,7 +444,7 @@ export default function CheckoutView() {
 
       <BottomBar
         total={total}
-        label={sending ? "กำลังส่ง…" : pay === "cod" ? "สั่งซื้อ" : "เช็คเอาต์"}
+        label={sending ? "กำลังส่ง…" : pay === "cod" ? "สั่งซื้อ" : "สั่งสินค้า"}
         disabled={sending}
         onClick={placeOrder}
       />
