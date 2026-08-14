@@ -11,6 +11,7 @@ export interface CartItem {
   price: number;
   image: string;
   qty: number;
+  sku?: string;   // SKU ของตัวเลือกที่หยิบ — ออเดอร์ใช้ส่งเข้า ZORT ให้ตัดสต็อกถูกตัว
 }
 
 const KEY = "gucut-cart";

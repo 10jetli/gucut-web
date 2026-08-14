@@ -157,7 +157,7 @@ export default function CheckoutView() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           customer: { ...addr, note },
-          items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty })),
+          items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty, sku: i.sku ?? "" })),
           payment: pay,                                   // "cod" | "promptpay"
           couponCode: coupon?.code ?? null,
           discount,

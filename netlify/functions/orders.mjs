@@ -87,6 +87,7 @@ export default async function handler(req, context) {
       .map((i) => ({
         title: clean(i.title, 160),
         variant: clean(i.variant, 80),
+        sku: clean(i.sku, 64),
         price: money(i.price),
         qty: Math.min(999, Math.max(1, money(i.qty))),
       }))
@@ -133,6 +134,10 @@ export default async function handler(req, context) {
       hasSlip: !!slip,
     };
 
+    // ส่งออเดอร์เข้า ZORT ให้ตัดสต็อกเอง — แบบเดียวกับตอนขายผ่าน Shopify
+    // พังก็ไม่ล้มออเดอร์ (ออเดอร์เก็บที่เราแล้ว) แค่ติดธงให้ร้านเห็นแล้วกดส่งซ้ำได้
+    order.zort = await zortAddOrder(order);
+
     await store.setJSON(`o/${id}`, order);
     if (slip) await store.set(`slip/${id}`, slip);
     rl.n += 1;
@@ -153,6 +158,11 @@ export default async function handler(req, context) {
       (order.taxInvoice ? `🧾 ขอใบกำกับภาษี: ${order.taxInvoice.name}\n` : "") +
       `📍 ${customer.address} ${customer.province} ${customer.zip}\n` +
       (customer.note ? `📝 ${customer.note}\n` : "") +
+      (order.zort?.ok
+        ? `✅ เข้า ZORT แล้ว\n`
+        : order.zort?.skipped
+          ? ""
+          : `⚠️ ส่งเข้า ZORT ไม่สำเร็จ (${order.zort?.message || "?"}) — กดส่งซ้ำได้ในหน้าออเดอร์\n`) +
       `\nเปิดดู: https://new78.com/admin/orders/`;
 
     const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
@@ -220,6 +230,16 @@ export default async function handler(req, context) {
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
     const id = clean(body.id, 40);
+
+    // ส่งเข้า ZORT ซ้ำ — ใช้ตอนรอบแรกพัง (เช่น ZORT ล่มพอดี)
+    if (body.action === "zort") {
+      const o = await store.get(`o/${id}`, { type: "json" }).catch(() => null);
+      if (!o) return json({ error: "not found" }, 404);
+      o.zort = await zortAddOrder(o);
+      await store.setJSON(`o/${id}`, o);
+      return json({ ok: o.zort.ok, order: o });
+    }
+
     const status = clean(body.status, 20);
     if (!STATUSES.includes(status)) return json({ error: "bad status" }, 400);
     const o = await store.get(`o/${id}`, { type: "json" }).catch(() => null);
@@ -231,6 +251,64 @@ export default async function handler(req, context) {
   }
 
   return json({ error: "method not allowed" }, 405);
+}
+
+// ---------------------------------------------------------------------------
+// ส่งออเดอร์เข้า ZORT (open-api.zortout.com) — ใช้รหัสชุดเดียวกับ /api/stock
+// ZORT จับคู่สินค้าด้วย SKU แล้วตัดสต็อกให้เอง เหมือนตอนออเดอร์มาจาก Shopify
+// รายการที่ไม่มี SKU (ของเก่าในตะกร้าลูกค้า) ส่งเป็นชื่อเฉย ๆ ร้านไปจับคู่เองใน ZORT
+// ---------------------------------------------------------------------------
+async function zortAddOrder(order) {
+  const { ZORT_STORENAME, ZORT_APIKEY, ZORT_APISECRET } = process.env;
+  if (!ZORT_STORENAME || !ZORT_APIKEY || !ZORT_APISECRET) {
+    return { ok: false, skipped: true, message: "ยังไม่ได้ตั้งค่า ZORT" };
+  }
+  const body = {
+    number: order.id,                                   // เลขเดียวกับบนเว็บ ตามกันเจอ
+    orderdate: new Date(order.at).toISOString().slice(0, 10),
+    customername: order.customer.name,
+    customerphone: order.customer.phone,
+    customeraddress:
+      `${order.customer.address} ${order.customer.province} ${order.customer.zip}`.trim(),
+    description:
+      `จากเว็บ new78.com · ${order.paymentLabel}` +
+      (order.couponCode ? ` · โค้ด ${order.couponCode}` : "") +
+      (order.customer.note ? ` · ${order.customer.note}` : ""),
+    discountamount: order.discount || 0,
+    shippingamount: order.shipping || 0,
+    amount: order.total,
+    // จ่ายด้วย QR = โอนแล้ว (มีสลิป) · เก็บปลายทาง = ยังไม่จ่าย
+    paymentamount: order.payment === "promptpay" ? order.total : 0,
+    list: order.items.map((i) => ({
+      ...(i.sku ? { sku: i.sku } : {}),
+      name: i.title + (i.variant && i.variant !== "-" ? ` (${i.variant})` : ""),
+      number: i.qty,
+      pricepernumber: i.price,
+    })),
+  };
+  try {
+    const res = await fetch("https://open-api.zortout.com/v4/Order/AddOrder", {
+      method: "POST",
+      headers: {
+        storename: ZORT_STORENAME,
+        apikey: ZORT_APIKEY,
+        apisecret: ZORT_APISECRET,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(9000),
+    });
+    const j = await res.json().catch(() => ({}));
+    // ZORT ตอบรหัสไว้คนละที่แล้วแต่รุ่น — เช็คให้ครบทั้งสองแบบ
+    const code = String(j?.res?.resCode ?? j?.rescode ?? (res.ok ? "200" : res.status));
+    if (code === "200") return { ok: true, id: j?.orderid ?? j?.id ?? null };
+    return {
+      ok: false,
+      message: String(j?.res?.resDesc ?? j?.resdesc ?? `HTTP ${res.status}`).slice(0, 200),
+    };
+  } catch {
+    return { ok: false, message: "ต่อ ZORT ไม่ได้" };
+  }
 }
 
 export const config = { path: "/api/orders" };
