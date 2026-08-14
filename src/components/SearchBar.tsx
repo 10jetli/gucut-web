@@ -1,4 +1,5 @@
 import Link from "next/link";
+import HeaderChat from "./HeaderChat";
 
 // หัวเว็บ — แถบเข้มเต็มความกว้าง โลโก้ + ช่องค้นหาขาว + ไอคอนตะกร้า
 // เส้นส้มใต้แถบคือลายเซ็นของแบรนด์ ใช้ซ้ำที่ท้ายเว็บและหัวข้อทุกหมวด
@@ -15,10 +16,11 @@ export default function SearchBar() {
           <span className="text-safety">GU</span>
           <span className="text-[#c9cacc]">CUT</span>
         </Link>
-        {/* แตะแล้วไปหน้า /search ที่มีช่องพิมพ์จริง (ดัชนีโหลดที่นั่นทีเดียว) */}
+        {/* แตะแล้วไปหน้า /search ที่มีช่องพิมพ์จริง (ดัชนีโหลดที่นั่นทีเดียว)
+            min-w-0 สำคัญ — ไม่ใส่แล้วช่องค้นหาไม่ยอมหด ดันไอคอนตะกร้าตกขอบจอ */}
         <Link
           href="/search/"
-          className="flex flex-1 items-center gap-2 rounded-sm bg-white px-2.5 py-1.5"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-sm bg-white px-2.5 py-1.5"
         >
           <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-[#6b6b6b] stroke-2">
             <circle cx="11" cy="11" r="7" />
@@ -28,6 +30,7 @@ export default function SearchBar() {
             ค้นหาเลื่อยยนต์ โซ่ อะไหล่ รหัสสินค้า...
           </span>
         </Link>
+        <HeaderChat />
         <Link href="/cart/" aria-label="ตะกร้า" className="shrink-0 p-1">
           <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-white stroke-[1.8]">
             <path d="M3 4h2l2.4 11.2a2 2 0 002 1.6h7.7a2 2 0 002-1.6L21 8H6" strokeLinecap="round" strokeLinejoin="round" />
