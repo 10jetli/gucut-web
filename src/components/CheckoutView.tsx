@@ -64,6 +64,11 @@ export default function CheckoutView() {
   const [remember, setRemember] = useState(true);
   const [eta, setEta] = useState("");
   const [coupon, setCoupon] = useState<Coupon | null>(null);
+  // แต้มสะสม — กติกาและยอดแต้มมาจากเซิร์ฟเวอร์ (ฝั่งนี้แค่โชว์กับส่งจำนวนที่อยากแลก)
+  const [loyalty, setLoyalty] = useState<{
+    on: boolean; points: number; redeemValue: number; minRedeem: number; maxPercent: number;
+  } | null>(null);
+  const [usePoints, setUsePoints] = useState(false);
 
   // มาจากปุ่ม "ซื้อเลย" = สั่งเฉพาะชิ้นนั้นชิ้นเดียว ของในตะกร้าไม่เกี่ยวข้อง (แบบ Shopee)
   // เข้าหน้านี้ทางอื่น (ปุ่มสั่งสินค้าในตะกร้า) = สั่งของทั้งตะกร้าเหมือนเดิม
@@ -72,6 +77,13 @@ export default function CheckoutView() {
     const one = getBuyNow();
     if (one) { setBuyNowMode(true); setItems([one]); }
     else setItems(getCart());
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/points")
+      .then((r) => r.json())
+      .then((d) => setLoyalty(d))
+      .catch(() => {});   // ระบบแต้มล่ม — หน้าสั่งซื้อต้องใช้ได้ตามปกติ
   }, []);
 
   // ช่วงวันที่ส่งถึงโดยประมาณ — คิดตอนเปิดหน้าเท่านั้น ไม่งั้น HTML ฝั่ง server ไม่ตรงกับ client
@@ -110,7 +122,18 @@ export default function CheckoutView() {
   const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
   const codFee = pay === "cod" ? COD_FEE : 0;
   const discount = Math.min(coupon?.discount ?? 0, subtotal);
-  const total = Math.max(0, subtotal - discount) + SHIPPING_FEE + codFee;
+
+  // แลกแต้มได้เท่าไหร่ — คิดแบบเดียวกับฝั่งเซิร์ฟเวอร์ (เซิร์ฟเวอร์คิดใหม่อยู่ดี)
+  const afterCoupon = Math.max(0, subtotal - discount);
+  const pointCap = Math.floor((afterCoupon * (loyalty?.maxPercent ?? 0)) / 100);
+  const canUsePoints =
+    !!loyalty?.on && (loyalty?.points ?? 0) >= (loyalty?.minRedeem ?? 0) && pointCap > 0 && (loyalty?.points ?? 0) > 0;
+  const pointsToUse = canUsePoints && usePoints
+    ? Math.min(loyalty!.points, Math.floor(pointCap / loyalty!.redeemValue))
+    : 0;
+  const pointDiscount = Math.min(Math.floor(pointsToUse * (loyalty?.redeemValue ?? 1)), pointCap, afterCoupon);
+
+  const total = Math.max(0, afterCoupon - pointDiscount) + SHIPPING_FEE + codFee;
 
   // ตะกร้าเปลี่ยนแล้วส่วนลดเดิมอาจใช้ไม่ได้ (เช่นมียอดขั้นต่ำ) — ให้กดใช้โค้ดใหม่
   useEffect(() => {
@@ -174,6 +197,7 @@ export default function CheckoutView() {
           payment: pay,                                   // "cod" | "promptpay"
           couponCode: coupon?.code ?? null,
           discount,
+          usePoints: pointsToUse,
           shipping: SHIPPING_FEE,
           codFee,
           taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
@@ -356,6 +380,31 @@ export default function CheckoutView() {
       {/* หมายเหตุ + ใบกำกับภาษี */}
       <Card>
         <CouponRow subtotal={subtotal} coupon={coupon} setCoupon={setCoupon} />
+
+        {/* แต้มสะสม — ขึ้นเฉพาะคนที่ล็อกอินและมีแต้มพอ */}
+        {loyalty?.on && (loyalty.points ?? 0) > 0 && (
+          <button
+            onClick={() => canUsePoints && setUsePoints((v) => !v)}
+            disabled={!canUsePoints}
+            className="flex w-full items-center gap-2 border-b border-steel-800 px-3 py-2.5 text-left last:border-0 disabled:opacity-60"
+          >
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] text-[#1a1a1a]">ใช้แต้มสะสม</span>
+              <span className="block text-[11.5px] text-steel-300">
+                มี {loyalty.points.toLocaleString("th-TH")} แต้ม
+                {!canUsePoints && ` · ต้องมีอย่างน้อย ${loyalty.minRedeem} แต้ม`}
+                {canUsePoints && ` · แลกได้ไม่เกิน ${loyalty.maxPercent}% ของค่าสินค้า`}
+              </span>
+            </span>
+            {usePoints && pointDiscount > 0 ? (
+              <span className="shrink-0 text-[13px] font-bold text-safety">
+                -฿{pointDiscount.toLocaleString("th-TH")}
+              </span>
+            ) : (
+              <span className="shrink-0 text-[12.5px] text-safety">กดใช้แต้ม</span>
+            )}
+          </button>
+        )}
         {editNote ? (
           <div className="space-y-2 p-3">
             <p className="text-[13px] font-semibold text-[#1a1a1a]">หมายเหตุ</p>
@@ -437,6 +486,14 @@ export default function CheckoutView() {
           )}
           <Row label="ค่าจัดส่ง" value={SHIPPING_FEE || "ฟรี"} free={!SHIPPING_FEE} />
           {codFee > 0 && <Row label="ค่าบริการเก็บเงินปลายทาง" value={codFee} />}
+          {pointDiscount > 0 && (
+            <Row
+              label={`ใช้แต้มสะสม (${pointsToUse.toLocaleString("th-TH")} แต้ม)`}
+              value={`-฿${pointDiscount.toLocaleString("th-TH")}`}
+              free
+            />
+          )}
+
           <div className="flex items-center justify-between border-t border-steel-700 pt-2">
             <span className="font-semibold text-[#1a1a1a]">ยอดรวมทั้งหมด</span>
             <Price value={total} className="font-heading text-[17px] font-bold text-safety" />
@@ -686,14 +743,16 @@ function TaxRow({ tax, setTax }: { tax: TaxInfo | null; setTax: (t: TaxInfo | nu
   );
 }
 
-// แถบเช็คเอาต์ติดล่างจอแบบ Shopee — ยอดรวมซ้าย ปุ่มส้มขวา
+// แถบเช็คเอาต์ติดล่างจอแบบ Shopee
+// ยอดรวมชิดไปทางขวาติดกับปุ่ม (แบบเดียวกับ Shopee) ไม่ใช่แปะซ้ายสุดแล้วเว้นกลางโล่ง ๆ
+// สายตาลูกค้าจะได้เห็น "ยอดที่ต้องจ่าย" กับ "ปุ่มกด" ในสายตาเดียว
 function BottomBar({
   total, label, disabled, hint, onClick,
 }: { total: number; label: string; disabled?: boolean; hint?: string; onClick: () => void }) {
   return (
     <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-lg border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]">
-      <div className="flex items-center gap-3 px-3 py-2">
-        <div className="min-w-0 flex-1">
+      <div className="flex items-center justify-end gap-2.5 px-3 py-2">
+        <div className="min-w-0 text-right">
           <p className="text-[11px] text-steel-300">{hint ?? "ยอดรวม"}</p>
           <Price value={total} className="font-heading text-[18px] font-bold text-safety" />
         </div>

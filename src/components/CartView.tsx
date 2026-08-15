@@ -84,8 +84,9 @@ export default function CartView() {
 
       {/* แถบสรุปยอด + ปุ่มเช็คเอาต์ — ลอยเหนือเมนูล่าง */}
       <div className="fixed inset-x-0 bottom-[57px] z-40 mx-auto max-w-lg border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]">
-        <div className="flex items-center gap-3 px-3 py-2">
-          <div className="min-w-0 flex-1">
+        {/* ยอดรวมชิดขวาติดปุ่ม แบบเดียวกับหน้าสั่งซื้อและ Shopee */}
+        <div className="flex items-center justify-end gap-2.5 px-3 py-2">
+          <div className="min-w-0 text-right">
             <p className="text-[11px] text-steel-300">ยอดรวม</p>
             <Price value={total} className="font-heading text-[18px] font-bold text-safety" />
           </div>

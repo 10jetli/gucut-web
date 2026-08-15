@@ -150,6 +150,11 @@ export default function AccountHome() {
             <span className="flex-1 text-[14px] text-ink">แชทกับร้าน</span>
             <span className="text-[15px] text-ink-300">›</span>
           </button>
+          <Link href="/account/points/" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
+            <Ico d="M12 3l2.6 5.6 6.4.8-4.7 4.3 1.3 6.3L12 17l-5.6 3 1.3-6.3L3 9.4l6.4-.8L12 3z" />
+            <span className="flex-1 text-[14px] text-ink">แต้มสะสม</span>
+            <span className="text-[15px] text-ink-300">›</span>
+          </Link>
           <Link href="/videos" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
             <Ico d="M4 6.5h16v11H4zM10.5 9.5l4 2.5-4 2.5v-5z" />
             <span className="flex-1 text-[14px] text-ink">วิดีโอรีวิวสินค้า</span>

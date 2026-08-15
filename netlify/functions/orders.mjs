@@ -22,6 +22,7 @@ import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
 import { markUsed } from "../lib/coupons.mjs";
+import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -101,7 +102,17 @@ export default async function handler(req, context) {
     const codFee = money(body.codFee);
     // ส่วนลดรับตามที่แจ้ง แต่ไม่ให้เกินค่าสินค้า — โค้ดถูกตรวจกับ /api/coupon ไปแล้ว
     const discount = Math.min(money(body.discount), subtotal);
-    const total = Math.max(0, subtotal - discount) + shipping + codFee;
+
+    // แลกแต้มสะสม — คิดฝั่งเซิร์ฟเวอร์เสมอ ไม่เชื่อตัวเลขจากเบราว์เซอร์
+    // ต้องล็อกอินอยู่จริงถึงแลกได้ (แต้มผูกกับบัญชี)
+    const cfg = await readLoyalty();
+    const buyer = await currentUser(req, usersStore()).then((r) => r?.user ?? null).catch(() => null);
+    const plan = buyer
+      ? redeemPlan(body.usePoints, Number(buyer.points || 0), Math.max(0, subtotal - discount), cfg)
+      : { points: 0, discount: 0 };
+    const pointDiscount = plan.discount || 0;
+
+    const total = Math.max(0, subtotal - discount - pointDiscount) + shipping + codFee;
 
     const payment = body.payment === "promptpay" ? "promptpay" : "cod";
     const slip = typeof body.slipBase64 === "string" && body.slipBase64.startsWith("data:image/")
@@ -122,6 +133,8 @@ export default async function handler(req, context) {
       paymentLabel: payment === "cod" ? "เก็บเงินปลายทาง" : "QR พร้อมเพย์",
       couponCode: clean(body.couponCode, 40) || null,
       discount,
+      pointsUsed: plan.points || 0,
+      pointDiscount,
       subtotal,
       shipping,
       codFee,
@@ -146,8 +159,13 @@ export default async function handler(req, context) {
     // นับโควตาโค้ดส่วนลด "ตอนสั่งจริง" เท่านั้น ไม่ใช่ตอนลูกค้ากดลองโค้ด
     // ไม่งั้นโค้ดจำนวนจำกัดจะหมดทั้งที่ยังไม่มีใครซื้อสักคน
     if (order.couponCode) {
-      const buyer = await currentUser(req, usersStore()).then((r) => r?.user ?? null).catch(() => null);
       await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
+    }
+
+    // หักแต้มที่แลกไปทันที (แต้มที่จะ "ได้" จากบิลนี้ รอจนออเดอร์สำเร็จก่อน)
+    if (buyer && order.pointsUsed > 0) {
+      await addPoints(usersStore(), buyer.phone, -order.pointsUsed, `ใช้แลกส่วนลด ฿${pointDiscount}`, id)
+        .catch(() => {});
     }
     rl.n += 1;
     await store.setJSON(`rl/${ip}`, rl).catch(() => {});
@@ -279,6 +297,19 @@ export default async function handler(req, context) {
     if (!o) return json({ error: "not found" }, 404);
     o.status = status;
     o.statusAt = Date.now();
+
+    // ออเดอร์ถึงมือลูกค้าแล้วค่อยให้แต้ม — ไม่ให้ตอนสั่ง เพราะยกเลิก/คืนของได้
+    // ให้ครั้งเดียวต่อออเดอร์ (ธง pointsGiven) ต่อให้กดสถานะสลับไปมาก็ไม่ได้ซ้ำ
+    if (status === "done" && !o.pointsGiven) {
+      const cfg = await readLoyalty();
+      const gain = earnFrom(o.subtotal ?? 0, cfg);
+      if (gain > 0) {
+        const phone = normPhone(o.customer?.phone);
+        const after = await addPoints(usersStore(), phone, gain, `ได้จากออเดอร์ ${o.id}`, o.id).catch(() => null);
+        if (after !== null) { o.pointsGiven = gain; o.pointsAt = Date.now(); }
+      }
+    }
+
     await store.setJSON(`o/${id}`, o);
     return json({ ok: true, order: o });
   }

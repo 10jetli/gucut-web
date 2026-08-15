@@ -96,7 +96,9 @@ export default function AdminStatus() {
     setBusy(false);
   }, [key, busy]);
 
-  useEffect(() => { if (key) load(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [key]);
+  // ⚠️ ไม่เช็คอัตโนมัติตอนเปิดหน้า — เจ้าของร้านสั่งไว้ว่าให้กดเองเท่านั้น
+  // การเช็คหนึ่งครั้งยิงไปหา ZORT · Telegram · R2 · Blobs จริงทุกตัว
+  // ถ้าเปิดหน้าทีเช็คที = เปลืองโดยไม่ได้อะไร
 
   const bad = (rows ?? []).filter((r) => r.state === "down").length;
   const slow = (rows ?? []).filter((r) => r.state === "slow").length;
@@ -120,12 +122,24 @@ export default function AdminStatus() {
         <section
           className={`mb-3 rounded-sm p-4 text-center ${bad ? "bg-safety-tint" : "bg-white"}`}
         >
-          <p className={`font-heading text-[17px] font-bold ${bad ? "text-safety" : "text-[#12a150]"}`}>
-            {rows === null ? "กำลังเช็ค..." : bad ? `มี ${bad} ระบบใช้ไม่ได้` : slow ? `ทำงานได้ แต่ ${slow} ระบบช้าผิดปกติ` : "ทุกระบบปกติ"}
+          <p className={`font-heading text-[17px] font-bold ${bad ? "text-safety" : rows === null ? "text-ink" : "text-[#12a150]"}`}>
+            {rows === null
+              ? (busy ? "กำลังเช็ค..." : "ยังไม่ได้เช็ค")
+              : bad ? `มี ${bad} ระบบใช้ไม่ได้` : slow ? `ทำงานได้ แต่ ${slow} ระบบช้าผิดปกติ` : "ทุกระบบปกติ"}
           </p>
           <p className="mt-1 text-[12px] text-ink-300">
-            {rows === null ? "ยิงเช็คของจริงทีละตัว" : `เช็คของจริงเมื่อ ${at} น. · ${rows.length} ระบบ`}
+            {rows === null
+              ? "กดปุ่มเช็คแล้วระบบจะยิงไปถามของจริงทีละตัว"
+              : `เช็คของจริงเมื่อ ${at} น. · ${rows.length} ระบบ`}
           </p>
+          {rows === null && !busy && (
+            <button
+              onClick={load}
+              className="mt-3 rounded-sm bg-safety px-6 py-2.5 text-[14px] font-semibold text-white"
+            >
+              เช็คระบบตอนนี้
+            </button>
+          )}
         </section>
 
         <section className="overflow-hidden rounded-sm bg-white">
@@ -145,7 +159,11 @@ export default function AdminStatus() {
               </div>
             );
           })}
-          {rows === null && <p className="px-3.5 py-10 text-center text-[13px] text-ink-300">กำลังเช็ค...</p>}
+          {rows === null && (
+            <p className="px-3.5 py-10 text-center text-[13px] text-ink-300">
+              {busy ? "กำลังเช็ค..." : "กด \u201cเช็คระบบตอนนี้\u201d ด้านบนเพื่อเริ่มตรวจ"}
+            </p>
+          )}
         </section>
 
         <p className="mt-3 px-1 text-[11.5px] leading-relaxed text-ink-300">
