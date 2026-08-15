@@ -155,9 +155,19 @@ export default function AccountHome() {
             <span className="flex-1 text-[14px] text-ink">วิดีโอรีวิวสินค้า</span>
             <span className="text-[15px] text-ink-300">›</span>
           </Link>
-          <Link href="/categories" className="flex items-center gap-3 px-3.5 py-3.5">
+          <Link href="/categories" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
             <Ico d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
             <span className="flex-1 text-[14px] text-ink">หมวดหมู่สินค้าทั้งหมด</span>
+            <span className="text-[15px] text-ink-300">›</span>
+          </Link>
+          <Link href="/policy/privacy/" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
+            <Ico d="M12 3l7 3v6c0 4.2-2.9 7.6-7 9-4.1-1.4-7-4.8-7-9V6l7-3z" />
+            <span className="flex-1 text-[14px] text-ink">นโยบายความเป็นส่วนตัว</span>
+            <span className="text-[15px] text-ink-300">›</span>
+          </Link>
+          <Link href="/policy/terms/" className="flex items-center gap-3 px-3.5 py-3.5">
+            <Ico d="M6 3h9l3 3v15H6V3zM9 9h6M9 13h6M9 17h4" />
+            <span className="flex-1 text-[14px] text-ink">เงื่อนไขการใช้บริการ</span>
             <span className="text-[15px] text-ink-300">›</span>
           </Link>
         </section>

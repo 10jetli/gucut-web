@@ -150,7 +150,7 @@ export default function SocialLink() {
 
         <p className="mb-7 mt-auto pt-10 text-center text-[11.5px] leading-relaxed text-ink-300">
           ร้านใช้เบอร์โทรเพื่อยืนยันตัวตนและติดตามพัสดุเท่านั้น
-          <br />ไม่ส่งต่อให้บุคคลอื่น
+          <br />ไม่ส่งต่อให้บุคคลอื่น · <Link href="/policy/privacy/" className="text-safety">นโยบายความเป็นส่วนตัว</Link>
         </p>
       </div>
     </main>

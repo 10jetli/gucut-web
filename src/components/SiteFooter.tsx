@@ -1,3 +1,5 @@
+import Link from "next/link";
+
 // ท้ายเว็บ — บล็อกเข้มปิดท้ายทุกหน้าร้าน ใช้เส้นส้มเดียวกับหัวเว็บ
 // อยู่ใน Shell จึงขึ้นเองทุกหน้า ไม่ต้องไปใส่ทีละหน้า
 export default function SiteFooter() {
@@ -13,7 +15,13 @@ export default function SiteFooter() {
         โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งฟรีทั่วไทย
       </p>
       <span aria-hidden className="mx-auto mt-5 block h-px w-10 bg-safety" />
-      <p className="mt-4 text-[11px] text-[#8a8a8a]">new78.com</p>
+      {/* Meta / Google บังคับให้ลิงก์สองอันนี้เข้าถึงได้จากทุกหน้า ตอนขอเปิดใช้ปุ่มเข้าสู่ระบบ */}
+      <nav className="mt-4 flex items-center justify-center gap-2 text-[11px] text-[#a9a9a9]">
+        <Link href="/policy/privacy/" className="underline underline-offset-2">นโยบายความเป็นส่วนตัว</Link>
+        <span aria-hidden>·</span>
+        <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
+      </nav>
+      <p className="mt-3 text-[11px] text-[#8a8a8a]">new78.com</p>
     </footer>
   );
 }

@@ -17,6 +17,15 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: p === "" ? 1 : 0.7,
   }));
 
+  // หน้าเอกสารของร้าน — เปลี่ยนแปลงน้อย แต่ต้องให้ Google เห็น
+  // (Meta/Google ตรวจว่าเข้าถึงได้จริงก่อนอนุมัติปุ่มเข้าสู่ระบบ)
+  const policyPages = ["/policy/privacy", "/policy/terms"].map((p) => ({
+    url: `${BASE}${p}/`,
+    lastModified: now,
+    changeFrequency: "yearly" as const,
+    priority: 0.3,
+  }));
+
   const collectionPages = collections.map((c) => ({
     url: `${BASE}/c/${encodeURIComponent(c.h)}/`,
     lastModified: now,
@@ -42,5 +51,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     }));
 
-  return [...staticPages, ...collectionPages, ...productPages, ...reviewPages];
+  return [...staticPages, ...policyPages, ...collectionPages, ...productPages, ...reviewPages];
 }

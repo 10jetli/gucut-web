@@ -303,8 +303,8 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         {/* ---------- เงื่อนไข ---------- */}
         <p className="mb-7 mt-auto pt-10 text-center text-[11.5px] leading-relaxed text-ink-300">
           โดยการ{isLogin ? "เข้าสู่ระบบ" : "สมัครสมาชิก"} ฉันได้อ่านและยอมรับ{" "}
-          <Link href="/account/" className="text-safety">เงื่อนไขการใช้บริการ</Link>
-          <br />และ <Link href="/account/" className="text-safety">นโยบายความเป็นส่วนตัว</Link> ของ GUCUT
+          <Link href="/policy/terms/" className="text-safety">เงื่อนไขการใช้บริการ</Link>
+          <br />และ <Link href="/policy/privacy/" className="text-safety">นโยบายความเป็นส่วนตัว</Link> ของ GUCUT
         </p>
       </div>
 
