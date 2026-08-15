@@ -6,6 +6,7 @@ import CouponStrip from "@/components/CouponStrip";
 import ProductCard from "@/components/ProductCard";
 import SectionHead from "@/components/SectionHead";
 import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog";
+import { ldScript, organizationLd, websiteLd } from "@/lib/seo";
 
 // หน้าแรก — feed สไตล์ Shopee / TikTok Shop
 export default function HomePage() {
@@ -23,6 +24,11 @@ export default function HomePage() {
     <main>
       <SearchBar />
       <CategoryNav items={nav} />
+      {/* บอกเครื่องให้รู้ว่าร้านนี้คือใคร ขายอะไร — ตัวนี้สำคัญที่สุดสำหรับ
+          AI (ChatGPT/Gemini/Perplexity) เวลามีคนถามว่า "ซื้อเลื่อยยนต์ที่ไหนดี" */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(organizationLd())} />
+      <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(websiteLd())} />
+
       <BannerSlider />
 
       {/* โค้ดส่วนลดให้กดเก็บแบบ Shopee — ร้านยังไม่เปิดโค้ดไหนก็ไม่ขึ้นอะไรเลย ไม่กินที่ */}

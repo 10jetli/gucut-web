@@ -1,4 +1,6 @@
 import { notFound } from "next/navigation";
+import { abs, breadcrumbLd, ldScript, videoLd } from "@/lib/seo";
+import { videoForProduct } from "@/lib/videos";
 import ProductDetail from "@/components/ProductDetail";
 import ReviewSection from "@/components/ReviewSection";
 import { products, getProduct, getCollection, inCollection, sellable } from "@/lib/catalog";
@@ -80,12 +82,35 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
       : {}),
   };
 
+  const clip = videoForProduct(p.h);
+
+  // เส้นทางหน้า — ผลค้นหาจะโชว์ หน้าแรก › หมวด › สินค้า แทน URL ยาว ๆ
+  const crumbLd = breadcrumbLd([
+    { name: "หน้าแรก", url: "/" },
+    ...(crumbs[0] ? [{ name: crumbs[0].t, url: `/c/${encodeURIComponent(crumbs[0].h)}/` }] : []),
+    { name: p.t, url: `/products/${encodeURIComponent(p.h)}/` },
+  ]);
+
+  // คลิปที่ผูกกับสินค้านี้ — บอกเครื่องว่ามีวิดีโอจริงประกอบสินค้า
+  const clipLd = clip
+    ? videoLd({
+        id: clip.v,
+        name: `${p.t} — คลิปจากหน้าร้าน GUCUT`,
+        description: p.d.slice(0, 200) || p.t,
+        thumb: abs(`/img/${p.img?.split("/").pop() ?? ""}`),
+        dur: clip.dur,
+        url: abs(`/videos/?v=${clip.v}`),
+      })
+    : null;
+
   return (
     <>
       <script
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
       />
+      <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(crumbLd)} />
+      {clipLd && <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(clipLd)} />}
       <ProductDetail
         product={p}
         related={related}

@@ -3,6 +3,7 @@ import SectionHead from "@/components/SectionHead";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { collections, getCollection, inCollection } from "@/lib/catalog";
+import { breadcrumbLd, itemListLd, ldScript } from "@/lib/seo";
 
 export const dynamicParams = false;
 
@@ -35,6 +36,18 @@ export default async function CollectionPage({ params }: { params: Promise<{ han
 
   return (
     <main className="pb-4">
+      {/* บอกเครื่องว่าหน้านี้คือรายการสินค้าอะไรบ้าง + เส้นทางหน้า */}
+      <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(itemListLd(items))} />
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={ldScript(
+          breadcrumbLd([
+            { name: "หน้าแรก", url: "/" },
+            { name: "หมวดหมู่", url: "/categories/" },
+            { name: c!.t, url: `/c/${encodeURIComponent(c!.h)}/` },
+          ]),
+        )}
+      />
       <header className="flex items-center gap-2 border-b border-steel-800 px-3 py-3">
         <Link href="/categories/" className="text-xl leading-none text-steel-300" aria-label="ย้อนกลับ">
           &lsaquo;
