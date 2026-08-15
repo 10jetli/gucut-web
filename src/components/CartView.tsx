@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { getCart, updateQty, removeItem, type CartItem } from "@/lib/cart";
+import { clearBuyNow, getCart, updateQty, removeItem, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
 
 // หน้าตะกร้า — หน้าตาชุดเดียวกับหน้าสั่งซื้อ (การ์ดขาว · ปุ่ม − จำนวน + · ลบ)
@@ -89,8 +89,10 @@ export default function CartView() {
             <p className="text-[11px] text-steel-300">ยอดรวม</p>
             <Price value={total} className="font-heading text-[18px] font-bold text-safety" />
           </div>
+          {/* ล้างของที่ค้างจากปุ่ม "ซื้อเลย" ก่อน — ไม่งั้นหน้าสั่งซื้อจะโชว์ชิ้นเดียวแทนทั้งตะกร้า */}
           <Link
             href="/checkout"
+            onClick={() => clearBuyNow()}
             className="shrink-0 rounded-sm bg-safety px-10 py-3 font-heading text-[15px] font-bold text-white active:scale-[0.98]"
           >
             สั่งสินค้า

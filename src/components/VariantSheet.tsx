@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useState } from "react";
-import { addToCart } from "@/lib/cart";
+import { addToCart, setBuyNow } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
 import Portal from "./Portal";
@@ -55,20 +55,24 @@ export default function VariantSheet({
 
   function confirm() {
     if (hasVariants && !sel) return;
-    addToCart(
-      {
-        productId: product.id,
-        handle: product.h,
-        title: product.t,
-        variant: sel?.t ?? "-",
-        price,
-        image: img ?? "",
-        sku: sel?.k || product.sku || product.v[0]?.k || "",
-      },
-      qty
-    );
+    const picked = {
+      productId: product.id,
+      handle: product.h,
+      title: product.t,
+      variant: sel?.t ?? "-",
+      price,
+      image: img ?? "",
+      sku: sel?.k || product.sku || product.v[0]?.k || "",
+    };
     onClose();
-    if (mode === "buy") window.location.href = "/cart/";
+    // "ซื้อเลย" แบบ Shopee — ซื้อเฉพาะชิ้นนี้ ไม่ใส่ตะกร้า ของที่ค้างในตะกร้าไม่ถูกแตะ
+    // แล้วข้ามหน้าตะกร้าไปหน้าสั่งซื้อเลย (หน้านั้นปรับจำนวน/ลบของได้อยู่แล้ว)
+    if (mode === "buy") {
+      setBuyNow(picked, qty);
+      window.location.href = "/checkout/";
+      return;
+    }
+    addToCart(picked, qty);
   }
 
   if (!open) return null;

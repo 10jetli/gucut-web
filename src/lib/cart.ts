@@ -59,3 +59,38 @@ export function cartCount(): number {
 export function cartTotal(): number {
   return getCart().reduce((s, i) => s + i.price * i.qty, 0);
 }
+
+// ---------------------------------------------------------------------------
+// "ซื้อเลย" แบบ Shopee — ซื้อเฉพาะชิ้นที่กด ไม่ยุ่งกับของในตะกร้า
+//
+// เก็บที่ sessionStorage ไม่ใช่ localStorage ตั้งใจให้เป็นของชั่วคราวประจำแท็บ
+// ปิดแท็บแล้วหายไปเอง จะได้ไม่มีของค้างมาโผล่ในการสั่งซื้อรอบหน้า
+// ตะกร้า (localStorage) ไม่ถูกแตะเลยทั้งตอนกดซื้อและตอนสั่งสำเร็จ
+// ---------------------------------------------------------------------------
+const BUY_KEY = "gucut-buynow";
+
+export function setBuyNow(item: Omit<CartItem, "qty">, qty = 1) {
+  sessionStorage.setItem(BUY_KEY, JSON.stringify({ ...item, qty }));
+}
+
+export function getBuyNow(): CartItem | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(BUY_KEY);
+    const it = raw ? (JSON.parse(raw) as CartItem) : null;
+    return it && it.qty > 0 ? it : null;
+  } catch {
+    return null;
+  }
+}
+
+export function setBuyNowQty(qty: number) {
+  const it = getBuyNow();
+  if (!it) return;
+  if (qty > 0) sessionStorage.setItem(BUY_KEY, JSON.stringify({ ...it, qty }));
+  else clearBuyNow();
+}
+
+export function clearBuyNow() {
+  if (typeof window !== "undefined") sessionStorage.removeItem(BUY_KEY);
+}

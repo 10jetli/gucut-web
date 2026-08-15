@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import QRCode from "qrcode";
-import { getCart, updateQty, type CartItem } from "@/lib/cart";
+import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
@@ -65,7 +65,14 @@ export default function CheckoutView() {
   const [eta, setEta] = useState("");
   const [coupon, setCoupon] = useState<Coupon | null>(null);
 
-  useEffect(() => setItems(getCart()), []);
+  // มาจากปุ่ม "ซื้อเลย" = สั่งเฉพาะชิ้นนั้นชิ้นเดียว ของในตะกร้าไม่เกี่ยวข้อง (แบบ Shopee)
+  // เข้าหน้านี้ทางอื่น (ปุ่มสั่งสินค้าในตะกร้า) = สั่งของทั้งตะกร้าเหมือนเดิม
+  const [buyNow, setBuyNowMode] = useState(false);
+  useEffect(() => {
+    const one = getBuyNow();
+    if (one) { setBuyNowMode(true); setItems([one]); }
+    else setItems(getCart());
+  }, []);
 
   // ช่วงวันที่ส่งถึงโดยประมาณ — คิดตอนเปิดหน้าเท่านั้น ไม่งั้น HTML ฝั่ง server ไม่ตรงกับ client
   useEffect(() => {
@@ -120,6 +127,12 @@ export default function CheckoutView() {
 
   // ปรับจำนวน / ลบของ ได้จากหน้านี้เลยแบบ Shopee
   const setQty = (i: CartItem, q: number) => {
+    if (buyNow) {
+      setBuyNowQty(q);
+      const one = getBuyNow();
+      setItems(one ? [one] : []);
+      return;
+    }
     updateQty(i.productId, i.variant, q);
     setItems(getCart());
   };
@@ -170,7 +183,9 @@ export default function CheckoutView() {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.ok) throw new Error(j?.error || `orders ${res.status}`);
       setOrderId(j.orderId);
-      items.forEach((i) => updateQty(i.productId, i.variant, 0));   // ล้างตะกร้า
+      // ซื้อเลย = ล้างเฉพาะของชิ้นที่ซื้อ ตะกร้าเดิมยังอยู่ครบ · สั่งจากตะกร้า = ล้างตะกร้า
+      if (buyNow) clearBuyNow();
+      else items.forEach((i) => updateQty(i.productId, i.variant, 0));
       setStep("done");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "";
@@ -188,7 +203,9 @@ export default function CheckoutView() {
     return (
       <main className="flex min-h-[70vh] flex-col items-center justify-center gap-3 px-6 text-center">
         <span className="text-4xl">🛒</span>
-        <p className="text-steel-300">ตะกร้าว่าง — เลือกสินค้าก่อนสั่งซื้อ</p>
+        <p className="text-steel-300">
+          {buyNow ? "ไม่มีสินค้าในรายการสั่งซื้อนี้" : "ตะกร้าว่าง — เลือกสินค้าก่อนสั่งซื้อ"}
+        </p>
         <Link href="/" className="rounded-lg bg-safety px-5 py-2.5 font-heading text-sm font-bold text-white">
           เลือกซื้อสินค้า
         </Link>
