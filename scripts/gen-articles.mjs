@@ -25,14 +25,19 @@ const dec = (s) =>
     .replace(/&quot;/g, '"').replace(/&#39;/g, "'")
     .replace(/&nbsp;/g, " ").replace(/&amp;/g, "&");
 
-// handle บางอันคือคำถามยาวทั้งประโยค (ยาวเกิน 250 ตัวอักษร) เอามาทำเป็นชื่อไฟล์
-// ตอน build ไม่ได้ ระบบไฟล์รับไม่ไหว — ตัดให้สั้นลงโดยตัดตรงขีดคั่นคำ
-// ภาษาไทยตัวละ 3 ไบต์ จึงคุมที่ 90 ตัวอักษรเพื่อให้ปลอดภัยกับ macOS/Linux
+// handle บางอันคือคำถามยาวทั้งประโยค เอามาตั้งเป็นชื่อโฟลเดอร์ตอน build ไม่ได้
+//
+// ⚠️ ต้องนับเป็น "ไบต์" ไม่ใช่จำนวนตัวอักษร — ภาษาไทยตัวละ 3 ไบต์
+//    Linux (เครื่องที่ Netlify ใช้ build) จำกัดชื่อไฟล์ที่ 255 ไบต์
+//    macOS ใจดีกว่า นับเป็นตัวอักษร จึง build ผ่านในเครื่องแต่ไปพังบน Netlify
+//    เคยทำ build ล่มมาแล้วเพราะจุดนี้ อย่าเปลี่ยนกลับไปนับเป็นตัวอักษร
+const MAX_BYTES = 120;
 const shorten = (h) => {
-  if (h.length <= 90) return h;
-  const cut = h.slice(0, 90);
+  if (Buffer.byteLength(h, "utf8") <= MAX_BYTES) return h;
+  let cut = h;
+  while (Buffer.byteLength(cut, "utf8") > MAX_BYTES) cut = cut.slice(0, -1);
   const dash = cut.lastIndexOf("-");
-  return dash > 40 ? cut.slice(0, dash) : cut;
+  return dash > 15 ? cut.slice(0, dash) : cut;
 };
 
 const get = (url) => fetch(url).then((r) => (r.ok ? r.text() : "")).catch(() => "");
