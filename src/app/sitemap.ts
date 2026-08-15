@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { articles } from "@/lib/articles";
 import { products, collections } from "@/lib/catalog";
 
 // sitemap สำหรับ 2,482 หน้าสินค้า + 30 หมวด
@@ -26,6 +27,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
     priority: 0.3,
   }));
 
+  // บทความจากบล็อกเดิม — ไม่ได้อยู่ในเมนู (เจ้าของร้านไม่อยากให้โชว์)
+  // Google จึงต้องเจอจาก sitemap นี้เท่านั้น
+  const articlePages = [
+    { url: `${BASE}/articles/`, lastModified: now, changeFrequency: "weekly" as const, priority: 0.5 },
+    ...articles.map((a) => ({
+      url: `${BASE}/articles/${encodeURIComponent(a.h)}/`,
+      lastModified: new Date(a.at || now),
+      changeFrequency: "yearly" as const,
+      priority: 0.6,
+    })),
+  ];
+
   const collectionPages = collections.map((c) => ({
     url: `${BASE}/c/${encodeURIComponent(c.h)}/`,
     lastModified: now,
@@ -51,5 +64,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     }));
 
-  return [...staticPages, ...policyPages, ...collectionPages, ...productPages, ...reviewPages];
+  return [...staticPages, ...policyPages, ...articlePages, ...collectionPages, ...productPages, ...reviewPages];
 }
