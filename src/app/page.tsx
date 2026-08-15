@@ -2,6 +2,7 @@ import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import BannerSlider from "@/components/BannerSlider";
 import CategoryNav from "@/components/CategoryNav";
+import CouponStrip from "@/components/CouponStrip";
 import ProductCard from "@/components/ProductCard";
 import SectionHead from "@/components/SectionHead";
 import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog";
@@ -23,6 +24,9 @@ export default function HomePage() {
       <SearchBar />
       <CategoryNav items={nav} />
       <BannerSlider />
+
+      {/* โค้ดส่วนลดให้กดเก็บแบบ Shopee — ร้านยังไม่เปิดโค้ดไหนก็ไม่ขึ้นอะไรเลย ไม่กินที่ */}
+      <CouponStrip />
 
       {rows.map(({ c, items }) => (
         <section key={c.h} className="mt-5">

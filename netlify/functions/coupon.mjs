@@ -1,28 +1,28 @@
-// ตรวจโค้ดส่วนลด — /api/coupon
+// โค้ดส่วนลด — /api/coupon
+//
+//   GET  /api/coupon                            โค้ดที่โชว์ให้ลูกค้าเห็น + โค้ดที่ฉันเก็บไว้
+//   POST {action:"check",   code, subtotal}     ตรวจว่าใช้กับยอดนี้ได้ไหม
+//   POST {action:"collect", code}               กดเก็บโค้ดเข้าบัญชี (ต้องล็อกอิน)
+//   POST {action:"save",    coupon}             สร้าง/แก้โค้ด (ต้องมีรหัสหลังร้าน)
+//   POST {action:"delete",  code}               ลบโค้ด (ต้องมีรหัสหลังร้าน)
 //
 // ⚠️ ต้องตรวจที่นี่เท่านั้น ห้ามย้ายไปตรวจในเบราว์เซอร์
-//    ถ้าเก็บรายชื่อโค้ดไว้ในหน้าเว็บ ลูกค้ากด "ดูซอร์ส" ก็เห็นโค้ดทั้งหมด
-//    แล้วเอาไปแจกกันได้ทันที
-//
-// รายชื่อโค้ดอยู่ที่ตัวแปรลับ COUPON_CODES ของ Netlify — เป็น JSON array
-//   [
-//     { "code": "GUCUT100", "type": "amount",  "value": 100, "min": 1000 },
-//     { "code": "SAVE10",   "type": "percent", "value": 10,  "min": 500, "max": 300 },
-//     { "code": "NEWYEAR",  "type": "amount",  "value": 200, "until": "2026-12-31" }
-//   ]
-//   type   amount = ลดเป็นบาท · percent = ลดเป็นเปอร์เซ็นต์
-//   min    ยอดขั้นต่ำถึงจะใช้ได้ (ไม่ใส่ = ไม่มีขั้นต่ำ)
-//   max    เพดานส่วนลด ใช้กับ percent (ไม่ใส่ = ไม่มีเพดาน)
-//   until  วันสุดท้ายที่ใช้ได้ YYYY-MM-DD (ไม่ใส่ = ไม่มีวันหมดอายุ)
-//
-// ยังไม่ตั้ง COUPON_CODES = ไม่มีโค้ดไหนใช้ได้ (ตอบว่าไม่มีโค้ดนี้ตามปกติ)
-import { getStore } from "@netlify/blobs";
+//    ถึงตัวโค้ดจะไม่ลับแล้ว (โชว์ให้กดเก็บแบบ Shopee) แต่เพดานส่วนลด โควตา
+//    และจำนวนครั้งต่อคน ถ้าเช็คฝั่งลูกค้าจะปลอมได้ทันที
+import { adminGate } from "../lib/admin-gate.mjs";
+import {
+  allCoupons, couponStore, findCoupon, publicCoupon, readCoupons, validate, writeCoupons,
+} from "../lib/coupons.mjs";
+import { currentUser, store as usersStore } from "../lib/session.mjs";
 
 const MAX_TRIES = 20;                 // ลองผิดได้กี่ครั้งต่อ IP
-const WINDOW_MS = 10 * 60 * 1000;     // ในช่วงเวลาเท่านี้
+const WINDOW_MS = 10 * 60 * 1000;
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
+
+const up = (v) => String(v ?? "").trim().toUpperCase().slice(0, 40);
+const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
 const who = (req, context) =>
   context?.ip ||
@@ -30,67 +30,124 @@ const who = (req, context) =>
   req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
   "unknown";
 
-function rules() {
-  try {
-    const list = JSON.parse(process.env.COUPON_CODES || "[]");
-    return Array.isArray(list) ? list : [];
-  } catch {
-    return [];   // JSON พิมพ์ผิด — ถือว่าไม่มีโค้ด ดีกว่าทำให้หน้าสั่งซื้อพัง
-  }
+// กันยิงเดาโค้ดรัว ๆ — นับแยกตาม IP
+async function tooMany(s, ip) {
+  const now = Date.now();
+  const rl = (await s.get(`rl/${ip}`, { type: "json" }).catch(() => null)) || { n: 0, start: now };
+  if (now - rl.start > WINDOW_MS) { rl.n = 0; rl.start = now; }
+  if (rl.n >= MAX_TRIES) return true;
+  rl.n += 1;
+  await s.setJSON(`rl/${ip}`, rl).catch(() => {});
+  return false;
 }
 
+const me = async (req) => {
+  try {
+    const found = await currentUser(req, usersStore());
+    return found?.user ?? null;
+  } catch {
+    return null;   // ระบบสมาชิกล่ม — ยังให้ใช้โค้ดทั่วไปได้ตามปกติ
+  }
+};
+
 export default async function handler(req, context) {
+  let s;
+  try { s = couponStore(); } catch { return json({ error: "store unavailable" }, 503); }
+
+  // ---------- รายการโค้ดที่โชว์ให้ลูกค้าเห็น ----------
+  if (req.method === "GET") {
+    // ฝั่งร้านขอดูทุกโค้ด รวมของที่ปิดอยู่และของลับ (ต้องมีรหัสหลังร้าน)
+    if (new URL(req.url).searchParams.get("all")) {
+      const gate = await adminGate(req, context);
+      if (gate.deny) return gate.deny;
+      if (!gate.ok) return json({ error: "unauthorized" }, 401);
+      return json({ all: await readCoupons(s) });
+    }
+
+    const user = await me(req);
+    const list = (await readCoupons(s))
+      .filter((c) => c.visible !== false && !c.off)
+      .map(publicCoupon);
+    return json({ coupons: list, mine: user?.coupons ?? {} });
+  }
+
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   let body;
   try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
+  const action = String(body.action || "check");
 
-  const code = String(body.code ?? "").trim().toUpperCase().slice(0, 40);
-  const subtotal = Number(body.subtotal);
+  // ---------- ฝั่งร้าน: สร้าง / แก้ / ลบ ----------
+  if (action === "save" || action === "delete") {
+    const gate = await adminGate(req, context);
+    if (gate.deny) return gate.deny;
+    if (!gate.ok) return json({ error: "unauthorized" }, 401);
+
+    const list = await readCoupons(s);
+
+    if (action === "delete") {
+      const code = up(body.code);
+      await writeCoupons(s, list.filter((x) => up(x.code) !== code));
+      return json({ ok: true });
+    }
+
+    const c = body.coupon || {};
+    const code = up(c.code);
+    if (!code) return json({ error: "ต้องมีตัวโค้ด" }, 400);
+    if (!["amount", "percent"].includes(c.type)) return json({ error: "ชนิดโค้ดไม่ถูกต้อง" }, 400);
+    if (num(c.value) <= 0) return json({ error: "ส่วนลดต้องมากกว่า 0" }, 400);
+
+    const next = {
+      code,
+      title: String(c.title || "").trim().slice(0, 60),
+      type: c.type,
+      value: num(c.value),
+      max: num(c.max),
+      min: num(c.min),
+      until: /^\d{4}-\d{2}-\d{2}$/.test(c.until || "") ? c.until : "",
+      quota: num(c.quota),
+      perUser: num(c.perUser, 1),
+      visible: c.visible !== false,
+      memberOnly: !!c.memberOnly,
+      off: !!c.off,
+      // ใช้ไปแล้วกี่ครั้ง — ห้ามให้แก้จากหน้าจอ เอาของเดิมมาเสมอ
+      used: num(findCoupon(list, code)?.used),
+    };
+    const rest = list.filter((x) => up(x.code) !== code);
+    await writeCoupons(s, [...rest, next]);
+    return json({ ok: true, coupon: next });
+  }
+
+  const code = up(body.code);
   if (!code) return json({ ok: false, error: "ใส่โค้ดส่วนลดก่อนครับ" });
+  const user = await me(req);
+
+  // ---------- กดเก็บโค้ดเข้าบัญชี ----------
+  if (action === "collect") {
+    if (!user) return json({ ok: false, error: "เข้าสู่ระบบก่อนถึงจะเก็บโค้ดได้" }, 401);
+    const c = findCoupon(await readCoupons(s), code);
+    if (!c || c.off || c.visible === false) return json({ ok: false, error: "ไม่มีโค้ดนี้แล้ว" });
+
+    const us = usersStore();
+    const key = `u/${user.phone}`;
+    const u = await us.get(key, { type: "json" }).catch(() => null);
+    if (!u) return json({ ok: false, error: "ไม่พบบัญชี" }, 404);
+    u.coupons = u.coupons || {};
+    if (!u.coupons[code]) u.coupons[code] = { collected: Date.now(), used: 0 };
+    await us.setJSON(key, u);
+    return json({ ok: true, mine: u.coupons });
+  }
+
+  // ---------- ตรวจว่าใช้กับยอดนี้ได้ไหม ----------
+  const subtotal = Number(body.subtotal);
   if (!Number.isFinite(subtotal) || subtotal <= 0) return json({ error: "bad subtotal" }, 400);
-
-  // กันยิงเดาโค้ดรัว ๆ — นับแยกตาม IP
-  const ip = who(req, context);
-  let store = null;
-  try { store = getStore({ name: "gucut-coupon", consistency: "strong" }); } catch { /* Blobs ล่ม ปล่อยผ่าน */ }
-  if (store) {
-    const now = Date.now();
-    const rl = (await store.get(`rl/${ip}`, { type: "json" }).catch(() => null)) || { n: 0, start: now };
-    if (now - rl.start > WINDOW_MS) { rl.n = 0; rl.start = now; }
-    if (rl.n >= MAX_TRIES) {
-      return json({ ok: false, error: "ลองใส่โค้ดบ่อยเกินไป รออีกสักครู่แล้วลองใหม่" });
-    }
-    rl.n += 1;
-    await store.setJSON(`rl/${ip}`, rl).catch(() => {});
+  if (await tooMany(s, who(req, context))) {
+    return json({ ok: false, error: "ลองใส่โค้ดบ่อยเกินไป รออีกสักครู่แล้วลองใหม่" });
   }
 
-  const r = rules().find((x) => String(x.code ?? "").trim().toUpperCase() === code);
-  if (!r) return json({ ok: false, error: "ไม่มีโค้ดนี้ หรือโค้ดหมดอายุแล้ว" });
-
-  if (r.until) {
-    // หมดอายุตอนสิ้นวันตามเวลาไทย (UTC+7)
-    const end = new Date(`${r.until}T23:59:59+07:00`).getTime();
-    if (Number.isFinite(end) && Date.now() > end) {
-      return json({ ok: false, error: "โค้ดนี้หมดอายุแล้ว" });
-    }
-  }
-  if (r.min && subtotal < r.min) {
-    return json({ ok: false, error: `โค้ดนี้ใช้ได้เมื่อซื้อครบ ฿${Number(r.min).toLocaleString("th-TH")}` });
-  }
-
-  let discount =
-    r.type === "percent" ? Math.floor((subtotal * Number(r.value)) / 100) : Math.floor(Number(r.value));
-  if (r.type === "percent" && r.max) discount = Math.min(discount, Number(r.max));
-  discount = Math.max(0, Math.min(discount, subtotal));   // ลดเกินยอดไม่ได้ และติดลบไม่ได้
-  if (!discount) return json({ ok: false, error: "โค้ดนี้ใช้กับยอดนี้ไม่ได้" });
-
-  return json({
-    ok: true,
-    code,
-    discount,
-    label: r.type === "percent" ? `ลด ${r.value}%` : `ลด ฿${Number(r.value).toLocaleString("th-TH")}`,
-  });
+  const c = findCoupon(await allCoupons(s), code);
+  const r = validate(c, subtotal, user);
+  return json(r.ok ? { ok: true, code: r.code, discount: r.discount, label: r.label } : r);
 }
 
 export const config = { path: "/api/coupon" };

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import QRCode from "qrcode";
 import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
@@ -527,9 +527,19 @@ function CouponRow({
   const [code, setCode] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // โค้ดที่ร้านเปิดให้เห็น + โค้ดที่ลูกค้าคนนี้เก็บไว้ (โค้ดที่ฉันเก็บไว้ขึ้นก่อน)
+  const [offers, setOffers] = useState<{ code: string; title: string; label: string; min: number }[]>([]);
+  const [mine, setMine] = useState<Record<string, unknown>>({});
 
-  async function apply() {
-    const c = code.trim();
+  useEffect(() => {
+    if (!open) return;
+    fetch("/api/coupon")
+      .then((r) => r.json())
+      .then((d) => { setOffers(d.coupons ?? []); setMine(d.mine ?? {}); })
+      .catch(() => {});
+  }, [open]);
+
+  const use = useCallback(async (c: string) => {
     if (!c || busy) return;
     setBusy(true);
     setErr("");
@@ -537,7 +547,7 @@ function CouponRow({
       const r = await fetch("/api/coupon", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: c, subtotal }),
+        body: JSON.stringify({ action: "check", code: c, subtotal }),
       });
       const j = await r.json();
       if (!j.ok) { setErr(j.error || "ใช้โค้ดนี้ไม่ได้"); return; }
@@ -549,7 +559,9 @@ function CouponRow({
     } finally {
       setBusy(false);
     }
-  }
+  }, [busy, subtotal, setCoupon]);
+
+  const apply = () => use(code.trim());
 
   if (!open) {
     return (
@@ -581,6 +593,41 @@ function CouponRow({
         </button>
       </div>
       {err && <p className="text-[12px] text-safety">{err}</p>}
+
+      {/* โค้ดที่กดเลือกได้เลย ไม่ต้องพิมพ์ — ของที่เก็บไว้แล้วขึ้นก่อน */}
+      {offers.length > 0 && (
+        <div className="space-y-1.5 pt-1">
+          {[...offers].sort((a, b) => Number(!!mine[b.code]) - Number(!!mine[a.code])).map((o) => {
+            const ok = subtotal >= (o.min || 0);
+            return (
+              <button
+                key={o.code}
+                onClick={() => ok && use(o.code)}
+                disabled={!ok || busy}
+                className={`flex w-full items-center gap-2 rounded-sm border px-2.5 py-2 text-left ${
+                  ok ? "border-safety/40 bg-safety-tint" : "border-steel-700 bg-white opacity-60"
+                }`}
+              >
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[12.5px] font-medium text-[#1a1a1a]">{o.title}</span>
+                  <span className="block text-[11px] text-steel-300">
+                    {o.code}
+                    {o.min > 0 && ` · ซื้อครบ ฿${o.min.toLocaleString("th-TH")}`}
+                    {!ok && " (ยอดยังไม่ถึง)"}
+                  </span>
+                </span>
+                {mine[o.code] ? (
+                  <span className="shrink-0 text-[11px] font-semibold text-safety">เก็บไว้แล้ว</span>
+                ) : null}
+                <span className={`shrink-0 text-[12px] font-bold ${ok ? "text-safety" : "text-steel-300"}`}>
+                  {o.label}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
       <div className="flex gap-2">
         {coupon && (
           <button

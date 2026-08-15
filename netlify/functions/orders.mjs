@@ -21,6 +21,7 @@ import { getStore } from "@netlify/blobs";
 import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
+import { markUsed } from "../lib/coupons.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -141,6 +142,13 @@ export default async function handler(req, context) {
 
     await store.setJSON(`o/${id}`, order);
     if (slip) await store.set(`slip/${id}`, slip);
+
+    // นับโควตาโค้ดส่วนลด "ตอนสั่งจริง" เท่านั้น ไม่ใช่ตอนลูกค้ากดลองโค้ด
+    // ไม่งั้นโค้ดจำนวนจำกัดจะหมดทั้งที่ยังไม่มีใครซื้อสักคน
+    if (order.couponCode) {
+      const buyer = await currentUser(req, usersStore()).then((r) => r?.user ?? null).catch(() => null);
+      await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
+    }
     rl.n += 1;
     await store.setJSON(`rl/${ip}`, rl).catch(() => {});
 
