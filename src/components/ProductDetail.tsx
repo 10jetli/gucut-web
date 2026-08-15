@@ -11,6 +11,7 @@ import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, type Product } from "@/lib/types";
 import Price from "@/components/Price";
 import ProductVideoFloat from "./ProductVideoFloat";
+import ProductTopBar from "./ProductTopBar";
 import { videoForProduct } from "@/lib/videos";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
@@ -45,6 +46,9 @@ export default function ProductDetail({
 
   return (
     <main className="pb-24">
+      {/* ปุ่มลอยบนรูป แบบ Shopee — ย้อนกลับ | แชร์ · ตะกร้า · เมนู ⋮ */}
+      <ProductTopBar onHelp={() => setChat(true)} shareTitle={p.t} />
+
       {/* สไลด์รูป */}
       <div className="relative aspect-square w-full bg-white">
         {imgs.length ? (
