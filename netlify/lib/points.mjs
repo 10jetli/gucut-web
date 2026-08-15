@@ -88,3 +88,31 @@ export async function addPoints(usersStore, phone, n, note, orderId) {
   await usersStore.setJSON(key, u);
   return after;
 }
+
+// ---------------------------------------------------------------------------
+// แต้มค้างรอ — สำหรับลูกค้าเก่าที่ยังไม่ได้สมัครสมาชิกบนเว็บใหม่
+//
+// ปัญหา: แต้มผูกกับ "บัญชี" แต่ลูกค้าเก่าจากระบบเดิม (CWILL Loyalty บน Shopify)
+// ยังไม่มีบัญชีที่นี่ ถ้าใส่แต้มไม่ได้ก็ต้องรอลูกค้าสมัครก่อนแล้วค่อยไล่ใส่ทีละคน
+//
+// วิธีแก้: พักแต้มไว้ที่ "เบอร์โทร" ก่อน (คีย์ pts/<เบอร์>)
+// พอลูกค้าคนนั้นสมัครหรือเข้าสู่ระบบครั้งแรก แต้มจะวิ่งเข้าบัญชีให้เองอัตโนมัติ
+// ---------------------------------------------------------------------------
+const pendKey = (phone) => `pts/${phone}`;
+
+/** พักแต้มไว้รอเจ้าของเบอร์นี้มาสมัคร */
+export async function addPending(usersStore, phone, n, note) {
+  const cur = (await usersStore.get(pendKey(phone), { type: "json" }).catch(() => null)) || { n: 0, note: "" };
+  const next = { n: Number(cur.n || 0) + Math.round(n), note: note || cur.note, at: Date.now() };
+  await usersStore.setJSON(pendKey(phone), next);
+  return next.n;
+}
+
+/** เรียกตอนสมัคร/เข้าสู่ระบบสำเร็จ — มีแต้มค้างอยู่ก็โอนเข้าบัญชีให้เลย */
+export async function claimPending(usersStore, phone) {
+  const pend = await usersStore.get(pendKey(phone), { type: "json" }).catch(() => null);
+  if (!pend?.n) return 0;
+  await addPoints(usersStore, phone, pend.n, pend.note || "แต้มสะสมเดิมจากระบบเก่า", null);
+  await usersStore.delete(pendKey(phone)).catch(() => {});
+  return pend.n;
+}

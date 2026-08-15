@@ -7,7 +7,7 @@
 // แต้มถูกบวกจริงตอนออเดอร์ "สำเร็จ" และถูกหักตอนสั่งซื้อ — ทำใน /api/orders
 // ที่นี่มีไว้ให้ดูและให้ร้านตั้งค่าเท่านั้น
 import { adminGate } from "../lib/admin-gate.mjs";
-import { addPoints, readLoyalty, writeLoyalty } from "../lib/points.mjs";
+import { addPending, addPoints, readLoyalty, writeLoyalty } from "../lib/points.mjs";
 import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
 
 const json = (o, s = 200) =>
@@ -42,9 +42,15 @@ export default async function handler(req, context) {
     const phone = normPhone(body.phone);
     const n = Math.round(Number(body.n) || 0);
     if (!phone || !n) return json({ error: "ต้องมีเบอร์ลูกค้าและจำนวนแต้ม" }, 400);
-    const after = await addPoints(usersStore(), phone, n, body.note || "ร้านปรับแต้มให้", null);
-    if (after === null) return json({ error: "ไม่พบบัญชีที่ใช้เบอร์นี้" }, 404);
-    return json({ ok: true, points: after });
+    const note = body.note || "ร้านปรับแต้มให้";
+    const after = await addPoints(usersStore(), phone, n, note, null);
+    if (after !== null) return json({ ok: true, points: after, pending: false });
+
+    // ยังไม่มีบัญชีที่ใช้เบอร์นี้ — พักแต้มไว้ก่อน (ใช้ตอนย้ายแต้มลูกค้าเก่า)
+    // ลูกค้าสมัคร/เข้าสู่ระบบด้วยเบอร์นี้เมื่อไหร่ แต้มจะวิ่งเข้าบัญชีเอง
+    if (n < 0) return json({ error: "ไม่พบบัญชีที่ใช้เบอร์นี้ (หักแต้มไม่ได้)" }, 404);
+    const held = await addPending(usersStore(), phone, n, note);
+    return json({ ok: true, points: held, pending: true });
   }
 
   return json({ error: "ไม่รู้จักคำสั่งนี้" }, 400);

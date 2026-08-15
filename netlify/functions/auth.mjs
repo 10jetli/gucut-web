@@ -13,6 +13,7 @@
 // รหัสผ่านไม่ถูกเก็บเป็นตัวหนังสือ — เก็บเป็น scrypt hash + salt สุ่มรายคน
 // ถึงใครหลุดเข้ามาดูฐานข้อมูลก็อ่านรหัสลูกค้าไม่ได้
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
+import { claimPending } from "../lib/points.mjs";
 import {
   LINK_COOKIE, clean, currentUser, json, killCookie, killShort, newSession,
   normPhone, publicUser, readCookie, setCookie, store,
@@ -76,8 +77,11 @@ export default async function handler(req) {
 
     const u = { phone, name, pass: hashPw(pw), created: Date.now(), addr: null };
     await s.setJSON(`u/${phone}`, u);
+    // ลูกค้าเก่าที่ร้านพักแต้มไว้ให้ตามเบอร์ — โอนเข้าบัญชีทันทีที่สมัครเสร็จ
+    await claimPending(s, phone).catch(() => {});
+    const fresh = (await s.get(`u/${phone}`, { type: "json" }).catch(() => null)) || u;
     const token = await newSession(s, phone);
-    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token, keep));
+    return json({ ok: true, user: publicUser(fresh) }, 200, setCookie(token, keep));
   }
 
   // ---------- เข้าสู่ระบบ ----------
@@ -96,8 +100,11 @@ export default async function handler(req) {
       return json({ error: "เบอร์หรือรหัสผ่านไม่ถูกต้อง" }, 401);
     }
     await s.delete(`rl/${phone}`).catch(() => {});
+    // มีแต้มเก่าที่ร้านพักไว้ตามเบอร์นี้ก็โอนเข้าบัญชีให้เลย (ทำครั้งเดียวแล้วหมด)
+    await claimPending(s, phone).catch(() => {});
+    const fresh = (await s.get(`u/${phone}`, { type: "json" }).catch(() => null)) || u;
     const token = await newSession(s, phone);
-    return json({ ok: true, user: publicUser(u) }, 200, setCookie(token, keep));
+    return json({ ok: true, user: publicUser(fresh) }, 200, setCookie(token, keep));
   }
 
   // ---------- ผูกบัญชีภายนอก (LINE / Facebook) เข้ากับเบอร์โทร ----------
@@ -148,6 +155,9 @@ export default async function handler(req) {
     await s.setJSON(`oa/${p.provider}/${p.id}`, { phone });
     await s.delete(`pl/${p.token}`).catch(() => {});
     await s.delete(`rl/${phone}`).catch(() => {});
+    // เข้าด้วย LINE/Facebook/Google ครั้งแรกก็ต้องได้แต้มเก่าที่พักไว้ตามเบอร์เหมือนกัน
+    await claimPending(s, phone).catch(() => {});
+    u = (await s.get(`u/${phone}`, { type: "json" }).catch(() => null)) || u;
 
     const token = await newSession(s, phone);
     return json({ ok: true, user: publicUser(u) }, 200, [
