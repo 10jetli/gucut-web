@@ -278,6 +278,17 @@ export default async function handler(req, context) {
   return json({ error: "method not allowed" }, 405);
 }
 
+// ชื่อที่จะไปโชว์ในหน้า "รายการขาย" ของ ZORT — แก้ที่นี่ หรือทับด้วย env ก็ได้
+// ต้องสะกดตรงกับช่องทาง/ขนส่งที่ตั้งไว้ใน ZORT เป๊ะ ๆ ไม่งั้น ZORT ไม่รู้จักแล้วปล่อยว่าง
+const SALES_CHANNEL = process.env.ZORT_SALES_CHANNEL || "เว็บไซต์ GUCUT";
+const SHIPPING_CHANNEL = process.env.ZORT_SHIPPING_CHANNEL || "Flash Express";
+const PAYMENT_METHOD = process.env.ZORT_PAYMENT_METHOD || "เงินโอน";
+
+// ZORT รับเวลาชำระเป็น "yyyy-MM-dd HH:mm" ตามเวลาไทย — เซิร์ฟเวอร์รันด้วย UTC
+// จึงต้องบวก 7 ชั่วโมงเอง ไม่งั้นเวลาชำระจะเพี้ยนไป 7 ชม. ทุกใบ
+const thaiDateTime = (ms) =>
+  new Date(ms + 7 * 60 * 60 * 1000).toISOString().replace("T", " ").slice(0, 16);
+
 // ---------------------------------------------------------------------------
 // ส่งออเดอร์เข้า ZORT (open-api.zortout.com) — ใช้รหัสชุดเดียวกับ /api/stock
 // ZORT จับคู่สินค้าด้วย SKU แล้วตัดสต็อกให้เอง เหมือนตอนออเดอร์มาจาก Shopify
@@ -288,6 +299,7 @@ async function zortAddOrder(order) {
   if (!ZORT_STORENAME || !ZORT_APIKEY || !ZORT_APISECRET) {
     return { ok: false, skipped: true, message: "ยังไม่ได้ตั้งค่า ZORT" };
   }
+  const cod = order.payment === "cod";
   const body = {
     number: order.id,                                   // เลขเดียวกับบนเว็บ ตามกันเจอ
     orderdate: new Date(order.at).toISOString().slice(0, 10),
@@ -302,8 +314,16 @@ async function zortAddOrder(order) {
     discountamount: order.discount || 0,
     shippingamount: order.shipping || 0,
     amount: order.total,
+    // ช่องทางการขาย — โชว์ในคอลัมน์ "ช่องทาง" แบบเดียวกับ Shopee / Lazada / Shopify
+    // ⚠️ ต้องมีช่องทางชื่อนี้อยู่ใน ZORT (ตั้งค่า → ช่องทางการขาย) ไม่งั้นคอลัมน์จะว่าง
+    saleschannel: SALES_CHANNEL,
+    // ป้าย COD ในคอลัมน์ "วันส่งสินค้า" — ออเดอร์เก็บเงินปลายทางต้องมีป้ายนี้
+    isCOD: cod,
+    shippingchannel: SHIPPING_CHANNEL,       // คอลัมน์ "บริการขนส่ง"
     // จ่ายด้วย QR = โอนแล้ว (มีสลิป) · เก็บปลายทาง = ยังไม่จ่าย
-    paymentamount: order.payment === "promptpay" ? order.total : 0,
+    paymentamount: cod ? 0 : order.total,
+    // ZORT บังคับให้ระบุวิธีชำระเมื่อส่งยอดที่ชำระมาด้วย
+    ...(cod ? {} : { paymentmethod: PAYMENT_METHOD, paymentdate: thaiDateTime(order.at) }),
     list: order.items.map((i) => ({
       ...(i.sku ? { sku: i.sku } : {}),
       name: i.title + (i.variant && i.variant !== "-" ? ` (${i.variant})` : ""),
