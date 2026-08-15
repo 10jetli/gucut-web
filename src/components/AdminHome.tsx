@@ -112,6 +112,7 @@ export default function AdminHome() {
     { href: "/admin/orders/", title: "ออเดอร์", note: "รายการสั่งซื้อจากหน้าเว็บ", badge: newOrders, icon: "order" as const },
     { href: "/admin/chat/", title: "แชทลูกค้า", note: "อ่าน / ตอบข้อความจากหน้าเว็บ", badge: unread, icon: "chat" as const },
     { href: "/admin/videos/", title: "เลือกคลิป", note: "เลือกว่าคลิปไหนขึ้นหน้าวิดีโอ", badge: 0, icon: "video" as const },
+    { href: "/admin/comments/", title: "คอมเมนต์ใต้คลิป", note: "อ่าน / ลบคอมเมนต์ที่ไม่เหมาะสม", badge: 0, icon: "chat" as const },
   ];
 
   const ICON = {
