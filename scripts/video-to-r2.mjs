@@ -140,7 +140,16 @@ async function one(clip) {
     "-frames:v", "1", "-vf", `scale=-2:${Math.min(h, 720)}`, "-q:v", "4", `${dir}/poster.jpg`]);
 
   await rm(src);   // ต้นฉบับไม่ต้องอัป เปลืองที่เปล่า ๆ
-  await run("rclone", ["copy", dir, `${BUCKET}/v/${id}`, "--transfers", "8", "--s3-no-check-bucket"]);
+  // ⚠️ ต้องติด Cache-Control ตอนอัปโหลด — ไฟล์ HLS ไม่มีวันเปลี่ยนเนื้อหา (ชื่อไฟล์
+  // ผูกกับ hash ของคลิป) ถ้าไม่ติด Cloudflare กับเบราว์เซอร์จะไม่แคชให้เลย
+  // ทุกคนที่เปิดดูวิ่งไปถึง bucket ทุกครั้ง = ช้าและเปลืองโดยไม่จำเป็น
+  // (ไฟล์ชุดแรก 22,545 ไฟล์อัปก่อนจะรู้เรื่องนี้ จึงยังไม่มี header — ดู CLAUDE.md)
+  await run("rclone", [
+    "copy", dir, `${BUCKET}/v/${id}`,
+    "--transfers", "8",
+    "--s3-no-check-bucket",
+    "--header-upload", "Cache-Control: public, max-age=31536000, immutable",
+  ]);
   if (!KEEP) await rm(dir, { recursive: true, force: true });
 }
 

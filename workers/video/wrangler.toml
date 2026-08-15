@@ -1,0 +1,18 @@
+# ตัวเสิร์ฟคลิปแทนลิงก์ r2.dev — แก้ปัญหา "คลิปเริ่มเล่นช้า" ที่ต้นตอ
+#
+# ลิงก์ pub-xxx.r2.dev ที่ใช้อยู่ Cloudflare ตั้งใจไม่แคชและจำกัดความเร็ว
+# ตัวนี้อ่านไฟล์จาก bucket ตรง ๆ แล้วติด Cache-Control ให้ → แคชที่ขอบเครือข่าย
+# คนดูคนที่สองเป็นต้นไปได้ไฟล์จากเซิร์ฟเวอร์ในไทย ไม่ต้องวิ่งไปสิงคโปร์
+#
+# วิธี deploy (เจ้าของร้านทำครั้งเดียว ที่เครื่องนี้)
+#   cd workers/video
+#   npx wrangler login      ← เปิดหน้าเว็บให้กดอนุญาต
+#   npx wrangler deploy
+# แล้วเอา URL ที่ได้ (https://gucut-video.<ชื่อ>.workers.dev) ไปใส่ HOST ใน src/lib/videos.ts
+name = "gucut-video"
+main = "index.js"
+compatibility_date = "2026-08-01"
+
+[[r2_buckets]]
+binding = "VIDEO"
+bucket_name = "gucut-video"
