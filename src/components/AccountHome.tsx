@@ -155,6 +155,11 @@ export default function AccountHome() {
             <span className="flex-1 text-[14px] text-ink">วิดีโอรีวิวสินค้า</span>
             <span className="text-[15px] text-ink-300">›</span>
           </Link>
+          <Link href="/videos/?saved=1" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
+            <Ico d="M6.5 4h11v16l-5.5-4-5.5 4V4z" />
+            <span className="flex-1 text-[14px] text-ink">คลิปที่บันทึกไว้</span>
+            <span className="text-[15px] text-ink-300">›</span>
+          </Link>
           <Link href="/categories" className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3.5">
             <Ico d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z" />
             <span className="flex-1 text-[14px] text-ink">หมวดหมู่สินค้าทั้งหมด</span>

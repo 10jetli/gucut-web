@@ -6,6 +6,9 @@ import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
 import { durLabel, usingHls, videoPoster, videoSrc, type FeedItem } from "@/lib/videos";
 import { isSafariHls, useHls } from "@/lib/useHls";
+import VideoActions from "./VideoActions";
+import VideoComments from "./VideoComments";
+import { fetchCounts, likedIds, savedIds, type VideoCounts } from "@/lib/social";
 
 // ใส่ <video> จริงกี่ใบรอบ ๆ ใบที่กำลังดู — ใบถัดไปโหลดรออยู่แล้ว เลื่อนถึงเล่นทันที
 // เผื่อไปข้างหน้ามากกว่าข้างหลัง เพราะคนดูเลื่อนลงเป็นหลัก
@@ -33,6 +36,23 @@ const readSeen = (): string[] => {
 const CHUNK = 20;
 const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะเติมชุดใหม่
 
+// จัดอันดับฟีดแบบ TikTok — คลิปที่คนกดหัวใจเยอะมีโอกาสขึ้นก่อน แต่สุ่มใหม่ทุกครั้งที่เปิด
+// เปิดสิบครั้งจะไม่เจอลำดับเดิมสิบครั้ง แต่ใบที่คนชอบก็ยังลอยขึ้นมาบ่อยกว่า
+// (ใบที่เคยดูแล้วดันไปท้ายเสมอ ไม่ว่าจะดังแค่ไหน)
+function rankFeed(list: FeedItem[], counts: VideoCounts, seen: Set<string>): FeedItem[] {
+  const score = new Map<string, number>();
+  for (const it of list) {
+    const likes = counts[it.v.v]?.[0] ?? 0;
+    const shoppable = it.p ? 1.4 : 1;             // คลิปที่กดซื้อได้ ดันขึ้นอีกนิด
+    score.set(it.v.v, (likes + 1) * shoppable * (0.5 + Math.random()));
+  }
+  const by = (a: FeedItem, b: FeedItem) => (score.get(b.v.v) ?? 0) - (score.get(a.v.v) ?? 0);
+  return [
+    ...list.filter((x) => !seen.has(x.v.v)).sort(by),
+    ...list.filter((x) => seen.has(x.v.v)).sort(by),
+  ];
+}
+
 export default function VideoFeed({ first, total }: { first: FeedItem[]; total: number }) {
   const rootRef = useRef<HTMLElement>(null);
   const [items, setItems] = useState(first);
@@ -42,11 +62,39 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const itemsRef = useRef(first);
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
+  const [feedTotal, setFeedTotal] = useState(total);   // เปลี่ยนตอนดูเฉพาะคลิปที่บันทึกไว้
   const [muted, setMuted] = useState(true);
   const [askSound, setAskSound] = useState(false);   // เบราว์เซอร์ไม่ให้เปิดเสียงเอง ต้องให้ลูกค้าแตะ
   const [ready, setReady] = useState(false);   // ใบที่ดูอยู่เล่นได้ลื่นแล้วหรือยัง
   const justUnmuted = useRef(false);           // แตะครั้งที่เปิดเสียง ห้ามหยุดคลิปไปด้วย
   const mutedRef = useRef(true);               // ค่าล่าสุด ใช้ตอนคลิปใบใหม่เพิ่งโผล่มา
+
+  // ---- หัวใจ / คอมเมนต์ / บันทึก ----
+  const [counts, setCounts] = useState<VideoCounts>({});
+  const [liked, setLiked] = useState<Set<string>>(new Set());
+  const [saved, setSaved] = useState<Set<string>>(new Set());
+  const [commentFor, setCommentFor] = useState<string | null>(null);
+  const [toast, setToast] = useState("");
+  const toastTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const say = useCallback((m: string) => {
+    setToast(m);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(""), 2200);
+  }, []);
+
+  // ตัวเลขถูกใจของใบนั้น — ขยับในเครื่องทันทีที่กด ไม่ต้องรอเซิร์ฟเวอร์ตอบ
+  const bumpLike = useCallback((id: string, on: boolean) => {
+    setLiked((cur) => { const n = new Set(cur); if (on) n.add(id); else n.delete(id); return n; });
+    setCounts((cur) => {
+      const [l = 0, c = 0] = cur[id] ?? [];
+      return { ...cur, [id]: [Math.max(0, l + (on ? 1 : -1)), c] };
+    });
+  }, []);
+
+  const markSaved = useCallback((id: string, on: boolean) => {
+    setSaved((cur) => { const n = new Set(cur); if (on) n.add(id); else n.delete(id); return n; });
+  }, []);
 
   // เปลี่ยนสถานะเสียงทีเดียวทั้งฟีด — remember = จำไว้ให้ครั้งหน้าด้วยไหม
   // (ตอนเบราว์เซอร์บล็อกเสียงเอง ไม่ใช่ลูกค้าสั่ง จึงไม่ต้องจำ)
@@ -97,21 +145,42 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       .catch(() => { loading.current = false; });   // เน็ตสะดุด ครั้งหน้าค่อยลองใหม่
   }, [active, shown, items.length, total]);
 
-  // เคยดูคลิปไปแล้ว = ไปเอารายการเต็มมาเรียงใหม่ ให้ใบที่ยังไม่เคยดูขึ้นก่อน
-  // ลูกค้าที่กลับมาครั้งที่สองจะได้เจอของใหม่ทันที ไม่ใช่คลิปเดิมที่เพิ่งดูไป
-  // (ใบที่ดูแล้วไม่ได้ถูกลบ แค่ย้ายไปต่อท้าย เลื่อนไปดูซ้ำได้)
+  // เปิดหน้ามา — โหลดรายการเต็ม + ยอดถูกใจ แล้วจัดอันดับใหม่
+  //   ใบที่ยังไม่เคยดูขึ้นก่อนเสมอ · ในกลุ่มนั้นใบที่คนกดหัวใจเยอะมีโอกาสขึ้นก่อน + สุ่ม
+  //   ?v=<คลิป>  เปิดจากลิงก์ที่เพื่อนแชร์มา → ใบนั้นขึ้นก่อน
+  //   ?saved=1   ดูเฉพาะคลิปที่บันทึกไว้
   useEffect(() => {
-    const list = readSeen();
-    seen.current = new Set(list);
-    if (!list.length) return;
-    fetch("/feed.json")
-      .then((r) => r.json())
-      .then((all: FeedItem[]) => {
-        const fresh = all.filter((x) => !seen.current.has(x.v.v));
-        const old = all.filter((x) => seen.current.has(x.v.v));
-        setItems([...fresh, ...old]);
-      })
-      .catch(() => {});   // เน็ตสะดุด ใช้ชุดที่ฝังมากับหน้าไปก่อน
+    seen.current = new Set(readSeen());
+    setLiked(likedIds());
+    const savedList = savedIds();
+    setSaved(new Set(savedList));
+
+    const q = new URLSearchParams(window.location.search);
+    const want = q.get("v");
+    const onlySaved = q.get("saved") === "1";
+
+    Promise.all([
+      fetch("/feed.json").then((r) => r.json()).catch(() => null),
+      fetchCounts(),
+    ]).then(([all, c]) => {
+      setCounts(c);
+      if (!all) return;   // เน็ตสะดุด ใช้ชุดที่ฝังมากับหน้าไปก่อน
+      const pool: FeedItem[] = onlySaved
+        ? (all as FeedItem[]).filter((x) => savedList.includes(x.v.v))
+        : (all as FeedItem[]);
+      if (!pool.length) {
+        if (onlySaved) say("ยังไม่มีคลิปที่บันทึกไว้ — กดรูปธงที่คลิปเพื่อเก็บไว้ดูทีหลัง");
+        return;
+      }
+      setFeedTotal(pool.length);
+      const ranked = rankFeed(pool, c, seen.current);
+      // ใบที่กำลังเล่นอยู่ต้องคาที่เดิม ไม่งั้นจอสลับคลิปกลางคันตอนตัวเลขโหลดเสร็จ
+      const pin = want ? pool.find((x) => x.v.v === want) : itemsRef.current[0];
+      const rest = ranked.filter((x) => x.v.v !== pin?.v.v);
+      setItems(pin ? [pin, ...rest] : rest);
+    });
+    // ตั้งใจให้รันครั้งเดียวตอนเปิดหน้า — say ไม่เปลี่ยนตัวตนอยู่แล้ว
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // ตั้งต้นคือ "เอาเสียง" เว้นแต่ลูกค้าเคยกดปิดไว้เอง
@@ -154,11 +223,11 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // แตะตรงไหนก็ได้ในฟีดครั้งแรก = เปิดเสียงให้เลย แบบเดียวกับ TikTok บนเว็บ
   // ใช้ capture แต่ไม่ขวางอะไร ปุ่มซื้อ/ลิงก์ยังกดได้ตามปกติ
   useEffect(() => {
-    const root = rootRef.current;
-    if (!askSound || !root) return;
+    if (!askSound) return;
     const on = () => { justUnmuted.current = true; setMute(false); setAskSound(false); };
-    root.addEventListener("pointerdown", on, { once: true, capture: true });
-    return () => root.removeEventListener("pointerdown", on, true);
+    // ฟังทั้งหน้า ไม่ใช่แค่ในกรอบฟีด — แตะปุ่มไหนก่อนก็ได้เสียงเลย
+    document.addEventListener("pointerdown", on, { once: true, capture: true });
+    return () => document.removeEventListener("pointerdown", on, true);
   }, [askSound, setMute]);
 
   const tap = useCallback((el: HTMLVideoElement) => {
@@ -200,10 +269,18 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
             key={item.v.v}
             item={item}
             i={i}
-            total={total}
+            total={feedTotal}
             mode={mode}
             live={i === active}
             busy={i === active && !ready}
+            liked={liked.has(item.v.v)}
+            saved={saved.has(item.v.v)}
+            likes={counts[item.v.v]?.[0] ?? 0}
+            comments={counts[item.v.v]?.[1] ?? 0}
+            onLike={bumpLike}
+            onSave={markSaved}
+            onOpenComments={setCommentFor}
+            onToast={say}
             // ใบที่ดูอยู่โหลดเต็มที่ · ใบถัดไปรอให้ใบนี้เล่นได้ก่อนค่อยโหลดตาม
             // ไม่งั้นเปิดหน้ามาแย่งเน็ตกันสามคลิป ใบแรกกว่าจะเล่นได้นาน
             eager={i === active || (i === active + 1 && ready)}
@@ -213,6 +290,31 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
           />
         );
       })}
+
+      {/* ป้ายชวนแตะเปิดเสียง — เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้ายังไม่เคยแตะจอ */}
+      {askSound && (
+        <span className="pointer-events-none fixed left-1/2 z-10 -translate-x-1/2 rounded-full bg-black/70 px-4 py-2 text-[13px] font-medium backdrop-blur"
+              style={{ top: "calc(env(safe-area-inset-top) + 4rem)" }}>
+          🔇 แตะที่จอเพื่อเปิดเสียง
+        </span>
+      )}
+
+      {toast && (
+        <span className="pointer-events-none fixed left-1/2 top-1/2 z-[80] -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2.5 text-[13px] backdrop-blur">
+          {toast}
+        </span>
+      )}
+
+      {commentFor && (
+        <VideoComments
+          id={commentFor}
+          open
+          onClose={() => setCommentFor(null)}
+          onCount={(n) =>
+            setCounts((cur) => ({ ...cur, [commentFor]: [cur[commentFor]?.[0] ?? 0, n] }))
+          }
+        />
+      )}
     </main>
   );
 }
@@ -229,6 +331,14 @@ const Slide = memo(function Slide({
   live,
   busy,
   eager,
+  liked,
+  saved,
+  likes,
+  comments,
+  onLike,
+  onSave,
+  onOpenComments,
+  onToast,
   register,
   onTap,
   onReady,
@@ -240,6 +350,14 @@ const Slide = memo(function Slide({
   live: boolean;
   busy: boolean;
   eager: boolean;
+  liked: boolean;
+  saved: boolean;
+  likes: number;
+  comments: number;
+  onLike: (id: string, on: boolean) => void;
+  onSave: (id: string, on: boolean) => void;
+  onOpenComments: (id: string) => void;
+  onToast: (msg: string) => void;
   register: (i: number, el: HTMLVideoElement | null) => void;
   onTap: (el: HTMLVideoElement) => void;
   onReady: (b: boolean) => void;
@@ -283,8 +401,24 @@ const Slide = memo(function Slide({
         <span className="pointer-events-none absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 animate-spin rounded-full border-2 border-white/30 border-t-white" />
       )}
 
-      {/* ป้ายชื่อคลิป + ลิงก์สินค้า overlay ด้านล่าง */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pt-14">
+      {/* ปุ่มขวาแบบ TikTok — ใส่เฉพาะใบที่อยู่ใกล้ ๆ ใบที่ดูอยู่ ไม่ต้องมีครบทุกใบ */}
+      {mode === "video" && (
+        <VideoActions
+          id={v.v}
+          liked={liked}
+          likes={likes}
+          comments={comments}
+          saved={saved}
+          productHref={p ? `/products/${encodeURIComponent(p.h)}/` : undefined}
+          onLike={(on) => onLike(v.v, on)}
+          onSave={(on) => onSave(v.v, on)}
+          onComment={() => onOpenComments(v.v)}
+          onToast={onToast}
+        />
+      )}
+
+      {/* ป้ายชื่อคลิป + ลิงก์สินค้า overlay ด้านล่าง — เว้นขวาไว้ให้แถบปุ่ม */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pr-16 pt-14">
         <p className="clamp-2 text-sm font-medium drop-shadow">{v.t ?? "คลิปจากหน้าร้าน GUCUT"}</p>
         {p ? (
           <Link
