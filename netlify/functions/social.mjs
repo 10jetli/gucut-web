@@ -91,8 +91,10 @@ export default async function handler(req, context) {
 
   // ---------- ลบคอมเมนต์ (ฝั่งร้าน) ----------
   if (req.method === "DELETE") {
+    // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น
     const gate = await adminGate(req, context);
-    if (gate) return gate;
+    if (gate.deny) return gate.deny;
+    if (!gate.ok) return json({ error: "unauthorized" }, 401);
     const id = clean(url.searchParams.get("id"), 64);
     const cid = clean(url.searchParams.get("cid"), 64);
     if (!id || !cid) return json({ error: "bad request" }, 400);

@@ -40,8 +40,11 @@ async function check(name, fn) {
 const timeout = (ms) => AbortSignal.timeout(ms);
 
 export default async function handler(req, context) {
+  // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น
+  // (เผลอ return ตัว object ตรง ๆ ทีเดียว Netlify ตอบ 502 ทันที)
   const gate = await adminGate(req, context);
-  if (gate) return gate;
+  if (gate.deny) return gate.deny;
+  if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   const env = process.env;
 
