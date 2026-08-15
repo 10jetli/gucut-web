@@ -28,6 +28,16 @@ export const organizationLd = () => ({
   currenciesAccepted: "THB",
   paymentAccepted: "เงินสด, เก็บเงินปลายทาง, โอนผ่าน QR พร้อมเพย์",
   areaServed: { "@type": "Country", name: "ประเทศไทย" },
+  // ช่องทางอื่นของร้าน — ช่วยให้ AI เชื่อมได้ว่าร้านบนเว็บ ร้านบน YouTube
+  // และร้านบนมาร์เก็ตเพลส คือร้านเดียวกัน (สำคัญกับ LLMO เรื่อง "ตัวตนของแบรนด์")
+  sameAs: ["https://www.youtube.com/@NEWWAVELegends"],
+  // บอกว่ามีไฟล์ข้อมูลแบบเครื่องอ่านให้ใช้ ไม่ต้องไล่อ่านทีละหน้า
+  subjectOf: {
+    "@type": "DataFeed",
+    name: "รายการสินค้าทั้งหมดของ GUCUT",
+    url: abs("/products.json"),
+    encodingFormat: "application/json",
+  },
   ...(SHOP.legalName ? { legalName: SHOP.legalName } : {}),
   ...(SHOP.taxId ? { taxID: SHOP.taxId } : {}),
   ...(SHOP.phone ? { telephone: SHOP.phone } : {}),
