@@ -359,7 +359,9 @@ const Slide = memo(function Slide({
 }) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
   const src = videoSrc(v);
-  useHls(el, src);
+  // ต่อ HLS เฉพาะใบที่กำลังดู กับใบถัดไปที่พร้อมโหลดแล้วเท่านั้น (ดู eager)
+  // ไม่งั้นหลายใบโหลดพร้อมกันจนแย่งเน็ตกันเอง คลิปที่ดูอยู่จะค้าง
+  useHls(el, src, eager);
 
   const poster = mode === "blank" ? undefined : videoPoster(v, 480);
   // คลิปแนวตั้งขยายเต็มจอแบบ TikTok · คลิปจัตุรัส/แนวนอนย่อให้เห็นครบ ไม่ตัดหัวตัดท้าย
