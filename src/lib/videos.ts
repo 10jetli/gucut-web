@@ -59,13 +59,15 @@ export const videoForProduct = (handle: string) => byProduct.get(handle);
 // ---------------------------------------------------------------------------
 // ที่เก็บคลิป — สลับทั้งเว็บด้วยบรรทัดเดียว
 //
-//   ""                          = ยังใช้ของ Shopify (ไฟล์ mp4 480p ตายตัว)
-//   "https://video.gucut.com"   = ใช้ R2 ของเราเอง (HLS ปรับความคมชัดตามเน็ต)
+//   ""                          = ใช้ของ Shopify (ไฟล์ mp4 480p ตายตัว) — เลิกใช้แล้ว
+//   "https://pub-xxxx.r2.dev"   = R2 ผ่านลิงก์ฟรีของ Cloudflare ← ใช้อยู่ตอนนี้
+//   "https://video.gucut.com"   = R2 ผ่านโดเมนร้าน (ทำได้เมื่อ gucut.com ย้าย DNS มา Cloudflare)
 //
-// ก่อนเปลี่ยนต้องย้ายไฟล์ขึ้น R2 ให้ครบก่อน — ดู scripts/video-to-r2.mjs
-// (ตัวเล่นรองรับทั้งสองแบบอยู่แล้ว ไม่ต้องแก้อะไรเพิ่ม)
+// คลิปครบ 459 ใบอยู่บน R2 แล้ว (ย้ายเมื่อ 15 ส.ค. 2569 · 12.8 GB · 22,545 ไฟล์)
+// ลิงก์ r2.dev มี rate limit ของ Cloudflare อยู่ ถ้าคนดูเยอะควรย้ายไป video.gucut.com
 // ---------------------------------------------------------------------------
-const HOST = "";
+// ใส่ : string ไว้ ไม่งั้น TypeScript ฟันธงว่าค่านี้เท่ากับ "" ไม่ได้แน่ ๆ แล้วฟ้อง usingHls
+const HOST: string = "https://pub-002ee0abd2f747c5b9e5573c987ca79d.r2.dev";
 
 export const usingHls = HOST !== "";
 
