@@ -113,12 +113,14 @@ export default function AdminHome() {
     { href: "/admin/chat/", title: "แชทลูกค้า", note: "อ่าน / ตอบข้อความจากหน้าเว็บ", badge: unread, icon: "chat" as const },
     { href: "/admin/videos/", title: "เลือกคลิป", note: "เลือกว่าคลิปไหนขึ้นหน้าวิดีโอ", badge: 0, icon: "video" as const },
     { href: "/admin/comments/", title: "คอมเมนต์ใต้คลิป", note: "อ่าน / ลบคอมเมนต์ที่ไม่เหมาะสม", badge: 0, icon: "chat" as const },
+    { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];
 
   const ICON = {
     order: "M7 4h10l1 16H6L7 4zm2.5 4a2.5 2.5 0 005 0",
     chat: "M21 12a8 8 0 01-11.6 7.1L4 20l1-4.5A8 8 0 1121 12z",
     video: "M3.5 7.5h11a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1v-7a1 1 0 011-1zm12 3.5l5-3v9l-5-3z",
+    pulse: "M3 12h4l2.5-6 4 12 2.5-6H21",
   };
 
   return (
