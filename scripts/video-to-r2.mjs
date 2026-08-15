@@ -67,8 +67,11 @@ const JOBS = Math.max(1, Number(flag("jobs", Math.max(1, Math.floor(cpus().lengt
 const KEEP = args.includes("--keep");
 
 // ---------- ตรวจว่ามีเครื่องมือครบไหม ----------
-async function need(cmd, how) {
-  try { await run(cmd, ["-version"]); }
+// ffmpeg/ffprobe ใช้ "-version" แต่ rclone ใช้ "version" เฉย ๆ
+// (rclone อ่าน -version เป็นแฟล็กย่อ -v -e -r... แล้วตายทันที เคยทำให้สคริปต์นี้
+//  ฟ้องว่า "ยังไม่มี rclone" ทั้งที่ลงไว้แล้ว)
+async function need(cmd, how, arg = "-version") {
+  try { await run(cmd, [arg]); }
   catch {
     console.error(`\n❌ ยังไม่มี ${cmd} — ลงก่อนด้วยคำสั่ง:\n   ${how}\n`);
     process.exit(1);
@@ -145,7 +148,7 @@ async function one(clip) {
 console.log("ตรวจเครื่องมือ...");
 await need("ffmpeg", "brew install ffmpeg");
 await need("ffprobe", "brew install ffmpeg");
-await need("rclone", "brew install rclone");
+await need("rclone", "brew install rclone", "version");
 
 const clips = JSON.parse(await readFile("src/data/videos.json", "utf8"));
 const done = new Set(existsSync(DONE_FILE) ? JSON.parse(await readFile(DONE_FILE, "utf8")) : []);

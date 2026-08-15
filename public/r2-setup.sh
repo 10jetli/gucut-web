@@ -63,7 +63,13 @@ if [ "$reuse" != "y" ] && [ "$reuse" != "Y" ]; then
   echo "เอาค่าจากหน้า Cloudflare ตอนสร้าง API token (Object Read & Write)"
   AK=$(ask  "1/3 Access Key ID:")
   SK=$(asks "2/3 Secret Access Key (พิมพ์แล้วไม่ขึ้นตัวหนังสือ ปกติครับ):")
-  EP=$(ask  "3/3 Endpoint (https://xxxx.r2.cloudflarestorage.com):")
+  EP=""
+  # วางไม่ติด/เผลอเคาะ Enter ผ่านไปเฉย ๆ ได้ง่ายมาก แล้วจะได้ endpoint เปล่า
+  # ซึ่งไปโผล่เป็น https://.r2.cloudflarestorage.com แล้วต่อไม่ได้ — จึงถามซ้ำจนกว่าจะได้
+  while [ -z "$EP" ]; do
+    EP=$(ask "3/3 Endpoint (https://xxxx.r2.cloudflarestorage.com):")
+    [ -z "$EP" ] && echo "  ↑ ยังว่างอยู่ — วางลิงก์ endpoint จากหน้า Cloudflare ให้ครบก่อนกด Enter"
+  done
   # เผื่อวางมาแค่ Account ID เปล่า ๆ — ประกอบ URL ให้เอง
   case "$EP" in
     https://*) : ;;
@@ -74,12 +80,12 @@ if [ "$reuse" != "y" ] && [ "$reuse" != "Y" ]; then
 fi
 
 echo "ทดสอบการเชื่อมต่อ..."
-if ! rclone lsd r2: >/dev/null 2>&1; then
-  echo "✗ ต่อ R2 ไม่ได้ — เช็คว่าคีย์คัดลอกมาครบ แล้วรันสคริปต์นี้ใหม่อีกครั้ง"
-  exit 1
-fi
-if ! rclone lsd r2: 2>/dev/null | grep -q 'gucut-video'; then
-  echo "✗ ต่อได้แต่ไม่เห็น bucket gucut-video — เช็คว่าตอนสร้าง token เลือก bucket ถูก"
+# ต้องยิงเข้า bucket ตรง ๆ ห้ามใช้ "rclone lsd r2:" (= ขอรายชื่อ bucket ทั้งบัญชี)
+# เพราะคีย์แบบ Object Read & Write ที่ผูกกับ bucket เดียวจะโดน 403 เสมอ
+if ! rclone lsjson r2:gucut-video --max-depth 1 >/dev/null 2>&1; then
+  echo "✗ ต่อ bucket gucut-video ไม่ได้"
+  echo "  เช็ค 3 อย่าง: คีย์คัดลอกมาครบ · endpoint ใส่ครบทั้งลิงก์ · ตอนสร้าง token เลือก bucket gucut-video"
+  echo "  แล้วรันสคริปต์นี้ใหม่อีกครั้ง"
   exit 1
 fi
 echo "เชื่อม R2 สำเร็จ ✓"
