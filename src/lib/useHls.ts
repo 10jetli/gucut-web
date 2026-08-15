@@ -43,7 +43,8 @@ export function useHls(el: HTMLVideoElement | null, src: string, on = true) {
 
     return () => {
       dead = true;
-      hls?.destroy();   // เลิกโหลดทันทีที่เลื่อนผ่าน ไม่ให้แย่งเน็ตกับใบที่กำลังดู
+      el.pause();       // กันเสียงค้างเล่นต่อหลังเลื่อนผ่านไปแล้ว
+      hls?.destroy();   // เลิกโหลดทันที ไม่ให้แย่งเน็ตกับใบที่กำลังดู
     };
   }, [el, src, on]);
 }

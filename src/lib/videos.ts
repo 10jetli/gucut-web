@@ -83,8 +83,8 @@ export const VIDEO_HOST = HOST;
 // ---------------------------------------------------------------------------
 const warmed = new Set<string>();
 
-export function prefetchVideo(x: ShopVideo) {
-  if (!HOST || typeof window === "undefined" || warmed.has(x.v)) return;
+export function prefetchVideo(x: ShopVideo | undefined) {
+  if (!x || !HOST || typeof window === "undefined" || warmed.has(x.v)) return;
   warmed.add(x.v);
   const base = `${HOST}/v/${x.v}`;
   // เรียงตามลำดับที่ตัวเล่นจะขอจริง ๆ · ไฟล์สองอันแรกเล็กมาก (ไม่ถึง 1KB)

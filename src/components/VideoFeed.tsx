@@ -108,8 +108,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
 
   const register = useCallback((i: number, el: HTMLVideoElement | null) => {
     // ต้องตั้งตอนนี้ ไม่งั้นคลิปใบที่เพิ่งโผล่มาจะเปิดเสียงค้างไว้ทั้งที่ทั้งฟีดปิดเสียงอยู่
-    if (el) { el.muted = mutedRef.current; players.current.set(i, el); }
-    else players.current.delete(i);
+    if (el) { el.muted = mutedRef.current; players.current.set(i, el); return; }
+    // ⚠️ ถอดกล่องคลิปออกจากหน้าแล้วมันยังเล่นต่อได้ เบราว์เซอร์ไม่หยุดให้เอง
+    //    เคยทำให้เลื่อนผ่านไปแล้วเสียงคลิปเก่ายังดังอยู่ — ต้องสั่งหยุดเองตรงนี้
+    const gone = players.current.get(i);
+    if (gone) {
+      gone.pause();
+      gone.removeAttribute("src");
+      gone.load();
+    }
+    players.current.delete(i);
   }, []);
 
   // ดูว่าเลื่อนมาถึงคลิปไหน — เกาะที่ section ไม่ใช่ที่ <video>
@@ -190,11 +198,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // ชิงโหลดคลิปใบถัดไปไว้ตั้งแต่ตอนที่ยังดูใบนี้อยู่ — เลื่อนถึงแล้วเล่นทันที
   // ใบแรกก็ชิงโหลดตั้งแต่เปิดหน้า ขนานไปกับตอนที่เบราว์เซอร์ยังโหลดตัวเล่นอยู่
   useEffect(() => {
-    for (const d of [0, 1, 2]) {
-      const it = items[active + d];
-      if (it) prefetchVideo(it.v);
-    }
-  }, [active, items]);
+    prefetchVideo(items[active]?.v);
+    // ใบถัดไปรอให้ใบที่ดูอยู่เล่นได้ก่อน ไม่งั้นสองใบแย่งเน็ตกันตั้งแต่วินาทีแรก
+    if (ready) prefetchVideo(items[active + 1]?.v);
+  }, [active, items, ready]);
 
   // ใบที่อยู่ในจอเล่น ใบอื่นหยุดและกรอกลับต้นคลิป
   useEffect(() => {
