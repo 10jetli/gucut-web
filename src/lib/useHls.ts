@@ -11,7 +11,7 @@ import { usingHls } from "./videos";
 export function useHls(el: HTMLVideoElement | null, src: string) {
   useEffect(() => {
     if (!usingHls || !el) return;
-    if (el.canPlayType("application/vnd.apple.mpegurl")) return;   // Safari จัดการเองแล้ว
+    if (isSafariHls()) return;   // Safari จัดการเองแล้ว
 
     let dead = false;
     let hls: { destroy(): void } | null = null;
@@ -32,7 +32,18 @@ export function useHls(el: HTMLVideoElement | null, src: string) {
   }, [el, src]);
 }
 
-/** เบราว์เซอร์เล่น HLS ได้เองไหม (เรียกได้เฉพาะฝั่ง client) */
+/** เบราว์เซอร์เล่น HLS เองได้จริงไหม (เรียกได้เฉพาะฝั่ง client)
+ *
+ * ⚠️ ห้ามเชื่อ canPlayType("application/vnd.apple.mpegurl") อย่างเดียวเด็ดขาด
+ * Chrome บนคอมตอบว่า "maybe" ทั้งที่เล่นไม่ได้จริง — เคยทำให้คลิปทั้งหน้าค้าง
+ * อยู่ที่รูปปก ไม่มี error ไม่มีอะไรเลย เพราะเราไม่โหลด hls.js ให้มัน
+ * จึงต้องกันเบราว์เซอร์ตระกูล Chromium ออกไปด้วย เหลือแต่ WebKit จริง ๆ
+ *
+ * ห้ามกัน CriOS / FxiOS / EdgiOS (Chrome, Firefox, Edge บน iPhone) เด็ดขาด —
+ * พวกนั้นเป็น WebKit ทั้งหมด เล่น HLS เองได้ และไม่มี MediaSource ให้ hls.js ใช้
+ * ถ้าไปบังคับใช้ hls.js กับเครื่องพวกนี้ คลิปจะไม่ขึ้นเลย
+ */
 export const isSafariHls = () =>
   typeof document !== "undefined" &&
-  !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl");
+  !!document.createElement("video").canPlayType("application/vnd.apple.mpegurl") &&
+  !/Chrome\/|Chromium|Edg\/|OPR\/|Android/i.test(navigator.userAgent);
