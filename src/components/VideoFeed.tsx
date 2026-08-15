@@ -62,7 +62,6 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const itemsRef = useRef(first);
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
-  const [feedTotal, setFeedTotal] = useState(total);   // เปลี่ยนตอนดูเฉพาะคลิปที่บันทึกไว้
   const [muted, setMuted] = useState(true);
   const [askSound, setAskSound] = useState(false);   // เบราว์เซอร์ไม่ให้เปิดเสียงเอง ต้องให้ลูกค้าแตะ
   const [ready, setReady] = useState(false);   // ใบที่ดูอยู่เล่นได้ลื่นแล้วหรือยัง
@@ -172,7 +171,6 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
         if (onlySaved) say("ยังไม่มีคลิปที่บันทึกไว้ — กดรูปธงที่คลิปเพื่อเก็บไว้ดูทีหลัง");
         return;
       }
-      setFeedTotal(pool.length);
       const ranked = rankFeed(pool, c, seen.current);
       // ใบที่กำลังเล่นอยู่ต้องคาที่เดิม ไม่งั้นจอสลับคลิปกลางคันตอนตัวเลขโหลดเสร็จ
       const pin = want ? pool.find((x) => x.v.v === want) : itemsRef.current[0];
@@ -269,7 +267,6 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
             key={item.v.v}
             item={item}
             i={i}
-            total={feedTotal}
             mode={mode}
             live={i === active}
             busy={i === active && !ready}
@@ -326,7 +323,6 @@ type Mode = "video" | "poster" | "blank";
 const Slide = memo(function Slide({
   item: { v, p },
   i,
-  total,
   mode,
   live,
   busy,
@@ -345,7 +341,6 @@ const Slide = memo(function Slide({
 }: {
   item: FeedItem;
   i: number;
-  total: number;
   mode: Mode;
   live: boolean;
   busy: boolean;
@@ -445,12 +440,13 @@ const Slide = memo(function Slide({
         )}
       </div>
 
-      {/* เลขลำดับคลิป + ความยาว — อยู่ซ้าย ไม่ให้ชนปุ่มเสียงที่ลอยอยู่มุมขวา */}
+      {/* ความยาวคลิป — อยู่ซ้าย ไม่ให้ชนปุ่มเสียงที่ลอยอยู่มุมขวา
+          ⚠️ ห้ามใส่ "ใบที่เท่าไหร่ / ทั้งหมดกี่ใบ" — ไม่ต้องให้คนนอกรู้ว่าร้านมีคลิปกี่ใบ */}
       <span
         className="absolute left-3 rounded-full bg-black/50 px-2 py-0.5 text-xs tabular-nums"
         style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
       >
-        {i + 1}/{total} · {durLabel(v.dur)}
+        {durLabel(v.dur)}
       </span>
     </section>
   );
