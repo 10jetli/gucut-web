@@ -71,6 +71,28 @@ const HOST: string = "https://pub-002ee0abd2f747c5b9e5573c987ca79d.r2.dev";
 
 export const usingHls = HOST !== "";
 
+/** โดเมนที่เก็บคลิป — หน้าเว็บใช้ preconnect ไว้ล่วงหน้า จะได้ไม่เสียเวลาต่อ TLS ตอนกดดู */
+export const VIDEO_HOST = HOST;
+
+// ---------------------------------------------------------------------------
+// ชิงโหลดล่วงหน้า — ตัวชี้ขาดว่าคลิป "กว่าจะเริ่มเล่น" นานแค่ไหน
+//
+// HLS ต้องยิงต่อกัน 3 ครั้งกว่าจะได้ภาพแรก: master.m3u8 → index ของชั้นนั้น →
+// เซกเมนต์แรก  บนเน็ตบ้านราว 0.5 วิ แต่บนมือถือ 4G ที่ ping สูงกว่าจะเป็น 1.5-2.5 วิ
+// ถ้าดึงสามอย่างนี้ไว้ตั้งแต่ตอนที่ลูกค้ายังดูใบก่อนหน้าอยู่ พอเลื่อนถึงจะเล่นทันที
+// ---------------------------------------------------------------------------
+const warmed = new Set<string>();
+
+export function prefetchVideo(x: ShopVideo) {
+  if (!HOST || typeof window === "undefined" || warmed.has(x.v)) return;
+  warmed.add(x.v);
+  const base = `${HOST}/v/${x.v}`;
+  // เรียงตามลำดับที่ตัวเล่นจะขอจริง ๆ · ไฟล์สองอันแรกเล็กมาก (ไม่ถึง 1KB)
+  for (const u of [`${base}/master.m3u8`, `${base}/v480/index.m3u8`, `${base}/v480/seg000.ts`]) {
+    fetch(u, { mode: "cors", credentials: "omit" }).catch(() => {});
+  }
+}
+
 const file = (x: ShopVideo, suffix: string) => `${CDN}/videos/c/vp/${x.v}/${x.v}.${suffix}.mp4`;
 
 // R2: ไฟล์ HLS ตัวเดียวจบ เบราว์เซอร์เลือกความคมชัดเองตามเน็ตลูกค้า

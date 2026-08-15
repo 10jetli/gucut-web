@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
-import { durLabel, usingHls, videoPoster, videoSrc, type FeedItem } from "@/lib/videos";
+import { durLabel, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
 import { isSafariHls, useHls } from "@/lib/useHls";
 import VideoActions from "./VideoActions";
 import VideoComments from "./VideoComments";
@@ -187,6 +187,15 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     if (localStorage.getItem(SOUND_KEY) !== "off") setMute(false, false);
   }, [setMute]);
 
+  // ชิงโหลดคลิปใบถัดไปไว้ตั้งแต่ตอนที่ยังดูใบนี้อยู่ — เลื่อนถึงแล้วเล่นทันที
+  // ใบแรกก็ชิงโหลดตั้งแต่เปิดหน้า ขนานไปกับตอนที่เบราว์เซอร์ยังโหลดตัวเล่นอยู่
+  useEffect(() => {
+    for (const d of [0, 1, 2]) {
+      const it = items[active + d];
+      if (it) prefetchVideo(it.v);
+    }
+  }, [active, items]);
+
   // ใบที่อยู่ในจอเล่น ใบอื่นหยุดและกรอกลับต้นคลิป
   useEffect(() => {
     for (const [i, el] of players.current) {
@@ -240,6 +249,14 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       ref={rootRef}
       className="no-scrollbar h-[calc(100dvh-57px-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-auto bg-black"
     >
+      {/* ต่อกับที่เก็บคลิปไว้ล่วงหน้าตั้งแต่เปิดหน้า — ประหยัดเวลา DNS + TLS
+          ก่อนขอไฟล์แรก ซึ่งบนมือถือกินเวลาหลายร้อยมิลลิวินาที */}
+      {VIDEO_HOST && (
+        <>
+          <link rel="preconnect" href={VIDEO_HOST} crossOrigin="anonymous" />
+          <link rel="dns-prefetch" href={VIDEO_HOST} />
+        </>
+      )}
       {/* ปุ่มเปิด/ปิดเสียง — ใบเดียวลอยอยู่เหนือฟีด ไม่ต้องมีทุกคลิป */}
       <button
         onClick={() => { setMute(!muted); setAskSound(false); }}
