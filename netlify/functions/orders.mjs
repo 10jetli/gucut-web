@@ -280,7 +280,7 @@ export default async function handler(req, context) {
 
 // ชื่อที่จะไปโชว์ในหน้า "รายการขาย" ของ ZORT — แก้ที่นี่ หรือทับด้วย env ก็ได้
 // ต้องสะกดตรงกับช่องทาง/ขนส่งที่ตั้งไว้ใน ZORT เป๊ะ ๆ ไม่งั้น ZORT ไม่รู้จักแล้วปล่อยว่าง
-const SALES_CHANNEL = process.env.ZORT_SALES_CHANNEL || "เว็บไซต์ GUCUT";
+const SALES_CHANNEL = process.env.ZORT_SALES_CHANNEL || "gucut";
 const SHIPPING_CHANNEL = process.env.ZORT_SHIPPING_CHANNEL || "Flash Express";
 const PAYMENT_METHOD = process.env.ZORT_PAYMENT_METHOD || "เงินโอน";
 
