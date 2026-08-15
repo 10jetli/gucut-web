@@ -113,6 +113,7 @@ export default function AdminHome() {
     { href: "/admin/chat/", title: "แชทลูกค้า", note: "อ่าน / ตอบข้อความจากหน้าเว็บ", badge: unread, icon: "chat" as const },
     { href: "/admin/videos/", title: "เลือกคลิป", note: "เลือกว่าคลิปไหนขึ้นหน้าวิดีโอ", badge: 0, icon: "video" as const },
     { href: "/admin/comments/", title: "คอมเมนต์ใต้คลิป", note: "อ่าน / ลบคอมเมนต์ที่ไม่เหมาะสม", badge: 0, icon: "chat" as const },
+    { href: "/admin/clip-shop/", title: "ผูกสินค้ากับคลิป", note: "ให้คลิปในฟีดกดซื้อได้", badge: 0, icon: "order" as const },
     { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];
 

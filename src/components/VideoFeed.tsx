@@ -169,9 +169,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     Promise.all([
       fetch("/feed.json").then((r) => r.json()).catch(() => null),
       fetchCounts(),
-    ]).then(([all, c]) => {
+      // สินค้าที่ร้านผูกกับคลิปเองจากหลังร้าน (ผูกแล้วขึ้นทันที ไม่ต้องรอ deploy)
+      fetch("/api/clip-shop").then((r) => r.json()).then((d) => d.map ?? {}).catch(() => ({})),
+    ]).then(([all, c, shop]) => {
       setCounts(c);
       if (!all) return;   // เน็ตสะดุด ใช้ชุดที่ฝังมากับหน้าไปก่อน
+      // เติมสินค้าให้คลิปที่ยังไม่มี — ของที่ผูกมากับ Shopify เดิมมาก่อนเสมอ
+      const withShop = (all as FeedItem[]).map((x) =>
+        x.p || !shop[x.v.v] ? x : { ...x, p: shop[x.v.v] },
+      );
+      all = withShop;
       const pool: FeedItem[] = onlySaved
         ? (all as FeedItem[]).filter((x) => savedList.includes(x.v.v))
         : (all as FeedItem[]);
