@@ -120,7 +120,13 @@ export default async function handler(req, context) {
 
     const total = Math.max(0, subtotal - discount - pointDiscount) + shipping + codFee;
 
+    // เก็บเงินปลายทาง — ปิด/เปิดด้วย NEXT_PUBLIC_COD ตัวเดียวกับหน้าเว็บ
+    // ปิดที่หน้าเว็บอย่างเดียวไม่พอ ยิง POST ตรงมาก็สั่งแบบ COD ได้
+    const codOn = process.env.NEXT_PUBLIC_COD === "1";
     const payment = body.payment === "promptpay" ? "promptpay" : "cod";
+    if (payment === "cod" && !codOn) {
+      return json({ error: "ตอนนี้ยังไม่เปิดให้เก็บเงินปลายทาง กรุณาชำระด้วย QR พร้อมเพย์" }, 400);
+    }
     const slip = typeof body.slipBase64 === "string" && body.slipBase64.startsWith("data:image/")
       ? body.slipBase64.slice(0, MAX_SLIP)
       : null;

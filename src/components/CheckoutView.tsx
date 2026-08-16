@@ -37,6 +37,16 @@ const PROMPTPAY_ID = process.env.NEXT_PUBLIC_PROMPTPAY_ID ?? "";
 // ค่าส่งเป็นขั้นบันไดตามยอดค่าสินค้า — ตารางอยู่ที่ src/lib/shipping.ts
 // (คัดมาจากค่าจริงที่ร้านตั้งไว้ใน Shopify) เซิร์ฟเวอร์คิดใหม่เองอยู่แล้ว
 const COD_FEE: number = 0;             // ค่าบริการเก็บเงินปลายทาง
+
+// เก็บเงินปลายทาง — ปิดอยู่ตามที่เจ้าของร้านสั่ง (16 ส.ค. 2569)
+// ปิดแล้วปุ่มยังโชว์อยู่แต่เป็นสีเทา กดไม่ได้ พร้อมบอกเหตุผล
+//
+// เปิดใช้ใหม่: ตั้ง NEXT_PUBLIC_COD=1 ที่ Netlify แล้ว deploy — ไม่ต้องแก้โค้ด
+// ไม่ตั้ง หรือตั้งเป็นค่าอื่น = ปิด (ตั้งใจให้ค่าเริ่มต้นเป็นปิด กันเปิดโดยไม่ตั้งใจ)
+// ⚠️ ฝั่งเซิร์ฟเวอร์อ่าน env ตัวเดียวกันนี้ที่ netlify/functions/orders.mjs
+//    ปิดที่หน้าเว็บอย่างเดียวไม่พอ ยิง POST ตรงยังสั่งแบบ COD ได้
+const COD_ON = process.env.NEXT_PUBLIC_COD === "1";
+const COD_OFF_NOTE = "ยังไม่เปิดให้ใช้ตอนนี้ — สั่งด้วย QR พร้อมเพย์ได้เลย";
 const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
 const SHIP_MAX_DAYS = 4;
 const SHIP_NAME = "ส่งธรรมดาในประเทศ";
@@ -54,7 +64,7 @@ export default function CheckoutView() {
   const [note, setNote] = useState("");
   const [editNote, setEditNote] = useState(false);
   const [tax, setTax] = useState<TaxInfo | null>(null);
-  const [pay, setPay] = useState<Pay>("cod");
+  const [pay, setPay] = useState<Pay>(COD_ON ? "cod" : "promptpay");
   const [qr, setQr] = useState("");
   const [slip, setSlip] = useState<{ name: string; data: string } | null>(null);
   const [sending, setSending] = useState(false);
@@ -458,11 +468,12 @@ export default function CheckoutView() {
           ช่องทางการชำระเงิน
         </p>
         <PayOption
-          on={pay === "cod"}
+          on={COD_ON && pay === "cod"}
           onClick={() => setPay("cod")}
+          disabled={!COD_ON}
           badge="COD"
           title="เก็บเงินปลายทาง"
-          note="จ่ายเงินสดตอนรับของที่บ้าน ร้านจะโทรยืนยันก่อนส่ง"
+          note={COD_ON ? "จ่ายเงินสดตอนรับของที่บ้าน ร้านจะโทรยืนยันก่อนส่ง" : COD_OFF_NOTE}
         />
         <PayOption
           on={pay === "promptpay"}
@@ -768,15 +779,26 @@ function BottomBar({
 }
 
 function PayOption({
-  on, onClick, badge, title, note,
-}: { on: boolean; onClick: () => void; badge: string; title: string; note: string }) {
+  on, onClick, badge, title, note, disabled,
+}: { on: boolean; onClick: () => void; badge: string; title: string; note: string; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="flex w-full items-start gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left last:border-0">
-      <span className="mt-0.5 shrink-0 rounded-sm border border-safety px-1 py-px text-[9px] font-bold leading-tight text-safety">
+    <button
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
+      aria-disabled={disabled}
+      className={
+        "flex w-full items-start gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left last:border-0 " +
+        (disabled ? "cursor-not-allowed opacity-45" : "")
+      }
+    >
+      <span className={
+        "mt-0.5 shrink-0 rounded-sm border px-1 py-px text-[9px] font-bold leading-tight " +
+        (disabled ? "border-steel-500 text-steel-400" : "border-safety text-safety")
+      }>
         {badge}
       </span>
       <span className="min-w-0 flex-1">
-        <span className={"block text-[13px] " + (on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>{title}</span>
+        <span className={"block text-[13px] " + (disabled ? "text-steel-400" : on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>{title}</span>
         <span className="mt-0.5 block text-[11px] leading-snug text-steel-300">{note}</span>
       </span>
       <span className={"mt-0.5 flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full " + (on ? "bg-safety" : "border-2 border-steel-600")}>
