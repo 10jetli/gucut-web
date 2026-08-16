@@ -62,6 +62,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const itemsRef = useRef(first);
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
+  const activeRef = useRef(0);          // ให้ตัวฟังจังหวะแตะอ่านได้โดยไม่ต้องรอ render
   const [muted, setMuted] = useState(true);
   const [askSound, setAskSound] = useState(false);   // เบราว์เซอร์ไม่ให้เปิดเสียงเอง ต้องให้ลูกค้าแตะ
   const [ready, setReady] = useState(false);   // ใบที่ดูอยู่เล่นได้ลื่นแล้วหรือยัง
@@ -136,7 +137,9 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       (entries) => {
         for (const e of entries) {
           if (e.isIntersecting && e.intersectionRatio > 0.6) {
-            setActive(Number((e.target as HTMLElement).dataset.i));
+            const n = Number((e.target as HTMLElement).dataset.i);
+            activeRef.current = n;
+            setActive(n);
           }
         }
       },
@@ -272,15 +275,32 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // ใช้ capture แต่ไม่ขวางอะไร ปุ่มซื้อ/ลิงก์ยังกดได้ตามปกติ
   useEffect(() => {
     if (!askSound) return;
-    const on = () => { justUnmuted.current = true; setMute(false); setAskSound(false); };
+    const on = () => {
+      justUnmuted.current = true;
+      setMute(false);
+      setAskSound(false);
+      // ⚠️ ต้องสั่งเล่นตรงนี้ทันที ไม่ใช่รอ effect หลัง state เปลี่ยน
+      //    iOS โหมดประหยัดแบตห้าม autoplay ทุกกรณี (ปิดเสียงก็ห้าม)
+      //    คำสั่งเล่นจะผ่านก็ต่อเมื่ออยู่ "ในจังหวะแตะ" เท่านั้น — effect อยู่นอกจังหวะแล้ว
+      const el = players.current.get(activeRef.current);
+      if (el) {
+        el.muted = false;
+        el.play().catch(() => {});
+      }
+    };
     // ฟังทั้งหน้า ไม่ใช่แค่ในกรอบฟีด — แตะปุ่มไหนก่อนก็ได้เสียงเลย
     document.addEventListener("pointerdown", on, { once: true, capture: true });
     return () => document.removeEventListener("pointerdown", on, true);
   }, [askSound, setMute]);
 
   const tap = useCallback((el: HTMLVideoElement) => {
-    // แตะครั้งแรกคือการเปิดเสียง อย่าให้คลิปหยุดไปด้วย
-    if (justUnmuted.current) { justUnmuted.current = false; return; }
+    // แตะครั้งแรกคือการเปิดเสียง อย่าให้คลิปหยุดไปด้วย — แต่ถ้ามันยังไม่เล่น
+    // (โหมดประหยัดแบตกัน autoplay ไว้) ให้ใช้จังหวะแตะนี้สั่งเล่นเลย
+    if (justUnmuted.current) {
+      justUnmuted.current = false;
+      if (el.paused) el.play().catch(() => {});
+      return;
+    }
     if (el.paused) el.play().catch(() => {});
     else el.pause();
   }, []);
