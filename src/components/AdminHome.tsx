@@ -116,6 +116,7 @@ export default function AdminHome() {
     { href: "/admin/coupons/", title: "โค้ดส่วนลด", note: "สร้างโค้ดให้ลูกค้ากดเก็บแบบ Shopee", badge: 0, icon: "tag" as const },
     { href: "/admin/points/", title: "แต้มสะสม", note: "ตั้งกติกาแต้ม · ปรับแต้มให้ลูกค้า", badge: 0, icon: "star" as const },
     { href: "/admin/clip-shop/", title: "ผูกสินค้ากับคลิป", note: "ให้คลิปในฟีดกดซื้อได้", badge: 0, icon: "order" as const },
+    { href: "/admin/seo/", title: "ตรวจสุขภาพ SEO", note: "งานที่ควรแก้ เรียงตามความสำคัญ", badge: 0, icon: "search" as const },
     { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];
 
@@ -125,6 +126,7 @@ export default function AdminHome() {
     video: "M3.5 7.5h11a1 1 0 011 1v7a1 1 0 01-1 1h-11a1 1 0 01-1-1v-7a1 1 0 011-1zm12 3.5l5-3v9l-5-3z",
     pulse: "M3 12h4l2.5-6 4 12 2.5-6H21",
     tag: "M4 12.5V5a1 1 0 011-1h7.5L21 12.5 12.5 21 4 12.5zM8 8.5v.01",
+    search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
     star: "M12 3l2.6 5.6 6.4.8-4.7 4.3 1.3 6.3L12 17l-5.6 3 1.3-6.3L3 9.4l6.4-.8L12 3z",
   };
 
