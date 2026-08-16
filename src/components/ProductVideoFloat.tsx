@@ -94,6 +94,19 @@ function Clip({
   useHls(el, src);
   const started = useRef(false);
 
+  // ฝั่ง Safari ป้อน src ด้วย JS — ห้ามใส่ใน JSX
+  // หน้านี้ถูก build เป็น HTML ล่วงหน้า ตอน build isSafariHls() เป็น false เสมอ
+  // และ React ไม่แก้ attribute ที่ไม่ตรงกันตอน hydrate → iPhone ได้ <video> ไร้ src
+  // (บั๊กเดียวกับที่ทำให้ฟีดวิดีโอค้างที่วงหมุน — แก้พร้อมกัน 16 ส.ค. 2569)
+  useEffect(() => {
+    if (!el) return;
+    if (!(isSafariHls() || !usingHls)) return;
+    if (el.getAttribute("src") !== src) {
+      el.src = src;
+      el.load();
+    }
+  }, [el, src]);
+
   // ตัวเต็มจอ: เปิดเสียงแล้วเล่นเลย — ถ้าเบราว์เซอร์ไม่ยอม (นโยบายเสียงอัตโนมัติ)
   // ก็ถอยไปเล่นแบบปิดเสียงแทน ดีกว่าจอค้างไม่เล่นอะไรเลย
   useEffect(() => {
@@ -108,7 +121,6 @@ function Clip({
   return (
     <video
       ref={setEl}
-      src={usingHls && !isSafariHls() ? undefined : src}
       poster={videoPoster(video, muted ? 240 : 720)}
       muted={muted}
       controls={controls}

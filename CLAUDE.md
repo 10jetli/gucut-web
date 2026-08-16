@@ -166,6 +166,11 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
 > `public/video-fast.sh` (แผนเดิมที่จะใช้ Worker) จึง **ไม่ต้องรันแล้ว** — ใส่ตัวกันรันซ้ำไว้แล้ว
 
 **บทเรียนเรื่องตัวเล่น HLS — อย่าแก้กลับ**
+- ⚠️ **ห้ามใส่ `src` ของ `<video>` ใน JSX ถ้าค่าขึ้นกับการตรวจเบราว์เซอร์** (เช่น `isSafariHls()`)
+  หน้าถูก build เป็น HTML ล่วงหน้า ตอน build ไม่มีเบราว์เซอร์ ค่าจึงเป็น false เสมอ
+  แล้ว **React ไม่แก้ attribute ที่ไม่ตรงกันตอน hydrate** → iPhone ได้ `<video>` ไร้ src ตลอดกาล
+  อาการ: โปสเตอร์ขึ้น วงหมุนค้าง แตะไม่ติด **เฉพาะบน iPhone** (คอมปกติเพราะ hls.js ป้อนผ่าน JS)
+  ทางแก้: ป้อน src ด้วย JS ใน effect ทั้งสองทาง — เจอของจริง 16 ส.ค. 2569 หลังย้ายมา gucut.com
 - `canPlayType("application/vnd.apple.mpegurl")` **โกหก** — Chrome บนคอมตอบ "maybe" ทั้งที่เล่นไม่ได้
   ต้องเช็ค user agent ประกอบใน `isSafariHls()` (ห้ามกัน CriOS/FxiOS/EdgiOS — เป็น WebKit บน iPhone)
 - ฟีดต้องต่อ hls.js **เฉพาะใบที่ดูอยู่กับใบถัดไป** (`useHls(el, src, eager)`) ไม่งั้นหลายใบดูดเน็ตพร้อมกัน
