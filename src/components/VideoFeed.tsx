@@ -230,7 +230,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // ใบที่อยู่ในจอเล่น ใบอื่นหยุดและกรอกลับต้นคลิป
   useEffect(() => {
     for (const [i, el] of players.current) {
-      if (i !== active && !el.paused) {
+      if (i !== active) {
         // ดูค้างไว้นานพอ = ถือว่าดูแล้ว จดไว้ก่อนกรอกลับต้นคลิป
         const id = itemsRef.current[i]?.v.v;
         if (id && el.currentTime >= Math.min(SEEN_SEC, (el.duration || SEEN_SEC) * 0.6)) {
@@ -239,8 +239,8 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
           seen.current = new Set(keep);
           try { localStorage.setItem(SEEN_KEY, JSON.stringify(keep)); } catch { /* เต็ม ข้ามไป */ }
         }
-        el.pause();
-        el.currentTime = 0;
+        if (!el.paused) el.pause();
+        if (el.currentTime) el.currentTime = 0;
       }
     }
     const el = players.current.get(active);
@@ -460,17 +460,18 @@ const Slide = memo(function Slide({
   useEffect(() => {
     if (!el) return;
     if (!(isSafariHls() || !usingHls)) return;   // ทาง hls.js มี useHls จัดการอยู่แล้ว
-    if (eager) {
-      if (el.getAttribute("src") !== src) {
-        el.src = src;
-        el.load();
-      }
-    } else if (el.getAttribute("src")) {
-      el.pause();
-      el.removeAttribute("src");
-      el.load();          // ตัดการโหลดที่ค้างอยู่ทิ้ง คืนเน็ตให้ใบที่ลูกค้าดูอยู่
+    // ป้อน src "ครั้งเดียว" ตอนใบนี้โผล่มาในโหมดวิดีโอ แล้วไม่แตะอีกเลย
+    //
+    // ⚠️ ห้ามถอด src ออกตอนเลื่อนผ่าน แล้วใส่กลับตอนเลื่อนมาถึง
+    //    การถอด src + load() = สั่งล้างตัวเล่นใหม่ ซึ่งจะไปยกเลิก play() ที่ค้างท่ออยู่
+    //    (AbortError) และตอนเลื่อนถึงใบใหม่ก็ต้องเริ่มโหลดจากศูนย์ ทำให้ค้าง
+    //    อาการที่เคยเจอ: เลื่อนไปใบ 2 แล้วได้ยินเสียงใบ 1 ต่อ ส่วนใบ 2 ค้างไม่เล่น
+    //    การหยุดคลิปที่ไม่ได้ดูใช้ pause() พอ ไม่ต้องล้างตัวเล่น
+    if (!el.getAttribute("src")) {
+      el.src = src;
+      el.load();
     }
-  }, [el, eager, src]);
+  }, [el, src]);
 
   const poster = mode === "blank" ? undefined : videoPoster(v, 480);
   // คลิปแนวตั้งขยายเต็มจอแบบ TikTok · คลิปจัตุรัส/แนวนอนย่อให้เห็นครบ ไม่ตัดหัวตัดท้าย
