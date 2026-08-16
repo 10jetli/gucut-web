@@ -29,28 +29,44 @@
 เว็บขายเลื่อยยนต์ NEWWAVE / KingKong ของร้าน GUCUT — สไตล์ Shopee + TikTok Shop, mobile-first, ภาษาไทย, ราคาบาท
 
 ## โดเมน — อ่านก่อนแตะ robots.txt / sitemap
-| | โดเมน | สถานะ |
-|---|---|---|
-| ตอนนี้ | **new78.com** | เว็บซ้อม · `robots.txt` ปิด Google ทั้งเว็บ (`Disallow: /`) |
-| ภายหลัง | gucut.com | ยังชี้ไปร้าน Shopify — **เว็บยังไม่สมบูรณ์** |
+| โดเมน | สถานะ |
+|---|---|
+| **gucut.com** | ✅ **โดเมนหลักแล้ว (16 ส.ค. 2569)** — เสิร์ฟเว็บนี้ · SSL ออกแล้ว · `robots.txt` เปิดให้ Google เก็บ |
+| new78.com | ยังใช้ได้ เสิร์ฟเนื้อหาชุดเดียวกัน · `robots.txt` **ปิด** Google (`Disallow: /`) กันเนื้อหาซ้ำ |
 
-**DNS ของ gucut.com ย้ายมา Cloudflare แล้ว (16 ส.ค. 2569)** — nameserver `iris` / `lars.ns.cloudflare.com`
-แก้ DNS ที่ Cloudflare เท่านั้น หน้า DNS ใน Shopify ยังโชว์ค่าเดิมแต่ไม่มีผลแล้ว
-record ของ Shopify ต้องเป็น **DNS only (เมฆเทา)** เสมอ — เปิดเมฆส้มแล้วร้านล่มทั้งร้าน
-อีเมลย้ายมา **Cloudflare Email Routing** แล้วเช่นกัน (`info@` → `gucut1@gmail.com`)
+⚠️ **ร้าน Shopify ไม่ได้อยู่ที่ gucut.com อีกแล้ว** — เข้าจัดการที่ `admin.shopify.com/store/gucut1`
+(export แต้ม CWILL ยังทำได้ปกติ)
 
-**โค้ดพร้อมย้ายแล้ว** — ที่อยู่เว็บรวมอยู่ที่ `src/lib/site.ts` กับ `netlify/lib/site.mjs` ที่เดียว
-วันย้ายจริงตั้ง `NEXT_PUBLIC_SITE_URL=https://gucut.com` ที่ Netlify แล้วทั้งเว็บเปลี่ยนตาม
-⚠️ แต่ต้องไปแก้ **redirect URI ที่ LINE / Facebook / Google** ด้วย ไม่งั้นปุ่มเข้าสู่ระบบพัง
+DNS อยู่ที่ **Cloudflare** (nameserver `iris` / `lars.ns.cloudflare.com`) — แก้ที่นั่นที่เดียว
+หน้า DNS ใน Shopify ยังโชว์ค่าเดิมแต่**ไม่มีผลแล้ว**
 
-**ห้ามเปิด `robots.txt` ให้ Google เก็บ จนกว่าเจ้าของร้านจะสั่งเอง** ถ้าเปิดตอนเว็บยังไม่เสร็จ Google จะเก็บหน้าที่ยังไม่พร้อม และลบออกทีหลังยาก
+| record | ค่า |
+|---|---|
+| `gucut.com` | CNAME → `gucut-storefront.netlify.app` · DNS only |
+| `www` | CNAME → `gucut-storefront.netlify.app` · DNS only |
+| `video` | R2 bucket `gucut-video` · **Proxied (เมฆส้ม)** — ต้องส้มถึงจะแคชได้ |
+| MX ×3 · SPF · DKIM | Cloudflare Email Routing (`info@` → `gucut1@gmail.com`) |
+| `send.send` MX/SPF · `resend._domainkey.send` | Resend + Amazon SES (อีเมลส่งออก) |
+| `account` | ยังชี้ Shopify — ปล่อยไว้ ไม่มีผล |
 
-เมื่อเจ้าของร้านสั่งย้ายจริง ทำ 5 อย่างนี้:
-1. ตั้ง `NEXT_PUBLIC_SITE_URL=https://gucut.com` ที่ Netlify ← จุดเดียวได้ทั้งเว็บ (ไม่ต้องแก้โค้ด)
-2. `public/robots.txt` — เปลี่ยนตามตัวอย่างที่คอมเมนต์ไว้ในไฟล์ (อย่าลืม `Disallow: /admin/` และ `/account/`)
-3. ที่ Cloudflare เปลี่ยน record ของ `gucut.com` จาก Shopify มาชี้ Netlify **แล้วร้าน Shopify จะเข้าไม่ได้ทันที**
-4. เพิ่ม `gucut.com` เป็น custom domain ใน Netlify
-5. แก้ redirect URI ที่ LINE / Facebook / Google (ดูคอมเมนต์หัวไฟล์ `netlify/functions/oauth-*.mjs`)
+ที่อยู่เว็บอยู่ที่ `src/lib/site.ts` + `netlify/lib/site.mjs` อ่านจาก env `NEXT_PUBLIC_SITE_URL`
+(ตั้งเป็น `https://gucut.com` ที่ Netlify project `gucut-storefront` แล้ว)
+
+⚠️ **ยังค้าง: redirect URI ที่ LINE / Facebook / Google** — ปุ่มเข้าสู่ระบบบน gucut.com
+ยังใช้ไม่ได้จนกว่าจะเพิ่ม `https://gucut.com/api/oauth/{line,facebook,google}/callback`
+เพิ่มเฉย ๆ ไม่ต้องลบของ new78.com (oauth.mjs สร้าง callback จาก `url.origin` ของคำขอ)
+
+**robots.txt แยกรายโดเมน** — กติกาอยู่ใน `netlify.toml` (ต้องอยู่ก่อนกติกาอื่น)
+- `gucut.com` → `public/robots-gucut.txt` เปิดให้ Google + บอต AI เก็บ
+- โดเมนอื่น → `public/robots.txt` ปิดทั้งเว็บ
+
+แยกเพราะสองโดเมนเสิร์ฟเนื้อหาชุดเดียวกัน เปิดทั้งคู่ = Google เห็นเป็นเนื้อหาซ้ำ
+แล้วอาจเลือกจัดอันดับ new78.com แทน gucut.com ที่สะสมอันดับมาตั้งแต่ปี 2553
+
+บทเรียนตอนย้าย (16 ส.ค. 2569) — เผื่อต้องทำอีก
+- CNAME อยู่ร่วมกับ A/AAAA ชื่อเดียวกันไม่ได้ **ต้องลบ AAAA ก่อน** ถึงจะแปลง A เป็น CNAME ได้
+- เพิ่มโดเมนใน Netlify ตอน DNS ยังชี้ที่อื่น → Netlify ไม่ขอใบ SSL ให้ และ**ไม่ลองใหม่เอง**
+  ต้องกด **Renew certificate** ในหน้า Domain management แล้วยืนยันในกล่องอีกที (ออกใบใน ~45 วินาที)
 
 ## Tech Stack
 - Next.js 15 (App Router) + TypeScript + Tailwind CSS 3
