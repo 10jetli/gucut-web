@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import PolicyPage, { Sec, List } from "@/components/PolicyPage";
 import { SHOP } from "@/lib/shop";
+import TrackingNotice from "@/components/TrackingNotice";
 
 export const metadata: Metadata = {
   title: "นโยบายความเป็นส่วนตัว | GUCUT",
@@ -36,8 +37,7 @@ export default function PrivacyPage() {
       <Sec n={2} t="สิ่งที่ร้านไม่ได้เก็บ">
         <List
           items={[
-            <>ร้าน<b>ไม่ได้ติดตั้ง</b> Google Analytics, Facebook Pixel หรือสคริปต์โฆษณาติดตามใด ๆ
-              บนเว็บนี้ — ไม่มีคุกกี้โฆษณา ไม่มีการตามรอยคุณไปเว็บอื่น</>,
+            <TrackingNotice />,
             <>ร้าน<b>ไม่เก็บเลขบัตรเครดิต/เดบิต</b> เพราะไม่มีระบบรับบัตรบนเว็บนี้
               (จ่ายด้วย QR พร้อมเพย์ ผ่านแอปธนาคารของคุณเอง หรือเก็บเงินปลายทาง)</>,
             <><b>ปุ่มค้นหาสินค้าด้วยรูป (ไอคอนกล้อง)</b> ทำงานในเครื่องคุณทั้งหมด

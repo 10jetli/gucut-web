@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import SectionHead from "@/components/SectionHead";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import VariantSheet from "./VariantSheet";
 import ChatSheet from "./ChatSheet";
 import Stars from "./Stars";
@@ -13,6 +13,7 @@ import Price from "@/components/Price";
 import ProductVideoFloat from "./ProductVideoFloat";
 import ProductTopBar from "./ProductTopBar";
 import { videoForProduct } from "@/lib/videos";
+import { track } from "@/lib/track";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
 // สไลด์รูป → ราคา+ป้ายลด → ตัวเลือก → สเปก → คำอธิบาย → แถบซื้อติดล่างจอ
@@ -29,6 +30,11 @@ export default function ProductDetail({
   reviews?: ReactNode;   // บล็อกรีวิว render มาจากฝั่ง server
   specs?: ReactNode;     // คุณลักษณะ + เอกสาร + ตารางสเปก (server เช่นกัน)
 }) {
+  // บอกช่องทางโฆษณาว่าลูกค้าเปิดดูสินค้าตัวไหน — ใช้ทำกลุ่มเป้าหมายและรีมาร์เก็ตติ้ง
+  useEffect(() => {
+    track("ViewContent", { items: [{ id: p.h, title: p.t, price: p.v[0]?.p }], value: p.v[0]?.p ?? 0 });
+  }, [p.h, p.t, p.v]);
+
   const [i, setI] = useState(0);
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
   const [chat, setChat] = useState(false);

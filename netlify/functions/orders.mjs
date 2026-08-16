@@ -25,6 +25,7 @@ import { markUsed } from "../lib/coupons.mjs";
 import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs";
 import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
 import { shippingFor } from "../lib/shipping.mjs";
+import { sendPurchase } from "../lib/marketing.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -231,6 +232,17 @@ export default async function handler(req, context) {
         }).catch(() => {})
       );
     }
+    // ยิงยอดขายเข้าช่องทางโฆษณาจากเซิร์ฟเวอร์ (Meta / TikTok Conversions API)
+    // ใช้ event id = เลขออเดอร์ ตรงกับที่เบราว์เซอร์ยิง ปลายทางจะรวมเป็นรายการเดียว
+    // พังก็ไม่ล้มออเดอร์ — ยอดโฆษณาหายดีกว่าลูกค้าสั่งของไม่ได้
+    later(
+      sendPurchase(order, {
+        ip: req.headers.get("x-nf-client-connection-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
+        userAgent: req.headers.get("user-agent") || undefined,
+        sourceUrl: `${SITE_URL}/checkout/`,
+      }).catch(() => {})
+    );
+
     if (jobs.length) await Promise.allSettled(jobs);
 
     return json({ ok: true, orderId: id });

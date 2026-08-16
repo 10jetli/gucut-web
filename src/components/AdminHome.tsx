@@ -117,6 +117,7 @@ export default function AdminHome() {
     { href: "/admin/points/", title: "แต้มสะสม", note: "ตั้งกติกาแต้ม · ปรับแต้มให้ลูกค้า", badge: 0, icon: "star" as const },
     { href: "/admin/clip-shop/", title: "ผูกสินค้ากับคลิป", note: "ให้คลิปในฟีดกดซื้อได้", badge: 0, icon: "order" as const },
     { href: "/admin/seo/", title: "ตรวจสุขภาพ SEO", note: "งานที่ควรแก้ เรียงตามความสำคัญ", badge: 0, icon: "search" as const },
+    { href: "/admin/marketing/", title: "พิกเซลการตลาด", note: "ใส่รหัส Meta · TikTok · Google · LINE", badge: 0, icon: "tag" as const },
     { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];
 

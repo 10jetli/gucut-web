@@ -2,12 +2,13 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
 import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
 import { shippingFor } from "@/lib/shipping";
+import { track } from "@/lib/track";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 
 // หน้าสั่งซื้อแบบ Shopee — เห็นทุกอย่างในหน้าเดียว แล้วกดเช็คเอาต์จากแถบล่าง
@@ -147,6 +148,18 @@ export default function CheckoutView() {
   const shippingFee = shippingFor(afterCoupon);
   const total = Math.max(0, afterCoupon - pointDiscount) + shippingFee + codFee;
 
+  // บอกช่องทางโฆษณาว่าลูกค้าเข้าหน้าสั่งซื้อแล้ว — ยิงครั้งเดียวต่อการเข้าหน้า
+  // ไม่ผูกกับ total เพราะลูกค้าปรับจำนวน/ใส่โค้ดได้ ยิงทุกครั้งที่ยอดขยับจะรัวเกินจริง
+  const sentBegin = useRef(false);
+  useEffect(() => {
+    if (sentBegin.current || !items.length) return;
+    sentBegin.current = true;
+    track("InitiateCheckout", {
+      items: items.map((i) => ({ id: i.handle, title: i.title, price: i.price, qty: i.qty })),
+      value: items.reduce((s, i) => s + i.price * i.qty, 0),
+    });
+  }, [items]);
+
   // ตะกร้าเปลี่ยนแล้วส่วนลดเดิมอาจใช้ไม่ได้ (เช่นมียอดขั้นต่ำ) — ให้กดใช้โค้ดใหม่
   useEffect(() => {
     setCoupon((c) => (c && c.subtotal !== subtotal ? null : c));
@@ -219,6 +232,13 @@ export default function CheckoutView() {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.ok) throw new Error(j?.error || `orders ${res.status}`);
       setOrderId(j.orderId);
+      // ยอดที่ยิงให้โฆษณา = ยอดที่ลูกค้าจ่ายจริง (รวมค่าส่ง หักส่วนลดแล้ว)
+      // eventId = เลขออเดอร์ ต้องตรงกับที่เซิร์ฟเวอร์ยิงผ่าน CAPI ไม่งั้นยอดถูกนับสองเท่า
+      track("Purchase", {
+        items: items.map((i) => ({ id: i.handle, title: i.title, price: i.price, qty: i.qty })),
+        value: total,
+        eventId: j.orderId,
+      });
       // ซื้อเลย = ล้างเฉพาะของชิ้นที่ซื้อ ตะกร้าเดิมยังอยู่ครบ · สั่งจากตะกร้า = ล้างตะกร้า
       if (buyNow) clearBuyNow();
       else items.forEach((i) => updateQty(i.productId, i.variant, 0));

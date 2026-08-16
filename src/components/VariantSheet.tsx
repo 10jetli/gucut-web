@@ -6,6 +6,7 @@ import { addToCart, setBuyNow } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
 import Portal from "./Portal";
+import { track } from "@/lib/track";
 
 // Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
 // เด้งขึ้นจากล่างจอ · เลือกแล้วรูป+ราคา+สต็อกเปลี่ยนตาม · ปรับจำนวนได้
@@ -67,12 +68,16 @@ export default function VariantSheet({
     onClose();
     // "ซื้อเลย" แบบ Shopee — ซื้อเฉพาะชิ้นนี้ ไม่ใส่ตะกร้า ของที่ค้างในตะกร้าไม่ถูกแตะ
     // แล้วข้ามหน้าตะกร้าไปหน้าสั่งซื้อเลย (หน้านั้นปรับจำนวน/ลบของได้อยู่แล้ว)
+    const ev = { items: [{ id: product.h, title: product.t, price, qty }], value: price * qty };
     if (mode === "buy") {
       setBuyNow(picked, qty);
+      // "ซื้อเลย" ข้ามตะกร้า แต่ในสายตาโฆษณาก็คือหยิบใส่ตะกร้าแล้วไปจ่ายเลย
+      track("AddToCart", ev);
       window.location.href = "/checkout/";
       return;
     }
     addToCart(picked, qty);
+    track("AddToCart", ev);
   }
 
   if (!open) return null;
