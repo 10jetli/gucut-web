@@ -108,7 +108,14 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
 
   const register = useCallback((i: number, el: HTMLVideoElement | null) => {
     // ต้องตั้งตอนนี้ ไม่งั้นคลิปใบที่เพิ่งโผล่มาจะเปิดเสียงค้างไว้ทั้งที่ทั้งฟีดปิดเสียงอยู่
-    if (el) { el.muted = mutedRef.current; players.current.set(i, el); return; }
+    if (el) {
+      el.muted = mutedRef.current;
+      // iOS บางรุ่นเช็ค "attribute" muted ตอนตัดสินว่าให้เล่นเองได้ไหม ไม่ใช่แค่ property
+      // (React ก็มีบั๊กเก่าแก่ที่ไม่เขียน attribute นี้ให้จาก prop) — ใส่เองให้ชัวร์
+      if (mutedRef.current) el.setAttribute("muted", "");
+      players.current.set(i, el);
+      return;
+    }
     // ⚠️ ถอดกล่องคลิปออกจากหน้าแล้วมันยังเล่นต่อได้ เบราว์เซอร์ไม่หยุดให้เอง
     //    เคยทำให้เลื่อนผ่านไปแล้วเสียงคลิปเก่ายังดังอยู่ — ต้องสั่งหยุดเองตรงนี้
     const gone = players.current.get(i);
@@ -237,15 +244,28 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     if (!el) return;
     setReady(el.readyState >= 3);
     el.muted = muted;
-    el.play().catch(() => {
-      if (el.muted) return;   // ปฏิเสธด้วยเหตุอื่น ปล่อยให้ลูกค้ากดเอง
-      // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
-      // เล่นแบบเงียบไปก่อน แล้วขึ้นป้ายชวนให้แตะเปิดเสียง
-      el.muted = true;
-      setMute(true, false);
-      setAskSound(true);
-      el.play().catch(() => {});
-    });
+    const tryPlay = () => {
+      el.play().catch(() => {
+        if (el.muted) return;   // ปฏิเสธทั้งที่เงียบอยู่ — เดี๋ยว canplay ข้างล่างสั่งซ้ำให้
+        // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
+        // เล่นแบบเงียบไปก่อน แล้วขึ้นป้ายชวนให้แตะเปิดเสียง
+        el.muted = true;
+        setMute(true, false);
+        setAskSound(true);
+        el.play().catch(() => {});
+      });
+    };
+    tryPlay();
+    // ⚠️ iOS: play() ที่สั่งตอน readyState=0 ถูกยกเลิกกลางทางได้ (เช่นชนกับ load()
+    //    ที่เพิ่งสั่งตอนป้อน src) แล้วจะไม่มีใครสั่งซ้ำ — เฟรมแรกขึ้นแต่คลิปนิ่งค้าง
+    //    ต้องดักตอนคลิปพร้อมแล้วเช็คว่ายังหยุดอยู่ไหม ถ้าหยุดให้สั่งเล่นซ้ำ
+    const kick = () => { if (el.paused) tryPlay(); };
+    el.addEventListener("canplay", kick);
+    el.addEventListener("loadeddata", kick);
+    return () => {
+      el.removeEventListener("canplay", kick);
+      el.removeEventListener("loadeddata", kick);
+    };
   }, [active, muted, setMute]);
 
   // แตะตรงไหนก็ได้ในฟีดครั้งแรก = เปิดเสียงให้เลย แบบเดียวกับ TikTok บนเว็บ
