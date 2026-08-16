@@ -103,14 +103,18 @@ export const videoSrc = (x: ShopVideo) =>
 export const videoHd = (x: ShopVideo) =>
   HOST ? undefined : x.hd ? file(x, x.hd) : undefined;   // HLS ปรับเองไม่ต้องมีลิงก์ HD แยก
 
-// รูปปกวิ่งผ่าน Netlify Image CDN — ย่อตามจอจริงแล้วแปลง WebP ให้เอง
+// รูปปกคลิป
+//
+// ⚠️ รูปจาก R2 ใช้ตรง ๆ ห้ามวิ่งผ่าน Netlify Image CDN
+//    ตัวย้ายคลิป (video-to-r2.mjs) ตัดรูปปกมาให้ขนาดพอดีอยู่แล้ว (404x720)
+//    วัดจริงแล้ว: ผ่าน Netlify ได้ภาพขนาดเท่ากันเป๊ะ ประหยัดแค่ 14KB
+//    แต่ช้ากว่า 3 เท่า (0.98 วิ เทียบกับ 0.29 วิ) เพราะ Netlify ต้องวิ่งไปดึงจาก R2
+//    มาแปลงก่อนอีกทอด — ในฟีดที่เลื่อนทีละใบ ความหน่วงตรงนี้คือ "ภาพยังไม่ขึ้น"
+//    ส่วนรูปเก่าจาก Shopify ยังต้องผ่าน Netlify เพราะไฟล์ต้นทางใหญ่เกิน
 export function videoPoster(x: ShopVideo, w = 480) {
-  const url = HOST
-    ? `${HOST}/v/${x.v}/poster.jpg`
-    : x.pv
-      ? `${CDN}/s/files/${SHOP}/files/preview_images/${x.v}.thumbnail.0000000000.jpg?v=${x.pv}`
-      : undefined;
-  if (!url) return undefined;
+  if (HOST) return `${HOST}/v/${x.v}/poster.jpg`;
+  if (!x.pv) return undefined;
+  const url = `${CDN}/s/files/${SHOP}/files/preview_images/${x.v}.thumbnail.0000000000.jpg?v=${x.pv}`;
   return `/.netlify/images?${new URLSearchParams({ url, w: String(w), q: "60" })}`;
 }
 
