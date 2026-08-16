@@ -36,6 +36,24 @@ const readSeen = (): string[] => {
 const CHUNK = 20;
 const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะเติมชุดใหม่
 
+// ตัวฟ้องบนจอ — เปิดด้วย gucut.com/videos/?debug เท่านั้น ลูกค้าปกติไม่เห็น
+// มีไว้ไล่ปัญหา "คลิปไม่เล่นบนมือถือ" โดยไม่ต้องต่อสาย debug กับเครื่องจริง
+function dbg(msg: string) {
+  if (typeof window === "undefined" || !window.location.search.includes("debug")) return;
+  let el = document.getElementById("gu-dbg");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "gu-dbg";
+    el.style.cssText =
+      "position:fixed;left:0;right:0;bottom:70px;max-height:45vh;overflow:auto;z-index:99999;" +
+      "background:rgba(0,0,0,.8);color:#9f9;font:10px/1.5 Menlo,monospace;padding:6px 8px;" +
+      "pointer-events:none;white-space:pre-wrap;word-break:break-all";
+    document.body.appendChild(el);
+    el.textContent = "UA: " + navigator.userAgent + "\n";
+  }
+  el.textContent = new Date().toTimeString().slice(0, 8) + " " + msg + "\n" + el.textContent;
+}
+
 // จัดอันดับฟีดแบบ TikTok — คลิปที่คนกดหัวใจเยอะมีโอกาสขึ้นก่อน แต่สุ่มใหม่ทุกครั้งที่เปิด
 // เปิดสิบครั้งจะไม่เจอลำดับเดิมสิบครั้ง แต่ใบที่คนชอบก็ยังลอยขึ้นมาบ่อยกว่า
 // (ใบที่เคยดูแล้วดันไปท้ายเสมอ ไม่ว่าจะดังแค่ไหน)
@@ -114,6 +132,13 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       // iOS บางรุ่นเช็ค "attribute" muted ตอนตัดสินว่าให้เล่นเองได้ไหม ไม่ใช่แค่ property
       // (React ก็มีบั๊กเก่าแก่ที่ไม่เขียน attribute นี้ให้จาก prop) — ใส่เองให้ชัวร์
       if (mutedRef.current) el.setAttribute("muted", "");
+      if (!(el as HTMLVideoElement & { _dbg?: boolean })._dbg) {
+        (el as HTMLVideoElement & { _dbg?: boolean })._dbg = true;
+        for (const ev of ["loadstart", "loadedmetadata", "canplay", "playing", "waiting", "stalled", "suspend", "pause", "emptied"]) {
+          el.addEventListener(ev, () => dbg(`#${i} ${ev} rs=${el.readyState} src=${el.currentSrc ? "มี" : "ไม่มี"}`));
+        }
+        el.addEventListener("error", () => dbg(`#${i} ❌ ERROR code=${el.error?.code} ${el.error?.message || ""}`));
+      }
       players.current.set(i, el);
       return;
     }
@@ -248,6 +273,8 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     setReady(el.readyState >= 3);
     el.muted = muted;
     const tryPlay = () => {
+      dbg(`สั่ง play #${active} muted=${el.muted} rs=${el.readyState}`);
+      el.play().then(() => dbg(`play #${active} ✅`)).catch((err) => dbg(`play #${active} ❌ ${err?.name}`));
       el.play().catch(() => {
         if (el.muted) return;   // ปฏิเสธทั้งที่เงียบอยู่ — เดี๋ยว canplay ข้างล่างสั่งซ้ำให้
         // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
@@ -450,6 +477,7 @@ const Slide = memo(function Slide({
     if (!(isSafariHls() || !usingHls)) return;   // ทาง hls.js มี useHls จัดการอยู่แล้ว
     if (eager) {
       if (el.getAttribute("src") !== src) {
+        dbg(`#${i} ป้อน src (safari)`);
         el.src = src;
         el.load();
       }
