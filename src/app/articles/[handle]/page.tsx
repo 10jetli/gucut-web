@@ -73,7 +73,7 @@ export default async function ArticlePage({
       {/* ชวนไปดูสินค้าจริง — บทความมีไว้ให้คนหาเจอแล้วเดินต่อเข้าร้าน */}
       <section className="mx-2 mt-2 rounded-xl bg-white p-4 text-center">
         <p className="text-[14px] font-medium text-ink">ร้าน GUCUT ขายเลื่อยยนต์ NEWWAVE / KingKong ของแท้</p>
-        <p className="mt-1 text-[12px] text-ink-300">โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งฟรีทั่วไทย</p>
+        <p className="mt-1 text-[12px] text-ink-300">โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งทั่วไทย</p>
         <Link href="/" className="mt-3 inline-block rounded-sm bg-safety px-6 py-2.5 text-[14px] font-semibold text-white">
           ดูสินค้าทั้งหมด
         </Link>

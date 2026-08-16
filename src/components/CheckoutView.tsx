@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
+import { shippingFor } from "@/lib/shipping";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 
 // หน้าสั่งซื้อแบบ Shopee — เห็นทุกอย่างในหน้าเดียว แล้วกดเช็คเอาต์จากแถบล่าง
@@ -33,9 +34,8 @@ const PROMPTPAY_ID = process.env.NEXT_PUBLIC_PROMPTPAY_ID ?? "";
 // ---------------------------------------------------------------------------
 // ตัวเลขเรื่องจัดส่ง — แก้ที่นี่ที่เดียว หน้าสรุปยอดกับกล่องจัดส่งขึ้นตามให้เอง
 // ---------------------------------------------------------------------------
-const SHIPPING_FEE: number = 0;        // ค่าส่งที่เก็บจริง (ร้านส่งฟรีทั่วไทย)
-const SHIPPING_LIST: number = 35;      // ค่าส่งปกติที่ขีดฆ่าโชว์ข้าง ๆ · 0 = ไม่โชว์
-                               // ⚠️ ต้องเป็นราคาที่ร้านเก็บจริงถ้าไม่ยกเว้นให้ ห้ามใส่เลขมั่ว
+// ค่าส่งเป็นขั้นบันไดตามยอดค่าสินค้า — ตารางอยู่ที่ src/lib/shipping.ts
+// (คัดมาจากค่าจริงที่ร้านตั้งไว้ใน Shopify) เซิร์ฟเวอร์คิดใหม่เองอยู่แล้ว
 const COD_FEE: number = 0;             // ค่าบริการเก็บเงินปลายทาง
 const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
 const SHIP_MAX_DAYS = 4;
@@ -133,7 +133,9 @@ export default function CheckoutView() {
     : 0;
   const pointDiscount = Math.min(Math.floor(pointsToUse * (loyalty?.redeemValue ?? 1)), pointCap, afterCoupon);
 
-  const total = Math.max(0, afterCoupon - pointDiscount) + SHIPPING_FEE + codFee;
+  // ค่าส่งคิดจากยอดหลังหักส่วนลดโค้ด (ไม่นับแต้ม) ให้ตรงกับเงื่อนไขที่ตั้งไว้ใน Shopify
+  const shippingFee = shippingFor(afterCoupon);
+  const total = Math.max(0, afterCoupon - pointDiscount) + shippingFee + codFee;
 
   // ตะกร้าเปลี่ยนแล้วส่วนลดเดิมอาจใช้ไม่ได้ (เช่นมียอดขั้นต่ำ) — ให้กดใช้โค้ดใหม่
   useEffect(() => {
@@ -198,7 +200,7 @@ export default function CheckoutView() {
           couponCode: coupon?.code ?? null,
           discount,
           usePoints: pointsToUse,
-          shipping: SHIPPING_FEE,
+          shipping: shippingFee,   // เซิร์ฟเวอร์คิดใหม่เองอยู่ดี ส่งไปเพื่อให้เทียบได้ว่าตรงกันไหม
           codFee,
           taxInvoice: tax,                                // null = ไม่ขอใบกำกับภาษี
           slipBase64: slip?.data ?? null,
@@ -439,11 +441,8 @@ export default function CheckoutView() {
               <circle cx="17" cy="17.5" r="1.6" />
             </svg>
             <span className="flex-1 text-[13px] font-semibold text-[#1f9254]">{eta || " "}</span>
-            {SHIPPING_LIST > SHIPPING_FEE && (
-              <span className="text-[12px] text-steel-300 line-through">฿{SHIPPING_LIST.toLocaleString("th-TH")}</span>
-            )}
             <span className="text-[13px] font-semibold text-[#1f9254]">
-              {SHIPPING_FEE ? `฿${SHIPPING_FEE.toLocaleString("th-TH")}` : "ส่งฟรี"}
+              {shippingFee ? `฿${shippingFee.toLocaleString("th-TH")}` : "ส่งฟรี"}
             </span>
           </div>
           <p className="mt-0.5 text-[12px] text-steel-300">
@@ -484,7 +483,7 @@ export default function CheckoutView() {
           {discount > 0 && (
             <Row label={`ส่วนลดร้านค้า (${coupon?.code})`} value={`-฿${discount.toLocaleString("th-TH")}`} free />
           )}
-          <Row label="ค่าจัดส่ง" value={SHIPPING_FEE || "ฟรี"} free={!SHIPPING_FEE} />
+          <Row label="ค่าจัดส่ง" value={shippingFee || "ฟรี"} free={!shippingFee} />
           {codFee > 0 && <Row label="ค่าบริการเก็บเงินปลายทาง" value={codFee} />}
           {pointDiscount > 0 && (
             <Row

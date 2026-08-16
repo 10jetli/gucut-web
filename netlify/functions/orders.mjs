@@ -24,6 +24,7 @@ import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs"
 import { markUsed } from "../lib/coupons.mjs";
 import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs";
 import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
+import { shippingFor } from "../lib/shipping.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -99,10 +100,14 @@ export default async function handler(req, context) {
     if (!items.length) return json({ error: "ไม่มีสินค้าในออเดอร์" }, 400);
 
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
-    const shipping = money(body.shipping);
     const codFee = money(body.codFee);
     // ส่วนลดรับตามที่แจ้ง แต่ไม่ให้เกินค่าสินค้า — โค้ดถูกตรวจกับ /api/coupon ไปแล้ว
     const discount = Math.min(money(body.discount), subtotal);
+
+    // ค่าส่ง — คิดใหม่จากตารางเสมอ ห้ามเชื่อ body.shipping
+    // (เดิมรับค่าจากเบราว์เซอร์ตรง ๆ ตอนค่าส่งเป็น 0 เสมอจึงไม่มีผล
+    //  แต่พอมีค่าส่งจริงแล้ว ใครแก้ค่าที่ส่งมาเป็น 0 ก็จะได้ส่งฟรี)
+    const shipping = shippingFor(Math.max(0, subtotal - discount));
 
     // แลกแต้มสะสม — คิดฝั่งเซิร์ฟเวอร์เสมอ ไม่เชื่อตัวเลขจากเบราว์เซอร์
     // ต้องล็อกอินอยู่จริงถึงแลกได้ (แต้มผูกกับบัญชี)

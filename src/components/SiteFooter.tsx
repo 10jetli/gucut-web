@@ -13,7 +13,7 @@ export default function SiteFooter() {
         เลื่อยยนต์ NEWWAVE / KingKong ของแท้
       </p>
       <p className="mt-1 text-[12px] leading-relaxed text-[#a9a9a9]">
-        โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งฟรีทั่วไทย
+        โซ่ บาร์ อะไหล่ครบทุกรุ่น · ส่งทั่วไทย
       </p>
       <span aria-hidden className="mx-auto mt-5 block h-px w-10 bg-safety" />
       {/* Meta / Google บังคับให้ลิงก์สองอันนี้เข้าถึงได้จากทุกหน้า ตอนขอเปิดใช้ปุ่มเข้าสู่ระบบ */}

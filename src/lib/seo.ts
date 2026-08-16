@@ -20,7 +20,7 @@ export const organizationLd = () => ({
   url: SITE,
   description:
     "ร้าน GUCUT ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่ บาร์ และอะไหล่ครบทุกรุ่น " +
-    "ส่งฟรีทั่วไทย เก็บเงินปลายทางได้ มีอะไหล่แยกชิ้นกว่า 2,400 รายการ",
+    "ส่งทั่วไทยด้วย Flash Express เก็บเงินปลายทางได้ มีอะไหล่แยกชิ้นกว่า 2,400 รายการ",
   image: abs("/img/cover-all.jpg"),
   logo: abs("/icon-512.png"),
   priceRange: "฿฿",

@@ -27,7 +27,7 @@ export function GET() {
 
   return Response.json({
     store: "GUCUT",
-    about: "เลื่อยยนต์ NEWWAVE / KingKong ของแท้ โซ่ บาร์ และอะไหล่แยกชิ้น ส่งฟรีทั่วไทย",
+    about: "เลื่อยยนต์ NEWWAVE / KingKong ของแท้ โซ่ บาร์ และอะไหล่แยกชิ้น ส่งทั่วไทย",
     site: SITE,
     currency: "THB",
     count: list.length,

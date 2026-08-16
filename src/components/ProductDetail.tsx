@@ -119,7 +119,7 @@ export default function ProductDetail({
             {live && <span className="ml-1 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
           </span>
           {p.sku && <span>SKU {p.sku}</span>}
-          <span className="text-safety">ส่งฟรีทั่วไทย</span>
+          <span className="text-safety">ส่งทั่วไทย · Flash Express</span>
         </div>
       </section>
 
