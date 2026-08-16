@@ -55,6 +55,27 @@
   to = "/admin/:splat"
   status = 200
 
+# ---------------------------------------------------------------------------
+# robots.txt แยกตามโดเมน — ต้องอยู่ "ก่อน" กติกาอื่น ไม่งั้นไฟล์จริงถูกเสิร์ฟก่อน
+#
+#   gucut.com      → robots-gucut.txt  เปิดให้ Google + บอต AI เก็บ
+#   new78.com      → robots.txt        ปิดทั้งเว็บ (เว็บซ้อม)
+#
+# แยกเพราะสองโดเมนเสิร์ฟเนื้อหาชุดเดียวกัน ถ้าเปิดทั้งคู่ Google จะเห็นเป็น
+# เนื้อหาซ้ำ แล้วอาจเลือกจัดอันดับ new78.com แทน gucut.com ที่สะสมอันดับมา 14 ปี
+# ---------------------------------------------------------------------------
+[[redirects]]
+  from = "https://gucut.com/robots.txt"
+  to = "/robots-gucut.txt"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "https://www.gucut.com/robots.txt"
+  to = "/robots-gucut.txt"
+  status = 200
+  force = true
+
 # Serverless function สต็อก/ราคาสดจาก ZORT (/api/stock)
 [functions]
   directory = "netlify/functions"

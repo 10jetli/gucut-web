@@ -1,0 +1,43 @@
+# robots.txt สำหรับ gucut.com เท่านั้น
+#
+# ไฟล์นี้ไม่ได้เสิร์ฟตรง ๆ — netlify.toml ส่งคำขอ https://gucut.com/robots.txt
+# มาที่ไฟล์นี้ ส่วนโดเมนอื่น (new78.com) ยังได้ public/robots.txt ที่ปิด Google ทั้งเว็บ
+#
+# ทำไมต้องแยก: new78.com เป็นเว็บซ้อม เนื้อหาเหมือน gucut.com ทุกหน้า
+# ถ้าเปิดทั้งคู่ Google จะเห็นเป็นเนื้อหาซ้ำ แล้วอาจเลือกจัดอันดับ new78.com
+# แทน gucut.com ที่สะสมอันดับมาตั้งแต่ปี 2553
+
+User-agent: *
+Allow: /
+Disallow: /admin/
+Disallow: /account/
+Disallow: /checkout/
+
+# ── ผู้ช่วย AI: เปิดให้เข้าทั้งหมด (ตั้งใจ) ──
+# ร้านอยากให้ ChatGPT / Claude / Perplexity / Gemini อ่านแล้วแนะนำร้านเรา
+# ได้เวลามีคนถามว่า "ซื้อเลื่อยยนต์ที่ไหนดี" — นี่คือหัวใจของ GEO/LLMO
+# เว็บส่วนใหญ่บล็อกพวกนี้ ซึ่งเสียโอกาสฟรี ๆ
+User-agent: GPTBot
+Allow: /
+User-agent: OAI-SearchBot
+Allow: /
+User-agent: ChatGPT-User
+Allow: /
+User-agent: ClaudeBot
+Allow: /
+User-agent: Claude-Web
+Allow: /
+User-agent: PerplexityBot
+Allow: /
+User-agent: Google-Extended
+Allow: /
+User-agent: Applebot-Extended
+Allow: /
+User-agent: cohere-ai
+Allow: /
+
+Sitemap: https://gucut.com/sitemap.xml
+
+# ไฟล์ข้อมูลแบบเครื่องอ่าน — บอกไว้ใน /llms.txt ด้วย
+#   /products.json  สินค้าทุกตัวพร้อมราคาและสต็อก
+#   /feed.json      คลิปหน้างานจริง
