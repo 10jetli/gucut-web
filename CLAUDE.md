@@ -52,9 +52,12 @@ DNS อยู่ที่ **Cloudflare** (nameserver `iris` / `lars.ns.cloudflar
 ที่อยู่เว็บอยู่ที่ `src/lib/site.ts` + `netlify/lib/site.mjs` อ่านจาก env `NEXT_PUBLIC_SITE_URL`
 (ตั้งเป็น `https://gucut.com` ที่ Netlify project `gucut-storefront` แล้ว)
 
-⚠️ **ยังค้าง: redirect URI ที่ LINE / Facebook / Google** — ปุ่มเข้าสู่ระบบบน gucut.com
-ยังใช้ไม่ได้จนกว่าจะเพิ่ม `https://gucut.com/api/oauth/{line,facebook,google}/callback`
-เพิ่มเฉย ๆ ไม่ต้องลบของ new78.com (oauth.mjs สร้าง callback จาก `url.origin` ของคำขอ)
+✅ **redirect URI ที่ LINE / Facebook / Google เพิ่มแล้ว (16 ส.ค. 2569)**
+`https://gucut.com/api/oauth/{line,facebook,google}/callback` — ของ new78.com ยังอยู่ครบ
+ใช้ได้พร้อมกันสองโดเมนเพราะ `oauth.mjs:25` สร้าง callback จาก `url.origin` ของคำขอ
+ทดสอบแล้วทั้งสามเจ้าตอบ 302 ไปหาผู้ให้บริการพร้อม redirect_uri ที่ถูกต้อง
+
+⚠️ **ย้ายโดเมนอีกครั้งเมื่อไหร่ ต้องกลับมาเพิ่ม URI ที่สามเจ้านี้ด้วยทุกครั้ง** — แก้ env อย่างเดียวไม่พอ
 
 **robots.txt แยกรายโดเมน** — กติกาอยู่ใน `netlify.toml` (ต้องอยู่ก่อนกติกาอื่น)
 - `gucut.com` → `public/robots-gucut.txt` เปิดให้ Google + บอต AI เก็บ
