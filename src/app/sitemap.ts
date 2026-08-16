@@ -3,8 +3,8 @@ import { articles } from "@/lib/articles";
 import { products, collections } from "@/lib/catalog";
 
 // sitemap สำหรับ 2,482 หน้าสินค้า + 30 หมวด
-// พร้อมใช้ทันทีที่ย้ายไป gucut.com — แค่เปลี่ยน NEXT_PUBLIC_SITE_URL
-const BASE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
+// พร้อมใช้ทันทีที่ย้ายไป gucut.com — แค่เปลี่ยน NEXT_PUBLIC_SITE_URL (ดู src/lib/site.ts)
+import { SITE_URL as BASE } from "@/lib/site";
 
 export const dynamic = "force-static";
 

@@ -7,6 +7,8 @@
 //   FACEBOOK_API_VERSION      ไม่ใส่ก็ได้ ค่าเริ่มต้น v23.0
 // และที่แอป → Facebook Login → Settings → Valid OAuth Redirect URIs ใส่:
 //   https://new78.com/api/oauth/facebook/callback
+//   ⚠️ วันย้ายโดเมนไป gucut.com ต้อง "กลับมาแก้ที่นี่ด้วย" — เปลี่ยน NEXT_PUBLIC_SITE_URL
+//      อย่างเดียวไม่พอ ปุ่มเข้าสู่ระบบจะพังทันทีถ้า redirect URI ฝั่งผู้ให้บริการไม่ตรง
 import { FACEBOOK, handleOAuth } from "../lib/oauth.mjs";
 
 export default (req) => handleOAuth(req, FACEBOOK);

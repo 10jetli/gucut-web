@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { SITE_HOST } from "@/lib/site";
 
 // ท้ายเว็บ — บล็อกเข้มปิดท้ายทุกหน้าร้าน ใช้เส้นส้มเดียวกับหัวเว็บ
 // อยู่ใน Shell จึงขึ้นเองทุกหน้า ไม่ต้องไปใส่ทีละหน้า
@@ -21,7 +22,7 @@ export default function SiteFooter() {
         <span aria-hidden>·</span>
         <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
       </nav>
-      <p className="mt-3 text-[11px] text-[#8a8a8a]">new78.com</p>
+      <p className="mt-3 text-[11px] text-[#8a8a8a]">{SITE_HOST}</p>
     </footer>
   );
 }

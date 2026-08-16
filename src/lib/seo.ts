@@ -6,8 +6,7 @@
 // ทั้งสามอย่างกินข้อมูลชุดเดียวกัน: บอกให้ชัดว่า "นี่คือใคร ขายอะไร ราคาเท่าไหร่
 // มีของไหม ใครรีวิวว่ายังไง" ในรูปแบบที่เครื่องอ่านออก ไม่ใช่แค่ตัวหนังสือสวย ๆ
 import { SHOP } from "./shop";
-
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
+import { SITE_URL as SITE } from "./site";
 
 export const abs = (path: string) => `${SITE}${path.startsWith("/") ? path : `/${path}`}`;
 

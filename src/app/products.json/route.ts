@@ -6,8 +6,7 @@
 //
 // ใช้กับงานอื่นได้อีก: ทำฟีดเข้า Google Merchant / Facebook Catalog
 import { products, sellable } from "@/lib/catalog";
-
-const SITE = process.env.NEXT_PUBLIC_SITE_URL ?? "https://new78.com";
+import { SITE_URL as SITE } from "@/lib/site";
 
 export const dynamic = "force-static";
 

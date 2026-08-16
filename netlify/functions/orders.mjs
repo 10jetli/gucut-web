@@ -23,6 +23,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
 import { markUsed } from "../lib/coupons.mjs";
 import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs";
+import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -190,7 +191,7 @@ export default async function handler(req, context) {
         : order.zort?.skipped
           ? ""
           : `⚠️ ส่งเข้า ZORT ไม่สำเร็จ (${order.zort?.message || "?"}) — กดส่งซ้ำได้ในหน้าออเดอร์\n`) +
-      `\nเปิดดู: https://new78.com/admin/orders/`;
+      `\nเปิดดู: ${SITE_URL}/admin/orders/`;
 
     const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
     if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
@@ -347,7 +348,7 @@ async function zortAddOrder(order) {
     customeraddress:
       `${order.customer.address} ${order.customer.province} ${order.customer.zip}`.trim(),
     description:
-      `จากเว็บ new78.com · ${order.paymentLabel}` +
+      `จากเว็บ ${SITE_HOST} · ${order.paymentLabel}` +
       (order.couponCode ? ` · โค้ด ${order.couponCode}` : "") +
       (order.customer.note ? ` · ${order.customer.note}` : ""),
     discountamount: order.discount || 0,
