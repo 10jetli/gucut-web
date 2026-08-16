@@ -14,6 +14,7 @@ interface Cfg {
   ga4: { on: boolean; id: string };
   ads: { on: boolean; id: string; label: string };
   line: { on: boolean; tagId: string };
+  cf: { on: boolean; token: string };
 }
 
 export default function AdminMarketing() {
@@ -152,6 +153,22 @@ export default function AdminMarketing() {
               </F>
               <F label="Conversion Label" hint="ตัวอักษรสั้น ๆ ที่ Google ให้มาคู่กับ ID เช่น AbC-D_efG12hIjKlm">
                 <input value={cfg.ads.label} onChange={(e) => setCfg({ ...cfg, ads: { ...cfg.ads, label: e.target.value } })} className={input} />
+              </F>
+            </Card>
+
+            <Card
+              t="Cloudflare Web Analytics"
+              note="ดูจำนวนคนเข้า หน้ายอดนิยม มาจากไหน ใช้เครื่องอะไร — เบากว่า GA4 สิบกว่าเท่า (11 KB) และไม่ใช้คุกกี้เลย"
+              on={cfg.cf?.on ?? false}
+              set={(b) => setCfg({ ...cfg, cf: { ...cfg.cf, on: b } })}
+            >
+              <F
+                label="Beacon Token"
+                hint={"หาได้ที่ Cloudflare → Analytics & Logs → Web Analytics → Add a site → ใส่ gucut.com "
+                  + "แล้วก๊อปค่า token ในบรรทัด data-cf-beacon มาใส่ (ตัวอักษรผสมตัวเลขยาว ๆ) "
+                  + "· token นี้ไม่ใช่ความลับ มันฝังอยู่ในหน้าเว็บให้ทุกคนเห็นอยู่แล้ว"}
+              >
+                <input value={cfg.cf?.token ?? ""} onChange={(e) => setCfg({ ...cfg, cf: { ...cfg.cf, token: e.target.value } })} className={input} autoComplete="off" />
               </F>
             </Card>
 

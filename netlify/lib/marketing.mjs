@@ -23,6 +23,9 @@ export const DEFAULTS = {
   ads: { on: false, id: "", label: "" },
   // LINE Tag
   line: { on: false, tagId: "" },
+  // Cloudflare Web Analytics — ไม่ใช้คุกกี้ ไม่ตามรอยรายบุคคล
+  // token ตัวนี้ "ไม่ใช่ความลับ" มันฝังอยู่ในหน้าเว็บให้ทุกคนเห็นอยู่แล้ว
+  cf: { on: false, token: "" },
 };
 
 const str = (v, max = 120) => String(v ?? "").trim().slice(0, max);
@@ -57,6 +60,7 @@ export async function writeMarketing(next) {
     ga4: pick("ga4", ["id"]),
     ads: pick("ads", ["id", "label"]),
     line: pick("line", ["tagId"]),
+    cf: pick("cf", ["token"]),
   };
   await store().setJSON(KEY, merged);
   return merged;
@@ -71,6 +75,8 @@ export function publicView(m) {
     ga4: { on: on(m.ga4, "id"), id: m.ga4.on ? m.ga4.id : "" },
     ads: { on: on(m.ads, "id"), id: m.ads.on ? m.ads.id : "", label: m.ads.on ? m.ads.label : "" },
     line: { on: on(m.line, "tagId"), tagId: m.line.on ? m.line.tagId : "" },
+    // token ของ Cloudflare ส่งออกหน้าเว็บได้ ไม่ใช่ความลับ (ต่างจาก token ของ CAPI)
+    cf: { on: on(m.cf, "token"), token: m.cf.on ? m.cf.token : "" },
   };
 }
 

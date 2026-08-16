@@ -18,6 +18,7 @@ export interface PixelConfig {
   ga4: { on: boolean; id: string };
   ads: { on: boolean; id: string; label: string };
   line: { on: boolean; tagId: string };
+  cf: { on: boolean; token: string };
 }
 
 export interface TrackItem {
@@ -105,6 +106,15 @@ export async function initPixels() {
     win.gtag!("js", new Date());
     if (cfg.ga4.on) win.gtag!("config", cfg.ga4.id);
     if (cfg.ads.on) win.gtag!("config", cfg.ads.id);
+  }
+
+  if (cfg.cf?.on) {
+    // Cloudflare Web Analytics — 11 KB ไม่ใช้คุกกี้ ไม่ต้องยิง event เอง
+    // มันนับ pageview ให้เองรวมถึงตอนเปลี่ยนหน้าแบบ SPA
+    el("https://static.cloudflareinsights.com/beacon.min.js", (t) => {
+      t.defer = true;
+      t.setAttribute("data-cf-beacon", JSON.stringify({ token: cfg!.cf.token }));
+    });
   }
 
   if (cfg.line.on) {
