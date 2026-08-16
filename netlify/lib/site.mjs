@@ -5,7 +5,7 @@
 //
 // ⚠️ ค่าสำรองต้องตรงกับ src/lib/site.ts
 
-export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://new78.com").replace(/\/+$/, "");
+export const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || "https://gucut.com").replace(/\/+$/, "");
 
-/** ชื่อโดเมนล้วน ๆ ไว้ใส่ในข้อความที่คนอ่าน เช่น "new78.com" */
+/** ชื่อโดเมนล้วน ๆ ไว้ใส่ในข้อความที่คนอ่าน เช่น "gucut.com" */
 export const SITE_HOST = SITE_URL.replace(/^https?:\/\//, "");
