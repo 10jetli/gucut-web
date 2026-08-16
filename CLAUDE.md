@@ -11,11 +11,13 @@
 > - หลังร้าน 8 เมนู: ออเดอร์ · แชท · เลือกคลิป · คอมเมนต์ · ผูกสินค้ากับคลิป · โค้ดส่วนลด · แต้มสะสม · สถานะระบบ
 >
 > **รอเจ้าของร้านทำ (Claude ทำแทนไม่ได้)**
-> 1. `bash <(curl -fsSL https://new78.com/video-fast.sh)` — ตั้งตัวเสิร์ฟคลิปให้เล่นไว (ตอนนี้คลิปช้าเพราะลิงก์ r2.dev ไม่แคช)
-> 2. กรอกข้อมูลร้านใน `src/lib/shop.ts` (ชื่อผู้ประกอบการ · เลขผู้เสียภาษี · ที่อยู่ · อีเมล) — หน้านโยบายรออยู่
-> 3. ใส่ `NEXT_PUBLIC_PROMPTPAY_ID` ที่ Netlify — ไม่ใส่ = ลูกค้าจ่ายได้แค่เก็บเงินปลายทาง
-> 4. export แต้มลูกค้าเก่าจากแอป CWILL Loyalty บน Shopify **ก่อนปิดร้าน** ไม่งั้นแต้มหายหมด
-> 5. ตัดสินใจเรื่องย้ายโดเมน gucut.com (ดูหัวข้อ "โดเมน" ข้างล่าง)
+> 1. กรอกข้อมูลร้านใน `src/lib/shop.ts` (ชื่อผู้ประกอบการ · เลขผู้เสียภาษี · ที่อยู่ · อีเมล) — หน้านโยบายรออยู่
+> 2. ใส่ `NEXT_PUBLIC_PROMPTPAY_ID` ที่ Netlify — ไม่ใส่ = ลูกค้าจ่ายได้แค่เก็บเงินปลายทาง
+> 3. export แต้มลูกค้าเก่าจากแอป CWILL Loyalty บน Shopify **ก่อนปิดร้าน** ไม่งั้นแต้มหายหมด
+> 4. **ย้ายทะเบียนโดเมน gucut.com ออกจาก Shopify ก่อนปิดร้าน** — ปลดล็อก → ขอรหัส EPP →
+>    ย้ายไป Cloudflare Registrar (~$10/ปี ถูกกว่า $16 ที่จ่าย Shopify และ DNS อยู่ที่นั่นแล้ว)
+>    ไม่ย้าย = เสี่ยงเสียโดเมนอายุ 14 ปีพร้อมอันดับ Google ทั้งหมด
+> 5. ตัดสินใจว่าจะสลับหน้าร้านจาก new78.com มา gucut.com เมื่อไหร่ (ดูหัวข้อ "โดเมน" ข้างล่าง)
 >
 > **สิ่งที่เจ้าของร้านสั่งไว้ — ห้ามทำตรงข้าม**
 > - deploy ได้เลยไม่ต้องถาม (แต่ต้องบอกถ้ามีอะไรให้ตัดสินใจ)
@@ -30,15 +32,25 @@
 | | โดเมน | สถานะ |
 |---|---|---|
 | ตอนนี้ | **new78.com** | เว็บซ้อม · `robots.txt` ปิด Google ทั้งเว็บ (`Disallow: /`) |
-| ภายหลัง | gucut.com | ยังไม่ย้าย — **เว็บยังไม่สมบูรณ์** |
+| ภายหลัง | gucut.com | ยังชี้ไปร้าน Shopify — **เว็บยังไม่สมบูรณ์** |
+
+**DNS ของ gucut.com ย้ายมา Cloudflare แล้ว (16 ส.ค. 2569)** — nameserver `iris` / `lars.ns.cloudflare.com`
+แก้ DNS ที่ Cloudflare เท่านั้น หน้า DNS ใน Shopify ยังโชว์ค่าเดิมแต่ไม่มีผลแล้ว
+record ของ Shopify ต้องเป็น **DNS only (เมฆเทา)** เสมอ — เปิดเมฆส้มแล้วร้านล่มทั้งร้าน
+อีเมลย้ายมา **Cloudflare Email Routing** แล้วเช่นกัน (`info@` → `gucut1@gmail.com`)
+
+**โค้ดพร้อมย้ายแล้ว** — ที่อยู่เว็บรวมอยู่ที่ `src/lib/site.ts` กับ `netlify/lib/site.mjs` ที่เดียว
+วันย้ายจริงตั้ง `NEXT_PUBLIC_SITE_URL=https://gucut.com` ที่ Netlify แล้วทั้งเว็บเปลี่ยนตาม
+⚠️ แต่ต้องไปแก้ **redirect URI ที่ LINE / Facebook / Google** ด้วย ไม่งั้นปุ่มเข้าสู่ระบบพัง
 
 **ห้ามเปิด `robots.txt` ให้ Google เก็บ จนกว่าเจ้าของร้านจะสั่งเอง** ถ้าเปิดตอนเว็บยังไม่เสร็จ Google จะเก็บหน้าที่ยังไม่พร้อม และลบออกทีหลังยาก
 
-เมื่อเจ้าของร้านสั่งย้ายจริง ให้แก้ 4 จุดพร้อมกัน:
-1. `src/app/layout.tsx` — ค่า `SITE`
-2. `src/app/sitemap.ts` — ค่า `BASE`
-3. `src/app/page.tsx` — ข้อความท้ายหน้าแรก
-4. `public/robots.txt` — เปลี่ยนตามตัวอย่างที่คอมเมนต์ไว้ในไฟล์ (อย่าลืม `Disallow: /admin/` และ `/account/`)
+เมื่อเจ้าของร้านสั่งย้ายจริง ทำ 5 อย่างนี้:
+1. ตั้ง `NEXT_PUBLIC_SITE_URL=https://gucut.com` ที่ Netlify ← จุดเดียวได้ทั้งเว็บ (ไม่ต้องแก้โค้ด)
+2. `public/robots.txt` — เปลี่ยนตามตัวอย่างที่คอมเมนต์ไว้ในไฟล์ (อย่าลืม `Disallow: /admin/` และ `/account/`)
+3. ที่ Cloudflare เปลี่ยน record ของ `gucut.com` จาก Shopify มาชี้ Netlify **แล้วร้าน Shopify จะเข้าไม่ได้ทันที**
+4. เพิ่ม `gucut.com` เป็น custom domain ใน Netlify
+5. แก้ redirect URI ที่ LINE / Facebook / Google (ดูคอมเมนต์หัวไฟล์ `netlify/functions/oauth-*.mjs`)
 
 ## Tech Stack
 - Next.js 15 (App Router) + TypeScript + Tailwind CSS 3
@@ -115,13 +127,18 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
 | | |
 |---|---|
 | bucket | `gucut-video` (Asia-Pacific) · เปิด Public Development URL แล้ว |
-| ที่อยู่ปัจจุบัน | `HOST` ใน `src/lib/videos.ts` = `https://pub-002ee0abd2f747c5b9e5573c987ca79d.r2.dev` |
+| ที่อยู่ปัจจุบัน | `HOST` ใน `src/lib/videos.ts` = `https://video.gucut.com` (ทางถอยกลับ: ลิงก์ `pub-xxx.r2.dev`) |
 | CORS | ตั้งแล้ว (`new78.com`, `gucut.com`, `localhost:3000` · GET/HEAD · header `range`) |
 | ตัวย้าย | `scripts/video-to-r2.mjs` (รันซ้ำได้ จดใน `.r2-done.json`) · ตัวช่วยตั้งค่า `public/r2-setup.sh` |
 
-> ⚠️ **ลิงก์ `r2.dev` ช้าโดยตั้งใจ** — Cloudflare ไม่แคชที่ขอบเครือข่ายและจำกัดความเร็ว
-> (เช็ค header แล้วไม่มีทั้ง `cache-control` และ `cf-cache-status`) มีไว้ทดสอบเท่านั้น
-> จะเร็วจริงต้องผูก `video.gucut.com` (ย้าย DNS gucut.com มา Cloudflare) หรือเสิร์ฟผ่าน Worker
+> ✅ **เสิร์ฟผ่าน `video.gucut.com` แล้ว (16 ส.ค. 2569)** — ผูกโดเมนเข้ากับ bucket โดยตรง
+> พร้อม Cache Rule ชื่อ `cache-video-gucut` (Edge 30 วัน · Browser 7 วัน · ไม่สนใจ cache-control จากต้นทาง)
+> **ลบกฎนี้เมื่อไหร่ คลิปกลับไปไม่แคชทันที** เพราะ R2 ไม่ส่ง `cache-control` มาเอง
+>
+> วัดจริงแล้ว: ความเร็วดิบจากเน็ตในไทย **ไม่ต่างจาก r2.dev** (R2 อยู่ APAC ใกล้อยู่แล้ว)
+> ที่ได้จริงคือ **เบราว์เซอร์แคชได้** (`max-age=604800` ส่วน r2.dev ไม่ส่งอะไรเลย) ·
+> แคชที่ขอบเครือข่าย (`cf-cache-status: HIT`) · และไม่โดน r2.dev หรี่ความเร็วตอนคนดูพร้อมกันเยอะ
+> `public/video-fast.sh` (แผนเดิมที่จะใช้ Worker) จึง **ไม่ต้องรันแล้ว** — ใส่ตัวกันรันซ้ำไว้แล้ว
 
 **บทเรียนเรื่องตัวเล่น HLS — อย่าแก้กลับ**
 - `canPlayType("application/vnd.apple.mpegurl")` **โกหก** — Chrome บนคอมตอบ "maybe" ทั้งที่เล่นไม่ได้

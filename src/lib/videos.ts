@@ -60,14 +60,27 @@ export const videoForProduct = (handle: string) => byProduct.get(handle);
 // ที่เก็บคลิป — สลับทั้งเว็บด้วยบรรทัดเดียว
 //
 //   ""                          = ใช้ของ Shopify (ไฟล์ mp4 480p ตายตัว) — เลิกใช้แล้ว
-//   "https://pub-xxxx.r2.dev"   = R2 ผ่านลิงก์ฟรีของ Cloudflare ← ใช้อยู่ตอนนี้
-//   "https://video.gucut.com"   = R2 ผ่านโดเมนร้าน (ทำได้เมื่อ gucut.com ย้าย DNS มา Cloudflare)
+//   "https://pub-xxxx.r2.dev"   = R2 ผ่านลิงก์ฟรีของ Cloudflare — ทางถอยกลับ
+//   "https://video.gucut.com"   = R2 ผ่านโดเมนร้าน ← ใช้อยู่ตอนนี้ (16 ส.ค. 2569)
 //
 // คลิปครบ 459 ใบอยู่บน R2 แล้ว (ย้ายเมื่อ 15 ส.ค. 2569 · 12.8 GB · 22,545 ไฟล์)
-// ลิงก์ r2.dev มี rate limit ของ Cloudflare อยู่ ถ้าคนดูเยอะควรย้ายไป video.gucut.com
+//
+// ทำไมถึงย้ายจาก r2.dev มา video.gucut.com (วัดจริงเมื่อ 16 ส.ค. 2569)
+//   ความเร็วดิบ "ไม่ต่างกัน" สำหรับคนไทย — R2 อยู่ APAC ใกล้อยู่แล้ว
+//   (ไบต์แรก 0.15s vs 0.17s · ยิงต่อเนื่องบนการเชื่อมต่อเดียวพอ ๆ กัน)
+//   ที่ได้จริงคือสามอย่างที่วัดจากเครื่องเดียวไม่เห็น:
+//     1) เบราว์เซอร์แคชได้ — ส่ง cache-control: max-age=604800 ส่วน r2.dev ไม่ส่งอะไรเลย
+//        ในฟีดที่เลื่อนขึ้นลง เดิมโหลดซ้ำทุกครั้ง ตอนนี้ไม่โหลดซ้ำเลย 7 วัน
+//     2) แคชที่ขอบเครือข่าย (cf-cache-status: HIT) — ลดทั้งเวลาและค่า operation ของ R2
+//     3) r2.dev โดน Cloudflare หรี่ความเร็วโดยตั้งใจ เห็นผลตอนคนดูพร้อมกันเยอะ
+//
+//   ⚠️ แคชทำงานได้เพราะมี Cache Rule ชื่อ "cache-video-gucut" ที่ Cloudflare
+//      (Caching → Cache Rules) เงื่อนไข http.host eq "video.gucut.com"
+//      Edge TTL 30 วัน · Browser TTL 7 วัน · ไม่สนใจ cache-control จากต้นทาง
+//      ลบกฎนี้เมื่อไหร่ คลิปกลับไปไม่แคชทันที (R2 ไม่ส่ง cache-control มาเอง)
 // ---------------------------------------------------------------------------
 // ใส่ : string ไว้ ไม่งั้น TypeScript ฟันธงว่าค่านี้เท่ากับ "" ไม่ได้แน่ ๆ แล้วฟ้อง usingHls
-const HOST: string = "https://pub-002ee0abd2f747c5b9e5573c987ca79d.r2.dev";
+const HOST: string = "https://video.gucut.com";
 
 export const usingHls = HOST !== "";
 
