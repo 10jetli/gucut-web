@@ -401,6 +401,16 @@ const Slide = memo(function Slide({
   // ไม่งั้นหลายใบโหลดพร้อมกันจนแย่งเน็ตกันเอง คลิปที่ดูอยู่จะค้าง
   useHls(el, src, eager);
 
+  // ฝั่ง Safari: พอเลิกเป็นใบที่ดูอยู่ ต้องสั่งหยุดและตัดการโหลดเอง
+  // ถอด src ออกเฉย ๆ ไม่พอ เบราว์เซอร์ยังดึงข้อมูลที่ค้างท่ออยู่ต่อ
+  useEffect(() => {
+    if (!el || eager) return;
+    if (!(isSafariHls() || !usingHls)) return;
+    el.pause();
+    el.removeAttribute("src");
+    el.load();          // ตัดการโหลดที่ค้างอยู่ทิ้ง คืนเน็ตให้ใบที่ลูกค้าดูอยู่
+  }, [el, eager]);
+
   const poster = mode === "blank" ? undefined : videoPoster(v, 480);
   // คลิปแนวตั้งขยายเต็มจอแบบ TikTok · คลิปจัตุรัส/แนวนอนย่อให้เห็นครบ ไม่ตัดหัวตัดท้าย
   const fit = v.vw / v.vh < 0.85 ? "object-cover" : "object-contain";
@@ -411,7 +421,12 @@ const Slide = memo(function Slide({
         <video
           ref={(node) => { setEl(node); register(i, node); }}
           // Safari ใส่ src ตรง ๆ ได้ · Chrome/Android ให้ hls.js เป็นคนป้อนให้แทน
-          src={usingHls && !isSafariHls() ? undefined : src}
+          //
+          // ⚠️ ทั้งสองทางต้องจำกัดด้วย eager เหมือนกัน — ใส่ src ให้ทุกใบที่อยู่ในโหมดวิดีโอ
+          //    (4 ใบ: ใบก่อนหน้า + ใบปัจจุบัน + ใบถัดไปอีก 2) จะได้ตัวเล่น HLS 4 ตัว
+          //    แย่งเน็ตกันเองบนมือถือ จนใบที่ลูกค้าดูอยู่ค้างที่วงหมุน
+          //    เคยพลาดมาแล้ว: ฝั่ง hls.js กันไว้ตั้งแต่แรก แต่ฝั่ง Safari ลืมกัน
+          src={isSafariHls() || !usingHls ? (eager ? src : undefined) : undefined}
           poster={poster}
           // โหลดรอไว้ล่วงหน้า เลื่อนถึงแล้วเล่นทันทีไม่ต้องรอ
           preload={eager ? "auto" : "metadata"}
