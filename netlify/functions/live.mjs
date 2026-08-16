@@ -19,7 +19,9 @@ export default async function handler(req, context) {
     let body;
     try { body = await req.json(); } catch { return new Response(null, { status: 204 }); }
     // นับพลาดดีกว่าทำให้หน้าเว็บช้า — พังก็เงียบ ๆ ไป
-    try { await ping(body?.vid, body?.path); } catch { /* ไม่เป็นไร */ }
+    // Netlify บอกประเทศของผู้เข้าชมมาให้เอง ไม่ต้องพึ่งบริการภายนอกและไม่ต้องเก็บ IP
+    const cc = context?.geo?.country?.code;
+    try { await ping(body?.vid, body?.path, cc); } catch { /* ไม่เป็นไร */ }
     return new Response(null, { status: 204 });
   }
 

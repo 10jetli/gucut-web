@@ -7,8 +7,9 @@
 // ⚠️ วิธีเก็บสำคัญมาก — "ห้ามอ่านมาแก้แล้วเขียนกลับ" (read-modify-write)
 //    คนเข้าพร้อมกันหลายคนจะเขียนทับกันจนนับหาย
 //    จึงใช้วิธี "หนึ่งคน = หนึ่งคีย์" แล้วนับจำนวนคีย์เอา ไม่ต้องอ่านเนื้อในเลย
-//      l/<นาที>/<รหัสผู้ชม>   → ใครออนไลน์อยู่ (เก็บหน้าที่ดูไว้ในเนื้อ)
-//      v/<วันที่>/<รหัสผู้ชม>  → ใครเข้าเว็บวันไหน
+//      l/<นาที>/<รหัสผู้ชม>          → ใครออนไลน์อยู่ (เก็บหน้าที่ดูไว้ในเนื้อ)
+//      v/<วันที่>/<รหัสผู้ชม>         → ใครเข้าเว็บวันไหน
+//      c/<วันที่>/<ประเทศ>/<รหัสผู้ชม> → ใครมาจากประเทศไหน (นับคีย์ต่อประเทศ ไม่ต้องอ่านเนื้อ)
 //    เขียนทับคีย์เดิมได้ไม่เป็นไร เพราะเราสนแค่ "มีคีย์นี้ไหม" ไม่ใช่ค่าในนั้น
 import { getStore } from "@netlify/blobs";
 
@@ -23,15 +24,21 @@ export const dayOf = (t = Date.now()) =>
 
 const safe = (v, max = 80) => String(v ?? "").replace(/[^\w\-./]/g, "").slice(0, max);
 
-/** บันทึกว่ามีคนเปิดหน้านี้ — เรียกจากหน้าเว็บทุกครั้งที่เปลี่ยนหน้า */
-export async function ping(vid, path) {
+/**
+ * บันทึกว่ามีคนเปิดหน้านี้ — เรียกจากหน้าเว็บทุกครั้งที่เปลี่ยนหน้า
+ * @param cc รหัสประเทศ 2 ตัว จาก Netlify (context.geo) — ไม่ต้องพึ่งบริการภายนอก
+ */
+export async function ping(vid, path, cc) {
   const s = store();
   const id = safe(vid, 40);
   if (!id) return;
   const p = String(path || "/").slice(0, 120);
+  const day = dayOf();
+  const country = /^[A-Za-z]{2}$/.test(cc || "") ? cc.toUpperCase() : "ZZ";   // ZZ = ไม่รู้
   await Promise.allSettled([
     s.setJSON(`l/${minuteOf()}/${id}`, { p }),
-    s.setJSON(`v/${dayOf()}/${id}`, { p }),
+    s.setJSON(`v/${day}/${id}`, { p }),
+    s.setJSON(`c/${day}/${country}/${id}`, { p }),
   ]);
 }
 
@@ -80,7 +87,17 @@ export async function stats() {
     days.push({ d, n: keys.length });
   }
 
+  // มาจากประเทศไหนบ้าง (วันนี้) — นับคีย์ต่อประเทศ ไม่ต้องอ่านเนื้อ
+  const today = dayOf(now);
+  const ckeys = await keysWithPrefix(s, `c/${today}/`);
+  const byCountry = new Map();
+  for (const k of ckeys) {
+    const cc = k.split("/")[2] || "ZZ";
+    byCountry.set(cc, (byCountry.get(cc) || 0) + 1);
+  }
+
   return {
+    countries: [...byCountry.entries()].sort((a, b) => b[1] - a[1]).map(([cc, n]) => ({ cc, n })),
     online: seen.size,
     onlineWindowMin: ONLINE_MIN,
     pages: [...pages.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([p, n]) => ({ p, n })),
@@ -101,11 +118,13 @@ export async function sweep() {
   await Promise.allSettled(
     blobs.filter((b) => !keep.has(b.key.split("/")[1])).map((b) => { gone++; return s.delete(b.key); }),
   );
-  // สถิติรายวันเก่ากว่า KEEP_DAYS
+  // สถิติรายวันเก่ากว่า KEEP_DAYS (ทั้งรายคนและรายประเทศ)
   const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
-  const { blobs: vb } = await s.list({ prefix: "v/" });
-  await Promise.allSettled(
-    vb.filter((b) => (b.key.split("/")[1] || "") < oldest).map((b) => { gone++; return s.delete(b.key); }),
-  );
+  for (const prefix of ["v/", "c/"]) {
+    const { blobs } = await s.list({ prefix });
+    await Promise.allSettled(
+      blobs.filter((b) => (b.key.split("/")[1] || "") < oldest).map((b) => { gone++; return s.delete(b.key); }),
+    );
+  }
   return gone;
 }

@@ -12,12 +12,28 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
 interface Stats {
+  countries: { cc: string; n: number }[];
   online: number;
   onlineWindowMin: number;
   pages: { p: string; n: number }[];
   today: number;
   days: { d: string; n: number }[];
   at: number;
+}
+
+// รหัสประเทศ 2 ตัว → ธง (ใช้ regional indicator ไม่ต้องโหลดรูปธงเลย)
+function flag(cc: string) {
+  if (!/^[A-Z]{2}$/.test(cc)) return "🏳️";
+  return String.fromCodePoint(...[...cc].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
+// ชื่อประเทศภาษาไทย — เบราว์เซอร์แปลให้เอง ไม่ต้องมีตารางชื่อประเทศในโค้ด
+const names = typeof Intl !== "undefined" && "DisplayNames" in Intl
+  ? new Intl.DisplayNames(["th"], { type: "region" })
+  : null;
+function countryName(cc: string) {
+  if (cc === "ZZ") return "ไม่ทราบประเทศ";
+  try { return names?.of(cc) || cc; } catch { return cc; }
 }
 
 export default function AdminLive() {
@@ -101,6 +117,31 @@ export default function AdminLive() {
                   <span className="shrink-0 font-semibold text-ink">{p.n}</span>
                 </li>
               ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="mb-3 rounded-sm bg-white p-4">
+          <p className="mb-2 text-[14px] font-bold text-ink">มาจากประเทศไหน (วันนี้)</p>
+          {!s || !s.countries?.length ? (
+            <p className="py-4 text-center text-[13px] text-ink-300">ยังไม่มีข้อมูลวันนี้</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {s.countries.map((c) => {
+                const total = s.countries.reduce((a, b) => a + b.n, 0) || 1;
+                return (
+                  <li key={c.cc} className="flex items-center gap-2.5 text-[13px]">
+                    <span className="w-9 shrink-0 text-[15px]">{flag(c.cc)}</span>
+                    <span className="min-w-0 flex-1 truncate text-ink-700">{countryName(c.cc)}</span>
+                    <span className="w-20 shrink-0">
+                      <span className="block h-1.5 rounded-full bg-steel-700">
+                        <span className="block h-1.5 rounded-full bg-safety" style={{ width: `${Math.max(6, (c.n / total) * 100)}%` }} />
+                      </span>
+                    </span>
+                    <span className="w-10 shrink-0 text-right font-semibold text-ink">{c.n.toLocaleString("th-TH")}</span>
+                  </li>
+                );
+              })}
             </ul>
           )}
         </section>
