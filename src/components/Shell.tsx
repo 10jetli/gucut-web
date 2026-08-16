@@ -12,7 +12,7 @@ import LiveBeacon from "@/components/LiveBeacon";
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "";
 
-  // หลังร้านอยู่ที่ admin.new78.com ด้วย — เข้าทางหน้าแรกของโดเมนนั้น
+  // หลังร้านอยู่ที่ admin.gucut.com ด้วย — เข้าทางหน้าแรกของโดเมนนั้น
   // เส้นทางที่เบราว์เซอร์เห็นจะเป็น "/" ทั้งที่เนื้อหาคือหน้าเข้าระบบหลังร้าน
   // จึงต้องดูชื่อโดเมนประกอบ ไม่งั้นเมนูหน้าร้านจะโผล่มาคร่อมหน้าหลังร้าน
   const [adminHost, setAdminHost] = useState(false);
