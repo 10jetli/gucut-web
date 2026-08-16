@@ -273,8 +273,8 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     setReady(el.readyState >= 3);
     el.muted = muted;
     const tryPlay = () => {
+      if (!el.paused) return;              // เล่นอยู่แล้ว ไม่ต้องสั่งซ้ำ
       dbg(`สั่ง play #${active} muted=${el.muted} rs=${el.readyState}`);
-      el.play().then(() => dbg(`play #${active} ✅`)).catch((err) => dbg(`play #${active} ❌ ${err?.name}`));
       el.play().catch(() => {
         if (el.muted) return;   // ปฏิเสธทั้งที่เงียบอยู่ — เดี๋ยว canplay ข้างล่างสั่งซ้ำให้
         // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
@@ -282,7 +282,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
         el.muted = true;
         setMute(true, false);
         setAskSound(true);
-        el.play().catch(() => {});
+        el.play().then(() => dbg(`play #${active} ✅ (เงียบ)`)).catch((e) => dbg(`play #${active} ❌ ${e?.name}`));
       });
     };
     tryPlay();
@@ -464,6 +464,17 @@ const Slide = memo(function Slide({
 }) {
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
   const src = videoSrc(v);
+
+  // ⚠️ ref ต้องเป็นฟังก์ชัน "ตัวเดิม" ทุกรอบ
+  //    เขียน ref={(node)=>...} ตรง ๆ = สร้างฟังก์ชันใหม่ทุก render
+  //    React จะถอด ref (เรียกด้วย null) แล้วใส่ใหม่ทุกครั้งที่ re-render
+  //    → setEl(null) → re-render → ใส่ใหม่ → วนกันเอง
+  //    ผลคือ <video> ถูก reset รัว ๆ (event emptied) และ play() ถูกยกเลิก
+  //    กลางทางตลอด (AbortError) — คลิปจึงค้างไม่เล่นบนมือถือ
+  const setNode = useCallback((node: HTMLVideoElement | null) => {
+    setEl(node);
+    register(i, node);
+  }, [i, register]);
   // ต่อ HLS เฉพาะใบที่กำลังดู กับใบถัดไปที่พร้อมโหลดแล้วเท่านั้น (ดู eager)
   // ไม่งั้นหลายใบโหลดพร้อมกันจนแย่งเน็ตกันเอง คลิปที่ดูอยู่จะค้าง
   useHls(el, src, eager);
@@ -496,7 +507,7 @@ const Slide = memo(function Slide({
     <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always]">
       {mode === "video" ? (
         <video
-          ref={(node) => { setEl(node); register(i, node); }}
+          ref={setNode}
           // ⚠️ ห้ามใส่ src ใน JSX เด็ดขาด — ทั้งสองทางป้อนวิดีโอด้วย JS ใน effect
           //    หน้านี้ถูก build เป็น HTML ล่วงหน้า ตอน build ไม่มีเบราว์เซอร์
           //    isSafariHls() จึงเป็น false เสมอ → HTML ไม่มี src
