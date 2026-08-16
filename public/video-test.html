@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>ตรวจโรคคลิป GUCUT</title>
+<style>
+  body{font-family:-apple-system,sans-serif;margin:0;background:#111;color:#eee}
+  video{width:100%;max-height:40vh;background:#000;display:block}
+  .b{display:block;width:calc(100% - 24px);margin:8px 12px;padding:12px;font-size:15px;
+     border:0;border-radius:6px;background:#FF3C00;color:#fff;font-weight:600}
+  .b.alt{background:#444}
+  #log{font:11px/1.5 Menlo,monospace;white-space:pre-wrap;word-break:break-all;
+       padding:10px 12px;color:#9f9}
+  #log .err{color:#f88}
+  h1{font-size:15px;padding:10px 12px;margin:0}
+</style>
+</head>
+<body>
+<h1>หน้าตรวจโรคคลิป — กดปุ่มแล้วดูข้อความล่างจอ ถ่ายจอส่งให้ Claude</h1>
+<video id="v" controls autoplay muted playsinline></video>
+<button class="b" onclick="load('https://video.gucut.com/v/ba717cb6b4364b1ab9ea4fc599a1e70b/master.m3u8')">
+  1) ทดสอบผ่าน video.gucut.com
+</button>
+<button class="b alt" onclick="load('https://pub-002ee0abd2f747c5b9e5573c987ca79d.r2.dev/v/ba717cb6b4364b1ab9ea4fc599a1e70b/master.m3u8')">
+  2) ทดสอบผ่าน r2.dev (ของเดิม)
+</button>
+<div id="log"></div>
+<script>
+var v = document.getElementById('v'), out = document.getElementById('log');
+function log(m, bad){
+  var d = document.createElement('div');
+  if (bad) d.className = 'err';
+  d.textContent = new Date().toTimeString().slice(0,8) + ' ' + m;
+  out.prepend(d);
+}
+['loadstart','loadedmetadata','loadeddata','canplay','canplaythrough','playing',
+ 'waiting','stalled','suspend','abort','emptied','pause','ended'].forEach(function(ev){
+  v.addEventListener(ev, function(){ log(ev + '  readyState=' + v.readyState + ' network=' + v.networkState); });
+});
+v.addEventListener('error', function(){
+  var e = v.error;
+  log('ERROR code=' + (e && e.code) + ' msg=' + (e && e.message ? e.message : 'ไม่มีข้อความ'), true);
+  // code: 1=ยกเลิก 2=เครือข่าย 3=ถอดรหัสไม่ได้ 4=ไม่รองรับ/ไม่มี src
+});
+v.addEventListener('timeupdate', function(){
+  if (v.currentTime > 0 && !v._ok) { v._ok = 1; log('✅ เล่นได้จริง currentTime=' + v.currentTime.toFixed(2)); }
+});
+function load(u){
+  out.textContent = '';
+  log('UA: ' + navigator.userAgent);
+  log('canPlayType(HLS): "' + v.canPlayType('application/vnd.apple.mpegurl') + '"');
+  log('เริ่มโหลด: ' + u);
+  v.removeAttribute('src'); v.load();
+  v.src = u; v.load();
+  v.play().then(function(){ log('play() สำเร็จ'); })
+          .catch(function(err){ log('play() ถูกปฏิเสธ: ' + err.name + ' ' + err.message, true); });
+}
+</script>
+</body>
+</html>
