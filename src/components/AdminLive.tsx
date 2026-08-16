@@ -1,0 +1,137 @@
+"use client";
+
+// คนเข้าเว็บ — /admin/live/
+//
+// นับที่เซิร์ฟเวอร์เอง ตัวบล็อกโฆษณาบล็อกไม่ได้ จึงได้เลขจริงกว่า GA4
+// (GA4 มองไม่เห็นคนที่ใช้ตัวบล็อก หรือ Safari/iOS ที่ตัดคุกกี้ — ซึ่งคือลูกค้าส่วนใหญ่ของร้าน)
+//
+// ค่าเริ่มต้นคือ "กดรีเฟรชเอง" ตามกฎที่เจ้าของร้านสั่งไว้ว่าหน้าหลังร้านห้ามเช็คอัตโนมัติ
+// แต่หน้านี้มีสวิตช์ให้เปิดรีเฟรชเองได้ เพราะตัวเลข "ออนไลน์ตอนนี้" ไม่มีประโยชน์ถ้าไม่สด
+import Link from "next/link";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { adminFetch, requireKey } from "@/lib/admin";
+
+interface Stats {
+  online: number;
+  onlineWindowMin: number;
+  pages: { p: string; n: number }[];
+  today: number;
+  days: { d: string; n: number }[];
+  at: number;
+}
+
+export default function AdminLive() {
+  const [key, setKey] = useState("");
+  const [s, setS] = useState<Stats | null>(null);
+  const [err, setErr] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [auto, setAuto] = useState(false);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => setKey(requireKey()), []);
+
+  const load = useCallback(async (k: string) => {
+    if (!k) return;
+    setBusy(true);
+    try {
+      const r = await adminFetch("/api/live", k);
+      if (!r.ok) { setErr("รหัสหลังร้านไม่ถูกต้อง"); return; }
+      setS(await r.json());
+      setErr("");
+    } catch {
+      setErr("ดึงข้อมูลไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(key); }, [key, load]);
+
+  useEffect(() => {
+    if (timer.current) { clearInterval(timer.current); timer.current = null; }
+    if (!auto || !key) return;
+    timer.current = setInterval(() => { void load(key); }, 15000);
+    return () => { if (timer.current) clearInterval(timer.current); };
+  }, [auto, key, load]);
+
+  const max = Math.max(1, ...(s?.days || []).map((d) => d.n));
+  const thaiDay = (iso: string) =>
+    new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+
+  return (
+    <main className="min-h-[100dvh] bg-steel-900">
+      <header className="flex items-center gap-2 bg-ink px-3 py-3.5">
+        <Link href="/admin/" aria-label="ย้อนกลับ" className="p-1 text-[20px] leading-none text-white">‹</Link>
+        <span className="flex-1 text-[15px] font-semibold text-white">คนเข้าเว็บ</span>
+        <button
+          onClick={() => void load(key)}
+          disabled={busy}
+          className="rounded-sm border border-white/30 px-2.5 py-1 text-[12px] text-white disabled:opacity-40"
+        >
+          {busy ? "..." : "รีเฟรช"}
+        </button>
+      </header>
+
+      <div className="mx-auto max-w-lg p-3">
+        {err && <p className="mb-3 rounded-sm bg-safety-tint px-3 py-2 text-[13px] text-safety">{err}</p>}
+
+        <section className="mb-3 rounded-sm bg-white p-4 text-center">
+          <p className="text-[12px] text-ink-300">ออนไลน์ตอนนี้</p>
+          <p className="mt-1 text-[44px] font-extrabold leading-none text-safety">
+            {s ? s.online.toLocaleString("th-TH") : "—"}
+          </p>
+          <p className="mt-1.5 text-[11.5px] text-ink-300">
+            นับคนที่มีความเคลื่อนไหวใน {s?.onlineWindowMin ?? 5} นาทีล่าสุด
+          </p>
+          <label className="mt-3 inline-flex items-center gap-2 text-[12px] text-ink-700">
+            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#ff3c00]" />
+            รีเฟรชเองทุก 15 วินาที
+          </label>
+        </section>
+
+        <section className="mb-3 rounded-sm bg-white p-4">
+          <p className="mb-2 text-[14px] font-bold text-ink">กำลังดูหน้าไหนอยู่</p>
+          {!s || s.pages.length === 0 ? (
+            <p className="py-4 text-center text-[13px] text-ink-300">ยังไม่มีใครออนไลน์</p>
+          ) : (
+            <ul className="space-y-1.5">
+              {s.pages.map((p) => (
+                <li key={p.p} className="flex items-center justify-between gap-3 text-[13px]">
+                  <span className="min-w-0 flex-1 truncate text-ink-700">{decodeURIComponent(p.p)}</span>
+                  <span className="shrink-0 font-semibold text-ink">{p.n}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section className="rounded-sm bg-white p-4">
+          <div className="mb-3 flex items-baseline justify-between">
+            <p className="text-[14px] font-bold text-ink">ผู้เข้าชม 7 วันล่าสุด</p>
+            <p className="text-[12px] text-ink-300">วันนี้ <b className="text-ink">{s ? s.today.toLocaleString("th-TH") : "—"}</b> คน</p>
+          </div>
+          {!s ? (
+            <p className="py-6 text-center text-[13px] text-ink-300">กำลังโหลด...</p>
+          ) : (
+            <div className="flex h-28 items-end gap-1.5">
+              {s.days.map((d) => (
+                <div key={d.d} className="flex flex-1 flex-col items-center gap-1">
+                  <span className="text-[10px] text-ink-300">{d.n}</span>
+                  <div
+                    className="w-full rounded-t-sm bg-safety"
+                    style={{ height: `${Math.max(3, (d.n / max) * 76)}px` }}
+                  />
+                  <span className="text-[9.5px] text-ink-300">{thaiDay(d.d)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-300">
+            นับเป็น <b>จำนวนคน</b> ไม่ใช่จำนวนครั้งที่เปิดหน้า · คนเดิมเข้าหลายรอบในวันเดียวนับเป็น 1 ·
+            เก็บย้อนหลัง 30 วัน · <b>ไม่ได้นับตัวเองตอนเข้าหลังร้าน</b>
+          </p>
+        </section>
+      </div>
+    </main>
+  );
+}

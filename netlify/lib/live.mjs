@@ -1,0 +1,111 @@
+// นับคนเข้าเว็บ — เก็บเอง ไม่พึ่งบริการใคร ไม่ใช้คุกกี้
+//
+// ทำไมไม่ใช้ GA4 อย่างเดียว: GA4 นับไม่ครบ คนใช้ตัวบล็อกโฆษณาหรือ Safari/iOS
+// ที่ตัดคุกกี้จะหายไปจากตัวเลข — ลูกค้าร้านนี้ส่วนใหญ่ใช้ iPhone ตัวเลขจึงต่ำกว่าจริง
+// ตัวนี้นับที่เซิร์ฟเวอร์ บล็อกไม่ได้ ใช้ดูของจริงคู่กับ GA4
+//
+// ⚠️ วิธีเก็บสำคัญมาก — "ห้ามอ่านมาแก้แล้วเขียนกลับ" (read-modify-write)
+//    คนเข้าพร้อมกันหลายคนจะเขียนทับกันจนนับหาย
+//    จึงใช้วิธี "หนึ่งคน = หนึ่งคีย์" แล้วนับจำนวนคีย์เอา ไม่ต้องอ่านเนื้อในเลย
+//      l/<นาที>/<รหัสผู้ชม>   → ใครออนไลน์อยู่ (เก็บหน้าที่ดูไว้ในเนื้อ)
+//      v/<วันที่>/<รหัสผู้ชม>  → ใครเข้าเว็บวันไหน
+//    เขียนทับคีย์เดิมได้ไม่เป็นไร เพราะเราสนแค่ "มีคีย์นี้ไหม" ไม่ใช่ค่าในนั้น
+import { getStore } from "@netlify/blobs";
+
+const store = () => getStore({ name: "gucut-live", consistency: "eventual" });
+
+const ONLINE_MIN = 5;          // ไม่มีความเคลื่อนไหวเกินกี่นาที = ถือว่าออกไปแล้ว
+const KEEP_DAYS = 30;          // เก็บสถิติรายวันย้อนหลังกี่วัน
+
+const minuteOf = (t = Date.now()) => Math.floor(t / 60000);
+export const dayOf = (t = Date.now()) =>
+  new Date(t + 7 * 3600 * 1000).toISOString().slice(0, 10);   // เวลาไทย
+
+const safe = (v, max = 80) => String(v ?? "").replace(/[^\w\-./]/g, "").slice(0, max);
+
+/** บันทึกว่ามีคนเปิดหน้านี้ — เรียกจากหน้าเว็บทุกครั้งที่เปลี่ยนหน้า */
+export async function ping(vid, path) {
+  const s = store();
+  const id = safe(vid, 40);
+  if (!id) return;
+  const p = String(path || "/").slice(0, 120);
+  await Promise.allSettled([
+    s.setJSON(`l/${minuteOf()}/${id}`, { p }),
+    s.setJSON(`v/${dayOf()}/${id}`, { p }),
+  ]);
+}
+
+async function keysWithPrefix(s, prefix) {
+  const out = [];
+  const { blobs } = await s.list({ prefix });
+  for (const b of blobs) out.push(b.key);
+  return out;
+}
+
+/** สรุปให้หน้าหลังร้าน — ใช้แต่การ "นับคีย์" ไม่อ่านเนื้อ ยกเว้นคนที่ออนไลน์อยู่ */
+export async function stats() {
+  const s = store();
+  const now = Date.now();
+
+  // ออนไลน์ตอนนี้ = รวมคีย์ของ ONLINE_MIN นาทีล่าสุด แล้วตัดคนซ้ำ
+  const buckets = [];
+  for (let i = 0; i < ONLINE_MIN; i++) buckets.push(minuteOf(now - i * 60000));
+  const perBucket = await Promise.all(buckets.map((b) => keysWithPrefix(s, `l/${b}/`)));
+
+  const seen = new Map();   // รหัสผู้ชม → คีย์ล่าสุดของคนนั้น
+  for (const keys of perBucket) {
+    for (const k of keys) {
+      const id = k.split("/")[2];
+      if (!seen.has(id)) seen.set(id, k);   // วนจากนาทีล่าสุดก่อน จึงได้อันใหม่สุด
+    }
+  }
+
+  // อ่านเฉพาะคนที่ออนไลน์อยู่ เพื่อรู้ว่ากำลังดูหน้าไหน (จำนวนน้อย ไม่หนัก)
+  const pages = new Map();
+  await Promise.all(
+    [...seen.values()].slice(0, 200).map(async (k) => {
+      try {
+        const v = await s.get(k, { type: "json" });
+        const p = v?.p || "/";
+        pages.set(p, (pages.get(p) || 0) + 1);
+      } catch { /* คีย์หายไประหว่างทาง ไม่เป็นไร */ }
+    }),
+  );
+
+  // ผู้เข้าชมรายวัน 7 วันล่าสุด
+  const days = [];
+  for (let i = 0; i < 7; i++) {
+    const d = dayOf(now - i * 86400000);
+    const keys = await keysWithPrefix(s, `v/${d}/`);
+    days.push({ d, n: keys.length });
+  }
+
+  return {
+    online: seen.size,
+    onlineWindowMin: ONLINE_MIN,
+    pages: [...pages.entries()].sort((a, b) => b[1] - a[1]).slice(0, 12).map(([p, n]) => ({ p, n })),
+    today: days[0]?.n ?? 0,
+    days: days.reverse(),
+    at: now,
+  };
+}
+
+/** เก็บกวาดของเก่า — เรียกตอนหลังร้านเปิดดู ไม่ต้องตั้ง cron ให้เปลืองอีกตัว */
+export async function sweep() {
+  const s = store();
+  let gone = 0;
+  // คีย์ออนไลน์: เก็บแค่ช่วงที่ยังนับอยู่ ที่เหลือทิ้ง
+  const keep = new Set();
+  for (let i = 0; i < ONLINE_MIN + 2; i++) keep.add(String(minuteOf(Date.now() - i * 60000)));
+  const { blobs } = await s.list({ prefix: "l/" });
+  await Promise.allSettled(
+    blobs.filter((b) => !keep.has(b.key.split("/")[1])).map((b) => { gone++; return s.delete(b.key); }),
+  );
+  // สถิติรายวันเก่ากว่า KEEP_DAYS
+  const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
+  const { blobs: vb } = await s.list({ prefix: "v/" });
+  await Promise.allSettled(
+    vb.filter((b) => (b.key.split("/")[1] || "") < oldest).map((b) => { gone++; return s.delete(b.key); }),
+  );
+  return gone;
+}

@@ -7,6 +7,7 @@ import BottomNav from "@/components/BottomNav";
 import SiteFooter from "@/components/SiteFooter";
 import PwaSetup from "@/components/PwaSetup";
 import PixelSetup from "@/components/PixelSetup";
+import LiveBeacon from "@/components/LiveBeacon";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "";
@@ -29,6 +30,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <PwaSetup />
       {/* พิกเซลการตลาด — หน้าร้านเท่านั้น หลังร้านไม่ต้องถูกตามรอย */}
       {!admin && <PixelSetup />}
+      {/* นับผู้เข้าชม — หน้าร้านเท่านั้น ไม่นับตัวเองตอนเข้าหลังร้าน */}
+      {!admin && <LiveBeacon />}
       <div className={"mx-auto min-h-screen max-w-lg" + (admin ? "" : " pb-20")}>
         {children}
         {!bare && <SiteFooter />}
