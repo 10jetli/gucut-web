@@ -150,7 +150,15 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       const n = Math.round(root.scrollTop / h);
       if (n !== activeRef.current && n >= 0) {
         activeRef.current = n;
+        userPaused.current = false;      // เปลี่ยนใบแล้ว ถือว่าเริ่มใหม่
         setActive(n);
+        return;
+      }
+      // อยู่ใบเดิม แต่คลิปดันหยุดเอง (สะดุดระหว่างโหลด) — สั่งเล่นต่อให้
+      // ไม่ต้องรอลูกค้ากด เว้นแต่ลูกค้าเป็นคนกดหยุดเอง
+      if (!userPaused.current) {
+        const cur = players.current.get(activeRef.current);
+        if (cur && cur.paused && cur.getAttribute("src")) cur.play().catch(() => {});
       }
     };
     const onScroll = () => {
@@ -295,12 +303,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     // ⚠️ iOS: play() ที่สั่งตอน readyState=0 ถูกยกเลิกกลางทางได้ (เช่นชนกับ load()
     //    ที่เพิ่งสั่งตอนป้อน src) แล้วจะไม่มีใครสั่งซ้ำ — เฟรมแรกขึ้นแต่คลิปนิ่งค้าง
     //    ต้องดักตอนคลิปพร้อมแล้วเช็คว่ายังหยุดอยู่ไหม ถ้าหยุดให้สั่งเล่นซ้ำ
-    const kick = () => { if (el.paused) tryPlay(); };
+    const kick = () => { if (el.paused && !userPaused.current) tryPlay(); };
     el.addEventListener("canplay", kick);
     el.addEventListener("loadeddata", kick);
+    // สะดุดกลางคลิปแล้วข้อมูลกลับมา — เล่นต่อเองไม่ต้องรอลูกค้ากด
+    el.addEventListener("canplaythrough", kick);
+    el.addEventListener("playing", () => { userPaused.current = false; });
     return () => {
       el.removeEventListener("canplay", kick);
       el.removeEventListener("loadeddata", kick);
+      el.removeEventListener("canplaythrough", kick);
     };
   }, [active, muted, setMute]);
 
@@ -326,6 +338,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     return () => document.removeEventListener("pointerdown", on, true);
   }, [askSound, setMute]);
 
+  const userPaused = useRef(false);
   const tap = useCallback((el: HTMLVideoElement) => {
     // แตะครั้งแรกคือการเปิดเสียง อย่าให้คลิปหยุดไปด้วย — แต่ถ้ามันยังไม่เล่น
     // (โหมดประหยัดแบตกัน autoplay ไว้) ให้ใช้จังหวะแตะนี้สั่งเล่นเลย
@@ -334,8 +347,8 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       if (el.paused) el.play().catch(() => {});
       return;
     }
-    if (el.paused) el.play().catch(() => {});
-    else el.pause();
+    if (el.paused) { userPaused.current = false; el.play().catch(() => {}); }
+    else { userPaused.current = true; el.pause(); }
   }, []);
 
   return (
@@ -499,11 +512,14 @@ const Slide = memo(function Slide({
     //    (AbortError) และตอนเลื่อนถึงใบใหม่ก็ต้องเริ่มโหลดจากศูนย์ ทำให้ค้าง
     //    อาการที่เคยเจอ: เลื่อนไปใบ 2 แล้วได้ยินเสียงใบ 1 ต่อ ส่วนใบ 2 ค้างไม่เล่น
     //    การหยุดคลิปที่ไม่ได้ดูใช้ pause() พอ ไม่ต้องล้างตัวเล่น
-    if (!el.getAttribute("src")) {
+    // ป้อนเฉพาะใบที่ดูอยู่กับใบถัดไป (eager) — ไม่งั้น 4 ใบโหลดพร้อมกันแย่งเน็ต
+    // จนใบที่ลูกค้าดูอยู่สะดุด · ป้อนแล้ว "ไม่ถอดออกอีก" ตอนเลื่อนผ่าน
+    // เพราะการถอด src + load() คือการล้างตัวเล่น ซึ่งไปยกเลิก play() ที่ค้างอยู่
+    if (eager && !el.getAttribute("src")) {
       el.src = src;
       el.load();
     }
-  }, [el, src]);
+  }, [el, src, eager]);
 
   const poster = mode === "blank" ? undefined : videoPoster(v, 480);
   // คลิปแนวตั้งขยายเต็มจอแบบ TikTok · คลิปจัตุรัส/แนวนอนย่อให้เห็นครบ ไม่ตัดหัวตัดท้าย
