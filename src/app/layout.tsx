@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Shell from "@/components/Shell";
 import { SITE_URL as SITE } from "@/lib/site";
+import { VIDEO_HOST } from "@/lib/videos";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
@@ -25,6 +26,21 @@ export const viewport: Viewport = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="th">
+      <head>
+        {/*
+          เปิดสายไปเซิร์ฟเวอร์คลิปไว้ล่วงหน้า "ทุกหน้า" ไม่ใช่เฉพาะหน้าวิดีโอ
+          วัดจริงแล้ว: คำขอแรกไปหาโดเมนนั้นเสีย ~0.6 วินาที ไปกับการต่อสาย + TLS
+          ส่วนคำขอที่ 2-3 เหลือ 0.15-0.29 วินาที — เพราะสายเปิดไว้แล้ว
+          เปิดสายตั้งแต่ลูกค้ายังอยู่หน้าแรก พอกดเข้าฟีดจึงยิงขอคลิปได้ทันที
+          (ตัดเวลารอไปได้เกือบครึ่งวินาทีสำหรับคลิปใบแรก)
+        */}
+        {VIDEO_HOST && (
+          <>
+            <link rel="preconnect" href={VIDEO_HOST} crossOrigin="anonymous" />
+            <link rel="dns-prefetch" href={VIDEO_HOST} />
+          </>
+        )}
+      </head>
       <body className="font-body">
         <Shell>{children}</Shell>
       </body>
