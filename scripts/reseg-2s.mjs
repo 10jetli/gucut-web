@@ -110,7 +110,13 @@ async function main() {
     const work = await mkdtemp(join(tmpdir(), "reseg-"));
     try {
       const outRoot = join(work, "out");
-      for (const lv of LEVELS) {
+      // ⚠️ ไม่ใช่ทุกคลิปมีครบ 3 ความคมชัด — คลิปที่ต้นฉบับเล็กจะไม่มี 1080p
+      //    ต้องอ่านจาก master.m3u8 ว่าใบนี้มีอะไรบ้าง ไม่ใช่สมมติว่ามีครบ
+      //    (พลาดมาแล้ว: รอบแรกล้มไป 37% เพราะไปหา v1080 ที่ไม่มีอยู่จริง)
+      const master = await (await fetch(`${HOST}/v/${id}/master.m3u8`)).text();
+      const have = LEVELS.filter((lv) => master.includes(`${lv.dir}/index.m3u8`));
+      if (!have.length) throw new Error("master.m3u8 ไม่มีความคมชัดใดเลย");
+      for (const lv of have) {
         const src = join(work, lv.dir);
         await mkdir(src, { recursive: true });
         const listPath = await pullLevel(id, lv, src);
