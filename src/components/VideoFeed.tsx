@@ -128,26 +128,46 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     players.current.delete(i);
   }, []);
 
-  // ดูว่าเลื่อนมาถึงคลิปไหน — เกาะที่ section ไม่ใช่ที่ <video>
-  // เพราะ <video> ถูกถอดออกเมื่อเลื่อนไกลเกินหน้าต่าง
+  // ดูว่าเลื่อนมาถึงคลิปไหน — คิดจากตำแหน่งการเลื่อนตรง ๆ
+  //
+  // ⚠️ เคยใช้ IntersectionObserver แล้วพลาดมาแล้ว (17 ส.ค. 2569)
+  //    ตั้ง threshold: [0.6] แล้วเช็ค ratio > 0.6 — ตัวสังเกตจะแจ้งตอน "ข้ามเส้น"
+  //    ด้วยค่าประมาณ 0.6 พอดี เงื่อนไข "มากกว่า 0.6" จึงเป็นเท็จ ไม่เคยอัปเดตเลย
+  //    ระบบคิดว่ายังอยู่ใบเดิมตลอด → ใบเก่าไม่ถูกหยุด ใบใหม่ไม่ถูกสั่งเล่น
+  //
+  //    ฟีดนี้เลื่อนแบบ snap ทีละหน้าจอเต็ม ๆ อยู่แล้ว การหารตำแหน่งเลื่อนด้วย
+  //    ความสูงหนึ่งหน้าจอจึงได้เลขใบที่แม่นกว่า ไม่ต้องพึ่งค่าทศนิยมของใคร
+  //    (แอปฟีดวิดีโอทั่วไปก็ใช้วิธีนี้ ไม่ได้พึ่ง IntersectionObserver อย่างเดียว)
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const io = new IntersectionObserver(
-      (entries) => {
-        for (const e of entries) {
-          if (e.isIntersecting && e.intersectionRatio > 0.6) {
-            const n = Number((e.target as HTMLElement).dataset.i);
-            activeRef.current = n;
-            setActive(n);
-          }
-        }
-      },
-      { root, threshold: [0.6] },
-    );
-    root.querySelectorAll("section[data-i]").forEach((s) => io.observe(s));
-    return () => io.disconnect();
-  }, [shown]);
+
+    let raf = 0;
+    const calc = () => {
+      raf = 0;
+      const h = root.clientHeight || 1;
+      const n = Math.round(root.scrollTop / h);
+      if (n !== activeRef.current && n >= 0) {
+        activeRef.current = n;
+        setActive(n);
+      }
+    };
+    const onScroll = () => {
+      if (raf) return;                       // รวบหลายเหตุการณ์ให้เหลือเฟรมละครั้ง
+      raf = requestAnimationFrame(calc);
+    };
+
+    root.addEventListener("scroll", onScroll, { passive: true });
+    // เผื่อกรณีที่ scroll ไม่ยิง (เปลี่ยนขนาดจอ / หมุนเครื่อง)
+    window.addEventListener("resize", onScroll);
+    calc();                                   // ตั้งค่าเริ่มต้นให้ถูกตั้งแต่เปิดหน้า
+
+    return () => {
+      root.removeEventListener("scroll", onScroll);
+      window.removeEventListener("resize", onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, []);
 
   // เลื่อนใกล้หมดชุดที่วางไว้ → เติมอีกชุด
   // ถ้ากล่องที่มีในมือใกล้หมดด้วย ค่อยไปดึงรายการที่เหลือทั้งหมดมาทีเดียว
