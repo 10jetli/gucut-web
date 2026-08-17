@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
-import { durLabel, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
+import { durLabel, prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
 import { isSafariHls, useHls } from "@/lib/useHls";
 import VideoActions from "./VideoActions";
 import VideoComments from "./VideoComments";
@@ -42,9 +42,16 @@ const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะ�
 function rankFeed(list: FeedItem[], counts: VideoCounts, seen: Set<string>): FeedItem[] {
   const score = new Map<string, number>();
   for (const it of list) {
-    const likes = counts[it.v.v]?.[0] ?? 0;
+    const c = counts[it.v.v];
+    const likes = c?.[0] ?? 0;
+    const comments = c?.[1] ?? 0;
+    // คอมเมนต์ = คนสนใจมากกว่ากดหัวใจผ่าน ๆ ให้น้ำหนักมากกว่า
+    const pop = likes + comments * 3;
+    // ใช้ log กันคลิปดังใบเดียวกินพื้นที่ทั้งฟีด (100 หัวใจไม่ควรชนะ 10 หัวใจ 10 เท่า)
     const shoppable = it.p ? 1.4 : 1;             // คลิปที่กดซื้อได้ ดันขึ้นอีกนิด
-    score.set(it.v.v, (likes + 1) * shoppable * (0.5 + Math.random()));
+    // สุ่มน้อยลงกว่าเดิม (0.8-1.2) ความนิยมจึงเป็นตัวตัดสินหลักจริง ๆ
+    // แต่ยังไม่ซ้ำเดิมเป๊ะทุกครั้งที่เปิด
+    score.set(it.v.v, Math.log2(pop + 2) * shoppable * (0.8 + Math.random() * 0.4));
   }
   const by = (a: FeedItem, b: FeedItem) => (score.get(b.v.v) ?? 0) - (score.get(a.v.v) ?? 0);
   return [
@@ -256,8 +263,18 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // ใบแรกก็ชิงโหลดตั้งแต่เปิดหน้า ขนานไปกับตอนที่เบราว์เซอร์ยังโหลดตัวเล่นอยู่
   useEffect(() => {
     prefetchVideo(items[active]?.v);
-    // ใบถัดไปรอให้ใบที่ดูอยู่เล่นได้ก่อน ไม่งั้นสองใบแย่งเน็ตกันตั้งแต่วินาทีแรก
-    if (ready) prefetchVideo(items[active + 1]?.v);
+    // ใบถัดไปรอให้ใบที่ดูอยู่เล่นได้ก่อน ไม่งั้นแย่งเน็ตกันตั้งแต่วินาทีแรก
+    // แล้วค่อยไล่ชิงโหลดช่วงต้นของใบถัด ๆ ไปทีละใบ ห่างกันครึ่งวินาที
+    // (แบบเดียวกับแอปฟีดวิดีโอ — เอาแค่ช่วงต้น ไม่ได้โหลดเต็มทั้งคลิป)
+    if (!ready) return;
+    const depth = prefetchDepth();
+    const timers: ReturnType<typeof setTimeout>[] = [];
+    for (let k = 1; k <= depth; k++) {
+      const v = items[active + k]?.v;
+      if (!v) break;
+      timers.push(setTimeout(() => prefetchVideo(v), (k - 1) * 500));
+    }
+    return () => timers.forEach(clearTimeout);
   }, [active, items, ready]);
 
   // ใบที่อยู่ในจอเล่น ใบอื่นหยุดและกรอกลับต้นคลิป

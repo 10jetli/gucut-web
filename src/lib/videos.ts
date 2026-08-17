@@ -96,6 +96,25 @@ export const VIDEO_HOST = HOST;
 // ---------------------------------------------------------------------------
 const warmed = new Set<string>();
 
+/**
+ * ชิงโหลดล่วงหน้าลึกแค่ไหน — ปรับตามเน็ตของลูกค้าเอง
+ *
+ * แอปฟีดวิดีโอไม่ได้โหลดคลิปเต็มหลายสิบใบล่วงหน้า มันชิงโหลดแค่ "ช่วงต้น"
+ * ของใบถัดไปไม่กี่ใบ (ที่นี่คือ ~320KB ต่อใบ = เล่นได้ 4 วินาทีแรกทันที)
+ * โหลดเต็มหลายสิบใบ = กินเน็ตลูกค้าหลาย GB และไปแย่งเน็ตจนใบที่ดูอยู่สะดุด
+ */
+export function prefetchDepth(): number {
+  if (typeof navigator === "undefined") return 2;
+  const c = (navigator as Navigator & {
+    connection?: { effectiveType?: string; saveData?: boolean };
+  }).connection;
+  if (c?.saveData) return 1;                       // ลูกค้าเปิดโหมดประหยัดเน็ต
+  const t = c?.effectiveType || "";
+  if (t.includes("2g")) return 1;                  // 2G / slow-2g
+  if (t === "3g") return 2;
+  return 5;                                        // 4G ขึ้นไปหรือไม่รู้ = 5 ใบ
+}
+
 export function prefetchVideo(x: ShopVideo | undefined) {
   if (!x || !HOST || typeof window === "undefined" || warmed.has(x.v)) return;
   warmed.add(x.v);
