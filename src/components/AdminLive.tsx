@@ -28,12 +28,26 @@ function flag(cc: string) {
 }
 
 // ชื่อประเทศภาษาไทย — เบราว์เซอร์แปลให้เอง ไม่ต้องมีตารางชื่อประเทศในโค้ด
-const names = typeof Intl !== "undefined" && "DisplayNames" in Intl
-  ? new Intl.DisplayNames(["th"], { type: "region" })
-  : null;
+//
+// ⚠️ สร้างตอนเรียกใช้ ไม่ใช่ตอนโหลดไฟล์ — เบราว์เซอร์บางรุ่นสร้างแล้ว throw
+//    ถ้าไปสร้างไว้ระดับไฟล์ ทั้งหน้าจะพังเป็น "Application error" ทันที
+//    (เคยพลาดมาแล้ว 17 ส.ค. 2569 — หน้าคนเข้าเว็บพังบ้างไม่พังบ้างบน Safari)
+let names: Intl.DisplayNames | null | undefined;
 function countryName(cc: string) {
   if (cc === "ZZ") return "ไม่ทราบประเทศ";
+  if (names === undefined) {
+    try {
+      names = typeof Intl !== "undefined" && "DisplayNames" in Intl
+        ? new Intl.DisplayNames(["th"], { type: "region" })
+        : null;
+    } catch { names = null; }
+  }
   try { return names?.of(cc) || cc; } catch { return cc; }
+}
+
+// path ที่มี % แปลก ๆ จะทำให้ decodeURIComponent โยน error จนทั้งหน้าพัง
+function safePath(p: string) {
+  try { return decodeURIComponent(p); } catch { return p; }
 }
 
 export default function AdminLive() {
@@ -52,7 +66,17 @@ export default function AdminLive() {
     try {
       const r = await adminFetch("/api/live", k);
       if (!r.ok) { setErr("รหัสหลังร้านไม่ถูกต้อง"); return; }
-      setS(await r.json());
+      const j = await r.json();
+      // เซิร์ฟเวอร์รุ่นเก่ายังไม่ส่ง countries มา — เติมค่าว่างกันหน้าพัง
+      setS({
+        online: Number(j?.online) || 0,
+        onlineWindowMin: Number(j?.onlineWindowMin) || 5,
+        pages: Array.isArray(j?.pages) ? j.pages : [],
+        countries: Array.isArray(j?.countries) ? j.countries : [],
+        today: Number(j?.today) || 0,
+        days: Array.isArray(j?.days) ? j.days : [],
+        at: Number(j?.at) || Date.now(),
+      });
       setErr("");
     } catch {
       setErr("ดึงข้อมูลไม่สำเร็จ");
@@ -71,8 +95,11 @@ export default function AdminLive() {
   }, [auto, key, load]);
 
   const max = Math.max(1, ...(s?.days || []).map((d) => d.n));
-  const thaiDay = (iso: string) =>
-    new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+  const thaiDay = (iso: string) => {
+    try {
+      return new Date(iso + "T00:00:00+07:00").toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+    } catch { return iso.slice(5); }
+  };
 
   return (
     <main className="min-h-[100dvh] bg-steel-900">
@@ -113,7 +140,7 @@ export default function AdminLive() {
             <ul className="space-y-1.5">
               {s.pages.map((p) => (
                 <li key={p.p} className="flex items-center justify-between gap-3 text-[13px]">
-                  <span className="min-w-0 flex-1 truncate text-ink-700">{decodeURIComponent(p.p)}</span>
+                  <span className="min-w-0 flex-1 truncate text-ink-700">{safePath(p.p)}</span>
                   <span className="shrink-0 font-semibold text-ink">{p.n}</span>
                 </li>
               ))}
