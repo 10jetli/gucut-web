@@ -14,7 +14,15 @@ import Portal from "./Portal";
 // ปิดไปแล้วไม่ต้องเด้งซ้ำระหว่างที่ยังเปิดเว็บอยู่ — แต่เปิดเว็บใหม่ให้เด้งได้อีก
 const HIDE_KEY = "gucut-float-video-off";
 
-export default function ProductVideoFloat({ video }: { video: ShopVideo }) {
+export default function ProductVideoFloat({
+  video,
+  // ลอยสูงจากขอบล่างเท่าไหร่ — หน้าสินค้ามีแถบซื้อบัง (4.25rem)
+  // หน้าแรกมีแค่เมนูล่าง จึงส่งค่าที่ต่ำกว่าเข้ามาแทน
+  lift = "4.25rem",
+}: {
+  video: ShopVideo;
+  lift?: string;
+}) {
   const [gone, setGone] = useState(true);   // เริ่มด้วยซ่อนไว้ กัน HTML ฝั่ง server ไม่ตรงกับ client
   const [big, setBig] = useState(false);
 
@@ -27,7 +35,13 @@ export default function ProductVideoFloat({ video }: { video: ShopVideo }) {
   return (
     <>
       {/* ตัวย่อมุมจอ */}
-      <div className="fixed bottom-[calc(env(safe-area-inset-bottom)+4.25rem)] right-2 z-[55] w-[104px] overflow-hidden rounded-lg bg-black shadow-[0_2px_12px_rgba(0,0,0,0.35)]">
+      {/* ⚠️ ระยะลอยต้องใส่เป็น style ไม่ใช่ class ของ Tailwind
+          Tailwind สแกนหาชื่อคลาสในซอร์สตอน build ถ้าประกอบชื่อคลาสจากตัวแปร
+          มันจะหาไม่เจอแล้วไม่สร้าง CSS ให้ — กล่องจะไปกองอยู่ล่างสุดจอ */}
+      <div
+        style={{ bottom: `calc(env(safe-area-inset-bottom) + ${lift})` }}
+        className="fixed right-2 z-[55] w-[104px] overflow-hidden rounded-lg bg-black shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
+      >
         <button
           onClick={() => {
             sessionStorage.setItem(HIDE_KEY, "1");

@@ -21,3 +21,37 @@ export function feedItems(): FeedItem[] {
     return p ? { v, p: { h: p.h, t: p.t, img: p.img, p: p.p } } : { v };
   });
 }
+
+// ---------------------------------------------------------------------------
+// คลิปสำหรับ "คลิปลอยมุมจอ" ในหน้าแรก (แบบ Shopee)
+//
+// หน้าแรกถูก build เป็น HTML ล่วงหน้า ถ้าสุ่มตอน build ทุกคนจะเห็นคลิปเดียวกันหมด
+// จึงส่ง "ตัวเลือก" ไปให้เบราว์เซอร์ แล้วให้เครื่องลูกค้าสุ่มเองตอนเปิดหน้า
+// เปิดกี่ครั้งก็ได้คลิปคนละใบ
+//
+// ⚠️ ส่งไปเท่าที่จำเป็นเท่านั้น (แค่รหัสคลิปกับความยาว)
+//    ถ้าส่งทั้งก้อน videos.json ไปด้วย หน้าแรกจะหนักขึ้นเกือบ 80KB
+//    ซึ่งเป็นหน้าที่คนเข้ามากที่สุด ไม่คุ้มกันเลย
+//
+// เลือกแบบ "หยิบเว้นระยะ" ให้กระจายทั้งคลัง ไม่ใช่เอาแต่ 80 ใบแรก
+// (คลิปเรียงตามเวลาที่อัป ถ้าเอาหัวแถวจะได้แต่ของเก่าหรือของใหม่กระจุกเดียว)
+//
+// อยากให้หลากหลายขึ้นก็เพิ่มเลขนี้ — ทุก 10 ใบ = หน้าแรกหนักขึ้นราว 0.5KB
+export const FLOAT_POOL = 80;
+
+export interface FloatClip {
+  v: string;     // รหัสคลิป
+  dur: number;   // ความยาว (วินาที) — ใช้โชว์บนป้าย
+}
+
+export function floatClips(): FloatClip[] {
+  const all = videos.filter((v) => !STILL.has(v.v));
+  if (all.length <= FLOAT_POOL) return all.map((v) => ({ v: v.v, dur: v.dur }));
+  const step = all.length / FLOAT_POOL;
+  const out: FloatClip[] = [];
+  for (let i = 0; i < FLOAT_POOL; i++) {
+    const v = all[Math.floor(i * step)];
+    out.push({ v: v.v, dur: v.dur });
+  }
+  return out;
+}

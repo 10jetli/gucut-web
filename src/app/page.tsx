@@ -4,9 +4,11 @@ import BannerSlider from "@/components/BannerSlider";
 import CategoryNav from "@/components/CategoryNav";
 import CouponStrip from "@/components/CouponStrip";
 import ProductCard from "@/components/ProductCard";
+import HomeVideoFloat from "@/components/HomeVideoFloat";
 import SectionHead from "@/components/SectionHead";
 import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog";
 import { ldScript, organizationLd, websiteLd } from "@/lib/seo";
+import { floatClips } from "@/lib/feed";
 
 // หน้าแรก — feed สไตล์ Shopee / TikTok Shop
 export default function HomePage() {
@@ -56,6 +58,10 @@ export default function HomePage() {
       >
         ดูสินค้าทั้งหมด 2,482 รายการ ›
       </Link>
+
+      {/* คลิปลอยมุมขวาล่างแบบ Shopee — สุ่มคลิปใหม่ทุกครั้งที่เปิดหน้า
+          ตัวเลือกส่งไปจากตรงนี้ แต่คนที่สุ่มคือเบราว์เซอร์ของลูกค้า (ดู HomeVideoFloat) */}
+      <HomeVideoFloat clips={floatClips()} />
 
     </main>
   );
