@@ -88,6 +88,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const gestured = useRef(false);              // ลูกค้าเคยแตะจอแล้วหรือยัง = ได้สิทธิ์เปิดเสียง
   const justUnmuted = useRef(false);           // แตะครั้งที่เปิดเสียง ห้ามหยุดคลิปไปด้วย
   const mutedRef = useRef(true);               // ค่าล่าสุด ใช้ตอนคลิปใบใหม่เพิ่งโผล่มา
+  const retries = useRef<number[]>([]);        // นัดสั่งเล่นซ้ำที่ตั้งไว้ ยกเลิกได้ตอนเลื่อนหนี
 
   // ---- หัวใจ / คอมเมนต์ / บันทึก ----
   const [counts, setCounts] = useState<VideoCounts>({});
@@ -313,23 +314,50 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     if (!el) return;
     setReady(el.readyState >= 3);
     el.muted = muted;
-    const tryPlay = () => {
+    // ---- นัดสั่งเล่นซ้ำ ----
+    //
+    // ⚠️ พึ่ง event canplay/loadeddata อย่างเดียวไม่พอ
+    //    event พวกนี้ยิง "ตอนความพร้อมเพิ่มขึ้น" เท่านั้น ถ้าคลิปถูกชิงโหลดไว้จน
+    //    readyState เต็มก่อนที่เราจะสั่งเล่น มันจะยิงไปแล้วและ "ไม่ยิงอีก"
+    //    พอ play() โดนยกเลิกกลางทาง (AbortError) จึงไม่มีใครสั่งซ้ำ — คลิปค้าง
+    //    จนกว่าลูกค้าจะแตะจอเอง
+    //    อาการที่เจอจริง 17 ส.ค. 2569: "บางทีต้องเอามือแตะนิดนึงถึงเล่น"
+    //    โผล่ชัดขึ้นหลังเปลี่ยนไปใช้เซกเมนต์ 2 วินาที เพราะคลิปพร้อมเร็วกว่าเดิมมาก
+    //
+    // ตั้งนาฬิกาไล่ลองใหม่แทน ห่างขึ้นเรื่อย ๆ รวมไม่เกิน ~2.5 วิ แล้วเลิก
+    // (ไม่วนไม่สิ้นสุด — ถ้าถึงตรงนั้นยังเล่นไม่ได้ แปลว่าเบราว์เซอร์ห้ามจริง
+    //  ป้ายชวนแตะจะทำหน้าที่แทน)
+    const GAPS = [120, 300, 700, 1400];
+    const clearRetries = () => {
+      for (const t of retries.current) clearTimeout(t);
+      retries.current = [];
+    };
+    const again = (n: number) => {
+      if (n >= GAPS.length) return;
+      retries.current.push(
+        window.setTimeout(() => {
+          if (el.paused && !userPaused.current) tryPlay(n + 1);
+        }, GAPS[n]),
+      );
+    };
+
+    const tryPlay = (n = 0) => {
       if (!el.paused) return;              // เล่นอยู่แล้ว ไม่ต้องสั่งซ้ำ
       el.play().catch((err: DOMException) => {
-        if (el.muted) return;   // ปฏิเสธทั้งที่เงียบอยู่ — เดี๋ยว canplay ข้างล่างสั่งซ้ำให้
+        if (el.muted) { again(n); return; }   // ปฏิเสธทั้งที่เงียบอยู่ = ยังไม่พร้อม ลองใหม่
         // ⚠️ ต้องแยกให้ออกว่าถูกปฏิเสธ "เพราะเสียง" หรือ "เพราะยังโหลดไม่ทัน"
         //    คลิปที่โหลดช้าจะถูกปฏิเสธด้วย AbortError ซึ่งไม่เกี่ยวกับเสียงเลย
         //    เดิมเหมารวมแล้วสั่งปิดเสียงทั้งฟีดทิ้ง ทั้งที่ลูกค้าเปิดเสียงไว้แล้ว
         //    อาการ: เลื่อนเจอคลิปที่หมุนโหลด แล้วเสียงหายไปทั้งฟีด
         //    ถ้าลูกค้าแตะจอไปแล้ว (มีสิทธิ์เปิดเสียง) ก็ไม่ต้องปิดเสียง
         //    ปล่อยให้ canplay ข้างล่างสั่งเล่นซ้ำตอนคลิปพร้อม
-        if (err?.name !== "NotAllowedError" || gestured.current) return;
+        if (err?.name !== "NotAllowedError" || gestured.current) { again(n); return; }
         // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
         // เล่นแบบเงียบไปก่อน แล้วขึ้นป้ายชวนให้แตะเปิดเสียง
         el.muted = true;
         setMute(true, false);
         setAskSound(true);
-        el.play().catch(() => {});
+        el.play().catch(() => { again(n); });
       });
     };
     tryPlay();
@@ -341,11 +369,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     el.addEventListener("loadeddata", kick);
     // สะดุดกลางคลิปแล้วข้อมูลกลับมา — เล่นต่อเองไม่ต้องรอลูกค้ากด
     el.addEventListener("canplaythrough", kick);
-    el.addEventListener("playing", () => { userPaused.current = false; });
+    // เล่นออกแล้ว เลิกไล่ลองใหม่ทันที (ไม่งั้นนาฬิกาที่ตั้งค้างไว้จะไปสั่งซ้ำเปล่า ๆ)
+    const started = () => { userPaused.current = false; clearRetries(); };
+    el.addEventListener("playing", started);
     return () => {
+      clearRetries();
       el.removeEventListener("canplay", kick);
       el.removeEventListener("loadeddata", kick);
       el.removeEventListener("canplaythrough", kick);
+      // ⚠️ ของเดิมลืมถอดตัวนี้ ทุกครั้งที่เลื่อนจะพอกเพิ่มไปเรื่อย ๆ บน <video> ตัวเดิม
+      el.removeEventListener("playing", started);
     };
   }, [active, muted, setMute]);
 
