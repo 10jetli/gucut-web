@@ -1,6 +1,6 @@
 import VideoFeed from "@/components/VideoFeed";
 import { feedItems, FIRST_PAGE } from "@/lib/feed";
-import { VIDEO_HOST } from "@/lib/videos";
+import { VIDEO_HOST, VIDEO_PREFIX } from "@/lib/videos";
 
 export const metadata = { title: "วิดีโอรีวิว | GUCUT" };
 
@@ -14,9 +14,9 @@ export default function VideosPage() {
   // (ฟีดปักใบแรกไว้ที่เดิมเสมอตอนสลับลำดับ ใบนี้จึงเป็นใบที่ลูกค้าเห็นแน่นอน)
   const warm = first && VIDEO_HOST
     ? [
-        `${VIDEO_HOST}/v/${first}/master.m3u8`,
-        `${VIDEO_HOST}/v/${first}/v480/index.m3u8`,
-        `${VIDEO_HOST}/v/${first}/v480/seg000.ts`,
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${first}/master.m3u8`,
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${first}/v480/index.m3u8`,
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${first}/v480/seg000.ts`,
       ]
     : [];
 

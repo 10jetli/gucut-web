@@ -84,6 +84,23 @@ const HOST: string = "https://video.gucut.com";
 
 export const usingHls = HOST !== "";
 
+// ---------------------------------------------------------------------------
+// โฟลเดอร์ชุดคลิปบน R2 — สลับกลับได้ที่บรรทัดเดียว
+//
+//   /v/   ชุดแรก · เซกเมนต์ละ 6 วินาที  (ยังอยู่ครบบน R2 ไม่ได้ลบ)
+//   /v2/  ชุดใหม่ · เซกเมนต์ละ 2 วินาที (แปลงครบ 459 ใบ 17 ส.ค. 2569)
+//
+// ทำไมต้อง 2 วินาที: HLS เล่นได้ก็ต่อเมื่อโหลดเซกเมนต์แรก "จบทั้งก้อน"
+// ก้อน 6 วินาทีบนมือถือ 4G = รอ ~1.5-2 วิกว่าจะเห็นภาพแรก · ก้อน 2 วินาทีเหลือราว 1 ใน 3
+// TikTok/Reels ใช้ก้อนสั้นด้วยเหตุผลเดียวกัน
+//
+// ⚠️ ของใหม่มีปัญหาเมื่อไหร่ เปลี่ยนกลับเป็น "/v" แล้ว deploy ได้ทันที ไม่ต้องแปลงอะไรใหม่
+// ---------------------------------------------------------------------------
+const PREFIX = "/v2";
+
+/** โฟลเดอร์ชุดคลิป — หน้า /videos ใช้ประกอบลิงก์ preload ของใบแรกด้วย */
+export const VIDEO_PREFIX = PREFIX;
+
 /** โดเมนที่เก็บคลิป — หน้าเว็บใช้ preconnect ไว้ล่วงหน้า จะได้ไม่เสียเวลาต่อ TLS ตอนกดดู */
 export const VIDEO_HOST = HOST;
 
@@ -118,7 +135,7 @@ export function prefetchDepth(): number {
 export function prefetchVideo(x: ShopVideo | undefined) {
   if (!x || !HOST || typeof window === "undefined" || warmed.has(x.v)) return;
   warmed.add(x.v);
-  const base = `${HOST}/v/${x.v}`;
+  const base = `${HOST}${PREFIX}/${x.v}`;
   // เรียงตามลำดับที่ตัวเล่นจะขอจริง ๆ · ไฟล์สองอันแรกเล็กมาก (ไม่ถึง 1KB)
   for (const u of [`${base}/master.m3u8`, `${base}/v480/index.m3u8`, `${base}/v480/seg000.ts`]) {
     fetch(u, { mode: "cors", credentials: "omit" }).catch(() => {});
@@ -130,7 +147,7 @@ const file = (x: ShopVideo, suffix: string) => `${CDN}/videos/c/vp/${x.v}/${x.v}
 // R2: ไฟล์ HLS ตัวเดียวจบ เบราว์เซอร์เลือกความคมชัดเองตามเน็ตลูกค้า
 // Shopify: ได้แค่ 480p ตายตัว ถ้าใช้ 720p คนเน็ตอ่อนจะค้าง
 export const videoSrc = (x: ShopVideo) =>
-  HOST ? `${HOST}/v/${x.v}/master.m3u8` : file(x, x.s);
+  HOST ? `${HOST}${PREFIX}/${x.v}/master.m3u8` : file(x, x.s);
 
 export const videoHd = (x: ShopVideo) =>
   HOST ? undefined : x.hd ? file(x, x.hd) : undefined;   // HLS ปรับเองไม่ต้องมีลิงก์ HD แยก
@@ -144,7 +161,7 @@ export const videoHd = (x: ShopVideo) =>
 //    มาแปลงก่อนอีกทอด — ในฟีดที่เลื่อนทีละใบ ความหน่วงตรงนี้คือ "ภาพยังไม่ขึ้น"
 //    ส่วนรูปเก่าจาก Shopify ยังต้องผ่าน Netlify เพราะไฟล์ต้นทางใหญ่เกิน
 export function videoPoster(x: ShopVideo, w = 480) {
-  if (HOST) return `${HOST}/v/${x.v}/poster.jpg`;
+  if (HOST) return `${HOST}${PREFIX}/${x.v}/poster.jpg`;
   if (!x.pv) return undefined;
   const url = `${CDN}/s/files/${SHOP}/files/preview_images/${x.v}.thumbnail.0000000000.jpg?v=${x.pv}`;
   return `/.netlify/images?${new URLSearchParams({ url, w: String(w), q: "60" })}`;
