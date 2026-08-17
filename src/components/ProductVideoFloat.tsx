@@ -6,6 +6,7 @@
 // เฉพาะตอนปิดเสียง) กดแล้วขยายเต็มจอพร้อมเปิดเสียง กดกากบาทเพื่อปิดทิ้ง
 //
 // โชว์เฉพาะสินค้าที่มีคลิปผูกไว้จริง (90 รายการ) ที่เหลือไม่ขึ้นอะไรเลย
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { durLabel, usingHls, videoPoster, videoSrc, type ShopVideo } from "@/lib/videos";
 import { isSafariHls, useHls } from "@/lib/useHls";
@@ -19,9 +20,20 @@ export default function ProductVideoFloat({
   // ลอยสูงจากขอบล่างเท่าไหร่ — หน้าสินค้ามีแถบซื้อบัง (4.25rem)
   // หน้าแรกมีแค่เมนูล่าง จึงส่งค่าที่ต่ำกว่าเข้ามาแทน
   lift = "4.25rem",
+  // ใส่ href = กดแล้วพาไปหน้านั้นแทนที่จะขยายเต็มจอ
+  // หน้าสินค้าไม่ใส่ (คลิปคือของสินค้าตัวนั้น ขยายดูตรงนั้นจบ)
+  // หน้าแรกใส่ /videos/ เพราะเป้าหมายคือดึงคนเข้าไปดูคลิปรวม ไม่ใช่ให้ดูจบคาที่
+  href,
+  label,
+  // ความกว้างของกล่อง — หน้าสินค้า 104px (ของเดิม)
+  // หน้าแรกเล็กกว่า เพราะเป็นแค่ตัวชวนให้กดเข้าไปดูคลิปรวม ไม่ใช่ของหลักของหน้า
+  width = 104,
 }: {
   video: ShopVideo;
   lift?: string;
+  href?: string;
+  label?: string;
+  width?: number;
 }) {
   const [gone, setGone] = useState(true);   // เริ่มด้วยซ่อนไว้ กัน HTML ฝั่ง server ไม่ตรงกับ client
   const [big, setBig] = useState(false);
@@ -39,8 +51,8 @@ export default function ProductVideoFloat({
           Tailwind สแกนหาชื่อคลาสในซอร์สตอน build ถ้าประกอบชื่อคลาสจากตัวแปร
           มันจะหาไม่เจอแล้วไม่สร้าง CSS ให้ — กล่องจะไปกองอยู่ล่างสุดจอ */}
       <div
-        style={{ bottom: `calc(env(safe-area-inset-bottom) + ${lift})` }}
-        className="fixed right-2 z-[55] w-[104px] overflow-hidden rounded-lg bg-black shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
+        style={{ bottom: `calc(env(safe-area-inset-bottom) + ${lift})`, width }}
+        className="fixed right-2 z-[55] overflow-hidden rounded-lg bg-black shadow-[0_2px_12px_rgba(0,0,0,0.35)]"
       >
         <button
           onClick={() => {
@@ -52,19 +64,15 @@ export default function ProductVideoFloat({
         >
           ×
         </button>
-        <button
-          onClick={() => setBig(true)}
-          aria-label="ดูคลิปเต็มจอ"
-          className="block w-full text-left"
-        >
+        <Tap href={href} onOpen={() => setBig(true)}>
           <Clip video={video} muted className="aspect-[9/16] w-full object-cover" />
           <span className="flex items-center justify-center gap-1 bg-safety py-1 text-[11px] font-semibold text-white">
-            วิดีโอ {durLabel(video.dur)}
+            {label ?? `วิดีโอ ${durLabel(video.dur)}`}
             <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-white stroke-[2.5]">
               <path d="M9 5l7 7-7 7" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </span>
-        </button>
+        </Tap>
       </div>
 
       {/* เต็มจอ พร้อมเสียง */}
@@ -88,6 +96,32 @@ export default function ProductVideoFloat({
         </Portal>
       )}
     </>
+  );
+}
+
+// ตัวรับการแตะ — เป็นลิงก์ถ้าส่ง href มา ไม่งั้นเป็นปุ่มขยายเต็มจอเหมือนเดิม
+// ⚠️ ใช้ <Link> ของ Next ไม่ใช่ <a> ธรรมดา จะได้ไม่โหลดหน้าใหม่ทั้งหน้า
+function Tap({
+  href,
+  onOpen,
+  children,
+}: {
+  href?: string;
+  onOpen: () => void;
+  children: React.ReactNode;
+}) {
+  const cls = "block w-full text-left";
+  if (href) {
+    return (
+      <Link href={href} aria-label="ดูคลิปทั้งหมด" className={cls}>
+        {children}
+      </Link>
+    );
+  }
+  return (
+    <button onClick={onOpen} aria-label="ดูคลิปเต็มจอ" className={cls}>
+      {children}
+    </button>
   );
 }
 

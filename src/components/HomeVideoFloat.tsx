@@ -45,5 +45,5 @@ export default function HomeVideoFloat({ clips }: { clips: FloatClip[] }) {
 
   // หน้าแรกไม่มีแถบซื้อ มีแค่เมนูล่าง (วัดจริงบนจอมือถือได้ 59px รวมระยะหลบขอบจอ)
   // 4.5rem = 72px เหลือช่องว่างเหนือเมนูราว 13px กำลังดี ไม่ดูติดกันจนเกะกะ
-  return <ProductVideoFloat video={pick} lift="4.5rem" />;
+  return <ProductVideoFloat video={pick} lift="4.5rem" width={78} href="/videos/" label="ดูคลิปรวม" />;
 }
