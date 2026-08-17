@@ -63,14 +63,42 @@ export const myName = () => (typeof window === "undefined" ? "" : localStorage.g
 export const setMyName = (n: string) => localStorage.setItem(NAME_KEY, n);
 
 // ---------------------------------------------------------------- เซิร์ฟเวอร์
-export async function fetchCounts(): Promise<VideoCounts> {
+export type VideoViews = Record<string, number>;
+
+export async function fetchCounts(): Promise<{ counts: VideoCounts; views: VideoViews }> {
   try {
     const r = await fetch("/api/social");
-    if (!r.ok) return {};
-    return (await r.json()).counts ?? {};
+    if (!r.ok) return { counts: {}, views: {} };
+    const j = await r.json();
+    return { counts: j.counts ?? {}, views: j.views ?? {} };
   } catch {
-    return {};   // ตัวเลขไม่ขึ้นดีกว่าฟีดพัง
+    return { counts: {}, views: {} };   // ตัวเลขไม่ขึ้นดีกว่าฟีดพัง
   }
+}
+
+/**
+ * จดว่าดูคลิปนี้แล้ว — เรียกเมื่อดูค้างนานพอเท่านั้น ไม่ใช่ทุกครั้งที่เลื่อนผ่าน
+ * คนเดิมนับได้ครั้งเดียว (เซิร์ฟเวอร์เก็บเป็นหนึ่งคน = หนึ่งคีย์)
+ * รหัสผู้ชมใช้ตัวเดียวกับตัวนับคนเข้าเว็บ อยู่ใน sessionStorage ไม่ใช่คุกกี้
+ */
+const sent = new Set<string>();
+export function markViewed(id: string) {
+  if (typeof window === "undefined" || !id || sent.has(id)) return;
+  sent.add(id);
+  let vid = "";
+  try {
+    vid = sessionStorage.getItem("gu_vid") || "";
+    if (!vid) {
+      vid = Math.random().toString(36).slice(2) + Date.now().toString(36);
+      sessionStorage.setItem("gu_vid", vid);
+    }
+  } catch { return; }
+  fetch("/api/social", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ action: "view", id, vid }),
+    keepalive: true,
+  }).catch(() => {});
 }
 
 export async function fetchComments(id: string): Promise<VideoComment[]> {

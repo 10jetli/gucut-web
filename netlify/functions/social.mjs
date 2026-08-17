@@ -17,6 +17,7 @@
 // ตั้งใจให้กดได้เลยโดยไม่ต้องล็อกอิน — แลกกับที่ล้างเบราว์เซอร์แล้วกดซ้ำได้
 // ตัวเลขจึงเป็น "ความนิยมโดยประมาณ" พอสำหรับจัดอันดับฟีด ไม่ใช่ตัวเลขทางบัญชี
 import { getStore } from "@netlify/blobs";
+import { addView, readViews } from "../lib/views.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
 
 const MAX_TEXT = 300;
@@ -84,7 +85,8 @@ export default async function handler(req, context) {
       return json({ comments: list }, 200, { "cache-control": "public, max-age=0, s-maxage=15" });
     }
     // ยอดรวมทุกคลิป — แคชที่ edge 60 วิ ฟีดของลูกค้าคนถัดไปได้ทันทีไม่ต้องรอ
-    return json({ counts: await readCounts(s) }, 200, {
+    const [counts, views] = await Promise.all([readCounts(s), readViews()]);
+    return json({ counts, views }, 200, {
       "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     });
   }
@@ -117,6 +119,13 @@ export default async function handler(req, context) {
   const ip = who(req, context);
 
   // ---------- กดหัวใจ ----------
+  // จดว่ามีคนดูคลิปนี้ — ไม่ต้องล็อกอิน ไม่มีการกันสแปมหนัก ๆ
+  // เพราะคนเดิมนับได้ครั้งเดียวอยู่แล้ว (หนึ่งคน = หนึ่งคีย์)
+  if (action === "view") {
+    await addView(body.id, body.vid);
+    return json({ ok: true });
+  }
+
   if (action === "like" || action === "unlike") {
     if (await overLimit(s, ip, "like", LIKE_MAX)) return json({ error: "กดถี่เกินไป พักสักครู่" }, 429);
     const counts = await readCounts(s);

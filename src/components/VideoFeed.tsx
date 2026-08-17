@@ -8,7 +8,7 @@ import { durLabel, prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc
 import { isSafariHls, useHls } from "@/lib/useHls";
 import VideoActions from "./VideoActions";
 import VideoComments from "./VideoComments";
-import { fetchCounts, likedIds, savedIds, type VideoCounts } from "@/lib/social";
+import { fetchCounts, likedIds, markViewed, savedIds, type VideoCounts, type VideoViews } from "@/lib/social";
 
 // ใส่ <video> จริงกี่ใบรอบ ๆ ใบที่กำลังดู — ใบถัดไปโหลดรออยู่แล้ว เลื่อนถึงเล่นทันที
 // เผื่อไปข้างหน้ามากกว่าข้างหลัง เพราะคนดูเลื่อนลงเป็นหลัก
@@ -39,14 +39,16 @@ const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะ�
 // จัดอันดับฟีดแบบ TikTok — คลิปที่คนกดหัวใจเยอะมีโอกาสขึ้นก่อน แต่สุ่มใหม่ทุกครั้งที่เปิด
 // เปิดสิบครั้งจะไม่เจอลำดับเดิมสิบครั้ง แต่ใบที่คนชอบก็ยังลอยขึ้นมาบ่อยกว่า
 // (ใบที่เคยดูแล้วดันไปท้ายเสมอ ไม่ว่าจะดังแค่ไหน)
-function rankFeed(list: FeedItem[], counts: VideoCounts, seen: Set<string>): FeedItem[] {
+function rankFeed(list: FeedItem[], counts: VideoCounts, views: VideoViews, seen: Set<string>): FeedItem[] {
   const score = new Map<string, number>();
   for (const it of list) {
     const c = counts[it.v.v];
     const likes = c?.[0] ?? 0;
     const comments = c?.[1] ?? 0;
     // คอมเมนต์ = คนสนใจมากกว่ากดหัวใจผ่าน ๆ ให้น้ำหนักมากกว่า
-    const pop = likes + comments * 3;
+    // ยอดวิว = คนดูจริงกี่คน (คนเดิมนับครั้งเดียว) ให้น้ำหนักน้อยกว่าหัวใจ
+    // เพราะดูผ่านตาไม่เท่ากับตั้งใจกดชอบ แต่บอกความนิยมได้กว้างกว่า
+    const pop = (views[it.v.v] ?? 0) * 0.5 + likes + comments * 3;
     // ใช้ log กันคลิปดังใบเดียวกินพื้นที่ทั้งฟีด (100 หัวใจไม่ควรชนะ 10 หัวใจ 10 เท่า)
     const shoppable = it.p ? 1.4 : 1;             // คลิปที่กดซื้อได้ ดันขึ้นอีกนิด
     // สุ่มน้อยลงกว่าเดิม (0.8-1.2) ความนิยมจึงเป็นตัวตัดสินหลักจริง ๆ
@@ -79,6 +81,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
 
   // ---- หัวใจ / คอมเมนต์ / บันทึก ----
   const [counts, setCounts] = useState<VideoCounts>({});
+  const [views, setViews] = useState<VideoViews>({});
   const [liked, setLiked] = useState<Set<string>>(new Set());
   const [saved, setSaved] = useState<Set<string>>(new Set());
   const [commentFor, setCommentFor] = useState<string | null>(null);
@@ -224,8 +227,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       fetchCounts(),
       // สินค้าที่ร้านผูกกับคลิปเองจากหลังร้าน (ผูกแล้วขึ้นทันที ไม่ต้องรอ deploy)
       fetch("/api/clip-shop").then((r) => r.json()).then((d) => d.map ?? {}).catch(() => ({})),
-    ]).then(([all, c, shop]) => {
+    ]).then(([all, cv, shop]) => {
+      const c = cv.counts;
       setCounts(c);
+      setViews(cv.views);
       if (!all) return;   // เน็ตสะดุด ใช้ชุดที่ฝังมากับหน้าไปก่อน
       // เติมสินค้าให้คลิปที่ยังไม่มี — ของที่ผูกมากับ Shopify เดิมมาก่อนเสมอ
       const withShop = (all as FeedItem[]).map((x) =>
@@ -239,7 +244,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
         if (onlySaved) say("ยังไม่มีคลิปที่บันทึกไว้ — กดรูปธงที่คลิปเพื่อเก็บไว้ดูทีหลัง");
         return;
       }
-      const ranked = rankFeed(pool, c, seen.current);
+      const ranked = rankFeed(pool, c, cv.views, seen.current);
       // ใบที่กำลังเล่นอยู่ต้องคาที่เดิม ไม่งั้นจอสลับคลิปกลางคันตอนตัวเลขโหลดเสร็จ
       const pin = want ? pool.find((x) => x.v.v === want) : itemsRef.current[0];
       const rest = ranked.filter((x) => x.v.v !== pin?.v.v);
@@ -284,6 +289,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
         // ดูค้างไว้นานพอ = ถือว่าดูแล้ว จดไว้ก่อนกรอกลับต้นคลิป
         const id = itemsRef.current[i]?.v.v;
         if (id && el.currentTime >= Math.min(SEEN_SEC, (el.duration || SEEN_SEC) * 0.6)) {
+          markViewed(id);          // นับวิว — คนเดิมนับครั้งเดียว จดที่เซิร์ฟเวอร์
           seen.current.add(id);
           const keep = [...seen.current].slice(-SEEN_MAX);
           seen.current = new Set(keep);
