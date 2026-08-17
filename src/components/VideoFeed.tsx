@@ -66,6 +66,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const [muted, setMuted] = useState(true);
   const [askSound, setAskSound] = useState(false);   // เบราว์เซอร์ไม่ให้เปิดเสียงเอง ต้องให้ลูกค้าแตะ
   const [ready, setReady] = useState(false);   // ใบที่ดูอยู่เล่นได้ลื่นแล้วหรือยัง
+  const gestured = useRef(false);              // ลูกค้าเคยแตะจอแล้วหรือยัง = ได้สิทธิ์เปิดเสียง
   const justUnmuted = useRef(false);           // แตะครั้งที่เปิดเสียง ห้ามหยุดคลิปไปด้วย
   const mutedRef = useRef(true);               // ค่าล่าสุด ใช้ตอนคลิปใบใหม่เพิ่งโผล่มา
 
@@ -237,6 +238,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   // ถ้าเบราว์เซอร์ไม่ยอมให้เปิดเสียงเอง เดี๋ยวโค้ดข้างล่างจะถอยไปเล่นแบบเงียบให้เอง
   useEffect(() => {
     if (localStorage.getItem(SOUND_KEY) !== "off") setMute(false, false);
+    // จดไว้ว่าลูกค้าแตะจอแล้ว — ตั้งแต่นั้นเบราว์เซอร์ยอมให้เล่นพร้อมเสียงได้
+    const mark = () => { gestured.current = true; };
+    document.addEventListener("pointerdown", mark, { capture: true });
+    return () => document.removeEventListener("pointerdown", mark, true);
   }, [setMute]);
 
   // ชิงโหลดคลิปใบถัดไปไว้ตั้งแต่ตอนที่ยังดูใบนี้อยู่ — เลื่อนถึงแล้วเล่นทันที
@@ -269,8 +274,15 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     el.muted = muted;
     const tryPlay = () => {
       if (!el.paused) return;              // เล่นอยู่แล้ว ไม่ต้องสั่งซ้ำ
-      el.play().catch(() => {
+      el.play().catch((err: DOMException) => {
         if (el.muted) return;   // ปฏิเสธทั้งที่เงียบอยู่ — เดี๋ยว canplay ข้างล่างสั่งซ้ำให้
+        // ⚠️ ต้องแยกให้ออกว่าถูกปฏิเสธ "เพราะเสียง" หรือ "เพราะยังโหลดไม่ทัน"
+        //    คลิปที่โหลดช้าจะถูกปฏิเสธด้วย AbortError ซึ่งไม่เกี่ยวกับเสียงเลย
+        //    เดิมเหมารวมแล้วสั่งปิดเสียงทั้งฟีดทิ้ง ทั้งที่ลูกค้าเปิดเสียงไว้แล้ว
+        //    อาการ: เลื่อนเจอคลิปที่หมุนโหลด แล้วเสียงหายไปทั้งฟีด
+        //    ถ้าลูกค้าแตะจอไปแล้ว (มีสิทธิ์เปิดเสียง) ก็ไม่ต้องปิดเสียง
+        //    ปล่อยให้ canplay ข้างล่างสั่งเล่นซ้ำตอนคลิปพร้อม
+        if (err?.name !== "NotAllowedError" || gestured.current) return;
         // เบราว์เซอร์ห้ามเล่นพร้อมเสียงถ้าลูกค้ายังไม่เคยแตะจอ
         // เล่นแบบเงียบไปก่อน แล้วขึ้นป้ายชวนให้แตะเปิดเสียง
         el.muted = true;
