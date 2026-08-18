@@ -498,7 +498,12 @@ export default function CheckoutView() {
             </svg>
             <span className="flex-1 text-[13px] font-semibold text-[#1f9254]">{eta || " "}</span>
             <span className="text-[13px] font-semibold text-[#1f9254]">
-              {shippingFee ? `฿${shippingFee.toLocaleString("th-TH")}` : "ส่งฟรี"}
+              {/* ⚠️ ห้ามเขียนคำว่า "ส่งฟรี" ที่ไหนในเว็บนี้ — ร้านไม่มีส่งฟรี
+                  ค่าส่งจริงเป็นขั้นบันได 70-400 บาท (ดู src/lib/shipping.ts
+                  ไม่มีขั้นไหนเป็น 0 สักขั้น) เดิมตรงนี้มีทางแยกไปโชว์ "ส่งฟรี"
+                  ตอนค่าส่งเป็น 0 ซึ่งเกิดไม่ได้อยู่แล้ว และเป็นคำที่เจ้าของร้านห้ามใช้
+                  โชว์เป็นตัวเลขตรง ๆ เสมอ ถ้าเป็น 0 จริงก็ขึ้น ฿0 ซึ่งไม่ได้โฆษณาอะไร */}
+              {`฿${shippingFee.toLocaleString("th-TH")}`}
             </span>
           </div>
           <p className="mt-0.5 text-[12px] text-steel-300">
