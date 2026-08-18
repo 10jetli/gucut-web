@@ -99,16 +99,23 @@ export default function BannerSlider() {
         })}
 
         {/* จุดบอกตำแหน่งสไลด์ */}
-        <div className="absolute bottom-2 right-3 flex gap-1">
+        {/* ⚠️ จุดที่เห็นเล็กได้ แต่ "พื้นที่กด" ต้องไม่ต่ำกว่า 24×24 px
+            เดิมปุ่มสูง 6px กว้าง 6px — นิ้วคนแตะไม่โดน และ Lighthouse หักคะแนน
+            แก้ด้วยการครอบปุ่มให้ใหญ่แล้วใส่ padding โปร่ง จุดยังดูเล็กเท่าเดิม */}
+        <div className="absolute bottom-0 right-1 flex">
           {slides.map((s, idx) => (
             <button
               key={s.position}
               onClick={() => setI(idx)}
               aria-label={`สไลด์ ${idx + 1}`}
-              className={`h-1.5 rounded-full shadow transition-all ${
-                idx === i ? "w-4 bg-white" : "w-1.5 bg-white/60"
-              }`}
-            />
+              className="flex h-6 w-6 items-center justify-center"
+            >
+              <span
+                className={`block h-1.5 rounded-full shadow transition-all ${
+                  idx === i ? "w-4 bg-white" : "w-1.5 bg-white/60"
+                }`}
+              />
+            </button>
           ))}
         </div>
       </div>
