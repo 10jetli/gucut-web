@@ -34,6 +34,9 @@ export async function ping(vid, path, cc, src, selfHost) {
   const s = store();
   const id = safe(vid, 40);
   if (!id) return;
+  // รหัสที่ขึ้นต้นด้วย test- คือของที่ยิงทดสอบตอนพัฒนา ไม่ใช่ลูกค้าจริง — ไม่นับ
+  // (หน้าเว็บจริงสร้างรหัสเป็นตัวอักษรสุ่ม ไม่มีทางขึ้นต้นแบบนี้)
+  if (id.startsWith("test-")) return;
   const p = String(path || "/").slice(0, 120);
   const day = dayOf();
   const country = /^[A-Za-z]{2}$/.test(cc || "") ? cc.toUpperCase() : "ZZ";   // ZZ = ไม่รู้
@@ -158,7 +161,13 @@ export async function sweep() {
   for (const prefix of ["v/", "c/", "s/"]) {
     const { blobs } = await s.list({ prefix });
     await Promise.allSettled(
-      blobs.filter((b) => (b.key.split("/")[1] || "") < oldest).map((b) => { gone++; return s.delete(b.key); }),
+      blobs
+        .filter((b) => {
+          const parts = b.key.split("/");
+          // เก่าเกินกำหนด หรือเป็นข้อมูลทดสอบที่หลงเหลือจากตอนพัฒนา
+          return (parts[1] || "") < oldest || (parts[parts.length - 1] || "").startsWith("test-");
+        })
+        .map((b) => { gone++; return s.delete(b.key); }),
     );
   }
   return gone;
