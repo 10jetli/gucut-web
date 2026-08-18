@@ -23,7 +23,7 @@
 //    เคยลืม Google-Extended แล้วมันหลุดตะแกรงไปทั้งตัว (จับไม่ได้เลย)
 const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|\bLine\/\d/i;
 
-export default async function handler(request) {
+export default async function handler(request, context) {
   try {
     const ua = request.headers.get("user-agent") || "";
     if (!MAYBE_BOT.test(ua)) return;      // คนทั่วไป — จบตรงนี้
@@ -32,7 +32,24 @@ export default async function handler(request) {
     const bot = identify(ua);
     if (!bot) return;                      // บอตที่ไม่รู้จัก ไม่ต้องจด
 
-    await seen(bot.name, new URL(request.url).pathname);
+    // -----------------------------------------------------------------------
+    // ⚠️ ห้าม await ตัวเขียนข้อมูลเด็ดขาด — ต้องปล่อยให้ทำเบื้องหลัง
+    //
+    // วัดของจริงบน gucut.com 18 ส.ค. 2569 ตอนยังใช้ await อยู่
+    //   คนทั่วไป  223 ms   (ไม่กระทบเลย ตะแกรงตัดตั้งแต่บรรทัดแรก)
+    //   บอต     1,400 ms   ← ช้ากว่าเดิม 6 เท่า
+    // เพราะที่เก็บข้อมูล (Netlify Blobs) อยู่ us-east-1 เขียนทีต้องข้ามมหาสมุทร
+    //
+    // ทำไมถึงเป็นเรื่องใหญ่: Google ลดจำนวนหน้าที่ไล่เก็บลงเมื่อเซิร์ฟเวอร์ตอบช้า
+    // เว็บนี้เพิ่งปลด noindex และมีสองพันกว่าหน้าที่รอให้ Google กลับมาเก็บ
+    // การทำให้ Googlebot ช้าลง 6 เท่าคือทำร้าย SEO ด้วยเครื่องมือที่สร้างมาช่วย SEO
+    //
+    // waitUntil = บอกให้ Netlify รอให้งานเบื้องหลังเสร็จก่อนปิดเครื่อง
+    // ถ้ารุ่นที่รันอยู่ไม่มีให้ใช้ ก็ปล่อยลอยไว้เฉย ๆ (ส่วนใหญ่ยังเขียนสำเร็จ)
+    // ยอมให้ข้อมูลบางส่วนหายดีกว่าทำให้บอตทุกตัวช้าลง
+    // -----------------------------------------------------------------------
+    const job = seen(bot.name, new URL(request.url).pathname).catch(() => {});
+    if (typeof context?.waitUntil === "function") context.waitUntil(job);
   } catch {
     // จดไม่ได้ก็ไม่เป็นไร ห้ามให้กระทบการเสิร์ฟหน้าเว็บ
   }
