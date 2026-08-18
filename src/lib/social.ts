@@ -81,10 +81,19 @@ export async function fetchCounts(): Promise<{ counts: VideoCounts; views: Video
  * คนเดิมนับได้ครั้งเดียว (เซิร์ฟเวอร์เก็บเป็นหนึ่งคน = หนึ่งคีย์)
  * รหัสผู้ชมใช้ตัวเดียวกับตัวนับคนเข้าเว็บ อยู่ใน sessionStorage ไม่ใช่คุกกี้
  */
-const sent = new Set<string>();
-export function markViewed(id: string) {
-  if (typeof window === "undefined" || !id || sent.has(id)) return;
-  sent.add(id);
+// จำว่าส่งไปแล้ว "ลึกสุด" แค่ไหน — ส่งซ้ำเฉพาะตอนดูลึกกว่าเดิมเท่านั้น
+// (เลื่อนกลับมาดูใบเดิมแล้วดูจนจบ ต้องนับว่าดูจบด้วย ไม่ใช่ตัดทิ้งเพราะเคยส่งแล้ว)
+const sent = new Map<string, number>();
+
+/** ระดับความลึกที่เซิร์ฟเวอร์สนใจ — ตรงกับหมุดหมายใน netlify/lib/views.mjs */
+const STEPS = [0, 0.5, 0.9];
+const stepOf = (frac: number) => STEPS.filter((x) => frac >= x).length;
+
+export function markViewed(id: string, frac = 0) {
+  if (typeof window === "undefined" || !id) return;
+  const step = stepOf(frac);
+  if ((sent.get(id) ?? 0) >= step) return;   // ไม่ได้ดูลึกกว่าเดิม ไม่ต้องยิงซ้ำ
+  sent.set(id, step);
   let vid = "";
   try {
     vid = sessionStorage.getItem("gu_vid") || "";
@@ -96,7 +105,7 @@ export function markViewed(id: string) {
   fetch("/api/social", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "view", id, vid }),
+    body: JSON.stringify({ action: "view", id, vid, frac }),
     keepalive: true,
   }).catch(() => {});
 }

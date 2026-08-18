@@ -293,6 +293,25 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     return () => timers.forEach(clearTimeout);
   }, [active, items, ready]);
 
+  // ⚠️ ปิดแท็บ/สลับแอปทั้งที่ยังดูใบเดิมอยู่ = ไม่เคยผ่านจังหวะ "เลื่อนไปใบอื่น"
+  //    ถ้าไม่ดักตรงนี้ คนที่ดูคลิปเดียวจนจบแล้วปิดไปเลยจะไม่ถูกนับ
+  //    ซึ่งคือกลุ่มที่ "ดูนานที่สุด" พอดี — สถิติจะเพี้ยนไปทางดูสั้นกว่าความจริง
+  useEffect(() => {
+    const flush = () => {
+      const el = players.current.get(activeRef.current);
+      const id = itemsRef.current[activeRef.current]?.v.v;
+      if (!el || !id || !el.currentTime) return;
+      markViewed(id, el.duration ? el.currentTime / el.duration : 0);
+    };
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", flush);
+    return () => {
+      flush();   // ออกจากหน้าวิดีโอไปหน้าอื่นก็ต้องจดเหมือนกัน
+      window.removeEventListener("pagehide", flush);
+      document.removeEventListener("visibilitychange", flush);
+    };
+  }, []);
+
   // ใบที่อยู่ในจอเล่น ใบอื่นหยุดและกรอกลับต้นคลิป
   useEffect(() => {
     for (const [i, el] of players.current) {
@@ -300,7 +319,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
         // ดูค้างไว้นานพอ = ถือว่าดูแล้ว จดไว้ก่อนกรอกลับต้นคลิป
         const id = itemsRef.current[i]?.v.v;
         if (id && el.currentTime >= Math.min(SEEN_SEC, (el.duration || SEEN_SEC) * 0.6)) {
-          markViewed(id);          // นับวิว — คนเดิมนับครั้งเดียว จดที่เซิร์ฟเวอร์
+          // ส่ง "ดูไปกี่ส่วนของคลิป" ไปด้วย เพื่อให้หลังร้านรู้ว่าคนดูนานแค่ไหน
+          // ไม่ใช่แค่ว่ามีคนเปิดดู (ดูจบกับเลื่อนผ่านหลังห้าวินาที ไม่เท่ากัน)
+          const frac = el.duration ? el.currentTime / el.duration : 0;
+          markViewed(id, frac);    // นับวิว — คนเดิมนับครั้งเดียว จดที่เซิร์ฟเวอร์
           seen.current.add(id);
           const keep = [...seen.current].slice(-SEEN_MAX);
           seen.current = new Set(keep);

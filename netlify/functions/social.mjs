@@ -122,7 +122,9 @@ export default async function handler(req, context) {
   // จดว่ามีคนดูคลิปนี้ — ไม่ต้องล็อกอิน ไม่มีการกันสแปมหนัก ๆ
   // เพราะคนเดิมนับได้ครั้งเดียวอยู่แล้ว (หนึ่งคน = หนึ่งคีย์)
   if (action === "view") {
-    await addView(body.id, body.vid);
+    // frac = ดูไปกี่ส่วนของคลิป (0-1) — หน้าเว็บรุ่นเก่าไม่ส่งมา ก็ยังนับวิวได้ตามเดิม
+    const frac = Math.max(0, Math.min(1, Number(body.frac) || 0));
+    await addView(body.id, body.vid, frac);
     return json({ ok: true });
   }
 

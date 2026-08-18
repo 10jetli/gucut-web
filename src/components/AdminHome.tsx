@@ -118,6 +118,7 @@ export default function AdminHome() {
     { href: "/admin/clip-shop/", title: "ผูกสินค้ากับคลิป", note: "ให้คลิปในฟีดกดซื้อได้", badge: 0, icon: "order" as const },
     { href: "/admin/seo/", title: "ตรวจสุขภาพ SEO", note: "งานที่ควรแก้ เรียงตามความสำคัญ", badge: 0, icon: "search" as const },
     { href: "/admin/marketing/", title: "พิกเซลการตลาด", note: "ใส่รหัส Meta · TikTok · Google · LINE", badge: 0, icon: "tag" as const },
+    { href: "/admin/clips/", title: "สถิติคลิป", note: "คลิปไหนคนดูเยอะ · ดูจนจบกี่ %", badge: 0, icon: "video" as const },
     { href: "/admin/live/", title: "คนเข้าเว็บ", note: "ออนไลน์ตอนนี้กี่คน · กำลังดูหน้าไหน", badge: 0, icon: "pulse" as const },
     { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];

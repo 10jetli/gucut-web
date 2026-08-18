@@ -12,23 +12,61 @@ const store = () => getStore({ name: "gucut-social", consistency: "eventual" });
 
 const safe = (v, max = 64) => String(v ?? "").replace(/[^\w-]/g, "").slice(0, max);
 
-/** จดว่ามีคนดูคลิปนี้ — เรียกเมื่อดูค้างนานพอเท่านั้น ไม่ใช่ทุกครั้งที่เลื่อนผ่าน */
-export async function addView(id, vid) {
+/**
+ * จดว่ามีคนดูคลิปนี้ — เรียกเมื่อดูค้างนานพอเท่านั้น ไม่ใช่ทุกครั้งที่เลื่อนผ่าน
+ *
+ * frac = ดูไปกี่ส่วนของความยาวคลิป (0-1) · ไม่ส่งมาก็ยังนับวิวเหมือนเดิม
+ *
+ * ⚠️ ทำไมไม่เก็บ "จำนวนวินาทีที่ดู" ตรง ๆ
+ *    ถ้าเก็บตัวเลขไว้ในเนื้อคีย์ เวลาจะสรุปต้อง "อ่านทุกคีย์" ซึ่งช้ามากและคิดเงินตามจำนวนอ่าน
+ *    เก็บเป็นหมุดหมายแยกคีย์แทน แล้วสรุปด้วยการ "นับคีย์" อย่างเดียว (เร็วและถูก)
+ *      w/<คลิป>/<ผู้ชม>  ดูแล้ว (ผ่านเกณฑ์ขั้นต่ำ)
+ *      q/<คลิป>/<ผู้ชม>  ดูถึงครึ่งเรื่อง
+ *      f/<คลิป>/<ผู้ชม>  ดูจนเกือบจบ (90%)
+ *    เอา q/w กับ f/w มาเทียบ ก็ตอบได้ว่า "คนดูนานไหม" โดยไม่ต้องเก็บวินาที
+ *
+ * ⚠️ ห้ามเปลี่ยนไปเก็บแบบอ่านก้อนเดียวมาบวกแล้วเขียนกลับ — คนดูพร้อมกันจะเขียนทับกันจนยอดหาย
+ */
+export async function addView(id, vid, frac = 0) {
   const k = safe(id, 40);
   const who = safe(vid, 40);
   if (!k || !who) return;
-  await store().setJSON(`w/${k}/${who}`, 1).catch(() => {});
+  const s = store();
+  const jobs = [s.setJSON(`w/${k}/${who}`, 1)];
+  if (frac >= 0.5) jobs.push(s.setJSON(`q/${k}/${who}`, 1));
+  if (frac >= 0.9) jobs.push(s.setJSON(`f/${k}/${who}`, 1));
+  await Promise.all(jobs).catch(() => {});
 }
 
 /** ยอดวิวทุกคลิป — นับคีย์อย่างเดียว ไม่ต้องอ่านเนื้อ */
 export async function readViews() {
+  return countPrefix("w/");
+}
+
+async function countPrefix(prefix) {
   const out = {};
   try {
-    const { blobs } = await store().list({ prefix: "w/" });
+    const { blobs } = await store().list({ prefix });
     for (const b of blobs) {
       const id = b.key.split("/")[1];
       if (id) out[id] = (out[id] || 0) + 1;
     }
   } catch { /* ดึงไม่ได้ก็ส่งของว่างไป ฟีดยังทำงานได้ */ }
   return out;
+}
+
+/**
+ * สถิติความลึกในการดู — ใช้ในหน้าสถิติคลิปของหลังร้าน
+ * คืนค่า { views, half, full } แต่ละอันเป็น { "<คลิป>": จำนวนคน }
+ *
+ * ⚠️ ตัวนี้ยิง list 3 ครั้ง จึงหนักกว่า readViews — เรียกเฉพาะหลังร้านเท่านั้น
+ *    ห้ามเอาไปใส่ใน /api/social ที่หน้าร้านเรียกทุกครั้งที่เปิดฟีด
+ */
+export async function readWatch() {
+  const [views, half, full] = await Promise.all([
+    countPrefix("w/"),
+    countPrefix("q/"),
+    countPrefix("f/"),
+  ]);
+  return { views, half, full };
 }
