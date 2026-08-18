@@ -1,5 +1,0 @@
-# กันเหนียวอีกชั้น — บอก Google ตรง ๆ ว่าห้าม index ทุกหน้า
-# (robots.txt กันการ crawl · X-Robots-Tag กันการ index หน้าที่เคยเจอไปแล้ว)
-# ลบไฟล์นี้ทิ้งตอนย้ายขึ้น gucut.com
-/*
-  X-Robots-Tag: noindex, nofollow

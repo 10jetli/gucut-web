@@ -6,18 +6,29 @@
 // เจาะจง จึงเลือกมาจากคลังคลิปของร้าน เปิดหน้าใหม่ก็ได้คลิปใบใหม่
 // กดแล้วพาไปหน้าคลิปรวม (/videos/) ไม่ได้ขยายดูคาหน้าแรก — หน้าที่ของมันคือ "ชวน"
 //
-// ⚠️ ต้องเลือกในเครื่องลูกค้าเท่านั้น ห้ามเลือกตอน build
-//    หน้าแรกถูก build เป็น HTML ล่วงหน้าไฟล์เดียวเสิร์ฟทุกคน เลือกตอน build
-//    = ทุกคนเห็นคลิปเดียวกันจนกว่าจะ deploy ใหม่ ซึ่งไม่ใช่ "สุ่ม"
+// ===========================================================================
+// ⚠️ กติกาข้อแรกของไฟล์นี้: หน้าแรกต้องเร็วก่อนเสมอ
+//
+// เจ้าของร้านย้ำ 18 ส.ค. 2569: "หัวใจหลักคือความเร็วหน้าแรก"
+// คลิปลอยเป็นของแถม ห้ามไปถ่วงหน้าแรกเด็ดขาด จึงวางกฎไว้ 2 ข้อ
+//
+//   1) ไม่โหลดอะไรเลยจนกว่าลูกค้าจะ "เลื่อน" — คนที่เปิดผ่านแล้วปิด
+//      (ซึ่งเป็นคนส่วนใหญ่ของทุกเว็บ) จ่ายเพิ่ม 0 ไบต์
+//   2) โชว์แค่รูปนิ่ง ไม่สตรีมวิดีโอบนหน้าแรก
+//      รูปนิ่ง 26KB · คลิปที่เล่นได้ 224KB — ต่างกัน 9 เท่า
+//      กดแล้วไปหน้าคลิปรวมอยู่แล้ว คลิปที่เล่น 5 วินาทีมุมจอจึงไม่คุ้มค่าเน็ต
+//
+// ⚠️ ห้ามเอาการเล่นวิดีโอกลับมาใส่หน้าแรก ถ้าไม่ได้วัดแล้วว่าคุ้ม
+//    (เคยลองแล้ววันเดียวกัน — ตัวเลขไม่คุ้ม เลยถอยมาเป็นรูปนิ่ง)
+// ===========================================================================
 import { useEffect, useState } from "react";
 import type { FloatClip } from "@/lib/feed";
 import { fetchCounts, type VideoCounts, type VideoViews } from "@/lib/social";
 import type { ShopVideo } from "@/lib/videos";
 import ProductVideoFloat from "./ProductVideoFloat";
 
-// รอให้หน้าแรกวาดเสร็จก่อนค่อยโผล่ — คลิปไม่ควรไปแย่งเน็ตกับรูปสินค้า
-// ที่ลูกค้ากำลังรอดูอยู่ (รูปพวกนั้นคือสิ่งที่ทำให้เกิดการซื้อ ไม่ใช่คลิปลอย)
-const DELAY_MS = 1500;
+// เลื่อนลงมาเกินเท่านี้ = กำลังดูสินค้าจริง ไม่ใช่เปิดผ่าน
+const WAKE_AT = 200;
 
 // ---------------------------------------------------------------------------
 // เลือกคลิป — "คนดูเยอะได้เปรียบ แต่ไม่ใช่ผูกขาด"
@@ -51,29 +62,39 @@ function weight(views: number, likes: number, comments: number) {
 }
 
 export default function HomeVideoFloat({ clips }: { clips: FloatClip[] }) {
+  const [awake, setAwake] = useState(false);
   const [pick, setPick] = useState<ShopVideo | null>(null);
 
+  // ---- ขั้นที่ 1: รอจนลูกค้าเลื่อน ----
+  // ก่อนถึงตรงนี้ไฟล์นี้ไม่ยิงคำขออะไรเลยสักอัน หน้าแรกจึงหนักเท่าเดิมเป๊ะ
   useEffect(() => {
-    if (!clips.length) return;
-
-    // ลูกค้าที่เปิดโหมดประหยัดเน็ตหรือเน็ตอ่อน ไม่ต้องยัดคลิปให้
-    // คนกลุ่มนี้เข้ามาหาสินค้า ไม่ได้มาดูคลิป แล้วคลิปจะไปแย่งเน็ตจนหน้าเว็บอืด
+    // โหมดประหยัดเน็ต / 2G / 3G — ไม่ต้องโชว์เลย คนกลุ่มนี้มาหาสินค้า ไม่ได้มาดูคลิป
     const c = (navigator as Navigator & {
       connection?: { effectiveType?: string; saveData?: boolean };
     }).connection;
     if (c?.saveData) return;
-    if ((c?.effectiveType || "").includes("2g")) return;
+    const t = c?.effectiveType || "";       // ค่าว่าง = เบราว์เซอร์ไม่บอก ให้ถือว่าเน็ตดี
+    if (t === "3g" || t.includes("2g")) return;
 
+    const onScroll = () => {
+      if (window.scrollY < WAKE_AT) return;
+      setAwake(true);
+      window.removeEventListener("scroll", onScroll);
+    };
+    onScroll();   // เผื่อเปิดมาแล้วหน้าเลื่อนอยู่ก่อน (กดปุ่มย้อนกลับมา)
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
+  // ---- ขั้นที่ 2: เลื่อนแล้ว ค่อยไปถามว่าคลิปไหนคนดูเยอะ ----
+  useEffect(() => {
+    if (!awake || !clips.length) return;
     let dead = false;
 
-    // ยิงขอยอดวิว/หัวใจไปพร้อมกับนับเวลารอ — ไม่ได้ต่อคิวกัน
-    // ตัวเลขชุดนี้แคชที่ขอบเครือข่าย 60 วินาที และเป็นก้อนเดียวจบ ไม่ได้ถามทีละคลิป
-    // ถ้าดึงไม่ได้ (เน็ตสะดุด/ยังไม่มีใครดูสักคลิป) ก็ถอยไปสุ่มจากชุดที่ฝังมากับหน้า
+    // ตัวเลขชุดนี้เป็นก้อนเดียวจบ (ไม่ได้ถามทีละคลิป) ราว 1KB และแคชที่ขอบเครือข่าย 60 วิ
+    // ดึงไม่ได้ (เน็ตสะดุด / ยังไม่มีใครดูสักคลิป) ก็สุ่มจากชุดที่ฝังมากับหน้าไปตามปกติ
     const empty: { counts: VideoCounts; views: VideoViews } = { counts: {}, views: {} };
-    Promise.all([
-      fetchCounts().catch(() => empty),
-      new Promise((r) => setTimeout(r, DELAY_MS)),
-    ]).then(([cv]) => {
+    fetchCounts().catch(() => empty).then((cv) => {
       if (dead) return;
 
       // ตัวเลือก = คลิปที่ฝังมากับหน้า (ให้คลิปที่ยังไม่มีใครดูมีสิทธิ์ด้วย)
@@ -94,18 +115,27 @@ export default function HomeVideoFloat({ clips }: { clips: FloatClip[] }) {
       if (!best) return;
 
       // ประกอบเป็น ShopVideo ให้ครบรูปแบบ — ช่อง s / vw / vh ใส่ค่าตั้งต้นไว้เฉย ๆ
-      // เพราะคลิปเสิร์ฟจาก R2 แบบ HLS ซึ่งใช้แค่รหัสคลิป (ดู videoSrc ใน lib/videos.ts)
+      // เพราะรูปปกดึงจาก R2 ด้วยรหัสคลิปอย่างเดียว (ดู videoPoster ใน lib/videos.ts)
       // สามช่องนั้นเป็นของเส้นทางเก่าสมัยดึงไฟล์ mp4 จาก Shopify ซึ่งเลิกใช้แล้ว
       // ส่วน dur ไม่ได้เอาไปโชว์แล้ว (ป้ายเขียน "ดูคลิปรวม") ใบที่มาจากยอดวิวจึงใส่ 0 ได้
       setPick({ v: best, dur: dur.get(best) ?? 0, s: "", vw: 404, vh: 720 });
     });
 
     return () => { dead = true; };
-  }, [clips]);
+  }, [awake, clips]);
 
   if (!pick) return null;
 
   // หน้าแรกไม่มีแถบซื้อ มีแค่เมนูล่าง (วัดจริงบนจอมือถือได้ 59px รวมระยะหลบขอบจอ)
   // 4.5rem = 72px เหลือช่องว่างเหนือเมนูราว 13px กำลังดี ไม่ดูติดกันจนเกะกะ
-  return <ProductVideoFloat video={pick} lift="4.5rem" width={78} href="/videos/" label="ดูคลิปรวม" />;
+  return (
+    <ProductVideoFloat
+      video={pick}
+      lift="4.5rem"
+      width={78}
+      href="/videos/"
+      label="ดูคลิปรวม"
+      still
+    />
+  );
 }

@@ -28,12 +28,21 @@ export default function ProductVideoFloat({
   // ความกว้างของกล่อง — หน้าสินค้า 104px (ของเดิม)
   // หน้าแรกเล็กกว่า เพราะเป็นแค่ตัวชวนให้กดเข้าไปดูคลิปรวม ไม่ใช่ของหลักของหน้า
   width = 104,
+  // still = โชว์แค่รูปนิ่ง ยังไม่โหลดตัวคลิป (ประหยัดเน็ตลูกค้า 198KB)
+  //
+  // ⚠️ รูปนิ่ง 26KB · คลิปที่เล่นได้ 224KB — ต่างกันเกือบ 9 เท่า
+  //    คนที่เข้าหน้าแรกแล้วออกเลย (ซึ่งเป็นคนส่วนใหญ่ของทุกเว็บ) ไม่ควรโดนโหลด
+  //    คลิปทิ้งเปล่า ๆ ทั้งที่ยังไม่ทันได้มองด้วยซ้ำ
+  //    หน้าแรกจึงเริ่มด้วยรูปนิ่ง แล้วค่อยสลับเป็นคลิปตอนลูกค้าแสดงว่าสนใจจริง
+  //    (ดู HomeVideoFloat) · หน้าสินค้าไม่ใช้โหมดนี้ เพราะคลิปคือของสินค้าตัวนั้นโดยตรง
+  still = false,
 }: {
   video: ShopVideo;
   lift?: string;
   href?: string;
   label?: string;
   width?: number;
+  still?: boolean;
 }) {
   const [gone, setGone] = useState(true);   // เริ่มด้วยซ่อนไว้ กัน HTML ฝั่ง server ไม่ตรงกับ client
   const [big, setBig] = useState(false);
@@ -65,7 +74,9 @@ export default function ProductVideoFloat({
           ×
         </button>
         <Tap href={href} onOpen={() => setBig(true)}>
-          <Clip video={video} muted className="aspect-[9/16] w-full object-cover" />
+          {still ? <Still video={video} /> : (
+            <Clip video={video} muted className="aspect-[9/16] w-full object-cover" />
+          )}
           <span className="flex items-center justify-center gap-1 bg-safety py-1 text-[11px] font-semibold text-white">
             {label ?? `วิดีโอ ${durLabel(video.dur)}`}
             <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-white stroke-[2.5]">
@@ -96,6 +107,30 @@ export default function ProductVideoFloat({
         </Portal>
       )}
     </>
+  );
+}
+
+// รูปนิ่ง + ปุ่มเล่นทับ — หน้าตาเหมือนคลิปแต่ยังไม่โหลดวิดีโอ
+// ใช้รูปปกใบเดียวกับที่ตัวเล่นจะใช้ พอสลับเป็นคลิปจริงจึงไม่โหลดรูปซ้ำ (เบราว์เซอร์แคชไว้แล้ว)
+function Still({ video }: { video: ShopVideo }) {
+  return (
+    <span className="relative block aspect-[9/16] w-full bg-steel-700">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={videoPoster(video, 240)}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        className="h-full w-full object-cover"
+      />
+      <span className="absolute inset-0 flex items-center justify-center">
+        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-black/45 backdrop-blur-[1px]">
+          <svg viewBox="0 0 24 24" className="ml-0.5 h-4 w-4 fill-white">
+            <path d="M8 5l11 7-11 7z" />
+          </svg>
+        </span>
+      </span>
+    </span>
   );
 }
 
