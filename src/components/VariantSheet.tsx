@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { SHELL_W } from "@/lib/layout";
 import { useEffect, useState } from "react";
 import { addToCart, setBuyNow } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
@@ -88,7 +89,7 @@ export default function VariantSheet({
     <Portal>
     <div className="fixed inset-0 z-[70] flex items-end justify-center" role="dialog" aria-modal="true">
       <button aria-label="ปิด" className="absolute inset-0 bg-black/60" onClick={onClose} />
-      <div className="relative max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-steel-800 pb-4">
+      <div className={`relative max-h-[85vh] w-full ${SHELL_W} overflow-y-auto rounded-t-2xl bg-steel-800 pb-4`}>
         {/* หัว sheet: รูป + ราคา + สต็อก */}
         <div className="flex gap-3 p-3">
           <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-white">

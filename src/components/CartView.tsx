@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { clearBuyNow, getCart, updateQty, removeItem, type CartItem } from "@/lib/cart";
@@ -83,7 +84,7 @@ export default function CartView() {
       </section>
 
       {/* แถบสรุปยอด + ปุ่มเช็คเอาต์ — ลอยเหนือเมนูล่าง */}
-      <div className="fixed inset-x-0 bottom-[57px] z-40 mx-auto max-w-lg border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]">
+      <div className={`fixed inset-x-0 bottom-[57px] z-40 mx-auto ${SHELL_W} border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]`}>
         {/* ยอดรวมชิดขวาติดปุ่ม แบบเดียวกับหน้าสั่งซื้อและ Shopee */}
         <div className="flex items-center justify-end gap-2.5 px-3 py-2">
           <div className="min-w-0 text-right">

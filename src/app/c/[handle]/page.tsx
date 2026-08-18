@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SectionHead from "@/components/SectionHead";
+import { GRID_PRODUCTS } from "@/lib/layout";
 import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { collections, getCollection, inCollection } from "@/lib/catalog";
@@ -61,7 +62,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ han
       {items.length === 0 ? (
         <p className="px-3 py-10 text-center text-sm text-steel-300">ยังไม่มีสินค้าในหมวดนี้</p>
       ) : (
-        <div className="mt-2 grid grid-cols-2 gap-2 px-3">
+        <div className={`mt-2 grid ${GRID_PRODUCTS} gap-2 px-3`}>
           {items.map((p) => (
             <ProductCard key={p.id} product={p} />
           ))}

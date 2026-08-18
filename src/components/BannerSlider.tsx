@@ -64,10 +64,12 @@ export default function BannerSlider() {
 
   return (
     <div className="px-3 pt-2">
-      <div
-        className="relative overflow-hidden rounded-xl bg-carbon"
-        style={{ aspectRatio: `${HERO_W} / ${HALF_H}` }}
-      >
+      {/* ⚠️ สัดส่วนต้องเปลี่ยนตามจอ ไม่ใช่ค่าเดียวทุกขนาด
+          บนมือถือกว้าง 2 ต่อสูง 1 กำลังดี (สูงราว 190px)
+          แต่พอกรอบเนื้อหากว้างขึ้นเป็น 1,128px บนคอม สัดส่วนเดิมจะสูงถึง 564px
+          กินพื้นที่จนไม่เหลือที่ให้สินค้าเลย ต้องแบนลงเป็น 3.5 ต่อ 1 (สูงราว 320px)
+          รูปต้นฉบับถูกครอปด้วย object-cover อยู่แล้ว จึงไม่บิดเบี้ยว */}
+      <div className="relative aspect-[2/1] overflow-hidden rounded-xl bg-carbon lg:aspect-[7/2]">
         {slides.map((s, idx) => {
           const shown = idx === i;
           return (
@@ -85,8 +87,13 @@ export default function BannerSlider() {
               <img
                 src={half(1080, s.position)}
                 srcSet={WIDTHS.map((w) => `${half(w, s.position)} ${w}w`).join(", ")}
-                // หน้าเว็บกว้างสุด max-w-lg (512px) หักขอบซ้ายขวาอย่างละ 12px
-                sizes="(max-width: 536px) 100vw, 488px"
+                // ต้องตรงกับความกว้างจริงของกรอบเนื้อหา (ดู SHELL_W ใน lib/layout.ts)
+                // หักขอบซ้ายขวาอย่างละ 12px ออกแล้ว
+                //   มือถือ  เต็มความกว้างจอ
+                //   ≥640px  กรอบ 768px  → รูป 744px
+                //   ≥1024px กรอบ 1152px → รูป 1128px
+                // ⚠️ ใส่เลขผิดแล้วเบราว์เซอร์จะโหลดรูปเล็กเกินไปมายืด ภาพจะแตกบนคอม
+                sizes="(max-width: 536px) 100vw, (max-width: 1023px) 744px, 1128px"
                 alt={s.alt}
                 width={HERO_W}
                 height={HALF_H}

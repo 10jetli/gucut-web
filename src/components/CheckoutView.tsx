@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import QRCode from "qrcode";
@@ -805,7 +806,7 @@ function BottomBar({
   total, label, disabled, hint, onClick,
 }: { total: number; label: string; disabled?: boolean; hint?: string; onClick: () => void }) {
   return (
-    <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto max-w-lg border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]">
+    <div className={`fixed inset-x-0 bottom-0 z-[60] mx-auto ${SHELL_W} border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)]`}>
       <div className="flex items-center justify-end gap-2.5 px-3 py-2">
         <div className="min-w-0 text-right">
           <p className="text-[11px] text-steel-300">{hint ?? "ยอดรวม"}</p>

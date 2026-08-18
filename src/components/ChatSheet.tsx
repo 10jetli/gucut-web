@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { SHELL_W } from "@/lib/layout";
 import Image from "next/image";
 
 export interface ChatProduct { h: string; t: string; img?: string | null; p?: number }
@@ -78,7 +79,7 @@ export default function ChatSheet({
   return (
     <div className="fixed inset-0 z-[80] flex flex-col justify-end bg-black/40" onClick={onClose}>
       <div
-        className="mx-auto flex h-[85vh] w-full max-w-lg flex-col rounded-t-2xl bg-steel-900"
+        className={`mx-auto flex h-[85vh] w-full ${SHELL_W} flex-col rounded-t-2xl bg-steel-900`}
         onClick={(e) => e.stopPropagation()}
       >
         {/* หัวแชท */}

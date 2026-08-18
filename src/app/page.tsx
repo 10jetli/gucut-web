@@ -41,7 +41,7 @@ export default function HomePage() {
           <SectionHead title={c.t} href={`/c/${encodeURIComponent(c.h)}/`} count={c.n} />
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-1">
             {items.map((p) => (
-              <div key={p.id} className="w-36 shrink-0">
+              <div key={p.id} className="w-36 shrink-0 sm:w-40 lg:w-44">
                 <ProductCard product={p} />
               </div>
             ))}

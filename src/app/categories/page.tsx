@@ -1,5 +1,6 @@
 import Link from "next/link";
 import SectionHead from "@/components/SectionHead";
+import { GRID_CARDS } from "@/lib/layout";
 import { menuGroups } from "@/lib/catalog";
 
 export const metadata = { title: "หมวดหมู่สินค้า | GUCUT" };
@@ -15,7 +16,7 @@ export default function CategoriesPage() {
       </header>
 
       <section className="px-3 pt-3">
-        <div className="grid grid-cols-2 gap-2">
+        <div className={`grid ${GRID_CARDS} gap-2`}>
           {top.map((c) => (
             <Link
               key={c.h}
@@ -32,7 +33,7 @@ export default function CategoriesPage() {
       {[...groups.entries()].map(([group, items]) => (
         <section key={group} className="px-3 pt-6">
           <SectionHead title={group} bare />
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid ${GRID_CARDS} gap-2`}>
             {items.map((c) => (
               <Link
                 key={c.h}

@@ -3,6 +3,7 @@
 // หน้าค้นหา — โหลดดัชนีครั้งเดียว แล้วค้นในเครื่อง ผลขึ้นทันทีทุกตัวอักษรที่พิมพ์
 // รองรับ: รหัสอะไหล่ (00627), รุ่นเครื่อง (5200, MS180), ชื่อไทย (สปริง คาร์บู), SKU ตัวเลือก (00894-22T)
 import Image from "next/image";
+import { GRID_PRODUCTS } from "@/lib/layout";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Stars from "./Stars";
@@ -159,7 +160,7 @@ export default function SearchClient() {
             </div>
           )}
 
-          <div className="grid grid-cols-2 gap-2">
+          <div className={`grid ${GRID_PRODUCTS} gap-2`}>
             {results.slice(0, shown).map((e) => (
               <Link key={e.h} href={`/products/${encodeURIComponent(e.h)}`}
                 className="overflow-hidden rounded-sm border border-steel-700 bg-white">

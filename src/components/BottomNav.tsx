@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { SHELL_W } from "@/lib/layout";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { cartCount } from "@/lib/cart";
@@ -32,7 +33,7 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] backdrop-blur">
-      <div className="mx-auto flex max-w-lg">
+      <div className={`mx-auto flex ${SHELL_W}`}>
         {items.map(({ href, label, icon: Icon }) => {
           const active = pathname === href;
           return (

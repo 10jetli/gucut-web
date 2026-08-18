@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import BottomNav from "@/components/BottomNav";
 import SiteFooter from "@/components/SiteFooter";
+import { SHELL_W } from "@/lib/layout";
 import PwaSetup from "@/components/PwaSetup";
 import PixelSetup from "@/components/PixelSetup";
 import LiveBeacon from "@/components/LiveBeacon";
@@ -32,7 +33,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {!admin && <PixelSetup />}
       {/* นับผู้เข้าชม — หน้าร้านเท่านั้น ไม่นับตัวเองตอนเข้าหลังร้าน */}
       {!admin && <LiveBeacon />}
-      <div className={"mx-auto min-h-screen max-w-lg" + (admin ? "" : " pb-20")}>
+      <div className={`mx-auto min-h-screen ${SHELL_W}` + (admin ? "" : " pb-20")}>
         {children}
         {!bare && <SiteFooter />}
       </div>

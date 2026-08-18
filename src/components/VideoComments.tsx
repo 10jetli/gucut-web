@@ -3,6 +3,7 @@
 // แผ่นคอมเมนต์ของคลิป — เลื่อนขึ้นมาจากล่างจอแบบ TikTok
 // ร้านลบคอมเมนต์ที่ไม่เหมาะสมได้จากหลังร้าน (DELETE /api/social)
 import { useEffect, useRef, useState } from "react";
+import { SHELL_W } from "@/lib/layout";
 import {
   agoLabel, fetchComments, myName, postComment, setMyName, type VideoComment,
 } from "@/lib/social";
@@ -54,7 +55,7 @@ export default function VideoComments({
     <div className="fixed inset-0 z-[75] flex items-end justify-center" role="dialog" aria-modal="true">
       <button aria-label="ปิด" className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-      <div className="relative flex h-[72dvh] w-full max-w-lg flex-col rounded-t-2xl bg-white">
+      <div className={`relative flex h-[72dvh] w-full ${SHELL_W} flex-col rounded-t-2xl bg-white`}>
         {/* หัวแผ่น */}
         <div className="relative shrink-0 border-b border-steel-700 py-3 text-center">
           <span aria-hidden className="absolute left-1/2 top-1.5 h-1 w-10 -translate-x-1/2 rounded-full bg-steel-600" />

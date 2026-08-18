@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
 import SectionHead from "@/components/SectionHead";
 import { useEffect, useState, type ReactNode } from "react";
@@ -206,7 +207,7 @@ export default function ProductDetail({
       {clip && <ProductVideoFloat video={clip} />}
 
       {/* แถบซื้อติดล่างจอ — แชท | ตะกร้า | ซื้อเลย+ราคา */}
-      <div className="fixed inset-x-0 bottom-0 z-[60] mx-auto flex max-w-lg items-stretch border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]">
+      <div className={`fixed inset-x-0 bottom-0 z-[60] mx-auto flex ${SHELL_W} items-stretch border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]`}>
         <button
           onClick={() => setChat(true)}
           className="flex w-[68px] shrink-0 flex-col items-center justify-center gap-0.5 border-r border-steel-700 py-1.5 text-safety"
