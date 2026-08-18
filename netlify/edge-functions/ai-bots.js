@@ -23,6 +23,66 @@
 //    เคยลืม Google-Extended แล้วมันหลุดตะแกรงไปทั้งตัว (จับไม่ได้เลย)
 const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|\bLine\/\d/i;
 
+// ---------------------------------------------------------------------------
+// จำไว้ในหน่วยความจำของเครื่องที่รันอยู่ + รวบเขียนทีเดียว
+//
+// วัดของจริงบน gucut.com 18 ส.ค. 2569 แยกทีละขั้นด้วย user-agent สามแบบ
+//   คนทั่วไป (ไม่เข้า edge เลย)              218 ms
+//   ผ่านตะแกรงแต่ไม่เขียนข้อมูล                218 ms  ← โหลดโมดูลไม่มีค่าใช้จ่ายเลย
+//   เขียนข้อมูลจริง                          778 ms  ← ตัวเขียนกินไป 560 ms เต็ม ๆ
+// (ที่เก็บข้อมูลอยู่ us-east-1 เขียนทีต้องข้ามมหาสมุทร และ waitUntil รอให้เสร็จก่อนตอบ)
+//
+// สองชั้นที่ช่วยลดจำนวนครั้งที่ต้องเขียน
+//   1. จำว่าเขียนไปแล้ว — บอตวนอ่านหน้าเดิมซ้ำ (ซึ่งเกิดบ่อยมาก) ไม่เสียเวลาเลย
+//   2. รวบไว้ครบ BATCH ค่อยเขียนทีเดียว — เฉลี่ยแล้วเสียเวลาแค่ 1 ใน BATCH คำขอ
+//
+// ⚠️ ยอมแลก: ถ้าเครื่องที่รันอยู่ถูกปิดตอนยังรวบไม่ครบ รายการที่ค้างจะหาย
+//    รับได้เพราะข้อมูลนี้ใช้ดูแนวโน้ม ไม่ใช่ตัวเลขบัญชี — และบอตกลับมาอ่านใหม่เรื่อย ๆ
+//    สำคัญกว่ามากคือ "ห้ามถ่วง Googlebot" เพราะ Google ลดจำนวนหน้าที่ไล่เก็บเมื่อเว็บตอบช้า
+// ---------------------------------------------------------------------------
+const BATCH = 5;
+const MAX_REMEMBER = 5000;      // กันหน่วยความจำบวมถ้าบอตไล่เก็บทั้งเว็บ
+
+const written = new Set();
+let pending = [];
+
+export default async function handler(request, context) {
+  try {
+    const ua = request.headers.get("user-agent") || "";
+    if (!MAYBE_BOT.test(ua)) return;      // คนทั่วไป — จบตรงนี้
+
+    const { identify, seen } = await import("../lib/aibots.mjs");
+    const bot = identify(ua);
+    if (!bot) return;                      // บอตที่ไม่รู้จัก ไม่ต้องจด
+
+    const path = new URL(request.url).pathname;
+    const key = `${bot.name}|${path}`;
+    if (written.has(key)) return;          // เคยจดแล้ว — ไม่ต้องเสียเวลาอีก
+    if (written.size >= MAX_REMEMBER) written.clear();
+    written.add(key);
+
+    pending.push([bot.name, path]);
+    if (pending.length < BATCH) return;    // ยังไม่ถึงคิวเขียน — ตอบทันที
+
+    const batch = pending;
+    pending = [];
+    const job = Promise.all(batch.map(([b, p]) => seen(b, p).catch(() => {})));
+    if (typeof context?.waitUntil === "function") context.waitUntil(job);
+  } catch {
+    // จดไม่ได้ก็ไม่เป็นไร ห้ามให้กระทบการเสิร์ฟหน้าเว็บ
+  }
+  // คืน undefined เสมอ = ให้ Netlify เสิร์ฟของเดิมต่อไปตามปกติ
+}
+
+export const config ข้างล่าง ไม่ได้อยู่ใน netlify.toml)
+
+// ตะแกรงหยาบ ๆ ให้คนทั่วไปผ่านฉลุย — ต้องกว้างกว่ารายชื่อจริงใน lib/aibots.mjs เสมอ
+// (ตัวจริงค่อยไปแยกว่าเป็นบอตตัวไหนอีกที)
+// ⚠️ ชื่อที่ไม่มีคำว่า bot อยู่ในตัว ต้องเขียนเพิ่มเองทุกตัว
+//    Google-Extended · anthropic-ai · meta-externalagent · Bytespider ฯลฯ
+//    เคยลืม Google-Extended แล้วมันหลุดตะแกรงไปทั้งตัว (จับไม่ได้เลย)
+const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|\bLine\/\d/i;
+
 export default async function handler(request, context) {
   try {
     const ua = request.headers.get("user-agent") || "";
