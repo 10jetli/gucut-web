@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { titleSuffix } from "@/lib/shop";
 import SocialLink from "@/components/SocialLink";
 
 export const metadata: Metadata = {
-  title: "ผูกบัญชี | GUCUT",
+  title: titleSuffix("ผูกบัญชี"),
   robots: { index: false, follow: false },
 };
 

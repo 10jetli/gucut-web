@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { BRAND, titleSuffix } from "@/lib/shop";
 import { abs, breadcrumbLd, ldScript, videoLd } from "@/lib/seo";
 import { videoForProduct } from "@/lib/videos";
 import ProductDetail from "@/components/ProductDetail";
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   const p = getProduct(decodeURIComponent(raw));
   if (!p) return {};
   return {
-    title: `${p.t} | GUCUT`,
+    title: titleSuffix(`${p.t}`),
     description: p.d.slice(0, 160) || p.t,
     alternates: { canonical: `/products/${encodeURIComponent(p.h)}/` },
     openGraph: {
@@ -58,7 +59,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
     description: p.d.slice(0, 300) || p.t,
     image: p.imgs.slice(0, 5),
     sku: p.sku || undefined,
-    brand: { "@type": "Brand", name: /KINGKONG|KING KONG/i.test(p.t) ? "KINGKONG" : /NEWWAVE/i.test(p.t) ? "NEWWAVE" : "GUCUT" },
+    brand: { "@type": "Brand", name: /KINGKONG|KING KONG/i.test(p.t) ? "KINGKONG" : /NEWWAVE/i.test(p.t) ? "NEWWAVE" : BRAND.name },
     offers: {
       "@type": "AggregateOffer",
       priceCurrency: "THB",
@@ -66,7 +67,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
       highPrice: p.pmax,
       offerCount: Math.max(1, p.v.length),
       availability: p.st > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
-      seller: { "@type": "Organization", name: "GUCUT" },
+      seller: { "@type": "Organization", name: BRAND.name },
     },
     // ดาวใต้ลิงก์ในผลค้นหา Google — ใช้คะแนนจริงจาก Shopee/Lazada/TikTok
     ...(p.rv
@@ -95,7 +96,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
   const clipLd = clip
     ? videoLd({
         id: clip.v,
-        name: `${p.t} — คลิปจากหน้าร้าน GUCUT`,
+        name: `${p.t} — คลิปจากหน้าร้าน ${BRAND.name}`,
         description: p.d.slice(0, 200) || p.t,
         thumb: abs(`/img/${p.img?.split("/").pop() ?? ""}`),
         dur: clip.dur,

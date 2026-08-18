@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
+import { BRAND, titleSuffix } from "@/lib/shop";
 import Link from "next/link";
 import PolicyPage, { Sec, List } from "@/components/PolicyPage";
 import { RETURN_DAYS, SHOP } from "@/lib/shop";
 
 export const metadata: Metadata = {
-  title: "เงื่อนไขการใช้บริการ | GUCUT",
+  title: titleSuffix("เงื่อนไขการใช้บริการ"),
   description:
-    "เงื่อนไขการสั่งซื้อ การชำระเงิน การจัดส่ง การคืนสินค้า และการรับประกัน ของร้าน GUCUT",
+    `เงื่อนไขการสั่งซื้อ การชำระเงิน การจัดส่ง การคืนสินค้า และการรับประกัน ของร้าน ${BRAND.name}`,
 };
 
 // ตัวเลขค่าส่ง/ระยะเวลาส่ง ไม่เขียนซ้ำในหน้านี้ — ของจริงอยู่หัวไฟล์ CheckoutView.tsx

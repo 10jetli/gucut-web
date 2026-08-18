@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BRAND, titleSuffix } from "@/lib/shop";
 import Image from "next/image";
 import Link from "next/link";
 import { articles, thaiDate } from "@/lib/articles";
@@ -6,9 +7,9 @@ import { articles, thaiDate } from "@/lib/articles";
 // หน้ารวมบทความ — ตั้งใจ "ไม่ใส่ไว้ในเมนู" ตามที่เจ้าของร้านสั่ง
 // มีไว้ให้ Google เก็บ (อยู่ใน sitemap) และให้แต่ละบทความลิงก์หากันเอง
 export const metadata: Metadata = {
-  title: "บทความเรื่องเลื่อยยนต์ | GUCUT",
+  title: titleSuffix("บทความเรื่องเลื่อยยนต์"),
   description:
-    "รวมบทความเรื่องเลื่อยยนต์ — วิธีเลือก วิธีดูแล อาการเสียที่พบบ่อย กฎหมายเลื่อยยนต์ และเรื่องน่ารู้จากช่างที่ร้าน GUCUT",
+    `รวมบทความเรื่องเลื่อยยนต์ — วิธีเลือก วิธีดูแล อาการเสียที่พบบ่อย กฎหมายเลื่อยยนต์ และเรื่องน่ารู้จากช่างที่ร้าน ${BRAND.name}`,
 };
 
 export default function ArticlesPage() {

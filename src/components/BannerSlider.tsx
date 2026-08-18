@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { BRAND } from "@/lib/shop";
 import { useEffect, useState } from "react";
 
 // ---------------------------------------------------------------------------
@@ -45,7 +46,7 @@ function half(w: number, position: "top" | "bottom") {
 const slides = [
   {
     position: "top",
-    alt: "โชว์รูมเลื่อยยนต์ NEWWAVE ของแท้ ร้าน GUCUT",
+    alt: `โชว์รูมเลื่อยยนต์ NEWWAVE ของแท้ ร้าน ${BRAND.name}`,
   },
   {
     position: "bottom",

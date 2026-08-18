@@ -1,9 +1,10 @@
 import type { Viewport } from "next";
+import { titleSuffix } from "@/lib/shop";
 import VideoFeed from "@/components/VideoFeed";
 import { feedItems, FIRST_PAGE } from "@/lib/feed";
 import { VIDEO_HOST, VIDEO_PREFIX } from "@/lib/videos";
 
-export const metadata = { title: "วิดีโอรีวิว | GUCUT" };
+export const metadata = { title: titleSuffix("วิดีโอรีวิว") };
 
 // ---------------------------------------------------------------------------
 // ⚠️ หน้านี้หน้าเดียวที่ล็อกไม่ให้ซูมจอ — หน้าอื่นทั้งเว็บซูมได้ตามปกติ

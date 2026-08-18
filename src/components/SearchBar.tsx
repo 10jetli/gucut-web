@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BRAND } from "@/lib/shop";
 import HeaderChat from "./HeaderChat";
 import ScanButton from "./ScanButton";
 
@@ -11,7 +12,7 @@ export default function SearchBar() {
         {/* โลโก้ตามอาร์ตเวิร์กจริง: GU ส้ม + CUT เทา บนแถบดำ */}
         <Link
           href="/"
-          aria-label="GUCUT หน้าแรก"
+          aria-label={`${BRAND.name} หน้าแรก`}
           className="shrink-0 font-heading text-[19px] font-extrabold italic leading-none tracking-tight"
         >
           <span className="text-safety">GU</span>

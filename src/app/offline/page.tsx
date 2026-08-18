@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import { titleSuffix } from "@/lib/shop";
 import Link from "next/link";
 
 // หน้าที่ขึ้นตอนเน็ตหลุด — service worker จะหยิบหน้านี้มาแสดงแทนจอขาว
 export const metadata: Metadata = {
-  title: "ออฟไลน์ | GUCUT",
+  title: titleSuffix("ออฟไลน์"),
   robots: { index: false, follow: false },
 };
 

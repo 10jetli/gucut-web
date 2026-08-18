@@ -4,6 +4,7 @@
 // ตัวเลขใต้ปุ่มมาจาก /api/social (ทุกคนเห็นเลขเดียวกัน)
 // ส่วน "ฉันกดไปแล้วหรือยัง" เก็บในเครื่องลูกค้า กดได้เลยไม่ต้องล็อกอิน
 import Link from "next/link";
+import { BRAND } from "@/lib/shop";
 import { useState } from "react";
 import { shortCount, toggleLike, toggleSave } from "@/lib/social";
 
@@ -38,7 +39,7 @@ export default function VideoActions({
   const share = async () => {
     const url = `${window.location.origin}/videos/?v=${id}`;
     try {
-      if (navigator.share) { await navigator.share({ title: "คลิปจากร้าน GUCUT", url }); return; }
+      if (navigator.share) { await navigator.share({ title: `คลิปจากร้าน ${BRAND.name}`, url }); return; }
       await navigator.clipboard.writeText(url);
       onToast("คัดลอกลิงก์คลิปแล้ว");
     } catch {

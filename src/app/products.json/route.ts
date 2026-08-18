@@ -6,6 +6,7 @@
 //
 // ใช้กับงานอื่นได้อีก: ทำฟีดเข้า Google Merchant / Facebook Catalog
 import { products, sellable } from "@/lib/catalog";
+import { BRAND } from "@/lib/shop";
 import { SITE_URL as SITE } from "@/lib/site";
 
 export const dynamic = "force-static";
@@ -26,7 +27,7 @@ export function GET() {
   }));
 
   return Response.json({
-    store: "GUCUT",
+    store: BRAND.name,
     about: "เลื่อยยนต์ NEWWAVE / KingKong ของแท้ โซ่ บาร์ และอะไหล่แยกชิ้น ส่งทั่วไทย",
     site: SITE,
     currency: "THB",

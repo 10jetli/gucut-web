@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { BRAND } from "@/lib/shop";
 import "./globals.css";
 import Shell from "@/components/Shell";
 import { SITE_URL as SITE } from "@/lib/site";
@@ -6,11 +7,11 @@ import { VIDEO_HOST } from "@/lib/videos";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE),
-  title: "GUCUT — เลื่อยยนต์ NEWWAVE / KingKong ของแท้",
+  title: `${BRAND.name} — ${BRAND.tagline}`,
   description:
     "ร้าน GUCUT ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่ บาร์ อะไหล่ครบทุกรุ่น ส่งทั่วไทย เก็บเงินปลายทางได้",
   manifest: "/manifest.webmanifest",
-  appleWebApp: { capable: true, title: "GUCUT", statusBarStyle: "black-translucent" },
+  appleWebApp: { capable: true, title: BRAND.name, statusBarStyle: "black-translucent" },
   // iOS ใช้ apple-touch-icon เป็นไอคอนบนหน้าจอโฮม ไม่ได้อ่านจาก manifest
   icons: { icon: "/icon-192.png", apple: "/icon-192.png" },
 };

@@ -3,6 +3,7 @@
 // หน้าบัญชีของฉัน — /account/
 // ยังไม่ล็อกอินก็เข้าดูได้ (ร้านไม่บังคับล็อกอินก่อนสั่งซื้อ) แต่จะมีปุ่มชวนเข้าสู่ระบบ
 import Link from "next/link";
+import { BRAND } from "@/lib/shop";
 import { useEffect, useState } from "react";
 import ChatSheet from "@/components/ChatSheet";
 import { cachedUser, fetchMe, logout, saveProfile, type Addr, type User } from "@/lib/account";
@@ -192,7 +193,7 @@ export default function AccountHome() {
         )}
 
         <p className="py-4 text-center text-[11px] text-ink-300">
-          GUCUT · เลื่อยยนต์ NEWWAVE / KingKong ของแท้
+          {BRAND.name} · {BRAND.tagline}
         </p>
       </div>
 

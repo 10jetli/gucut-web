@@ -5,6 +5,7 @@
 //
 // ปุ่มเข้าสู่ระบบด้วยบัญชีอื่น: เปิด/ปิดรายเจ้าด้วย env — ดูตรง SOCIAL ด้านล่าง
 import Link from "next/link";
+import { BRAND } from "@/lib/shop";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { login, register } from "@/lib/account";
@@ -118,7 +119,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
           <p className="mb-1 font-medium text-ink">{help.title}</p>
           <p>{help.body}</p>
           <Link href="/account/" className="mt-2 inline-block font-medium text-safety underline">
-            ติดต่อร้าน GUCUT
+            ติดต่อร้าน {BRAND.name}
           </Link>
         </div>
       )}
@@ -304,7 +305,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
         <p className="mb-7 mt-auto pt-10 text-center text-[11.5px] leading-relaxed text-ink-300">
           โดยการ{isLogin ? "เข้าสู่ระบบ" : "สมัครสมาชิก"} ฉันได้อ่านและยอมรับ{" "}
           <Link href="/policy/terms/" className="text-safety">เงื่อนไขการใช้บริการ</Link>
-          <br />และ <Link href="/policy/privacy/" className="text-safety">นโยบายความเป็นส่วนตัว</Link> ของ GUCUT
+          <br />และ <Link href="/policy/privacy/" className="text-safety">นโยบายความเป็นส่วนตัว</Link> ของ {BRAND.name}
         </p>
       </div>
 

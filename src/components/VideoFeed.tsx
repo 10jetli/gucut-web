@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { BRAND } from "@/lib/shop";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
@@ -666,7 +667,7 @@ const Slide = memo(function Slide({
 
       {/* ป้ายชื่อคลิป + ลิงก์สินค้า overlay ด้านล่าง — เว้นขวาไว้ให้แถบปุ่ม */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pr-16 pt-14">
-        <p className="clamp-2 text-sm font-medium drop-shadow">{v.t ?? "คลิปจากหน้าร้าน GUCUT"}</p>
+        <p className="clamp-2 text-sm font-medium drop-shadow">{v.t ?? `คลิปจากหน้าร้าน ${BRAND.name}`}</p>
         {p ? (
           <Link
             href={`/products/${encodeURIComponent(p.h)}/`}

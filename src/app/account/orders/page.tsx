@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { titleSuffix } from "@/lib/shop";
 import OrdersView from "@/components/OrdersView";
 
 export const metadata: Metadata = {
-  title: "การซื้อของฉัน | GUCUT",
+  title: titleSuffix("การซื้อของฉัน"),
   robots: { index: false, follow: true },
 };
 

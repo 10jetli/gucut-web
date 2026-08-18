@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { titleSuffix } from "@/lib/shop";
 import SectionHead from "@/components/SectionHead";
 import { GRID_PRODUCTS } from "@/lib/layout";
 import { notFound } from "next/navigation";
@@ -17,7 +18,7 @@ export async function generateMetadata({ params }: { params: Promise<{ handle: s
   const c = getCollection(decodeURIComponent(raw));
   return c
     ? {
-        title: `${c.t} — GUCUT`,
+        title: titleSuffix(`${c.t}`),
         description: `${c.t} ของแท้ ${c.n} รายการ ราคาส่ง มีสต็อกพร้อมส่งทั่วไทย | GUCUT`,
         alternates: { canonical: `/c/${encodeURIComponent(c.h)}/` },
       }

@@ -1,8 +1,9 @@
 import type { Metadata } from "next";
+import { titleSuffix } from "@/lib/shop";
 import AuthForm from "@/components/AuthForm";
 
 export const metadata: Metadata = {
-  title: "สมัครสมาชิก | GUCUT",
+  title: titleSuffix("สมัครสมาชิก"),
   robots: { index: false, follow: true },
 };
 

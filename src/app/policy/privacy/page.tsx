@@ -1,12 +1,13 @@
 import type { Metadata } from "next";
+import { BRAND, titleSuffix } from "@/lib/shop";
 import PolicyPage, { Sec, List } from "@/components/PolicyPage";
 import { SHOP } from "@/lib/shop";
 import TrackingNotice from "@/components/TrackingNotice";
 
 export const metadata: Metadata = {
-  title: "นโยบายความเป็นส่วนตัว | GUCUT",
+  title: titleSuffix("นโยบายความเป็นส่วนตัว"),
   description:
-    "ร้าน GUCUT เก็บข้อมูลอะไรของลูกค้าบ้าง เอาไปใช้ทำอะไร ส่งต่อให้ใคร เก็บนานแค่ไหน และลูกค้าขอดู แก้ไข หรือลบข้อมูลของตัวเองได้อย่างไร",
+    `ร้าน ${BRAND.name} เก็บข้อมูลอะไรของลูกค้าบ้าง เอาไปใช้ทำอะไร ส่งต่อให้ใคร เก็บนานแค่ไหน และลูกค้าขอดู แก้ไข หรือลบข้อมูลของตัวเองได้อย่างไร`,
 };
 
 // เนื้อหาต้องตรงกับที่โค้ดทำจริง — แก้ระบบเมื่อไหร่ต้องกลับมาแก้หน้านี้ด้วย

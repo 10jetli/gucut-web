@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { BRAND, titleSuffix } from "@/lib/shop";
 import Link from "next/link";
 import { faqLd, ldScript } from "@/lib/seo";
 
@@ -10,10 +11,10 @@ import { faqLd, ldScript } from "@/lib/seo";
 //    และความน่าเชื่อถือของร้านจะพังยาว
 
 export const metadata: Metadata = {
-  title: "คำถามที่พบบ่อย เรื่องเลื่อยยนต์ | GUCUT",
+  title: titleSuffix("คำถามที่พบบ่อย เรื่องเลื่อยยนต์"),
   description:
     "เลื่อยยนต์ต้องจดทะเบียนไหม · เลือกขนาดบาร์และโซ่ยังไง · ค่าส่งเท่าไหร่ · จ่ายเงินปลายทางได้ไหม · " +
-    "รับประกันและคืนสินค้าอย่างไร — รวมคำถามที่ลูกค้าถามร้าน GUCUT บ่อยที่สุด",
+    `รับประกันและคืนสินค้าอย่างไร — รวมคำถามที่ลูกค้าถามร้าน ${BRAND.name} บ่อยที่สุด`,
   alternates: { canonical: "/faq/" },
 };
 
@@ -24,7 +25,7 @@ const QA: { q: string; a: string; more?: { t: string; href: string } }[] = [
     more: { t: "อ่านบทความเต็มเรื่องกฎหมายเลื่อยยนต์", href: "/articles/" },
   },
   {
-    q: "ร้าน GUCUT ขายอะไรบ้าง",
+    q: `ร้าน ${BRAND.name} ขายอะไรบ้าง`,
     a: "ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่เลื่อยทุกขนาด บาร์ตั้งแต่ 11.5 ถึง 36 นิ้ว และอะไหล่แยกชิ้นกว่า 2,400 รายการ ครอบคลุมทั้งคาร์บูเรเตอร์ ลูกสูบ กระบอกสูบ คลัตช์ ชุดสตาร์ท กรองอากาศ และท่อไอเสีย",
   },
   {

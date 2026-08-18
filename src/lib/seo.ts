@@ -6,6 +6,7 @@
 // ทั้งสามอย่างกินข้อมูลชุดเดียวกัน: บอกให้ชัดว่า "นี่คือใคร ขายอะไร ราคาเท่าไหร่
 // มีของไหม ใครรีวิวว่ายังไง" ในรูปแบบที่เครื่องอ่านออก ไม่ใช่แค่ตัวหนังสือสวย ๆ
 import { SHOP } from "./shop";
+import { BRAND } from "./shop";
 import { SITE_URL as SITE } from "./site";
 
 export const abs = (path: string) => `${SITE}${path.startsWith("/") ? path : `/${path}`}`;
@@ -15,11 +16,11 @@ export const organizationLd = () => ({
   "@context": "https://schema.org",
   "@type": "Store",
   "@id": abs("/#store"),
-  name: "GUCUT",
-  alternateName: ["กูคัท", "GUCUT เลื่อยยนต์"],
+  name: BRAND.name,
+  alternateName: BRAND.aka,
   url: SITE,
   description:
-    "ร้าน GUCUT ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่ บาร์ และอะไหล่ครบทุกรุ่น " +
+    `ร้าน ${BRAND.name} ขายเลื่อยยนต์ NEWWAVE และ KingKong ของแท้ พร้อมโซ่ บาร์ และอะไหล่ครบทุกรุ่น ` +
     "ส่งทั่วไทยด้วย Flash Express เก็บเงินปลายทางได้ มีอะไหล่แยกชิ้นกว่า 2,400 รายการ",
   image: abs("/img/cover-all.jpg"),
   logo: abs("/icon-512.png"),
@@ -33,7 +34,7 @@ export const organizationLd = () => ({
   // บอกว่ามีไฟล์ข้อมูลแบบเครื่องอ่านให้ใช้ ไม่ต้องไล่อ่านทีละหน้า
   subjectOf: {
     "@type": "DataFeed",
-    name: "รายการสินค้าทั้งหมดของ GUCUT",
+    name: `รายการสินค้าทั้งหมดของ ${BRAND.name}`,
     url: abs("/products.json"),
     encodingFormat: "application/json",
   },
