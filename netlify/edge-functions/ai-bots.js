@@ -1,0 +1,50 @@
+// จดว่าบอตของ AI / เครื่องค้นหา มาอ่านหน้าไหนบ้าง
+//
+// ต้องเป็น edge function เพราะเว็บนี้เป็นไฟล์นิ่ง (static export) — คำขอของบอต
+// ไม่เคยวิ่งผ่านโค้ดฝั่งเราเลย และบอตไม่รัน JavaScript ตัวนับคนเข้าเว็บจึงมองไม่เห็น
+// นี่คือข้อมูลชุดเดียวกับที่แอป Vizby AI บน Shopify คิดเงินรายเดือนเพื่อทำให้
+//
+// ⚠️ ตัวนี้ทำงานกับ "ทุกคำขอหน้าเว็บ" ห้ามทำอะไรหนักเด็ดขาด
+//    คนทั่วไป: เทียบ user-agent ครั้งเดียวแล้วปล่อยผ่านทันที
+//    ไม่โหลดโมดูล ไม่แตะที่เก็บข้อมูล ไม่หน่วงหน้าเว็บ
+//
+// ⚠️ ห้ามให้ไฟล์นี้ throw ออกไปเด็ดขาด — edge function ที่พังทำให้ทั้งเว็บขึ้น 500
+//    จึงเรียกโมดูลแบบ dynamic import "ข้างใน" try เสมอ
+//    ถ้าวันหนึ่ง @netlify/blobs ใช้ใน edge ไม่ได้ ผลคือแค่ "ไม่มีข้อมูลบอต"
+//    ไม่ใช่ "เว็บล่ม" — ถ้า import ไว้ข้างบนไฟล์ ความผิดพลาดจะเกิดก่อนถึง try แล้วเว็บตาย
+//
+// ปิดตัวนี้ยังไง: ลบไฟล์นี้ทิ้งแล้ว deploy
+//                (ตั้งค่าอยู่ใน export const config ข้างล่าง ไม่ได้อยู่ใน netlify.toml)
+
+// ตะแกรงหยาบ ๆ ให้คนทั่วไปผ่านฉลุย — ต้องกว้างกว่ารายชื่อจริงใน lib/aibots.mjs เสมอ
+// (ตัวจริงค่อยไปแยกว่าเป็นบอตตัวไหนอีกที)
+// ⚠️ ชื่อที่ไม่มีคำว่า bot อยู่ในตัว ต้องเขียนเพิ่มเองทุกตัว
+//    Google-Extended · anthropic-ai · meta-externalagent · Bytespider ฯลฯ
+//    เคยลืม Google-Extended แล้วมันหลุดตะแกรงไปทั้งตัว (จับไม่ได้เลย)
+const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|\bLine\/\d/i;
+
+export default async function handler(request) {
+  try {
+    const ua = request.headers.get("user-agent") || "";
+    if (!MAYBE_BOT.test(ua)) return;      // คนทั่วไป — จบตรงนี้
+
+    const { identify, seen } = await import("../lib/aibots.mjs");
+    const bot = identify(ua);
+    if (!bot) return;                      // บอตที่ไม่รู้จัก ไม่ต้องจด
+
+    await seen(bot.name, new URL(request.url).pathname);
+  } catch {
+    // จดไม่ได้ก็ไม่เป็นไร ห้ามให้กระทบการเสิร์ฟหน้าเว็บ
+  }
+  // คืน undefined เสมอ = ให้ Netlify เสิร์ฟของเดิมต่อไปตามปกติ
+}
+
+export const config = {
+  path: "/*",
+  // ไม่ต้องดักไฟล์ที่บอตไม่ได้เอาไปทำอะไร — ลดจำนวนครั้งที่ทำงานลงมาก
+  excludedPath: [
+    "/_next/*", "/img/*", "/rv/*", "/rv-img/*", "/rv-video/*", "/art/*", "/model/*", "/api/*",
+    "/*.png", "/*.jpg", "/*.jpeg", "/*.webp", "/*.avif", "/*.svg", "/*.ico",
+    "/*.css", "/*.js", "/*.bin", "/*.m3u8", "/*.mp4",
+  ],
+};
