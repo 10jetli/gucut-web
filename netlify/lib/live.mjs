@@ -10,8 +10,10 @@
 //      l/<นาที>/<รหัสผู้ชม>          → ใครออนไลน์อยู่ (เก็บหน้าที่ดูไว้ในเนื้อ)
 //      v/<วันที่>/<รหัสผู้ชม>         → ใครเข้าเว็บวันไหน
 //      c/<วันที่>/<ประเทศ>/<รหัสผู้ชม> → ใครมาจากประเทศไหน (นับคีย์ต่อประเทศ ไม่ต้องอ่านเนื้อ)
+//      s/<วันที่>/<ช่องทาง>/<รหัสผู้ชม> → มาจากช่องทางไหน (Google · Facebook · LINE · ChatGPT ฯลฯ)
 //    เขียนทับคีย์เดิมได้ไม่เป็นไร เพราะเราสนแค่ "มีคีย์นี้ไหม" ไม่ใช่ค่าในนั้น
 import { getStore } from "@netlify/blobs";
+import { channelKind, channelLabel, classify } from "./channels.mjs";
 
 const store = () => getStore({ name: "gucut-live", consistency: "eventual" });
 
@@ -28,18 +30,30 @@ const safe = (v, max = 80) => String(v ?? "").replace(/[^\w\-./]/g, "").slice(0,
  * บันทึกว่ามีคนเปิดหน้านี้ — เรียกจากหน้าเว็บทุกครั้งที่เปลี่ยนหน้า
  * @param cc รหัสประเทศ 2 ตัว จาก Netlify (context.geo) — ไม่ต้องพึ่งบริการภายนอก
  */
-export async function ping(vid, path, cc) {
+export async function ping(vid, path, cc, src, selfHost) {
   const s = store();
   const id = safe(vid, 40);
   if (!id) return;
   const p = String(path || "/").slice(0, 120);
   const day = dayOf();
   const country = /^[A-Za-z]{2}$/.test(cc || "") ? cc.toUpperCase() : "ZZ";   // ZZ = ไม่รู้
-  await Promise.allSettled([
+  const jobs = [
     s.setJSON(`l/${minuteOf()}/${id}`, { p }),
     s.setJSON(`v/${day}/${id}`, { p }),
     s.setJSON(`c/${day}/${country}/${id}`, { p }),
-  ]);
+  ];
+
+  // ⚠️ ช่องทางถูกส่งมาแค่ "ครั้งแรกของการเข้าเว็บรอบนั้น" เท่านั้น
+  //    หน้าถัด ๆ ไปเป็นการเดินภายในเว็บเราเอง ต้นทางจะกลายเป็น gucut.com ซึ่งไม่มีความหมาย
+  //    และการเขียนทุกหน้าจะเพิ่มภาระเป็น 4 ครั้งต่อการเปิดหนึ่งหน้าโดยไม่ได้อะไรเพิ่ม
+  if (src) {
+    // ⚠️ ห้ามใช้ safe() ตัวเดียวกับรหัสผู้ชม — มันอนุญาต "/" ซึ่งจะทำให้คีย์แตกเป็นชั้นเกิน
+    //    และมันตัด "~" ทิ้ง ซึ่งเราใช้แทนจุดในชื่อเว็บอื่น (web~pantip~com)
+    const ch = String(classify(src, selfHost)).replace(/[^\w.~-]/g, "").slice(0, 40);
+    if (ch) jobs.push(s.setJSON(`s/${day}/${ch}/${id}`, 1));
+  }
+
+  await Promise.allSettled(jobs);
 }
 
 async function keysWithPrefix(s, prefix) {
@@ -96,7 +110,28 @@ export async function stats() {
     byCountry.set(cc, (byCountry.get(cc) || 0) + 1);
   }
 
+  // มาจากช่องทางไหนบ้าง — อ่านทีเดียวแล้วแยกเป็น "วันนี้" กับ "7 วัน" (นับคีย์อย่างเดียว)
+  const week = new Set();
+  for (let i = 0; i < 7; i++) week.add(dayOf(now - i * 86400000));
+  const skeys = await keysWithPrefix(s, "s/");
+  const chToday = new Map();
+  const chWeek = new Map();
+  for (const k of skeys) {
+    const [, d, ch] = k.split("/");
+    if (!d || !ch) continue;
+    if (week.has(d)) chWeek.set(ch, (chWeek.get(ch) || 0) + 1);
+    if (d === today) chToday.set(ch, (chToday.get(ch) || 0) + 1);
+  }
+  // ส่งป้ายชื่อไปกับข้อมูลเลย หน้าเว็บจะได้ไม่ต้องมีตารางชื่อช่องทางของตัวเองอีกชุด
+  // (ถ้าแยกกันไว้ วันหน้าเพิ่มช่องทางใหม่แล้วลืมแก้ฝั่งหน้าเว็บ จะขึ้นเป็นรหัสดิบให้คนอ่าน)
+  const rows = (m) =>
+    [...m.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([ch, n]) => ({ ch, n, label: channelLabel(ch), kind: channelKind(ch) }));
+
   return {
+    channelsToday: rows(chToday),
+    channelsWeek: rows(chWeek),
     countries: [...byCountry.entries()].sort((a, b) => b[1] - a[1]).map(([cc, n]) => ({ cc, n })),
     online: seen.size,
     onlineWindowMin: ONLINE_MIN,
@@ -120,7 +155,7 @@ export async function sweep() {
   );
   // สถิติรายวันเก่ากว่า KEEP_DAYS (ทั้งรายคนและรายประเทศ)
   const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
-  for (const prefix of ["v/", "c/"]) {
+  for (const prefix of ["v/", "c/", "s/"]) {
     const { blobs } = await s.list({ prefix });
     await Promise.allSettled(
       blobs.filter((b) => (b.key.split("/")[1] || "") < oldest).map((b) => { gone++; return s.delete(b.key); }),

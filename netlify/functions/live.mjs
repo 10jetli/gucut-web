@@ -1,6 +1,7 @@
 // นับคนเข้าเว็บ — /api/live
 //
-//   POST {vid, path}   หน้าเว็บส่งมาทุกครั้งที่เปลี่ยนหน้า (ไม่ต้องมีรหัส)
+//   POST {vid, path, src}   หน้าเว็บส่งมาทุกครั้งที่เปลี่ยนหน้า (ไม่ต้องมีรหัส)
+//                           src = ช่องทางที่มา ส่งมาแค่ครั้งแรกของการเข้าเว็บรอบนั้น
 //   GET                สรุปให้หน้าหลังร้าน (ต้องมีรหัสหลังร้าน)
 //
 // ตัว POST ต้องเบาที่สุด เพราะยิงทุกครั้งที่ลูกค้าเปลี่ยนหน้า
@@ -21,7 +22,10 @@ export default async function handler(req, context) {
     // นับพลาดดีกว่าทำให้หน้าเว็บช้า — พังก็เงียบ ๆ ไป
     // Netlify บอกประเทศของผู้เข้าชมมาให้เอง ไม่ต้องพึ่งบริการภายนอกและไม่ต้องเก็บ IP
     const cc = context?.geo?.country?.code;
-    try { await ping(body?.vid, body?.path, cc); } catch { /* ไม่เป็นไร */ }
+    // โดเมนของเราเอง ใช้กันไม่ให้นับลิงก์ภายในเว็บตัวเองเป็น "ช่องทางที่มา"
+    let selfHost = "";
+    try { selfHost = new URL(req.url).hostname.replace(/^www\./, ""); } catch { /* ไม่เป็นไร */ }
+    try { await ping(body?.vid, body?.path, cc, body?.src, selfHost); } catch { /* ไม่เป็นไร */ }
     return new Response(null, { status: 204 });
   }
 

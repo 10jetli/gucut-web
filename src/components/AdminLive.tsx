@@ -11,7 +11,11 @@ import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
+interface Channel { ch: string; n: number; label: string; kind: string }
+
 interface Stats {
+  channelsToday: Channel[];
+  channelsWeek: Channel[];
   countries: { cc: string; n: number }[];
   online: number;
   onlineWindowMin: number;
@@ -45,6 +49,11 @@ function countryName(cc: string) {
   try { return names?.of(cc) || cc; } catch { return cc; }
 }
 
+// ไอคอนประจำกลุ่มช่องทาง — ไม่ต้องโหลดรูปเลยสักไบต์
+const KIND_ICON: Record<string, string> = {
+  ai: "🤖", search: "🔍", ads: "💰", social: "💬", market: "🛒", direct: "⌨️", other: "🔗",
+};
+
 // path ที่มี % แปลก ๆ จะทำให้ decodeURIComponent โยน error จนทั้งหน้าพัง
 function safePath(p: string) {
   try { return decodeURIComponent(p); } catch { return p; }
@@ -56,6 +65,7 @@ export default function AdminLive() {
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [auto, setAuto] = useState(false);
+  const [span, setSpan] = useState<"today" | "week">("today");
   const timer = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => setKey(requireKey()), []);
@@ -73,6 +83,9 @@ export default function AdminLive() {
         onlineWindowMin: Number(j?.onlineWindowMin) || 5,
         pages: Array.isArray(j?.pages) ? j.pages : [],
         countries: Array.isArray(j?.countries) ? j.countries : [],
+        // เซิร์ฟเวอร์รุ่นเก่ายังไม่ส่งช่องทางมา — เติมค่าว่างกันหน้าพังตอน deploy ทับกัน
+        channelsToday: Array.isArray(j?.channelsToday) ? j.channelsToday : [],
+        channelsWeek: Array.isArray(j?.channelsWeek) ? j.channelsWeek : [],
         today: Number(j?.today) || 0,
         days: Array.isArray(j?.days) ? j.days : [],
         at: Number(j?.at) || Date.now(),
@@ -149,6 +162,30 @@ export default function AdminLive() {
         </section>
 
         <section className="mb-3 rounded-sm bg-white p-4">
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <p className="text-[14px] font-bold text-ink">มาจากช่องทางไหน</p>
+            <div className="flex overflow-hidden rounded-sm border border-steel-700 text-[11.5px]">
+              {(["today", "week"] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  onClick={() => setSpan(v)}
+                  className={`px-2.5 py-1 ${span === v ? "bg-ink text-white" : "bg-white text-ink-300"}`}
+                >
+                  {v === "today" ? "วันนี้" : "7 วัน"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <ChannelList rows={(span === "today" ? s?.channelsToday : s?.channelsWeek) || []} />
+          <p className="mt-3 text-[11px] leading-relaxed text-ink-300">
+            นับจากต้นทางตอน<b>เปิดหน้าแรก</b>ของการเข้าเว็บแต่ละรอบ · เก็บแค่ชื่อเว็บที่ส่งมา
+            ไม่ได้เก็บลิงก์เต็มของลูกค้า · <b>เข้าตรง</b> คือพิมพ์เอง บุ๊กมาร์ก หรือกดจากแอปแชท
+            ที่ไม่บอกต้นทาง
+          </p>
+        </section>
+
+        <section className="mb-3 rounded-sm bg-white p-4">
           <p className="mb-2 text-[14px] font-bold text-ink">มาจากประเทศไหน (วันนี้)</p>
           {!s || !s.countries?.length ? (
             <p className="py-4 text-center text-[13px] text-ink-300">ยังไม่มีข้อมูลวันนี้</p>
@@ -201,5 +238,45 @@ export default function AdminLive() {
         </section>
       </div>
     </main>
+  );
+}
+
+function ChannelList({ rows }: { rows: Channel[] }) {
+  if (!rows.length) {
+    return <p className="py-4 text-center text-[13px] text-ink-300">ยังไม่มีข้อมูลช่วงนี้</p>;
+  }
+  const total = rows.reduce((a, b) => a + b.n, 0) || 1;
+  const ai = rows.filter((r) => r.kind === "ai").reduce((a, b) => a + b.n, 0);
+  return (
+    <>
+      <ul className="space-y-1.5">
+        {rows.slice(0, 14).map((c) => (
+          <li key={c.ch} className="flex items-center gap-2.5 text-[13px]">
+            <span className="w-6 shrink-0 text-center text-[14px]">{KIND_ICON[c.kind] || "🔗"}</span>
+            <span className="min-w-0 flex-1 truncate text-ink-700">{c.label}</span>
+            <span className="w-20 shrink-0">
+              <span className="block h-1.5 rounded-full bg-steel-700">
+                <span
+                  className={`block h-1.5 rounded-full ${c.kind === "ai" ? "bg-[#12a150]" : "bg-safety"}`}
+                  style={{ width: `${Math.max(6, (c.n / total) * 100)}%` }}
+                />
+              </span>
+            </span>
+            <span className="w-10 shrink-0 text-right font-semibold text-ink">
+              {c.n.toLocaleString("th-TH")}
+            </span>
+            <span className="w-9 shrink-0 text-right text-[11px] text-ink-300">
+              {Math.round((c.n / total) * 100)}%
+            </span>
+          </li>
+        ))}
+      </ul>
+      {ai > 0 && (
+        <p className="mt-2.5 rounded-sm bg-[#12a150]/10 px-3 py-2 text-[12px] leading-relaxed text-[#12a150]">
+          🤖 มีคนมาจากผู้ช่วย AI แล้ว <b>{ai.toLocaleString("th-TH")}</b> คน — คือผลของงาน
+          llms.txt / agents.md / ข้อมูลโครงสร้าง ที่ทำไว้
+        </p>
+      )}
+    </>
   );
 }

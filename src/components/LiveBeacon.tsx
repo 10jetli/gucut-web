@@ -12,6 +12,42 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 
 const KEY = "gu_vid";
+const SRC_SENT = "gu_src";
+
+// พารามิเตอร์ที่บอกช่องทางได้ — เอาแค่ที่จำเป็น ไม่กวาดทั้ง URL
+const SRC_PARAMS = [
+  "utm_source", "utm_medium", "utm_campaign",
+  "gclid", "gbraid", "wbraid", "fbclid", "ttclid", "msclkid",
+];
+
+/**
+ * ช่องทางที่ลูกค้าเข้ามา — ส่งครั้งเดียวต่อการเข้าเว็บหนึ่งรอบ
+ *
+ * ⚠️ ส่งแค่ "ชื่อโดเมน" ของเว็บที่ส่งมา ไม่ส่งลิงก์เต็ม
+ *    ลิงก์เต็มของเว็บอื่นอาจมีคำค้นหรือรหัสผู้ใช้ของลูกค้าติดมาโดยไม่ตั้งใจ
+ *    เราไม่ต้องการข้อมูลนั้นและไม่ควรเก็บ — รู้แค่ว่ามาจาก Google หรือ Facebook ก็พอ
+ *
+ * ⚠️ ส่งเฉพาะหน้าแรกที่เปิด เพราะหน้าถัดไปต้นทางจะเป็นเว็บเราเอง ไม่มีความหมาย
+ */
+function entrySource() {
+  try {
+    if (sessionStorage.getItem(SRC_SENT)) return undefined;
+    sessionStorage.setItem(SRC_SENT, "1");
+
+    let h = "";
+    try { h = document.referrer ? new URL(document.referrer).hostname : ""; } catch { h = ""; }
+
+    const q: Record<string, string> = {};
+    const sp = new URLSearchParams(window.location.search);
+    for (const k of SRC_PARAMS) {
+      const v = sp.get(k);
+      if (v) q[k] = v.slice(0, 60);
+    }
+    return { h, q };
+  } catch {
+    return undefined;   // เบราว์เซอร์ปิด storage — ไม่ต้องส่ง ดีกว่าพัง
+  }
+}
 
 function visitorId() {
   try {
@@ -31,7 +67,7 @@ export default function LiveBeacon() {
   useEffect(() => {
     const vid = visitorId();
     if (!vid) return;
-    const body = JSON.stringify({ vid, path });
+    const body = JSON.stringify({ vid, path, src: entrySource() });
     // sendBeacon ส่งได้แม้ลูกค้ากำลังปิดหน้า และไม่หน่วงการโหลดหน้าถัดไป
     try {
       if (navigator.sendBeacon) {
