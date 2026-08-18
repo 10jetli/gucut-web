@@ -36,8 +36,19 @@ export default async function handler(req, context) {
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   const s = await stats();
+
   // เก็บกวาดของเก่าไปด้วยตอนเปิดดู ไม่ต้องตั้งงานตามเวลาให้เปลืองอีกตัว
-  context?.waitUntil?.(sweep().catch(() => {}));
+  //
+  // ⚠️ ห้ามเขียนเป็น context?.waitUntil?.(sweep()) เด็ดขาด
+  //    ถ้า waitUntil ไม่มี JavaScript จะ "ข้ามการประเมิน argument ทั้งก้อน"
+  //    แปลว่า sweep() ไม่เคยถูกเรียกเลยแม้แต่ครั้งเดียว — ของเก่าค้างสะสมตลอดไป
+  //    และข้อความ "เก็บย้อนหลัง 30 วัน" ในหน้าหลังร้านก็จะไม่จริง
+  //    (เขียนผิดแบบนี้ไว้ตั้งแต่แรก เพิ่งจับได้ 19 ส.ค. 2569 ตอนลบข้อมูลทดสอบไม่ออก)
+  //    ไฟล์ chat.mjs กับ orders.mjs ใช้ท่าที่ถูกอยู่แล้ว เอามาใช้ให้ตรงกัน
+  const job = sweep().catch(() => {});
+  if (context?.waitUntil) context.waitUntil(job);
+  else await job;          // ไม่มี waitUntil ก็รอให้เสร็จ — หน้านี้เป็นหลังร้าน ช้าอีกนิดไม่เป็นไร
+
   return json(s);
 }
 
