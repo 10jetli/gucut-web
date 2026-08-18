@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem } from "@/lib/cart";
 import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
+import { SHOP } from "@/lib/shop";
 import { shippingFor } from "@/lib/shipping";
 import { track } from "@/lib/track";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
@@ -47,7 +48,12 @@ const COD_FEE: number = 0;             // ค่าบริการเก็�
 // ⚠️ ฝั่งเซิร์ฟเวอร์อ่าน env ตัวเดียวกันนี้ที่ netlify/functions/orders.mjs
 //    ปิดที่หน้าเว็บอย่างเดียวไม่พอ ยิง POST ตรงยังสั่งแบบ COD ได้
 const COD_ON = process.env.NEXT_PUBLIC_COD === "1";
-const COD_OFF_NOTE = "ยังไม่เปิดให้ใช้ตอนนี้ — สั่งด้วย QR พร้อมเพย์ได้เลย";
+// ⚠️ ข้อความต้องสอดคล้องกับความจริง ณ ตอนนั้น
+//    ถ้าเก็บปลายทางปิด "และ" ยังไม่ได้ตั้งเบอร์พร้อมเพย์ = ลูกค้าจ่ายไม่ได้สักทาง
+//    บอกให้ไปใช้ QR ทั้งที่ QR ก็ยังใช้ไม่ได้ = ลูกค้าวนอยู่ในหน้าเดิมแล้วเลิกซื้อ
+const COD_OFF_NOTE = PROMPTPAY_ID
+  ? "ยังไม่เปิดให้ใช้ตอนนี้ — สั่งด้วย QR พร้อมเพย์ได้เลย"
+  : "ยังไม่เปิดให้ใช้ตอนนี้ — กดยืนยันคำสั่งซื้อไว้ก่อนได้ ทีมงานจะติดต่อกลับ";
 const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
 const SHIP_MAX_DAYS = 4;
 const SHIP_NAME = "ส่งธรรมดาในประเทศ";
@@ -304,11 +310,30 @@ export default function CheckoutView() {
                 <p className="text-[13px] text-steel-300">พร้อมเพย์: {PROMPTPAY_ID}</p>
               </>
             ) : (
-              <p className="rounded-lg bg-amber-100 p-3 text-sm text-amber-800">
-                ⚠️ ร้านยังไม่ได้ตั้งค่าเบอร์พร้อมเพย์
-                <br />
-                (ใส่ NEXT_PUBLIC_PROMPTPAY_ID ที่ Netlify แล้ว deploy ใหม่)
-              </p>
+              // ⚠️ ข้อความตรงนี้ "ลูกค้าเป็นคนอ่าน" ไม่ใช่ช่างเทคนิค
+              //    ของเดิมเขียนว่า "ใส่ NEXT_PUBLIC_PROMPTPAY_ID ที่ Netlify แล้ว deploy ใหม่"
+              //    ซึ่งลูกค้าอ่านไม่รู้เรื่องและทำให้ดูเหมือนเว็บพัง (เจ้าของร้านเจอเอง 17 ส.ค. 2569)
+              //    ห้ามเอาข้อความสำหรับนักพัฒนามาโชว์หน้าร้านอีก — ให้ไปดูที่ /admin/status/ แทน
+              <div className="rounded-lg bg-amber-50 p-4 text-left">
+                <p className="text-[15px] font-semibold text-amber-900">
+                  ระบบชำระเงินผ่าน QR อยู่ระหว่างปรับปรุงชั่วคราว
+                </p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-amber-800">
+                  ขออภัยในความไม่สะดวก ท่านกดยืนยันคำสั่งซื้อไว้ก่อนได้เลย
+                  ทีมงานจะติดต่อกลับตามเบอร์ที่ท่านให้ไว้ เพื่อแจ้งช่องทางชำระเงิน
+                  และยืนยันการจัดส่ง
+                </p>
+                {/* เบอร์ร้านยังไม่ได้กรอกใน src/lib/shop.ts — กรอกเมื่อไหร่บรรทัดนี้ขึ้นเอง
+                    ห้ามใส่เบอร์มั่วเพื่อให้ดูครบ (กติกาเดียวกับหน้านโยบาย) */}
+                {SHOP.phone && (
+                  <p className="mt-2 text-[13px] text-amber-800">
+                    สอบถามด่วน{" "}
+                    <a href={`tel:${SHOP.phone}`} className="font-semibold underline">
+                      โทร. {SHOP.phone}
+                    </a>
+                  </p>
+                )}
+              </div>
             )}
             <Price value={total} className="mt-1 block font-heading text-2xl font-bold text-safety" />
           </div>
