@@ -126,11 +126,35 @@ export async function initPixels() {
     win._lt!("init", { customerType: "lap", tagId: cfg.line.tagId });
     win._lt!("send", "pv", [cfg.line.tagId]);
   }
+
+  // ปล่อยเหตุการณ์ที่ค้างไว้ตอนพิกเซลยังไม่พร้อม
+  const q = pending.splice(0);
+  for (const [ev, d] of q) send(ev, d);
 }
 
+type Ev = "ViewContent" | "AddToCart" | "InitiateCheckout" | "Purchase";
+
+// ⚠️ เหตุการณ์ที่ยิงก่อนพิกเซลโหลดเสร็จ ต้องเก็บไว้ยิงทีหลัง ห้ามทิ้ง
+//    ตั้งแต่ 18 ส.ค. 2569 พิกเซลไม่โหลดจนกว่าลูกค้าจะขยับตัวครั้งแรก (ดู PixelSetup)
+//    ถ้าลูกค้ากด "หยิบใส่ตะกร้า" เป็นการขยับครั้งแรกพอดี พิกเซลจะยังโหลดไม่เสร็จ
+//    ของเดิม track() จะ return ทิ้งเงียบ ๆ = ยอดขายหายจากระบบโฆษณา
+const pending: [Ev, TrackData][] = [];
+
 /** ยิง event เดียวไปทุกช่องทางที่เปิดอยู่ */
-export function track(ev: "ViewContent" | "AddToCart" | "InitiateCheckout" | "Purchase", d: TrackData = {}) {
-  if (!cfg || typeof window === "undefined") return;
+export function track(ev: Ev, d: TrackData = {}) {
+  if (typeof window === "undefined") return;
+  if (!cfg) {
+    // ยังไม่พร้อม — เก็บไว้ก่อน แล้วสั่งโหลดพิกเซลทันที (ถ้ายังไม่ได้โหลด)
+    pending.push([ev, d]);
+    void initPixels();
+    return;
+  }
+  send(ev, d);
+}
+
+/** ยิงจริง — เรียกได้เมื่อ cfg พร้อมแล้วเท่านั้น */
+function send(ev: Ev, d: TrackData) {
+  if (!cfg) return;
   const win = w();
   const ids = (d.items || []).map((i) => i.id).filter(Boolean);
   const value = d.value ?? 0;

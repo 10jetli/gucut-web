@@ -25,35 +25,36 @@
 import { useEffect } from "react";
 import { initPixels } from "@/lib/track";
 
-// กันเผื่อเบราว์เซอร์ว่างช้ามาก (หน้าหนัก/เครื่องช้า) — อย่างช้าที่สุดเท่านี้ต้องโหลด
-const LATEST_MS = 4000;
-
 export default function PixelSetup() {
   useEffect(() => {
     let done = false;
-    const go = () => {
+
+    // ⚠️ โหลดเมื่อ "ลูกค้าขยับตัวครั้งแรก" เท่านั้น — ไม่มีตัวจับเวลาสำรอง
+    //
+    // เจ้าของร้านเลือกแบบนี้ 18 ส.ค. 2569 หลังเห็นตัวเลขว่าพิกเซล Facebook + Google
+    // กินไปแล้ว 391KB จาก JavaScript ทั้งหน้า 573KB (68%) และ 564 จาก 600 มิลลิวินาที
+    // ที่ทำให้หน้าค้าง
+    //
+    // ของเดิมมีตัวจับเวลา 4 วินาที = คนที่เปิดแล้วปิดเลยก็ยังโดนโหลด 391KB ทิ้งเปล่า
+    // ตัดออกแล้วคนกลุ่มนั้นจ่ายเพิ่ม 0 ไบต์ ซึ่งเป็นคนที่ไม่มีค่าทางโฆษณาอยู่แล้ว
+    //
+    // ⚠️ ลูกค้าจริงทุกคนต้องขยับตัวเสมอ (เลื่อน/แตะ/พิมพ์) ถึงจะซื้อของได้
+    //    จึงไม่มีทางพลาดคนที่ซื้อจริง — ที่ไม่ถูกนับคือบอตกับคนที่เปิดผ่าน
+    //
+    // ⚠️ และ track() ใน lib/track.ts มีคิวรองรับไว้แล้ว
+    //    ถ้าเหตุการณ์ถูกยิงก่อนพิกเซลโหลดเสร็จ จะเก็บไว้ยิงทีหลัง ไม่หาย
+    //    ห้ามลบคิวนั้นทิ้ง ไม่งั้นยอดขายจะหายจากระบบโฆษณาโดยไม่มีใครรู้
+    const EVENTS = ["scroll", "pointerdown", "keydown", "touchstart"] as const;
+    const clean = () => {
+      for (const e of EVENTS) window.removeEventListener(e, go);
+    };
+    function go() {
       if (done) return;
       done = true;
       clean();
       void initPixels();
-    };
-
-    // ลูกค้าขยับตัว = หน้าวาดเสร็จแล้วแน่นอน โหลดได้เลยไม่ต้องรอ
-    const EVENTS = ["scroll", "pointerdown", "keydown", "touchstart"] as const;
-    const clean = () => {
-      for (const e of EVENTS) window.removeEventListener(e, go);
-      clearTimeout(timer);
-    };
+    }
     for (const e of EVENTS) window.addEventListener(e, go, { passive: true, once: true });
-
-    const timer = setTimeout(go, LATEST_MS);
-
-    // requestIdleCallback = "โหลดตอนเบราว์เซอร์ไม่มีอะไรทำ" ซึ่งคือสิ่งที่เราต้องการเป๊ะ
-    // Safari เพิ่งรองรับ จึงต้องเช็คก่อนใช้ ไม่งั้นหน้าพังบนเครื่องเก่า
-    const ric = (window as Window & {
-      requestIdleCallback?: (cb: () => void, o?: { timeout: number }) => number;
-    }).requestIdleCallback;
-    if (ric) ric(go, { timeout: LATEST_MS });
 
     return clean;
   }, []);
