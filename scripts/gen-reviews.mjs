@@ -23,6 +23,13 @@ mkdirSync(outDir, { recursive: true });
 // (ลูกค้าบางคนพิมพ์ถึงร้านที่อื่นในรีวิว รีวิวพวกนี้ไม่เอาขึ้น)
 const PLATFORM = /shopee|lazada|tiktok|tik ?tok|ช้อปปี้|ช็อปปี้|ลาซาด้า|ลาซาด้า|ติ๊กต๊อก|ติกต็อก|ทิกทอก/i;
 
+// ⚠️ ซ่อนรีวิวที่พูดถึง "ส่งฟรี" — ร้านไม่มีส่งฟรี (เจ้าของร้านย้ำ 18 ส.ค. 2569)
+//    รีวิวพวกนี้เป็นคำพูดลูกค้าจริงสมัยขายผ่าน Lazada/Shopee ที่แพลตฟอร์มมีโปรส่งฟรี
+//    ปล่อยไว้ = ลูกค้าคาดหวังส่งฟรีแล้วมาเจอค่าส่ง 70-400 บาทตอนเช็คเอาต์
+//    เลือก "ซ่อนทั้งรีวิว" ไม่ใช่ "แก้ข้อความ" เพราะแก้คำพูดลูกค้า = ปลอมแปลงรีวิว
+//    กระทบ 7 รีวิวจากทั้งหมด 4,622 (0.15%)
+const FREE_SHIP = /ส่งฟรี|จัดส่งฟรี|ฟรีค่าส่ง/;
+
 let files = 0;
 let cards = 0;
 let dropped = 0;
@@ -31,6 +38,7 @@ for (const [handle, entry] of Object.entries(reviews)) {
   if (!id) continue; // สินค้าไม่อยู่ใน catalog (เช่น ยัง draft อยู่)
   const kept = entry.items.filter((r) => {
     if (PLATFORM.test(r.text || "")) { dropped++; return false; }
+    if (FREE_SHIP.test(r.text || "")) { dropped++; return false; }
     return true;
   });
   const items = kept
