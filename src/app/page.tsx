@@ -1,6 +1,7 @@
 import Link from "next/link";
 import SearchBar from "@/components/SearchBar";
 import BannerSlider from "@/components/BannerSlider";
+import { HERO_SIZES, heroHalf, heroSrcSet } from "@/lib/hero";
 import CategoryNav from "@/components/CategoryNav";
 import CouponStrip from "@/components/CouponStrip";
 import ProductCard from "@/components/ProductCard";
@@ -24,6 +25,18 @@ export default function HomePage() {
 
   return (
     <main>
+      {/* สั่งโหลดรูปแบนเนอร์ตั้งแต่บรรทัดแรกของหน้า
+          ปกติเบราว์เซอร์จะเจอรูปนี้ตอนอ่าน HTML มาถึงกลางหน้า ซึ่งช้ากว่าโหลด CSS/JS
+          รูปนี้เป็นชิ้นใหญ่สุดที่ลูกค้าเห็น (LCP) จึงคุ้มที่จะแซงคิวให้
+          ⚠️ ต้องใช้ srcset/sizes ชุดเดียวกับ <img> เป๊ะ ๆ ไม่งั้นจะโหลดซ้ำสองไฟล์ */}
+      <link
+        rel="preload"
+        as="image"
+        href={heroHalf(1080, "top")}
+        imageSrcSet={heroSrcSet("top")}
+        imageSizes={HERO_SIZES}
+        fetchPriority="high"
+      />
       <SearchBar />
       <CategoryNav items={nav} />
       {/* บอกเครื่องให้รู้ว่าร้านนี้คือใคร ขายอะไร — ตัวนี้สำคัญที่สุดสำหรับ

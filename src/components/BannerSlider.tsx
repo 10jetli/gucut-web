@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { BRAND } from "@/lib/shop";
 import { useEffect, useState } from "react";
+import { HERO_HALF_H, HERO_SIZES, HERO_W, heroHalf, heroSrcSet } from "@/lib/hero";
 
 // ---------------------------------------------------------------------------
 // แบนเนอร์หน้าแรก — เอารูปปกร้าน (ทรงจัตุรัส) มาผ่าครึ่ง
@@ -21,27 +22,9 @@ import { useEffect, useState } from "react";
 // (ไฟล์ที่ Shopify ตั้งชื่อว่า .webp จริง ๆ เป็น JPEG จึงเก็บเป็น .jpg
 //  ถ้าเก็บเป็น .webp เบราว์เซอร์บางตัวจะอ่านไม่ออกเพราะชนิดไฟล์ไม่ตรงชื่อ)
 // ---------------------------------------------------------------------------
-const HERO = "/img/cover-all.jpg";
 
-const HERO_W = 1500;              // ความกว้างไฟล์ต้นฉบับ
-const HALF_H = 750;               // ครึ่งความสูง → แต่ละสไลด์เป็นทรง 2:1
 
-// ความกว้างที่เตรียมไว้ให้เบราว์เซอร์เลือก — ไม่เกิน 1500 เพราะไฟล์ต้นฉบับกว้างเท่านั้น
-// ขอใหญ่กว่านี้ = ให้ CDN ขยายรูปจนแตก ได้ไฟล์หนักขึ้นแต่ไม่ได้คมขึ้น
-const WIDTHS = [640, 750, 828, 1080, 1200, 1500];
 
-// สร้าง URL ผ่าน Netlify Image CDN — ย่อ + ครอปครึ่งบน/ครึ่งล่าง + แปลงฟอร์แมตให้เอง
-function half(w: number, position: "top" | "bottom") {
-  const p = new URLSearchParams({
-    url: HERO,
-    w: String(w),
-    h: String(Math.round((w * HALF_H) / HERO_W)),
-    fit: "cover",
-    position,
-    q: "60",     // รูปถ่ายฉากร้าน ลดคุณภาพลงหน่อยตาเปล่าดูไม่ออก แต่ไฟล์เบาลงราวหนึ่งในสาม
-  });
-  return `/.netlify/images?${p}`;
-}
 
 const slides = [
   {
@@ -99,18 +82,18 @@ export default function BannerSlider() {
               {(idx === 0 || ready) && (
               /* eslint-disable-next-line @next/next/no-img-element */
               <img
-                src={half(1080, s.position)}
-                srcSet={WIDTHS.map((w) => `${half(w, s.position)} ${w}w`).join(", ")}
+                src={heroHalf(1080, s.position)}
+                srcSet={heroSrcSet(s.position)}
                 // ต้องตรงกับความกว้างจริงของกรอบเนื้อหา (ดู SHELL_W ใน lib/layout.ts)
                 // หักขอบซ้ายขวาอย่างละ 12px ออกแล้ว
                 //   มือถือ  เต็มความกว้างจอ
                 //   ≥640px  กรอบ 768px  → รูป 744px
                 //   ≥1024px กรอบ 1152px → รูป 1128px
                 // ⚠️ ใส่เลขผิดแล้วเบราว์เซอร์จะโหลดรูปเล็กเกินไปมายืด ภาพจะแตกบนคอม
-                sizes="(max-width: 536px) 100vw, (max-width: 1023px) 744px, 1128px"
+                sizes={HERO_SIZES}
                 alt={s.alt}
                 width={HERO_W}
-                height={HALF_H}
+                height={HERO_HALF_H}
                 // ใบแรกอยู่บนสุดของหน้า โหลดก่อนเพื่อนเพื่อให้หน้าแรกดูเร็ว
                 fetchPriority={idx === 0 ? "high" : "auto"}
                 className="h-full w-full object-cover"
