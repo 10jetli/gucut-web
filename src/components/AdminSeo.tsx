@@ -118,6 +118,7 @@ export default function AdminSeo({ data }: { data: AuditResult }) {
         {tab === "geo" && <BotControl />}
         {tab === "geo" && <AiBots />}
         {tab === "speed" && <SpeedNote />}
+        {tab === "seo" && <NotFoundList />}
         {tab === "seo" && <DoneList crawlable={data.crawlable} />}
 
         {/* ตัวเลขรวม */}
@@ -629,6 +630,69 @@ function FeedHealth() {
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// หน้าที่ลูกค้าเปิดแล้วเจอ "ไม่พบหน้า"
+//
+// URL เก่าสมัยอยู่ Shopify ยังมีคนแชร์อยู่ตามเว็บและแชท
+// คนที่กดเข้ามาคือคนที่ตั้งใจจะซื้อ แต่เจอทางตันแล้วออกไปเลย
+// รู้ว่าหน้าไหนถูกกดบ่อย ก็ทำทางเปลี่ยนเส้นทางไปหน้าที่ถูกได้
+//
+// ⚠️ นับเฉพาะคนจริง ไม่นับบอต (บอตไม่ได้จะซื้อของ)
+// ⚠️ ตัวจดทำงานฝั่งเบราว์เซอร์ จึงไม่เห็นคำขอที่ไม่รันจาวาสคริปต์
+// ---------------------------------------------------------------------------
+function NotFoundList() {
+  const [rows, setRows] = useState<{ path: string; days: number }[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    const k = requireKey();
+    if (!k) return;
+    setBusy(true); setErr("");
+    try {
+      const r = await adminFetch("/api/notfound", k);
+      if (!r.ok) { setErr(r.status === 401 ? "รหัสหลังร้านไม่ถูกต้อง" : "ดึงข้อมูลไม่สำเร็จ"); return; }
+      const j = await r.json();
+      setRows(Array.isArray(j?.rows) ? j.rows : []);
+    } catch { setErr("ดึงข้อมูลไม่สำเร็จ"); } finally { setBusy(false); }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-sm bg-white">
+      <div className="border-b border-steel-700 px-3 py-2.5">
+        <p className="text-[13px] font-bold text-ink">หน้าที่ลูกค้าเปิดแล้วไม่เจอ</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+          ส่วนใหญ่เป็น URL เก่าสมัยอยู่ Shopify ที่ยังมีคนแชร์อยู่ —
+          คนที่กดเข้ามาคือคนที่ตั้งใจจะซื้อ แต่เจอทางตัน
+        </p>
+      </div>
+
+      {rows === null ? (
+        <p className="px-3 py-4 text-center text-[13px] text-ink-300">{busy ? "กำลังโหลด…" : "—"}</p>
+      ) : rows.length === 0 ? (
+        <p className="px-3 py-4 text-center text-[13px] text-[#12a150]">
+          ✅ ยังไม่มีใครเจอหน้าไม่พบเลย
+        </p>
+      ) : (
+        <>
+          {rows.slice(0, 15).map((r) => (
+            <div key={r.path} className="flex items-center gap-2 border-b border-steel-800 px-3 py-2 last:border-0">
+              <span className="min-w-0 flex-1 truncate text-[12.5px] text-ink-700">{r.path}</span>
+              <span className="shrink-0 text-[11.5px] text-ink-300">เจอ {r.days} วัน</span>
+            </div>
+          ))}
+          <p className="px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-300">
+            อยากให้หน้าไหนเด้งไปหน้าที่ถูก บอกได้ ผมทำทางเปลี่ยนเส้นทางให้ถาวร
+          </p>
+        </>
+      )}
+      {err && <p className="px-3 pb-2.5 text-[12px] text-safety">{err}</p>}
     </section>
   );
 }

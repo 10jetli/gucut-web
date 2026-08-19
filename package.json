@@ -7,7 +7,8 @@
     "prebuild": "node scripts/gen-details.mjs && node scripts/gen-image-list.mjs && node scripts/gen-image-manifest.mjs && node scripts/gen-review-images.mjs && node scripts/gen-reviews.mjs && node scripts/gen-part-info.mjs && node scripts/gen-search-index.mjs && node scripts/gen-agents-md.mjs && node scripts/gen-feed-base.mjs && node scripts/gen-llms-full.mjs",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "postbuild": "node scripts/ping-indexnow.mjs"
   },
   "dependencies": {
     "@netlify/blobs": "^10.7.12",
