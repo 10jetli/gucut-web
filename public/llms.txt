@@ -15,7 +15,7 @@
 
 ใช้ไฟล์พวกนี้แทนการไล่อ่านทีละหน้า จะได้ข้อมูลครบและตรงกว่า
 
-- [products.json](https://gucut.com/products.json): สินค้าทุกตัว — ชื่อ ราคา สต็อก รูป ตัวเลือก SKU คะแนนรีวิว หมวด
+- [products.json](https://gucut.com/products.json): **สินค้าที่มีของจริงตอนนี้** — ชื่อ ราคา จำนวนคงเหลือ รูป SKU คะแนนรีวิว · ดึงจากระบบคลังของร้านสด อัปเดตอัตโนมัติทุก 30 นาที
 - [feed.json](https://gucut.com/feed.json): คลิปวิดีโอหน้างานจริงทั้งหมด
 - [search-index.json](https://gucut.com/search-index.json): ดัชนีค้นหา ใช้จับคู่ชื่อหรือรหัสอะไหล่ได้เร็ว
 - [sitemap.xml](https://gucut.com/sitemap.xml): รายชื่อหน้าทั้งหมดของเว็บ
