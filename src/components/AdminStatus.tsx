@@ -11,12 +11,13 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
-type State = "ok" | "slow" | "off" | "down";
+type State = "ok" | "slow" | "warn" | "off" | "down";
 interface Row { name: string; state: State; note?: string; ms: number }
 
 const LOOK: Record<State, { label: string; cls: string; dot: string }> = {
   ok:   { label: "ระบบปกติ",     cls: "text-[#12a150]", dot: "bg-[#12a150]" },
   slow: { label: "ช้าผิดปกติ",   cls: "text-[#c47f00]", dot: "bg-[#c47f00]" },
+  warn: { label: "ควรมาดู",      cls: "text-[#c47f00]", dot: "bg-[#c47f00]" },
   off:  { label: "ยังไม่เปิดใช้", cls: "text-ink-300",   dot: "bg-steel-600" },
   down: { label: "ใช้ไม่ได้",     cls: "text-safety",    dot: "bg-safety" },
 };
@@ -102,6 +103,7 @@ export default function AdminStatus() {
 
   const bad = (rows ?? []).filter((r) => r.state === "down").length;
   const slow = (rows ?? []).filter((r) => r.state === "slow").length;
+  const warn = (rows ?? []).filter((r) => r.state === "warn").length;
 
   return (
     <main className="min-h-[100dvh] bg-steel-900">
@@ -125,7 +127,10 @@ export default function AdminStatus() {
           <p className={`font-heading text-[17px] font-bold ${bad ? "text-safety" : rows === null ? "text-ink" : "text-[#12a150]"}`}>
             {rows === null
               ? (busy ? "กำลังเช็ค..." : "ยังไม่ได้เช็ค")
-              : bad ? `มี ${bad} ระบบใช้ไม่ได้` : slow ? `ทำงานได้ แต่ ${slow} ระบบช้าผิดปกติ` : "ทุกระบบปกติ"}
+              : bad ? `มี ${bad} ระบบใช้ไม่ได้`
+              : slow ? `ทำงานได้ แต่ ${slow} ระบบช้าผิดปกติ`
+              : warn ? `ทำงานได้ แต่มี ${warn} เรื่องที่ควรมาดู`
+              : "ทุกระบบปกติ"}
           </p>
           <p className="mt-1 text-[12px] text-ink-300">
             {rows === null
