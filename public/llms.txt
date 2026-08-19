@@ -20,6 +20,7 @@
 - [search-index.json](https://gucut.com/search-index.json): ดัชนีค้นหา ใช้จับคู่ชื่อหรือรหัสอะไหล่ได้เร็ว
 - [sitemap.xml](https://gucut.com/sitemap.xml): รายชื่อหน้าทั้งหมดของเว็บ
 - [agents.md](https://gucut.com/agents.md): กติกาสำหรับตัวแทนซื้อของอัตโนมัติ — ปลายทางข้อมูล สิ่งที่ขอให้ทำและไม่ทำ
+- [llms-full.txt](https://gucut.com/llms-full.txt): เนื้อหาทั้งร้านในไฟล์เดียว — สินค้าทุกตัว บทความ คำถามที่พบบ่อย (ดึงครั้งเดียวรู้จักร้านครบ)
 
 ## หน้าสำคัญ
 

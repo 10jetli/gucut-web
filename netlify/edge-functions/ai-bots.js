@@ -46,6 +46,29 @@ const MAX_REMEMBER = 5000;      // กันหน่วยความจำบ
 const written = new Set();
 let pending = [];
 
+// ---------------------------------------------------------------------------
+// รายชื่อบอตที่เจ้าของร้านสั่งปิด (ตั้งในหลังร้าน → ตรวจสุขภาพ SEO → แท็บผู้ช่วย AI)
+//
+// จำไว้ในหน่วยความจำ 5 นาที ไม่งั้นต้องอ่านที่เก็บข้อมูลใหม่ทุกคำขอของบอต
+// (การอ่านหนึ่งครั้งกินราวครึ่งวินาที เพราะที่เก็บอยู่ us-east-1)
+//
+// ⚠️ อ่านไม่ได้ = ถือว่า "ไม่ปิดใคร" เสมอ
+//    ระบบนี้ต้องพังไปทางปล่อยผ่าน ไม่ใช่พังไปทางบล็อกทุกคน
+// ---------------------------------------------------------------------------
+const RULES_TTL = 5 * 60 * 1000;
+let rules = { at: 0, blocked: new Set() };
+
+async function blockedNow(readBlocked) {
+  const now = Date.now();
+  if (now - rules.at < RULES_TTL) return rules.blocked;
+  try {
+    rules = { at: now, blocked: new Set(await readBlocked()) };
+  } catch {
+    rules = { at: now, blocked: new Set() };   // อ่านไม่ได้ = ไม่ปิดใคร
+  }
+  return rules.blocked;
+}
+
 export default async function handler(request, context) {
   try {
     const ua = request.headers.get("user-agent") || "";
@@ -54,6 +77,15 @@ export default async function handler(request, context) {
     const { identify, seen } = await import("../lib/aibots.mjs");
     const bot = identify(ua);
     if (!bot) return;                      // บอตที่ไม่รู้จัก ไม่ต้องจด
+
+    // เจ้าของร้านสั่งปิดบอตตัวนี้ไว้ไหม (ปิดได้เฉพาะบอตของผู้ช่วย AI)
+    const { readBlocked } = await import("../lib/botrules.mjs");
+    if ((await blockedNow(readBlocked)).has(bot.name)) {
+      return new Response("Not available to this crawler", {
+        status: 403,
+        headers: { "content-type": "text/plain; charset=utf-8", "cache-control": "no-store" },
+      });
+    }
 
     const path = new URL(request.url).pathname;
     const key = `${bot.name}|${path}`;

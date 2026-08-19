@@ -11,7 +11,7 @@
 import Link from "next/link";
 import { useCallback, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
-import type { AuditResult, Cat, Finding, Level } from "@/lib/audit";
+import type { AiFile, AuditResult, Cat, Finding, Level } from "@/lib/audit";
 
 const LOOK: Record<Level, { label: string; cls: string; dot: string }> = {
   high: { label: "ควรแก้ก่อน", cls: "text-safety", dot: "bg-safety" },
@@ -113,6 +113,8 @@ export default function AdminSeo({ data }: { data: AuditResult }) {
         )}
         {list.map((f) => <Card key={f.title} f={f} />)}
 
+        {tab === "geo" && <AiFiles files={data.files} />}
+        {tab === "geo" && <BotControl />}
         {tab === "geo" && <AiBots />}
         {tab === "speed" && <SpeedNote />}
         {tab === "seo" && <DoneList crawlable={data.crawlable} />}
@@ -295,6 +297,151 @@ function DoneList({ crawlable }: { crawlable: boolean }) {
         <li>✅ ลิงก์ในบทความไม่วิ่งอ้อมผ่าน www อีกแล้ว</li>
         {crawlable && <li>✅ robots.txt เปิดให้ Google และผู้ช่วย AI เข้าเก็บข้อมูล</li>}
       </ul>
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// ไฟล์ที่ผู้ช่วย AI อ่าน — สร้างใหม่ทุกครั้งที่ deploy
+// ---------------------------------------------------------------------------
+function AiFiles({ files }: { files: AiFile[] }) {
+  return (
+    <section className="mt-4 overflow-hidden rounded-sm bg-white">
+      <div className="border-b border-steel-700 px-3 py-2.5">
+        <p className="text-[13px] font-bold text-ink">ไฟล์ที่ผู้ช่วย AI อ่าน</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+          สร้างใหม่เองทุกครั้งที่เว็บอัปเดต ไม่ต้องมากดอะไร
+        </p>
+      </div>
+      {files.map((f) => (
+        <div key={f.path} className="flex items-start gap-2.5 border-b border-steel-800 px-3 py-2.5 last:border-0">
+          <span aria-hidden className={`mt-1 h-2.5 w-2.5 shrink-0 rounded-full ${f.kb > 0 ? "bg-[#12a150]" : "bg-safety"}`} />
+          <div className="min-w-0 flex-1">
+            <a href={f.path} target="_blank" rel="noreferrer" className="text-[13px] font-semibold text-safety underline">
+              {f.label}
+            </a>
+            <p className="text-[12px] leading-relaxed text-ink-300">{f.what}</p>
+          </div>
+          <span className="shrink-0 text-[11.5px] text-ink-300">
+            {f.kb > 0 ? `${f.kb.toLocaleString("th-TH")} KB` : "ยังไม่มี"}
+          </span>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// เลือกว่าจะให้บอตของ AI เจ้าไหนเก็บข้อมูลเว็บเราบ้าง
+//
+// ⚠️ ปิดได้เฉพาะบอตของผู้ช่วย AI — บอตเครื่องค้นหา (Googlebot) กับบอตโซเชียล
+//    ไม่มีให้เลือกเลย ตั้งใจให้เป็นแบบนั้น ปิดผิดตัวแล้วเว็บหายจาก Google
+// ---------------------------------------------------------------------------
+interface Blockable { name: string; note: string }
+
+function BotControl() {
+  const [list, setList] = useState<Blockable[] | null>(null);
+  const [blocked, setBlocked] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const load = useCallback(async () => {
+    const k = requireKey();
+    if (!k) return;
+    setBusy(true);
+    setMsg("");
+    try {
+      const r = await adminFetch("/api/bot-rules", k);
+      if (!r.ok) { setMsg(r.status === 401 ? "รหัสหลังร้านไม่ถูกต้อง" : "ดึงข้อมูลไม่สำเร็จ"); return; }
+      const j = await r.json();
+      setList(Array.isArray(j?.blockable) ? j.blockable : []);
+      setBlocked(Array.isArray(j?.blocked) ? j.blocked : []);
+    } catch {
+      setMsg("ดึงข้อมูลไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const save = useCallback(async (next: string[]) => {
+    const k = requireKey();
+    if (!k) return;
+    setBlocked(next);               // ขยับหน้าจอก่อนเลย จะได้ไม่รู้สึกหน่วง
+    setBusy(true);
+    try {
+      const r = await adminFetch("/api/bot-rules", k, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ blocked: next }),
+      });
+      const j = await r.json();
+      if (!r.ok) { setMsg("บันทึกไม่สำเร็จ"); return; }
+      setBlocked(Array.isArray(j?.blocked) ? j.blocked : next);
+      setMsg("บันทึกแล้ว · มีผลภายใน 5 นาที");
+    } catch {
+      setMsg("บันทึกไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const toggle = (name: string) =>
+    save(blocked.includes(name) ? blocked.filter((x) => x !== name) : [...blocked, name]);
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-sm bg-white">
+      <div className="border-b border-steel-700 px-3 py-2.5">
+        <p className="text-[13px] font-bold text-ink">ให้ AI เจ้าไหนเก็บข้อมูลเว็บเราได้บ้าง</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+          ปิดแล้วบอตตัวนั้นจะเปิดหน้าเว็บไม่ได้เลย (ไม่ใช่แค่ขอความร่วมมือ) ·
+          บอตของ Google กับ Bing ไม่มีให้ปิด เพราะปิดแล้วเว็บจะหายจากการค้นหา
+        </p>
+      </div>
+
+      <div className="px-3 py-2.5">
+        <button
+          type="button"
+          onClick={load}
+          disabled={busy}
+          className="min-h-[40px] w-full rounded-sm bg-ink px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? "กำลังทำงาน…" : list ? "โหลดใหม่" : "ตั้งค่า"}
+        </button>
+        {msg && <p className="mt-2 text-[12px] text-ink-300">{msg}</p>}
+      </div>
+
+      {list?.length ? (
+        <div className="border-t border-steel-700">
+          {list.map((b) => {
+            const off = blocked.includes(b.name);
+            return (
+              <label
+                key={b.name}
+                className="flex cursor-pointer items-center gap-2.5 border-b border-steel-800 px-3 py-2 last:border-0"
+              >
+                <input
+                  type="checkbox"
+                  checked={!off}
+                  disabled={busy}
+                  onChange={() => toggle(b.name)}
+                  className="h-4 w-4 shrink-0 accent-[#c42d00]"
+                />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[13px] font-semibold text-ink">{b.name}</span>
+                  <span className="block truncate text-[11.5px] text-ink-300">{b.note}</span>
+                </span>
+                <span className={`shrink-0 text-[11.5px] ${off ? "text-safety" : "text-[#12a150]"}`}>
+                  {off ? "ปิดอยู่" : "เปิดให้เก็บ"}
+                </span>
+              </label>
+            );
+          })}
+          <p className="px-3 py-2.5 text-[11.5px] leading-relaxed text-ink-300">
+            แนะนำให้เปิดไว้ทั้งหมด — บอตพวกนี้คือทางที่ลูกค้าจะเจอร้านเราผ่าน ChatGPT / Gemini /
+            Perplexity · จะปิดก็ต่อเมื่อไม่อยากให้เจ้านั้นเอาเนื้อหาไปใช้จริง ๆ
+          </p>
+        </div>
+      ) : null}
     </section>
   );
 }

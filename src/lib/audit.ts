@@ -76,7 +76,16 @@ function scanImages(dir: string) {
   return out;
 }
 
+/** ไฟล์ที่ผู้ช่วย AI อ่าน — โชว์สถานะในหลังร้าน */
+export interface AiFile {
+  path: string;
+  label: string;
+  what: string;
+  kb: number;      // 0 = ยังไม่มีไฟล์
+}
+
 export interface AuditResult {
+  files: AiFile[];
   findings: Finding[];
   scores: Record<Cat, number>;
   score: number;
@@ -172,9 +181,21 @@ export function audit(): AuditResult {
   const imgBytes = dirs.reduce((s2, d) => s2 + d.bytes, 0);
 
   // ---- ไฟล์สำหรับผู้ช่วย AI ------------------------------------------------
-  const has = (f: string) => fs.existsSync(path.join(process.cwd(), "public", f));
-  const hasAgents = has("agents.md");
-  const hasLlms = has("llms.txt");
+  const sizeKb = (f: string) => {
+    try {
+      return Math.round(fs.statSync(path.join(process.cwd(), "public", f)).size / 1024);
+    } catch {
+      return 0;
+    }
+  };
+  const files: AiFile[] = [
+    { path: "/llms.txt", label: "llms.txt", what: "สารบัญย่อ บอกว่าร้านมีอะไรอยู่ที่ไหน", kb: sizeKb("llms.txt") },
+    { path: "/llms-full.txt", label: "llms-full.txt", what: "เนื้อหาทั้งร้านในไฟล์เดียว สินค้าทุกตัว บทความ คำถามที่พบบ่อย", kb: sizeKb("llms-full.txt") },
+    { path: "/agents.md", label: "agents.md", what: "กติกาสำหรับตัวแทนซื้อของอัตโนมัติ", kb: sizeKb("agents.md") },
+  ];
+  const hasAgents = files[2].kb > 0;
+  const hasLlms = files[0].kb > 0;
+  const hasFull = files[1].kb > 0;
   const crawlable = (() => {
     try {
       const txt = fs.readFileSync(path.join(process.cwd(), "public", "robots.txt"), "utf8");
@@ -312,6 +333,14 @@ export function audit(): AuditResult {
     },
     {
       cat: "geo", level: "mid",
+      title: "ยังไม่มีไฟล์ llms-full.txt",
+      count: hasFull ? 0 : 1,
+      unit: "ไฟล์",
+      why: "llms.txt เป็นแค่สารบัญ ผู้ช่วย AI ต้องตามไปเปิดทีละหน้าอยู่ดี · llms-full.txt คือเนื้อหาทั้งร้านในไฟล์เดียว ดึงครั้งเดียวรู้จักสินค้าครบทุกตัว โอกาสถูกหยิบไปตอบสูงขึ้นมาก",
+      how: "ระบบสร้างให้อัตโนมัติทุกครั้งที่ deploy (scripts/gen-llms-full.mjs)",
+    },
+    {
+      cat: "geo", level: "mid",
       title: "หัวข้อในบทความยังไม่ได้เขียนเป็นคำถาม",
       count: heads - headQ,
       unit: "หัวข้อ",
@@ -381,6 +410,7 @@ export function audit(): AuditResult {
   const scores: Record<Cat, number> = { seo: scoreOf("seo"), geo: scoreOf("geo"), speed: scoreOf("speed") };
 
   return {
+    files,
     findings: findings.sort((a, b) => weight[b.level] - weight[a.level] || b.count - a.count),
     scores,
     score: Math.round((scores.seo + scores.geo + scores.speed) / 3),
