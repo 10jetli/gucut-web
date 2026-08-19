@@ -108,11 +108,14 @@ export default async function handler(req, context) {
     }),
 
     // ---------- รับเงิน ----------
+    // ⚠️ ข้อความตรงนี้ต้องดูสถานะ COD ประกอบเสมอ
+    //    ของเดิมเขียนตายตัวว่า "ลูกค้าจ่ายได้แค่ปลายทาง" ซึ่งไม่จริงตั้งแต่ปิด COD
+    //    หน้าสถานะระบบมีไว้บอกความจริง ถ้ามันโกหกเสียเองก็ไม่มีประโยชน์
     check("รับเงินด้วย QR พร้อมเพย์", async () => {
-      if (!env.NEXT_PUBLIC_PROMPTPAY_ID) {
-        return { off: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ — ลูกค้าจ่ายได้แค่ปลายทาง" };
-      }
-      return {};
+      if (env.NEXT_PUBLIC_PROMPTPAY_ID) return {};
+      return env.NEXT_PUBLIC_COD === "1"
+        ? { off: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ — ลูกค้าจ่ายได้เฉพาะเก็บเงินปลายทาง" }
+        : { warn: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ และ COD ก็ปิดอยู่ — ลูกค้าจ่ายเงินไม่ได้เลย" };
     }),
 
     // ---------- โค้ดส่วนลด ----------
@@ -132,15 +135,22 @@ export default async function handler(req, context) {
       env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET ? {} : { off: true }),
 
     // ---------- ฟีดสินค้าที่ผู้ช่วย AI อ่าน ----------
+    // ⚠️ ห้ามโหลดฟีดทั้งก้อนมาตรวจ — ตัวไฟล์ 700KB+ ทำให้ขึ้น "ช้าผิดปกติ" ทุกครั้ง
+    //    ทั้งที่ระบบปกติดี แล้วคนอ่านก็จะเลิกเชื่อหน้านี้ไปเลย
+    //    เช็คสองอย่างที่พอ: ฟีดยังตอบไหม (HEAD) และสต็อกที่เก็บไว้สดแค่ไหน
     check("ฟีดสินค้าให้ AI (/products.json)", async () => {
-      const r = await fetch(`${origin}/products.json`, { signal: timeout(15000) });
+      const r = await fetch(`${origin}/products.json`, { method: "HEAD", signal: timeout(10000) });
       if (!r.ok) throw new Error(`ฟีดตอบ ${r.status}`);
-      const j = await r.json();
-      if (!(j?.count > 0)) throw new Error("ฟีดไม่มีสินค้าเลย");
-      if (!j.stockLive) {
-        return { warn: true, note: `ใช้สต็อกเก่าอยู่ (ดึงจากคลังไม่ได้) · ${j.count} รายการ` };
-      }
-      return { note: `${j.count.toLocaleString("en-US")} รายการ · สต็อกสด` };
+
+      const s = getStore({ name: "gucut-coupon", consistency: "eventual" });
+      const cached = await s.get("zort-stock", { type: "json" }).catch(() => null);
+      if (!cached?.at) return { warn: true, note: "ฟีดตอบได้ แต่ยังไม่เคยดึงสต็อกจากคลังสำเร็จ" };
+
+      const mins = Math.round((Date.now() - cached.at) / 60000);
+      const n = Object.keys(cached.map || {}).length;
+      return mins > 90
+        ? { warn: true, note: `สต็อกเก่า ${mins} นาที — ดึงจากคลังไม่สำเร็จมาสักพัก` }
+        : { note: `${n.toLocaleString("en-US")} รหัสสินค้า · สต็อกอัปเดต ${mins} นาทีที่แล้ว` };
     }),
 
     // ---------- ไฟล์ที่ผู้ช่วย AI อ่าน ----------
