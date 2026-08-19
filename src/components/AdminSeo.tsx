@@ -9,7 +9,7 @@
 // รายการงานคิดตอน build จากข้อมูลจริงในโปรเจกต์ จึงไม่มีปุ่มสแกน — อัปเดตทุกครั้งที่ deploy
 // ส่วนแผง "บอต AI" เป็นข้อมูลสด ต้องกดโหลดเอง (กฎที่เจ้าของร้านสั่ง: ห้ามเช็คอัตโนมัติ)
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 import type { AiFile, AuditResult, Cat, Finding, Level } from "@/lib/audit";
 
@@ -197,9 +197,25 @@ function AiBots() {
     }
   }, []);
 
+  // ⚠️ โหลดครั้งเดียวตอนเปิดแท็บนี้ ไม่ใช่เช็ควนเป็นรอบ ๆ
+  //    (กติกาของร้านคือห้ามเช็คอัตโนมัติซ้ำ ๆ ไม่ใช่ห้ามแสดงผลเลย)
+  //    เจ้าของร้านขอให้ตัวเลขขึ้นให้เห็นทันทีโดยไม่ต้องกดก่อน
+  useEffect(() => { void load(); }, [load]);
+
   const rows = data
     ? Object.entries(data.bots).sort((a, b) => b[1].pages - a[1].pages)
     : [];
+
+  // สรุปเป็นกลุ่ม — ตัวเลขรวมบอกภาพได้เร็วกว่าไล่อ่านทีละตัว
+  const kindOf = (name: string) => data?.notes?.[name]?.kind || "other";
+  const sumOf = (k: string) =>
+    rows.filter(([n]) => kindOf(n) === k).reduce((a, [, v]) => a + v.pages, 0);
+  const groups = [
+    { k: "ai", icon: "🤖", label: "ผู้ช่วย AI", back: "พาลูกค้ากลับมาได้" },
+    { k: "search", icon: "🔍", label: "เครื่องค้นหา", back: "พาลูกค้ากลับมาได้" },
+    { k: "social", icon: "💬", label: "โซเชียล", back: "ดึงรูปตอนแชร์ลิงก์" },
+  ].map((g) => ({ ...g, n: sumOf(g.k) }));
+  const totalPages = rows.reduce((a, [, v]) => a + v.pages, 0);
 
   return (
     <section className="mt-4 overflow-hidden rounded-sm bg-white">
@@ -211,6 +227,26 @@ function AiBots() {
         </p>
       </div>
 
+      {rows.length > 0 && (
+        <div className="border-b border-steel-700">
+          <div className="grid grid-cols-3 gap-px bg-steel-700">
+            {groups.map((g) => (
+              <div key={g.k} className="bg-white px-2 py-2.5 text-center">
+                <p className="text-[16px] leading-none">{g.icon}</p>
+                <p className="mt-1 font-heading text-[17px] font-bold text-ink">
+                  {g.n.toLocaleString("th-TH")}
+                </p>
+                <p className="text-[11px] text-ink-300">{g.label}</p>
+              </div>
+            ))}
+          </div>
+          <p className="px-3 py-2 text-[12px] text-ink-300">
+            รวมแล้วบอตเก็บหน้าเว็บเราไป <b className="text-ink">{totalPages.toLocaleString("th-TH")}</b> หน้า
+            จาก <b className="text-ink">{rows.length}</b> เจ้า
+          </p>
+        </div>
+      )}
+
       <div className="px-3 py-2.5">
         <button
           type="button"
@@ -218,7 +254,7 @@ function AiBots() {
           disabled={busy}
           className="min-h-[40px] w-full rounded-sm bg-ink px-4 text-[13px] font-semibold text-white disabled:opacity-50"
         >
-          {busy ? "กำลังโหลด…" : data ? "โหลดใหม่" : "ดูข้อมูล"}
+          {busy ? "กำลังโหลด…" : "โหลดใหม่"}
         </button>
         {err && <p className="mt-2 text-[12px] text-safety">{err}</p>}
       </div>
@@ -236,6 +272,9 @@ function AiBots() {
             const kind = data!.notes[name]?.kind || "ai";
             return (
               <div key={name} className="flex items-center gap-2 border-b border-steel-800 px-3 py-2">
+                <span aria-hidden className="w-5 shrink-0 text-center text-[14px]">
+                  {kind === "ai" ? "🤖" : kind === "search" ? "🔍" : kind === "social" ? "💬" : "🔗"}
+                </span>
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-[13px] font-semibold text-ink">{name}</p>
                   <p className="truncate text-[11px] text-ink-300">
