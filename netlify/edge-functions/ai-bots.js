@@ -21,7 +21,7 @@
 // ⚠️ ชื่อที่ไม่มีคำว่า bot อยู่ในตัว ต้องเขียนเพิ่มเองทุกตัว
 //    Google-Extended · anthropic-ai · meta-externalagent · Bytespider ฯลฯ
 //    เคยลืม Google-Extended แล้วมันหลุดตะแกรงไปทั้งตัว (จับไม่ได้เลย)
-const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|\bLine\/\d/i;
+const MAYBE_BOT = /bot|crawl|spider|GPT|Claude|anthropic|Perplexity|Google|cohere|externalagent|facebookexternalhit|line-poker/i;
 
 // ---------------------------------------------------------------------------
 // จำไว้ในหน่วยความจำของเครื่องที่รันอยู่ + รวบเขียนทีเดียว

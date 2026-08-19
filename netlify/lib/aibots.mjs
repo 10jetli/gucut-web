@@ -55,7 +55,11 @@ const BOTS = [
   ["YandexBot",         /YandexBot/i,                 "search", "Yandex จัดอันดับ"],
   ["Baiduspider",       /Baiduspider/i,               "search", "Baidu จัดอันดับ"],
   // ---- โซเชียลดึงรูปตอนแชร์ลิงก์ ----
-  ["LINE",              /\bLine\/\d|LineBot/i,            "social", "LINE ดึงรูปตอนแชร์ลิงก์"],
+  // ⚠️ ห้ามจับด้วย /Line\/\d/ เด็ดขาด — นั่นคือ user-agent ของ "เบราว์เซอร์ในแอป LINE"
+  //    ซึ่งคือลูกค้าจริงที่กดลิงก์จากแชท ไม่ใช่บอต (ลูกค้าร้านนี้มาทางนี้เยอะมาก)
+  //    ตัวไล่เก็บรูปตอนแชร์ลิงก์ของ LINE ใช้ชื่อ line-poker / LineBot ต่างหาก
+  //    เคยจับผิดมาแล้ว 19 ส.ค. 2569 — ทำให้ลูกค้า LINE ถูกนับเป็นบอตและหายจากตัวเลขคนเข้าเว็บ
+  ["LINE",              /LineBot|line-poker/i,         "social", "LINE ดึงรูปตอนแชร์ลิงก์"],
   ["Twitterbot",        /Twitterbot/i,                "social", "X / Twitter ดึงรูปตอนแชร์"],
   ["facebookexternalhit", /facebookexternalhit/i,     "social", "Facebook ดึงรูปตอนแชร์"],
 ];
