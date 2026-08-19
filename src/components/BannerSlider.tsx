@@ -57,8 +57,19 @@ const slides = [
 export default function BannerSlider() {
   const [i, setI] = useState(0);
 
+  // ⚠️ ใบที่ 2 ต้องไม่โหลดพร้อมใบแรก
+  //
+  // เดิมใส่ <img> ของทั้งสองใบไว้ใน HTML ตั้งแต่แรก ทั้งคู่จึงถูกโหลดพร้อมกัน
+  // วัดจริง 19 ส.ค. 2569: ใบแรก 14KB + ใบที่สอง 25KB ยิงออกไปพร้อมกันวินาทีเดียวกัน
+  // ใบที่สองไม่มีใครเห็นจนกว่าจะผ่านไป 4 วินาที แต่ไปแย่งเน็ตกับใบแรกที่ลูกค้าเห็นจริง
+  // (เป็นหนึ่งในสาเหตุที่ Speed Index สูงทั้งที่ไฟล์ทุกอย่างเล็ก)
+  //
+  // จึงรอให้หน้าวาดเสร็จก่อนค่อยใส่ใบที่สองเข้าไป — ยังทันสลับที่วินาทีที่ 4 สบาย ๆ
+  const [ready, setReady] = useState(false);
+
   // สลับภาพเองทุก 4 วิ
   useEffect(() => {
+    setReady(true);
     const t = setInterval(() => setI((v) => (v + 1) % slides.length), 4000);
     return () => clearInterval(t);
   }, []);
@@ -84,7 +95,9 @@ export default function BannerSlider() {
               }`}
             >
               {/* ใช้ img ตรง ๆ เพราะ next/image ส่งพารามิเตอร์ครอป (fit/position) ไม่ได้ */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
+              {/* ใบแรกอยู่ใน HTML ตั้งแต่ต้น · ใบถัดไปใส่ทีหลังตอนหน้าวาดเสร็จแล้ว */}
+              {(idx === 0 || ready) && (
+              /* eslint-disable-next-line @next/next/no-img-element */
               <img
                 src={half(1080, s.position)}
                 srcSet={WIDTHS.map((w) => `${half(w, s.position)} ${w}w`).join(", ")}
@@ -102,6 +115,7 @@ export default function BannerSlider() {
                 fetchPriority={idx === 0 ? "high" : "auto"}
                 className="h-full w-full object-cover"
               />
+              )}
             </Link>
           );
         })}

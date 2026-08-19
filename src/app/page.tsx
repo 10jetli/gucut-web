@@ -36,13 +36,20 @@ export default function HomePage() {
       {/* โค้ดส่วนลดให้กดเก็บแบบ Shopee — ร้านยังไม่เปิดโค้ดไหนก็ไม่ขึ้นอะไรเลย ไม่กินที่ */}
       <CouponStrip />
 
-      {rows.map(({ c, items }) => (
+      {rows.map(({ c, items }, rowIdx) => (
         <section key={c.h} className="mt-5">
           <SectionHead title={c.t} href={`/c/${encodeURIComponent(c.h)}/`} count={c.n} />
           <div className="no-scrollbar flex gap-2 overflow-x-auto px-3 pb-1">
-            {items.map((p) => (
+            {items.map((p, i) => (
               <div key={p.id} className="w-36 shrink-0 sm:w-40 lg:w-44">
-                <ProductCard product={p} />
+                {/* ความกว้างต้องตรงกับ w-36 / sm:w-40 / lg:w-44 ข้างบน (144 / 160 / 176 px) */}
+                <ProductCard
+                  product={p}
+                  sizes="(max-width: 640px) 144px, (max-width: 1024px) 160px, 176px"
+                  // แถวแรก 3 ใบแรกคือของที่ลูกค้าเห็นทันทีตอนเปิดหน้า ให้โหลดก่อนเพื่อน
+                  // ที่เหลือเป็น lazy — ถ้าให้ทุกใบโหลดก่อนจะแย่งเน็ตกันจนช้ากว่าเดิม
+                  priority={rowIdx === 0 && i < 3}
+                />
               </div>
             ))}
           </div>

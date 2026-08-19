@@ -5,7 +5,25 @@ import { compactCount, discountPercent, type Product } from "@/lib/types";
 import Price from "@/components/Price";
 
 // การ์ดสินค้าแบบ Shopee/TikTok Shop — รูปสี่เหลี่ยมจัตุรัส ป้าย %ลด ราคาส้ม สต็อกจริง
-export default function ProductCard({ product: p }: { product: Product }) {
+//
+// ⚠️ sizes ต้องบอก "ความกว้างจริงของการ์ดในหน้านั้น ๆ" ไม่ใช่ค่ามั่ว ๆ
+//    เบราว์เซอร์เอาเลขนี้ไปคูณความละเอียดจอ แล้วเลือกไฟล์รูปขนาดที่ใกล้ที่สุด
+//    ใส่ใหญ่เกินจริง = โหลดรูปใหญ่เกินความจำเป็นทุกใบ (เจอของจริง 19 ส.ค. 2569
+//    หน้าแรกบอก 50vw ทั้งที่การ์ดกว้างแค่ 144px → โหลด 384px แทนที่จะเป็น 256px
+//    เสียเปล่าใบละ 14KB × 5 ใบที่เห็นตอนเปิดหน้า = 69KB)
+//    ใส่เล็กเกินจริง = รูปแตกบนจอความละเอียดสูง
+//
+// priority ใช้กับ "ใบที่เห็นทันทีตอนเปิดหน้า" เท่านั้น (แถวแรกไม่กี่ใบ)
+// ใบที่เหลือปล่อยเป็น lazy ตามค่าเริ่มต้น ไม่งั้นแย่งเน็ตกับรูปที่ลูกค้าเห็นจริง
+export default function ProductCard({
+  product: p,
+  sizes = "(max-width: 512px) 50vw, 256px",
+  priority = false,
+}: {
+  product: Product;
+  sizes?: string;
+  priority?: boolean;
+}) {
   const off = discountPercent(p);
   return (
     <Link
@@ -18,7 +36,8 @@ export default function ProductCard({ product: p }: { product: Product }) {
             src={p.img}
             alt={p.t}
             fill
-            sizes="(max-width: 512px) 50vw, 256px"
+            sizes={sizes}
+            priority={priority}
             className="object-contain"
           />
         ) : (
