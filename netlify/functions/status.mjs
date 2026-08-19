@@ -234,9 +234,19 @@ export default async function handler(req, context) {
       if (!id || !key) {
         return { off: true, note: `ยังไม่ได้ใส่รหัส (merchant ${id ? "มี" : "ไม่มี"} · key ${key ? "มี" : "ไม่มี"})` };
       }
-      return mode === "playground"
-        ? { warn: true, note: "อยู่ในโหมดสนามทดลอง — เงินไม่เข้าจริง" }
-        : { note: "โหมดใช้งานจริง · ทดสอบยิงจริงได้ที่ /api/beam-test" };
+      if (mode === "playground") return { warn: true, note: "อยู่ในโหมดสนามทดลอง — เงินไม่เข้าจริง" };
+
+      // ⚠️ เตือนจนกว่าจะมีเงินเข้าจริงสักครั้ง
+      //    ต่อ API สำเร็จกับ "เงินเข้าบัญชีจริง" เป็นคนละเรื่องกัน
+      //    ยังไม่เคยมีใครจ่ายสำเร็จ = ยังไม่รู้ว่าปลายทางครบวงจรไหม
+      //    (เจ้าของร้านฝากไว้ว่าจะทดสอบจ่ายจริงทีหลัง — ตัวนี้เตือนแทนความจำ)
+      const s2 = getStore({ name: "gucut-orders", consistency: "strong" });
+      const first = await s2.get("beam-first-paid", { type: "json" }).catch(() => null);
+      if (!first?.at) {
+        return { warn: true, note: "ต่อระบบแล้ว แต่ยังไม่เคยมีเงินเข้าจริงสักครั้ง — ควรทดสอบจ่ายจริง 1 ใบ" };
+      }
+      const d = new Date(first.at).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+      return { note: `ใช้งานจริง · มีเงินเข้าครั้งแรก ${d} (ออเดอร์ ${first.orderId})` };
     }),
 
     // ---------- เก็บเงินปลายทาง ----------

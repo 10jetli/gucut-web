@@ -426,6 +426,11 @@ export async function markOrderPaid(order, store, req, context) {
   order.status = "new";
   await store.setJSON(`o/${order.id}`, order);
 
+  // จดไว้ว่าเคยมีเงินเข้าจริงแล้ว — หน้าสถานะระบบใช้ตัวนี้เตือน
+  // ว่ายังไม่เคยมีใครจ่ายเงินสำเร็จเลยสักครั้ง (แปลว่ายังไม่ได้ทดสอบจ่ายจริง)
+  // ถูกกว่าการไล่อ่านออเดอร์ทุกใบมานับ และเตือนเองโดยไม่ต้องมีใครจำ
+  await store.setJSON("beam-first-paid", { at: Date.now(), orderId: order.id }).catch(() => {});
+
   const buyer = await currentUser(req, usersStore())
     .then((r) => r?.user ?? null)
     .catch(() => null);
