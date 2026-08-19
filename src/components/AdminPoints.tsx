@@ -72,7 +72,7 @@ export default function AdminPoints() {
           ) : (
             <div className="space-y-3">
               <label className="flex items-center gap-2 text-[13px] text-ink">
-                <input type="checkbox" checked={cfg.on} onChange={(e) => setCfg({ ...cfg, on: e.target.checked })} className="h-4 w-4 accent-[#ff3c00]" />
+                <input type="checkbox" checked={cfg.on} onChange={(e) => setCfg({ ...cfg, on: e.target.checked })} className="h-4 w-4 accent-[#d63200]" />
                 เปิดใช้ระบบแต้มสะสม
               </label>
               <F label="ซื้อครบกี่บาท = 1 แต้ม" hint="นับจากค่าสินค้า ไม่รวมค่าส่ง">

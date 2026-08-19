@@ -88,7 +88,7 @@ export default function AdminClipShop() {
             type="checkbox"
             checked={onlyEmpty}
             onChange={(e) => setOnlyEmpty(e.target.checked)}
-            className="h-4 w-4 accent-[#ff3c00]"
+            className="h-4 w-4 accent-[#d63200]"
           />
           เอาเฉพาะคลิปที่ยังไม่มีสินค้า ({clips.filter((c) => !c.p && !map[c.v.v]).length} คลิป)
         </label>

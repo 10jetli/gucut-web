@@ -15,7 +15,7 @@ export default function SearchBar() {
           aria-label={`${BRAND.name} หน้าแรก`}
           className="shrink-0 font-heading text-[19px] font-extrabold italic leading-none tracking-tight"
         >
-          <span className="text-safety">GU</span>
+          <span className="text-safety-light">GU</span>
           <span className="text-[#c9cacc]">CUT</span>
         </Link>
         {/* ช่องค้นหาขาว = ลิงก์ไปหน้าพิมพ์ + ปุ่มกล้องอยู่ในกรอบเดียวกัน

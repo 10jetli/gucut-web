@@ -85,7 +85,7 @@ export default function ChatSheet({
         {/* หัวแชท */}
         <div className="flex shrink-0 items-center gap-2 rounded-t-2xl bg-ink px-3 py-3">
           <span className="font-heading text-[15px] font-extrabold italic leading-none">
-            <span className="text-safety">GU</span><span className="text-[#c9cacc]">CUT</span>
+            <span className="text-safety-light">GU</span><span className="text-[#c9cacc]">CUT</span>
           </span>
           <span className="text-[13px] text-white/70">ตอบกลับภายในเวลาทำการ</span>
           <button onClick={onClose} aria-label="ปิด" className="ml-auto p-1 text-xl leading-none text-white/80">×</button>

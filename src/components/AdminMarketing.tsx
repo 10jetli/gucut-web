@@ -68,7 +68,7 @@ export default function AdminMarketing() {
   }) => (
     <section className="mb-3 rounded-sm bg-white p-4">
       <label className="flex items-start gap-2.5">
-        <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#ff3c00]" />
+        <input type="checkbox" checked={on} onChange={(e) => set(e.target.checked)} className="mt-0.5 h-4 w-4 accent-[#d63200]" />
         <span className="min-w-0 flex-1">
           <span className="block text-[14px] font-bold text-ink">{t}</span>
           <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">{note}</span>

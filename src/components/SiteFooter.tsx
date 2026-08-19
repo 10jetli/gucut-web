@@ -7,7 +7,7 @@ export default function SiteFooter() {
   return (
     <footer className="mt-8 border-t-[3px] border-safety bg-carbon px-5 py-7 text-center">
       <p className="font-heading text-[26px] font-extrabold italic leading-none tracking-tight">
-        <span className="text-safety">GU</span><span className="text-white">CUT</span>
+        <span className="text-safety-light">GU</span><span className="text-white">CUT</span>
       </p>
       <p className="mt-2.5 text-[13px] font-medium text-white">
         เลื่อยยนต์ NEWWAVE / KingKong ของแท้
@@ -22,7 +22,7 @@ export default function SiteFooter() {
         <span aria-hidden>·</span>
         <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
       </nav>
-      <p className="mt-3 text-[11px] text-[#6f6f6f]">{SITE_HOST}</p>
+      <p className="mt-3 text-[11px] text-[#a9a9a9]">{SITE_HOST}</p>
     </footer>
   );
 }

@@ -140,7 +140,7 @@ export default function AdminLive() {
             นับคนที่มีความเคลื่อนไหวใน {s?.onlineWindowMin ?? 5} นาทีล่าสุด
           </p>
           <label className="mt-3 inline-flex items-center gap-2 text-[12px] text-ink-700">
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#ff3c00]" />
+            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#d63200]" />
             รีเฟรชเองทุก 15 วินาที
           </label>
         </section>

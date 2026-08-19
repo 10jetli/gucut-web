@@ -198,15 +198,15 @@ export default function AdminCoupons() {
               </F>
 
               <label className="flex items-center gap-2 text-[13px] text-ink">
-                <input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} className="h-4 w-4 accent-[#ff3c00]" />
+                <input type="checkbox" checked={form.visible} onChange={(e) => setForm({ ...form, visible: e.target.checked })} className="h-4 w-4 accent-[#d63200]" />
                 โชว์บนหน้าเว็บให้ลูกค้ากดเก็บ (ไม่ติ๊ก = โค้ดลับ ต้องบอกกันเอง)
               </label>
               <label className="flex items-center gap-2 text-[13px] text-ink">
-                <input type="checkbox" checked={form.memberOnly} onChange={(e) => setForm({ ...form, memberOnly: e.target.checked })} className="h-4 w-4 accent-[#ff3c00]" />
+                <input type="checkbox" checked={form.memberOnly} onChange={(e) => setForm({ ...form, memberOnly: e.target.checked })} className="h-4 w-4 accent-[#d63200]" />
                 เฉพาะสมาชิกที่ล็อกอินเท่านั้น
               </label>
               <label className="flex items-center gap-2 text-[13px] text-ink">
-                <input type="checkbox" checked={form.off} onChange={(e) => setForm({ ...form, off: e.target.checked })} className="h-4 w-4 accent-[#ff3c00]" />
+                <input type="checkbox" checked={form.off} onChange={(e) => setForm({ ...form, off: e.target.checked })} className="h-4 w-4 accent-[#d63200]" />
                 ปิดใช้ชั่วคราว
               </label>
             </div>

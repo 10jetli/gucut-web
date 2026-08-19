@@ -226,7 +226,7 @@ export default function AdminChat() {
           <span className="rounded-full bg-safety px-2 py-0.5 text-[11px] font-bold text-white">{totalUnread}</span>
         )}
         <span className="ml-auto font-heading text-[15px] font-extrabold italic leading-none">
-          <span className="text-safety">GU</span><span className="text-[#c9cacc]">CUT</span>
+          <span className="text-safety-light">GU</span><span className="text-[#c9cacc]">CUT</span>
         </span>
       </header>
 

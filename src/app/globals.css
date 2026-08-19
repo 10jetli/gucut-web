@@ -41,10 +41,10 @@ body {
 .article-body ol { list-style: decimal; padding-left: 1.5em; margin: 0.8em 0; }
 .article-body li { margin: 0.35em 0; }
 .article-body strong { color: #1a1a1a; }
-.article-body a { color: #ff3c00; text-decoration: underline; }
+.article-body a { color: #d63200; text-decoration: underline; }
 .article-body img { max-width: 100%; height: auto; border-radius: 8px; margin: 1em 0; }
 .article-body hr { border: 0; border-top: 1px solid #dcdcdc; margin: 1.6em 0; }
-.article-body blockquote { border-left: 3px solid #ff3c00; padding-left: 0.9em; color: #6b6b6b; margin: 1em 0; }
+.article-body blockquote { border-left: 3px solid #d63200; padding-left: 0.9em; color: #6b6b6b; margin: 1em 0; }
 .article-body table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 14px; }
 .article-body th, .article-body td { border: 1px solid #dcdcdc; padding: 0.5em 0.6em; text-align: left; }
 .article-body th { background: #f6f6f6; font-weight: 600; }

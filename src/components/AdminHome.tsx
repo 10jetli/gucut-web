@@ -137,7 +137,7 @@ export default function AdminHome() {
     <main className="min-h-[100dvh] bg-steel-900">
       <header className="flex items-center gap-2 bg-ink px-4 py-3.5">
         <span className="font-heading text-[16px] font-extrabold italic leading-none">
-          <span className="text-safety">GU</span><span className="text-[#c9cacc]">CUT</span>
+          <span className="text-safety-light">GU</span><span className="text-[#c9cacc]">CUT</span>
         </span>
         <span className="text-[14px] font-semibold text-white">ระบบหลังร้าน</span>
         <button
