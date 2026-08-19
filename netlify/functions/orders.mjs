@@ -30,7 +30,7 @@ import { finalizeOrder } from "../lib/order-finalize.mjs";
 import { beamReady, chargePaid, createQrCharge, getCharge } from "../lib/beam.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
-export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
+export const STATUSES = ["pending", "new", "confirmed", "shipped", "done", "cancelled"];
 
 const MAX_ORDERS_PER_WINDOW = 10;     // กันสแปม: ออเดอร์ต่อ IP
 const WINDOW_MS = 10 * 60 * 1000;     // ในช่วงเวลาเท่านี้

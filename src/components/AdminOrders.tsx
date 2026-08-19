@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch, clearKey, requireKey } from "@/lib/admin";
 import { formatPrice } from "@/lib/types";
 
-type Status = "new" | "confirmed" | "shipped" | "done" | "cancelled";
+type Status = "pending" | "new" | "confirmed" | "shipped" | "done" | "cancelled";
 
 interface OrderItem { title: string; variant: string; price: number; qty: number }
 interface Order {
@@ -31,6 +31,11 @@ interface Order {
 
 // ป้ายสถานะ — ชื่อไทย + สี ใช้ทั้งตัวกรองและปุ่มเปลี่ยนสถานะ
 const STATUS: { key: Status; t: string; cls: string }[] = [
+  // ⚠️ "รอจ่าย" ต้องมีอยู่ในรายการนี้เสมอ
+  //    ออเดอร์ที่ลูกค้ากดสั่งแล้วยังไม่จ่าย (จ่ายผ่าน Beam) จะมีสถานะนี้
+  //    ถ้าไม่ใส่ไว้ ออเดอร์พวกนั้นจะหายไปจากทุกแท็บ ไม่มีใครเห็นเลย
+  //    สีเทาจาง ๆ ตั้งใจให้ดูออกทันทีว่า "ยังไม่ต้องแพ็ค"
+  { key: "pending",   t: "รอจ่าย",      cls: "bg-steel-700 text-ink-300" },
   { key: "new",       t: "ใหม่",        cls: "bg-safety text-white" },
   { key: "confirmed", t: "รับแล้ว",     cls: "bg-[#1d6fd1] text-white" },
   { key: "shipped",   t: "ส่งแล้ว",     cls: "bg-[#7c3aed] text-white" },
