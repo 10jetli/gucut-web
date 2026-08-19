@@ -38,32 +38,53 @@ async function fetchPage(headers, page) {
 }
 
 /** กวาดสต็อกทั้งคลัง — คืน { at, map: { "<sku>": [สต็อก, ราคา] } } */
+/**
+ * กวาดสต็อกทั้งคลัง — คืน { at, map, partial }
+ *
+ * ⚠️ ต้องแยก "หน้าว่างเพราะหมดแล้ว" ออกจาก "หน้าโหลดไม่สำเร็จ" ให้ขาด
+ *    เขียนครั้งแรกใช้ .catch(() => null) แล้วเช็ค !rows รวมกับ length === 0
+ *    ผลคือถ้าหน้ากลาง ๆ พลาดหนึ่งหน้า ระบบจะคิดว่า "จบแล้ว" แล้วหยุดกวาดทันที
+ *    สินค้าหลายร้อยตัวจะหายไปจากผลลัพธ์เงียบ ๆ โดยไม่มีใครรู้
+ *    ตอนนี้: [] = จบจริง · null = พลาด (ลองใหม่อีกรอบ ถ้ายังพลาดถือว่าได้ไม่ครบ)
+ */
 async function scrape() {
   const headers = creds();
   if (!headers) throw new Error("ยังไม่ได้ตั้งรหัส ZORT");
 
   const map = {};
+  const failed = [];
   let page = 1;
-  let done = false;
+  let reachedEnd = false;
 
-  while (!done && page <= MAX_PAGES) {
+  const absorb = (rows) => {
+    for (const x of rows) {
+      const sku = String(x.sku || "").trim();
+      if (sku) map[sku] = [num(x.availablestock ?? x.stock), num(x.sellprice ?? x.price)];
+    }
+  };
+
+  while (!reachedEnd && page <= MAX_PAGES) {
     const batch = [];
     for (let i = 0; i < CONCURRENCY && page + i <= MAX_PAGES; i++) batch.push(page + i);
     const pages = await Promise.all(batch.map((n) => fetchPage(headers, n).catch(() => null)));
 
-    for (const rows of pages) {
-      if (!rows || rows.length === 0) { done = true; continue; }
-      for (const x of rows) {
-        const sku = String(x.sku || "").trim();
-        if (sku) map[sku] = [num(x.availablestock ?? x.stock), num(x.sellprice ?? x.price)];
-      }
-      if (rows.length < PAGE) done = true;
-    }
+    pages.forEach((rows, i) => {
+      if (rows === null) { failed.push(batch[i]); return; }   // พลาด ไม่ใช่จบ
+      absorb(rows);
+      if (rows.length < PAGE) reachedEnd = true;              // หน้านี้ไม่เต็ม = หน้าสุดท้าย
+    });
     page += CONCURRENCY;
   }
 
+  // ลองหน้าที่พลาดอีกครั้ง ก่อนจะยอมรับว่าได้ไม่ครบ
+  const stillFailed = [];
+  if (failed.length) {
+    const again = await Promise.all(failed.map((n) => fetchPage(headers, n).catch(() => null)));
+    again.forEach((rows, i) => (rows === null ? stillFailed.push(failed[i]) : absorb(rows)));
+  }
+
   if (!Object.keys(map).length) throw new Error("ZORT ไม่ส่งสินค้ามาเลย");
-  return { at: Date.now(), map };
+  return { at: Date.now(), map, partial: stillFailed.length > 0 };
 }
 
 /**
@@ -81,7 +102,8 @@ export async function liveStock() {
 
   try {
     const fresh = await scrape();
-    s.setJSON(KEY, fresh).catch(() => {});   // เขียนแบบไม่รอ ผู้ใช้ไม่ควรต้องรอขั้นตอนนี้
+    // ⚠️ ได้มาไม่ครบ ห้ามเขียนทับของเก่าที่ครบกว่า — ใช้ครั้งนี้ไปก่อนแล้วรอบหน้าค่อยลองใหม่
+    if (!fresh.partial) s.setJSON(KEY, fresh).catch(() => {});
     return { ...fresh, stale: false };
   } catch {
     // ZORT ล่มหรือช้า — ใช้ของเก่าต่อไปดีกว่าไม่มีอะไรเลย

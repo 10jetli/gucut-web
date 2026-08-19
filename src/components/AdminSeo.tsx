@@ -113,6 +113,7 @@ export default function AdminSeo({ data }: { data: AuditResult }) {
         )}
         {list.map((f) => <Card key={f.title} f={f} />)}
 
+        {tab === "geo" && <FeedHealth />}
         {tab === "geo" && <AiFiles files={data.files} />}
         {tab === "geo" && <BotControl />}
         {tab === "geo" && <AiBots />}
@@ -442,6 +443,153 @@ function BotControl() {
           </p>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// สุขภาพของฟีดสินค้าที่ AI อ่าน (/products.json)
+//
+// ตอบคำถามที่เจ้าของร้านถามไว้: "ตอนมีของ จะรายงาน AI ออโต้ไหม"
+// ฟีดดึงสต็อกสดจากระบบคลังทุก 30 นาที แต่ "สินค้าตัวใหม่" ที่ยังไม่มีหน้าบนเว็บ
+// AI จะมองไม่เห็นเลย — หน้านี้บอกว่ามีกี่ตัว จะได้รู้ว่าควรเพิ่มลงเว็บเมื่อไหร่
+// ---------------------------------------------------------------------------
+interface Health {
+  stockLive: boolean;
+  partial: boolean;
+  at: string | null;
+  onSite: number;
+  inZort: number;
+  matched: number;
+  missingCount: number;
+  missing: { sku: string; st: number; price: number }[];
+  notInZortCount: number;
+  notInZort: { sku: string; t: string }[];
+  error?: string;
+}
+
+function FeedHealth() {
+  const [h, setH] = useState<Health | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const load = useCallback(async () => {
+    const k = requireKey();
+    if (!k) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const r = await adminFetch("/api/feed-health", k);
+      if (!r.ok) { setErr(r.status === 401 ? "รหัสหลังร้านไม่ถูกต้อง" : "ดึงข้อมูลไม่สำเร็จ"); return; }
+      const j = await r.json();
+      setH({
+        stockLive: !!j?.stockLive,
+        partial: !!j?.partial,
+        at: j?.at ?? null,
+        onSite: Number(j?.onSite) || 0,
+        inZort: Number(j?.inZort) || 0,
+        matched: Number(j?.matched) || 0,
+        missingCount: Number(j?.missingCount) || 0,
+        missing: Array.isArray(j?.missing) ? j.missing : [],
+        notInZortCount: Number(j?.notInZortCount) || 0,
+        notInZort: Array.isArray(j?.notInZort) ? j.notInZort : [],
+        error: j?.error,
+      });
+    } catch {
+      setErr("ดึงข้อมูลไม่สำเร็จ");
+    } finally {
+      setBusy(false);
+    }
+  }, []);
+
+  const when = (iso: string | null) => {
+    if (!iso) return "—";
+    try {
+      const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+      return m < 1 ? "เมื่อสักครู่" : m < 60 ? `${m} นาทีที่แล้ว` : `${Math.round(m / 60)} ชั่วโมงที่แล้ว`;
+    } catch { return "—"; }
+  };
+
+  return (
+    <section className="mt-4 overflow-hidden rounded-sm bg-white">
+      <div className="border-b border-steel-700 px-3 py-2.5">
+        <p className="text-[13px] font-bold text-ink">ฟีดสินค้าที่ AI อ่าน</p>
+        <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+          /products.json ดึงสต็อกจากระบบคลังของร้านเองทุก 30 นาที —
+          ของหมดหายจากฟีดเอง ของเข้าใหม่โผล่เอง ไม่ต้องมากดอะไร
+        </p>
+      </div>
+
+      <div className="px-3 py-2.5">
+        <button
+          type="button"
+          onClick={load}
+          disabled={busy}
+          className="min-h-[40px] w-full rounded-sm bg-ink px-4 text-[13px] font-semibold text-white disabled:opacity-50"
+        >
+          {busy ? "กำลังตรวจ…" : h ? "ตรวจใหม่" : "ตรวจสุขภาพฟีด"}
+        </button>
+        {err && <p className="mt-2 text-[12px] text-safety">{err}</p>}
+      </div>
+
+      {h && (
+        <div className="border-t border-steel-700">
+          <div className="grid grid-cols-2 gap-px bg-steel-700">
+            {[
+              ["สินค้าบนเว็บ", h.onSite],
+              ["สินค้าในคลัง", h.inZort],
+              ["จับคู่กันได้", h.matched],
+              ["ในคลังแต่เว็บไม่มี", h.missingCount],
+            ].map(([k, v]) => (
+              <div key={String(k)} className="bg-white px-3 py-2.5">
+                <p className="text-[11px] text-ink-300">{k}</p>
+                <p className="font-heading text-[17px] font-bold text-ink">
+                  {Number(v).toLocaleString("th-TH")}
+                </p>
+              </div>
+            ))}
+          </div>
+
+          <p className={`px-3 py-2.5 text-[12.5px] leading-relaxed ${h.stockLive ? "text-[#12a150]" : "text-safety"}`}>
+            {h.stockLive
+              ? `✅ ดึงสต็อกสดได้ปกติ · อัปเดตล่าสุด ${when(h.at)}`
+              : `⚠️ ดึงจากคลังไม่ได้ กำลังใช้ตัวเลขเก่า (${when(h.at)}) — ฟีดยังทำงาน แต่ตัวเลขไม่สด`}
+            {h.partial && " · รอบล่าสุดได้ข้อมูลมาไม่ครบ ระบบไม่บันทึกทับของเดิม"}
+          </p>
+
+          {h.missingCount > 0 && (
+            <div className="border-t border-steel-700 px-3 py-2.5">
+              <p className="text-[12.5px] font-semibold text-ink">
+                มีของในคลัง แต่เว็บยังไม่มีหน้าสินค้า {h.missingCount.toLocaleString("th-TH")} รายการ
+              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+                สินค้าพวกนี้ <b>ผู้ช่วย AI มองไม่เห็นเลย</b> เพราะไม่มีหน้าให้ชี้ไปหา
+                ต้องเพิ่มเข้าเว็บก่อน (ชื่อ รูป คำอธิบาย) แล้วอัปเดตเว็บหนึ่งครั้ง
+              </p>
+              <ul className="mt-2 space-y-0.5 text-[11.5px] text-ink-300">
+                {h.missing.slice(0, 12).map((m) => (
+                  <li key={m.sku} className="truncate">
+                    {m.sku} · เหลือ {m.st.toLocaleString("th-TH")}
+                    {m.price > 0 ? ` · ฿${m.price.toLocaleString("th-TH")}` : ""}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {h.notInZortCount > 0 && (
+            <div className="border-t border-steel-700 px-3 py-2.5">
+              <p className="text-[12.5px] font-semibold text-ink">
+                อยู่บนเว็บ แต่หาไม่เจอในคลัง {h.notInZortCount.toLocaleString("th-TH")} รายการ
+              </p>
+              <p className="mt-1 text-[12px] leading-relaxed text-ink-300">
+                กลุ่มนี้ฟีดต้องใช้สต็อกเก่าที่แช่ไว้ตอบ อาจเป็นรหัสสินค้าที่สะกดไม่ตรงกันสองระบบ
+                หรือของที่เลิกขายแล้วแต่ยังค้างอยู่บนเว็บ
+              </p>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }
