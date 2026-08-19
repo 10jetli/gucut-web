@@ -27,7 +27,7 @@ export default function SearchBar() {
               <circle cx="11" cy="11" r="7" />
               <path d="M20 20l-3.5-3.5" strokeLinecap="round" />
             </svg>
-            <span className="w-full truncate text-[13px] text-[#8a8a8a]">
+            <span className="w-full truncate text-[13px] text-[#6f6f6f]">
               ค้นหาเลื่อยยนต์ โซ่ อะไหล่ รหัสสินค้า...
             </span>
           </Link>

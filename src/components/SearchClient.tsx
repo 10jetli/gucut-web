@@ -115,11 +115,11 @@ export default function SearchClient() {
               value={q}
               onChange={(ev) => setQ(ev.target.value)}
               placeholder="ค้นหาเลื่อยยนต์ โซ่ อะไหล่ รหัสสินค้า..."
-              className="w-full bg-transparent text-[13px] text-[#1a1a1a] outline-none placeholder:text-[#8a8a8a]"
+              className="w-full bg-transparent text-[13px] text-[#1a1a1a] outline-none placeholder:text-[#6f6f6f]"
             />
             {q && (
               <button onClick={() => { setQ(""); inputRef.current?.focus(); }} aria-label="ล้าง"
-                className="shrink-0 text-base leading-none text-[#8a8a8a]">×</button>
+                className="shrink-0 text-base leading-none text-[#6f6f6f]">×</button>
             )}
           </div>
         </div>

@@ -22,7 +22,7 @@ export default function SiteFooter() {
         <span aria-hidden>·</span>
         <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
       </nav>
-      <p className="mt-3 text-[11px] text-[#8a8a8a]">{SITE_HOST}</p>
+      <p className="mt-3 text-[11px] text-[#6f6f6f]">{SITE_HOST}</p>
     </footer>
   );
 }
