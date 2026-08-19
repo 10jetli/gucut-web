@@ -18,8 +18,8 @@ import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 //            ช่องทางชำระเงิน / สรุปยอด
 //   pay      เฉพาะคนจ่ายด้วย QR — สแกนจ่ายแล้วแนบสลิป (เก็บปลายทางข้ามขั้นนี้)
 //   done     สั่งซื้อสำเร็จ
-type Step = "order" | "pay" | "done";
-type Pay = "cod" | "promptpay";
+type Step = "order" | "pay" | "beam" | "done";
+type Pay = "beam" | "cod" | "promptpay";
 
 interface Address {
   name: string; phone: string; address: string; province: string; zip: string;
@@ -72,12 +72,33 @@ export default function CheckoutView() {
   const [note, setNote] = useState("");
   const [editNote, setEditNote] = useState(false);
   const [tax, setTax] = useState<TaxInfo | null>(null);
+  // ⚠️ ห้ามเดาว่าจ่ายทางไหนได้ ต้องถามเซิร์ฟเวอร์
+  //    เคยเขียนตายตัวว่าจ่ายปลายทางได้ทั้งที่ปิดอยู่ ลูกค้ากรอกครบแล้วมาเจอว่าสั่งไม่ได้
+  const [pays, setPays] = useState<{ beam: boolean; cod: boolean } | null>(null);
   const [pay, setPay] = useState<Pay>(COD_ON ? "cod" : "promptpay");
+  // จ่ายผ่าน Beam — QR จากธนาคารจริง ระบบยืนยันเงินเข้าเอง ไม่ต้องแนบสลิป
+  const [beam, setBeam] = useState<{ qr: string; token: string; expiry: string | null } | null>(null);
+  const [beamLeft, setBeamLeft] = useState(0);
   const [qr, setQr] = useState("");
   const [slip, setSlip] = useState<{ name: string; data: string } | null>(null);
   const [sending, setSending] = useState(false);
   const [orderId, setOrderId] = useState("");
   const [error, setError] = useState("");
+
+  // ถามว่าตอนนี้จ่ายทางไหนได้บ้าง แล้วเลือกทางที่ดีที่สุดให้ลูกค้าอัตโนมัติ
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/pay-options")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        const o = { beam: !!j?.beam, cod: !!j?.cod };
+        setPays(o);
+        setPay(o.beam ? "beam" : o.cod ? "cod" : "promptpay");
+      })
+      .catch(() => setPays({ beam: false, cod: COD_ON }));
+    return () => { alive = false; };
+  }, []);
   const [user, setUser] = useState<User | null>(null);
   const [remember, setRemember] = useState(true);
   const [eta, setEta] = useState("");
@@ -210,7 +231,7 @@ export default function CheckoutView() {
     }
     setError("");
     if (user && remember) saveProfile({ addr }).catch(() => {});
-    if (pay === "cod") submit();
+    if (pay === "cod" || pay === "beam") submit();
     else setStep("pay");
   };
 
@@ -239,6 +260,15 @@ export default function CheckoutView() {
       const j = await res.json().catch(() => null);
       if (!res.ok || !j?.ok) throw new Error(j?.error || `orders ${res.status}`);
       setOrderId(j.orderId);
+
+      // ⚠️ จ่ายผ่าน Beam ยังไม่ถือว่าซื้อสำเร็จตรงนี้ — เพิ่งได้ QR มาเฉย ๆ
+      //    ห้ามล้างตะกร้าและห้ามยิงยอดขายเข้าโฆษณา จนกว่าเงินจะเข้าจริง
+      //    (ล้างตะกร้าตอนนี้ = ลูกค้าที่ไม่จ่ายจะเสียของในตะกร้าไปฟรี ๆ)
+      if (j.pay === "beam") {
+        setBeam({ qr: j.qrBase64 || "", token: j.checkToken || "", expiry: j.expiry || null });
+        setStep("beam");
+        return;
+      }
       // ยอดที่ยิงให้โฆษณา = ยอดที่ลูกค้าจ่ายจริง (รวมค่าส่ง หักส่วนลดแล้ว)
       // eventId = เลขออเดอร์ ต้องตรงกับที่เซิร์ฟเวอร์ยิงผ่าน CAPI ไม่งั้นยอดถูกนับสองเท่า
       track("Purchase", {
@@ -261,6 +291,93 @@ export default function CheckoutView() {
       setSending(false);
     }
   };
+
+  // ---------------------------------------------------------------------------
+  // รอเงินเข้า — ถามเซิร์ฟเวอร์เป็นระยะว่าจ่ายสำเร็จหรือยัง
+  //
+  // ⚠️ ไม่รอแต่ webhook จาก Beam อย่างเดียว ถ้ามันหายไปลูกค้าจะค้างหน้าจอทั้งที่จ่ายแล้ว
+  //    ฝั่งเซิร์ฟเวอร์ของ /api/orders?t= จะถาม Beam เองด้วยทุกครั้งที่เราถาม
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    if (step !== "beam" || !beam?.token || !orderId) return;
+    let alive = true;
+
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/orders?id=${encodeURIComponent(orderId)}&t=${encodeURIComponent(beam.token)}`);
+        const j = await r.json().catch(() => null);
+        if (!alive || !j?.paid) return;
+
+        // เงินเข้าแล้ว — ตอนนี้ถึงจะถือว่าซื้อสำเร็จ
+        track("Purchase", {
+          items: items.map((i) => ({ id: i.handle, title: i.title, price: i.price, qty: i.qty })),
+          value: total,
+          eventId: orderId,
+        });
+        if (buyNow) clearBuyNow();
+        else items.forEach((i) => updateQty(i.productId, i.variant, 0));
+        setStep("done");
+      } catch { /* เน็ตสะดุด รอบหน้าค่อยถามใหม่ */ }
+    };
+
+    const poll = setInterval(tick, 3000);
+    void tick();
+
+    const clock = setInterval(() => {
+      const ms = beam.expiry ? new Date(beam.expiry).getTime() - Date.now() : 0;
+      setBeamLeft(Math.max(0, Math.floor(ms / 1000)));
+    }, 1000);
+
+    return () => { alive = false; clearInterval(poll); clearInterval(clock); };
+  }, [step, beam, orderId, items, total, buyNow]);
+
+  // -------------------------------------------------------------- รอจ่ายเงิน
+  if (step === "beam") {
+    const mm = String(Math.floor(beamLeft / 60)).padStart(2, "0");
+    const ss = String(beamLeft % 60).padStart(2, "0");
+    const dead = beam?.expiry ? beamLeft <= 0 : false;
+    return (
+      <main className="pb-10">
+        <Head title="สแกนจ่ายเงิน" onBack={() => setStep("order")} />
+        <div className="space-y-2 p-3">
+          <div className="rounded-lg bg-white p-4 text-center">
+            {beam?.qr && !dead ? (
+              <>
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={beam.qr} alt="QR พร้อมเพย์" className="mx-auto h-64 w-64" />
+                <Price value={total} className="mt-2 block font-heading text-2xl font-bold text-safety" />
+                <p className="mt-1 text-[13px] text-steel-300">
+                  สแกนด้วยแอปธนาคารใดก็ได้ · ยอดใส่มาให้แล้ว
+                </p>
+                {beam.expiry && (
+                  <p className="mt-2 text-[13px] font-semibold text-[#1a1a1a]">
+                    QR หมดอายุใน {mm}:{ss}
+                  </p>
+                )}
+              </>
+            ) : (
+              <div className="rounded-lg bg-amber-50 p-4 text-left">
+                <p className="text-[15px] font-semibold text-amber-900">QR หมดอายุแล้ว</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-amber-800">
+                  กดย้อนกลับแล้วสั่งใหม่อีกครั้งได้เลย ยังไม่มีการตัดเงินใด ๆ
+                </p>
+              </div>
+            )}
+          </div>
+
+          <div className="rounded-lg bg-white px-3 py-3 text-[13px] leading-relaxed text-steel-300">
+            <p className="font-semibold text-[#1a1a1a]">ไม่ต้องแนบสลิป</p>
+            <p className="mt-1">
+              ระบบตรวจเงินเข้าให้อัตโนมัติ พอจ่ายเสร็จหน้านี้จะเปลี่ยนเป็นสั่งซื้อสำเร็จเอง
+              ภายในไม่กี่วินาที — อย่าเพิ่งปิดหน้านี้
+            </p>
+            <p className="mt-2 text-[12px]">เลขคำสั่งซื้อ {orderId}</p>
+          </div>
+          {error && <p className="text-center text-[13px] text-safety">{error}</p>}
+        </div>
+      </main>
+    );
+  }
 
   if (items.length === 0 && step !== "done") {
     return (
@@ -518,6 +635,18 @@ export default function CheckoutView() {
         <p className="border-b border-steel-700 px-3 py-2.5 text-[13px] font-semibold text-[#1a1a1a]">
           ช่องทางการชำระเงิน
         </p>
+        {/* ⚠️ ลำดับสำคัญ — ทางที่สะดวกที่สุดต้องอยู่บนสุดและถูกเลือกไว้ให้เลย
+            จ่ายผ่าน Beam ระบบตรวจเงินเข้าเอง ลูกค้าไม่ต้องแนบสลิป
+            และร้านไม่ต้องมานั่งเปิดดูสลิปทีละใบ */}
+        {pays?.beam && (
+          <PayOption
+            on={pay === "beam"}
+            onClick={() => setPay("beam")}
+            badge="QR"
+            title="QR พร้อมเพย์"
+            note="สแกนจ่ายด้วยแอปธนาคารใดก็ได้ · ระบบตรวจเงินเข้าให้อัตโนมัติ ไม่ต้องแนบสลิป"
+          />
+        )}
         <PayOption
           on={COD_ON && pay === "cod"}
           onClick={() => setPay("cod")}
@@ -526,13 +655,17 @@ export default function CheckoutView() {
           title="เก็บเงินปลายทาง"
           note={COD_ON ? "จ่ายเงินสดตอนรับของที่บ้าน ร้านจะโทรยืนยันก่อนส่ง" : COD_OFF_NOTE}
         />
-        <PayOption
-          on={pay === "promptpay"}
-          onClick={() => setPay("promptpay")}
-          badge="QR"
-          title="QR พร้อมเพย์"
-          note="สแกนจ่ายด้วยแอปธนาคาร แล้วแนบสลิป — ร้านจัดส่งทันทีที่ตรวจสลิปเสร็จ"
-        />
+        {/* ทางเดิม (แนบสลิปเอง) โชว์เฉพาะตอนที่ระบบตรวจอัตโนมัติใช้ไม่ได้
+            ไม่งั้นลูกค้าจะเลือกทางที่ช้ากว่าและร้านต้องมาตรวจสลิปโดยไม่จำเป็น */}
+        {pays && !pays.beam && (
+          <PayOption
+            on={pay === "promptpay"}
+            onClick={() => setPay("promptpay")}
+            badge="QR"
+            title="QR พร้อมเพย์ (แนบสลิป)"
+            note="สแกนจ่ายด้วยแอปธนาคาร แล้วแนบสลิป — ร้านจัดส่งทันทีที่ตรวจสลิปเสร็จ"
+          />
+        )}
       </Card>
 
       {/* สรุปการชำระเงิน */}

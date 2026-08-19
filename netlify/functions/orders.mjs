@@ -26,6 +26,8 @@ import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs"
 import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
 import { shippingFor } from "../lib/shipping.mjs";
 import { sendPurchase } from "../lib/marketing.mjs";
+import { finalizeOrder } from "../lib/order-finalize.mjs";
+import { beamReady, chargePaid, createQrCharge, getCharge } from "../lib/beam.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 export const STATUSES = ["new", "confirmed", "shipped", "done", "cancelled"];
@@ -124,9 +126,12 @@ export default async function handler(req, context) {
     // เก็บเงินปลายทาง — ปิด/เปิดด้วย NEXT_PUBLIC_COD ตัวเดียวกับหน้าเว็บ
     // ปิดที่หน้าเว็บอย่างเดียวไม่พอ ยิง POST ตรงมาก็สั่งแบบ COD ได้
     const codOn = process.env.NEXT_PUBLIC_COD === "1";
-    const payment = body.payment === "promptpay" ? "promptpay" : "cod";
+    const payment = ["beam", "promptpay", "cod"].includes(body.payment) ? body.payment : "cod";
     if (payment === "cod" && !codOn) {
       return json({ error: "ตอนนี้ยังไม่เปิดให้เก็บเงินปลายทาง กรุณาชำระด้วย QR พร้อมเพย์" }, 400);
+    }
+    if (payment === "beam" && !beamReady()) {
+      return json({ error: "ระบบรับชำระเงินยังไม่พร้อม กรุณาทักแชทร้าน" }, 503);
     }
     const slip = typeof body.slipBase64 === "string" && body.slipBase64.startsWith("data:image/")
       ? body.slipBase64.slice(0, MAX_SLIP)
@@ -144,6 +149,7 @@ export default async function handler(req, context) {
       items,
       payment,
       paymentLabel: payment === "cod" ? "เก็บเงินปลายทาง" : "QR พร้อมเพย์",
+      pointDiscount,
       couponCode: clean(body.couponCode, 40) || null,
       discount,
       pointsUsed: plan.points || 0,
@@ -162,90 +168,77 @@ export default async function handler(req, context) {
       hasSlip: !!slip,
     };
 
-    // ส่งออเดอร์เข้า ZORT ให้ตัดสต็อกเอง — แบบเดียวกับตอนขายผ่าน Shopify
-    // พังก็ไม่ล้มออเดอร์ (ออเดอร์เก็บที่เราแล้ว) แค่ติดธงให้ร้านเห็นแล้วกดส่งซ้ำได้
-    order.zort = await zortAddOrder(order);
+    // -----------------------------------------------------------------------
+    // จ่ายผ่าน Beam — ยังไม่ใช่ออเดอร์จริงจนกว่าเงินจะเข้า
+    //
+    // ⚠️ ห้ามส่งเข้า ZORT ตรงนี้เด็ดขาด ลูกน้องแพ็คของจาก ZORT
+    //    ถ้าส่งไปตั้งแต่ตอนกดสั่ง จะมีคนแพ็คของให้ลูกค้าที่ยังไม่จ่าย
+    //    งานทั้งหมด (ZORT · Telegram · ตัดแต้ม · นับโควตาโค้ด · ยอดโฆษณา)
+    //    ถูกยกไปไว้ที่ finalizeOrder แล้วเรียกตอนยืนยันว่าเงินเข้าจริงเท่านั้น
+    // -----------------------------------------------------------------------
+    if (payment === "beam") {
+      order.status = "pending";
+      order.paid = false;
+      // รหัสสั้น ๆ ให้หน้าเว็บใช้ถามสถานะออเดอร์ใบนี้ได้โดยไม่ต้องล็อกอิน
+      order.checkToken = Math.random().toString(36).slice(2, 10) + Math.random().toString(36).slice(2, 10);
 
-    await store.setJSON(`o/${id}`, order);
+      let charge;
+      try {
+        charge = await createQrCharge({
+          orderId: id,
+          baht: total,
+          returnUrl: `${SITE_URL}/account/orders/`,
+        });
+      } catch (e) {
+        return json({ error: `ขอ QR ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` }, 502);
+      }
+
+      order.beam = { chargeId: charge.chargeId, expiry: charge.expiry };
+      await store.setJSON(`o/${id}`, order);
+      rl.n += 1;
+      await store.setJSON(`rl/${ip}`, rl).catch(() => {});
+
+      return json({
+        ok: true, orderId: id, pay: "beam",
+        checkToken: order.checkToken,
+        qrBase64: charge.qrBase64,
+        expiry: charge.expiry,
+        total,
+      });
+    }
+
+    // เก็บเงินปลายทาง / โอนแล้วแนบสลิป — ถือว่าใช้ได้ทันที
     if (slip) await store.set(`slip/${id}`, slip);
-
-    // นับโควตาโค้ดส่วนลด "ตอนสั่งจริง" เท่านั้น ไม่ใช่ตอนลูกค้ากดลองโค้ด
-    // ไม่งั้นโค้ดจำนวนจำกัดจะหมดทั้งที่ยังไม่มีใครซื้อสักคน
-    if (order.couponCode) {
-      await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
-    }
-
-    // หักแต้มที่แลกไปทันที (แต้มที่จะ "ได้" จากบิลนี้ รอจนออเดอร์สำเร็จก่อน)
-    if (buyer && order.pointsUsed > 0) {
-      await addPoints(usersStore(), buyer.phone, -order.pointsUsed, `ใช้แลกส่วนลด ฿${pointDiscount}`, id)
-        .catch(() => {});
-    }
+    await finalizeOrder({
+      order, store, usersStore, buyer, slip, req, context, zortAddOrder,
+    });
     rl.n += 1;
     await store.setJSON(`rl/${ip}`, rl).catch(() => {});
 
-    // แจ้งเตือนร้าน — ต้องรอให้ยิงเสร็จก่อนตอบ ไม่งั้น serverless ดับก่อนแล้วเงียบหาย
-    const jobs = [];
-    const later = (p) => (context?.waitUntil ? context.waitUntil(p) : jobs.push(p));
-
-    const lines = items
-      .map((i) => `· ${i.title}${i.variant && i.variant !== "-" ? ` (${i.variant})` : ""} ×${i.qty} = ฿${(i.price * i.qty).toLocaleString("th-TH")}`)
-      .join("\n");
-    const text =
-      `🛒 ออเดอร์ใหม่ #${id}\n` +
-      `${customer.name} · ${customer.phone}\n\n${lines}\n` +
-      (discount ? `ส่วนลด (${order.couponCode}) -฿${discount.toLocaleString("th-TH")}\n` : "") +
-      `รวม ฿${total.toLocaleString("th-TH")} · ${order.paymentLabel}${order.hasSlip ? " (แนบสลิปแล้ว)" : ""}\n` +
-      (order.taxInvoice ? `🧾 ขอใบกำกับภาษี: ${order.taxInvoice.name}\n` : "") +
-      `📍 ${customer.address} ${customer.province} ${customer.zip}\n` +
-      (customer.note ? `📝 ${customer.note}\n` : "") +
-      (order.zort?.ok
-        ? `✅ เข้า ZORT แล้ว\n`
-        : order.zort?.skipped
-          ? ""
-          : `⚠️ ส่งเข้า ZORT ไม่สำเร็จ (${order.zort?.message || "?"}) — กดส่งซ้ำได้ในหน้าออเดอร์\n`) +
-      `\nเปิดดู: ${SITE_URL}/admin/orders/`;
-
-    const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
-    if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-      later(
-        fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-        }).catch(() => {})
-      );
-    }
-    later(
-      pushToAdmins({
-        title: `🛒 ออเดอร์ใหม่ ฿${total.toLocaleString("th-TH")}`,
-        body: `${customer.name} · ${order.paymentLabel}`,
-        url: "/admin/orders/",
-        tag: id,
-      }).catch(() => {})
-    );
-    if (process.env.ORDER_FORWARD_URL) {
-      later(
-        fetch(process.env.ORDER_FORWARD_URL, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ...order, slipBase64: slip }),
-        }).catch(() => {})
-      );
-    }
-    // ยิงยอดขายเข้าช่องทางโฆษณาจากเซิร์ฟเวอร์ (Meta / TikTok Conversions API)
-    // ใช้ event id = เลขออเดอร์ ตรงกับที่เบราว์เซอร์ยิง ปลายทางจะรวมเป็นรายการเดียว
-    // พังก็ไม่ล้มออเดอร์ — ยอดโฆษณาหายดีกว่าลูกค้าสั่งของไม่ได้
-    later(
-      sendPurchase(order, {
-        ip: req.headers.get("x-nf-client-connection-ip") || req.headers.get("x-forwarded-for")?.split(",")[0]?.trim(),
-        userAgent: req.headers.get("user-agent") || undefined,
-        sourceUrl: `${SITE_URL}/checkout/`,
-      }).catch(() => {})
-    );
-
-    if (jobs.length) await Promise.allSettled(jobs);
-
     return json({ ok: true, orderId: id });
+  }
+
+  // ---------- ลูกค้า: ถามว่าจ่ายเงินสำเร็จหรือยัง ----------
+  //
+  // ต้องมีทั้งเลขออเดอร์และรหัสประจำใบ (checkToken) ถึงจะดูได้
+  // เดาเลขออเดอร์อย่างเดียวไม่พอ และไม่ส่งข้อมูลลูกค้ากลับไปเลยนอกจากสถานะ
+  //
+  // ⚠️ ตรงนี้ "ถาม Beam เอง" ด้วย ไม่ได้รอแต่ webhook อย่างเดียว
+  //    ถ้า webhook หายไป (เน็ตสะดุด / Beam ยิงพลาด) ลูกค้าที่จ่ายแล้วจะค้างอยู่หน้าจอ
+  //    ทางนี้ทำให้จ่ายแล้วรู้ผลเสมอ ตราบใดที่ลูกค้ายังเปิดหน้าอยู่
+  if (req.method === "GET" && url.searchParams.get("t")) {
+    const oid = (url.searchParams.get("id") || "").trim();
+    const tok = (url.searchParams.get("t") || "").trim();
+    const o = oid ? await store.get(`o/${oid}`, { type: "json" }).catch(() => null) : null;
+    if (!o || !o.checkToken || o.checkToken !== tok) return json({ error: "not found" }, 404);
+
+    if (!o.paid && o.beam?.chargeId) {
+      try {
+        const c = await getCharge(o.beam.chargeId);
+        if (chargePaid(c)) await markOrderPaid(o, store, req, context);
+      } catch { /* ถาม Beam ไม่ได้ตอนนี้ก็ตอบสถานะเดิมไปก่อน */ }
+    }
+    return json({ paid: !!o.paid, status: o.status, expiry: o.beam?.expiry ?? null });
   }
 
   // ---------- ลูกค้า: การซื้อของฉัน ----------
@@ -417,6 +410,29 @@ async function zortAddOrder(order) {
   } catch {
     return { ok: false, message: "ต่อ ZORT ไม่ได้" };
   }
+}
+
+/**
+ * ยืนยันว่าออเดอร์ใบนี้จ่ายเงินแล้ว แล้วเดินงานที่เหลือให้ครบ
+ *
+ * ⚠️ ต้องเรียกซ้ำได้โดยไม่เกิดผลซ้ำ — เงินเข้าอาจถูกยืนยันสองทางพร้อมกัน
+ *    (Beam ยิง webhook มาบอก + หน้าเว็บของลูกค้าถามเอง)
+ *    ตัวกันอยู่ที่ธง done ใน finalizeOrder
+ */
+export async function markOrderPaid(order, store, req, context) {
+  if (order.paid) return order;
+  order.paid = true;
+  order.paidAt = Date.now();
+  order.status = "new";
+  await store.setJSON(`o/${order.id}`, order);
+
+  const buyer = await currentUser(req, usersStore())
+    .then((r) => r?.user ?? null)
+    .catch(() => null);
+
+  return finalizeOrder({
+    order, store, usersStore, buyer, slip: null, req, context, zortAddOrder,
+  });
 }
 
 export const config = { path: "/api/orders" };
