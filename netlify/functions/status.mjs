@@ -228,6 +228,17 @@ export default async function handler(req, context) {
       return on.length ? { note: `เปิดอยู่: ${on.join(", ")}` } : { off: true, note: "ยังไม่ได้เปิดเจ้าไหน" };
     }),
 
+    // ---------- รับเงินผ่าน Beam ----------
+    check("รับเงินผ่าน Beam", async () => {
+      const { BEAM_MERCHANT_ID: id, BEAM_API_KEY: key, BEAM_ENV: mode } = env;
+      if (!id || !key) {
+        return { off: true, note: `ยังไม่ได้ใส่รหัส (merchant ${id ? "มี" : "ไม่มี"} · key ${key ? "มี" : "ไม่มี"})` };
+      }
+      return mode === "playground"
+        ? { warn: true, note: "อยู่ในโหมดสนามทดลอง — เงินไม่เข้าจริง" }
+        : { note: "โหมดใช้งานจริง · ทดสอบยิงจริงได้ที่ /api/beam-test" };
+    }),
+
     // ---------- เก็บเงินปลายทาง ----------
     check("เก็บเงินปลายทาง (COD)", async () =>
       env.NEXT_PUBLIC_COD === "1"
