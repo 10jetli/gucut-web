@@ -59,7 +59,7 @@ async function call(path, init = {}) {
  *    ส่งเป็นบาทตรง ๆ = เก็บเงินลูกค้าน้อยกว่าจริงร้อยเท่า
  * ⚠️ referenceId ต้องเป็นเลขออเดอร์ของเรา จะได้จับคู่กลับได้ตอน Beam แจ้งผล
  */
-export async function createQrCharge({ orderId, baht, returnUrl }) {
+export async function createQrCharge({ orderId, baht, returnUrl, paymentMethod }) {
   const satang = Math.round(Number(baht) * 100);
   if (!(satang > 0)) throw new Error("ยอดเงินไม่ถูกต้อง");
 
@@ -70,7 +70,13 @@ export async function createQrCharge({ orderId, baht, returnUrl }) {
       currency: "THB",
       referenceId: String(orderId),
       returnUrl,
-      paymentMethod: { paymentMethodType: "QR_PROMPT_PAY" },
+      // ⚠️ Beam ต้องการ object ย่อยชื่อเดียวกับชนิดการจ่ายด้วย ไม่ใช่แค่ paymentMethodType
+      //    ใส่แค่ paymentMethodType อย่างเดียวจะโดนตีกลับว่า
+      //    "inputs are failing validation: qrPromptPay is a required field"
+      paymentMethod: paymentMethod || {
+        paymentMethodType: "QR_PROMPT_PAY",
+        qrPromptPay: {},
+      },
       deviceType: "WEB",
     }),
   });

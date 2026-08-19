@@ -27,14 +27,24 @@ export default async function handler(req, context) {
     });
   }
 
-  const baht = Math.max(1, Number(new URL(req.url).searchParams.get("baht")) || 20);
-  const origin = new URL(req.url).origin;
+  const url = new URL(req.url);
+  const baht = Math.max(1, Number(url.searchParams.get("baht")) || 20);
+  const origin = url.origin;
+
+  // ให้ลองรูปแบบ paymentMethod อื่นได้โดยไม่ต้อง deploy ใหม่ทุกครั้ง
+  // (เอกสารของ Beam เปิดไม่ได้ ต้องลองจากข้อความ error ที่มันตอบกลับมา)
+  let paymentMethod;
+  const pm = url.searchParams.get("pm");
+  if (pm) {
+    try { paymentMethod = JSON.parse(pm); } catch { return json({ ok: false, reason: "pm ไม่ใช่ JSON" }); }
+  }
 
   try {
     const c = await createQrCharge({
       orderId: `TEST-${Date.now()}`,
       baht,
       returnUrl: `${origin}/account/orders/`,
+      paymentMethod,
     });
     return json({
       ok: true,
