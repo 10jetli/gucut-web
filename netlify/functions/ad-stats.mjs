@@ -8,6 +8,7 @@
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { facebookInsights, publicView, readConfig, saveConfig } from "../lib/adstats.mjs";
+import { googleInsights } from "../lib/googleads.mjs";
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
@@ -90,31 +91,37 @@ export default async function handler(req, context) {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (days - 1));
   const sinceTs = start.getTime();
 
-  const [fb, sales] = await Promise.all([
+  const range = { since: ymd(sinceTs), until: ymd(untilTs) };
+
+  // ⚠️ เจ้าไหนพังต้องไม่ลากอีกเจ้าและยอดขายของเราพังไปด้วย — ห่อ error ไว้ทีละเจ้า
+  const guard = (p) =>
+    p.then(
+      (rows) => ({ ok: true, rows }),
+      (e) => ({ ok: false, error: String(e?.message || e), rows: [] }),
+    );
+
+  const [fb, google, sales] = await Promise.all([
     cfg.fb.on && cfg.fb.token && cfg.fb.accountId
-      ? facebookInsights({
-          accountId: cfg.fb.accountId,
-          token: cfg.fb.token,
-          since: ymd(sinceTs),
-          until: ymd(untilTs),
-        }).then(
-          (rows) => ({ ok: true, rows }),
-          // ⚠️ พังฝั่ง Facebook ต้องไม่ทำให้ทั้งหน้าพัง — ยอดขายของเรายังต้องดูได้
-          (e) => ({ ok: false, error: String(e?.message || e), rows: [] }),
-        )
+      ? guard(facebookInsights({ accountId: cfg.fb.accountId, token: cfg.fb.token, ...range }))
+      : Promise.resolve({ ok: false, off: true, rows: [] }),
+    cfg.google.on
+      ? guard(googleInsights(cfg.google, range))
       : Promise.resolve({ ok: false, off: true, rows: [] }),
     ownSales(sinceTs, untilTs),
   ]);
 
-  const spend = fb.rows.reduce((s, r) => s + r.spend, 0);
+  const sum = (rows) => rows.reduce((s, r) => s + r.spend, 0);
+  const spend = sum(fb.rows) + sum(google.rows);
 
   return json({
-    range: { since: ymd(sinceTs), until: ymd(untilTs), days },
+    range: { ...range, days },
     fb,
+    google,
     sales,
     // "ได้เงินกี่บาทต่อค่าโฆษณา 1 บาท" คิดจากยอดขายจริงของเรา ไม่ใช่ที่พิกเซลเดา
     roas: spend > 0 && sales ? sales.revenue / spend : null,
     spend,
+    spendBy: { fb: sum(fb.rows), google: sum(google.rows) },
   });
 }
 

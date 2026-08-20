@@ -14,13 +14,22 @@ import { getStore } from "@netlify/blobs";
 const store = () => getStore({ name: "gucut-coupon", consistency: "strong" });
 const KEY = "adstats";
 
-const EMPTY = { fb: { on: false, accountId: "", token: "" } };
+const EMPTY = {
+  fb: { on: false, accountId: "", token: "" },
+  google: {
+    on: false, customerId: "", loginCustomerId: "",
+    developerToken: "", clientId: "", clientSecret: "", refreshToken: "",
+  },
+};
 
 /** ค่าตั้งค่าทั้งหมด (มีโทเคน) — ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น */
 export async function readConfig() {
   try {
     const v = await store().get(KEY, { type: "json" });
-    return { fb: { ...EMPTY.fb, ...(v?.fb || {}) } };
+    return {
+      fb: { ...EMPTY.fb, ...(v?.fb || {}) },
+      google: { ...EMPTY.google, ...(v?.google || {}) },
+    };
   } catch {
     return EMPTY;
   }
@@ -30,11 +39,23 @@ export async function readConfig() {
 export async function saveConfig(input) {
   const cur = await readConfig();
   const fb = input?.fb || {};
+  const g = input?.google || {};
+  // ค่าลับที่ส่งมาว่าง = "ไม่เปลี่ยน" ไม่ใช่ "ลบ" — หน้าเว็บไม่เคยได้ค่าจริงไปแสดง
+  const keep = (v, old, max = 500) => (v ? String(v).slice(0, max) : old);
   const next = {
     fb: {
       on: !!fb.on,
       accountId: String(fb.accountId ?? cur.fb.accountId).replace(/[^0-9]/g, "").slice(0, 32),
-      token: fb.token ? String(fb.token).slice(0, 500) : cur.fb.token,
+      token: keep(fb.token, cur.fb.token),
+    },
+    google: {
+      on: !!g.on,
+      customerId: String(g.customerId ?? cur.google.customerId).replace(/[^0-9]/g, "").slice(0, 32),
+      loginCustomerId: String(g.loginCustomerId ?? cur.google.loginCustomerId).replace(/[^0-9]/g, "").slice(0, 32),
+      developerToken: keep(g.developerToken, cur.google.developerToken, 200),
+      clientId: keep(g.clientId, cur.google.clientId, 300),
+      clientSecret: keep(g.clientSecret, cur.google.clientSecret, 200),
+      refreshToken: keep(g.refreshToken, cur.google.refreshToken, 500),
     },
   };
   await store().setJSON(KEY, next);
@@ -44,6 +65,15 @@ export async function saveConfig(input) {
 /** ส่งกลับหน้าเว็บได้ — ไม่มีโทเคนติดไป */
 export const publicView = (c) => ({
   fb: { on: c.fb.on, accountId: c.fb.accountId, hasToken: !!c.fb.token },
+  google: {
+    on: c.google.on,
+    customerId: c.google.customerId,
+    loginCustomerId: c.google.loginCustomerId,
+    hasDeveloperToken: !!c.google.developerToken,
+    hasClientId: !!c.google.clientId,
+    hasClientSecret: !!c.google.clientSecret,
+    hasRefreshToken: !!c.google.refreshToken,
+  },
 });
 
 // ---------------------------------------------------------------------------
