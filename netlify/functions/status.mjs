@@ -228,6 +228,37 @@ export default async function handler(req, context) {
       return on.length ? { note: `เปิดอยู่: ${on.join(", ")}` } : { off: true, note: "ยังไม่ได้เปิดเจ้าไหน" };
     }),
 
+    // ---------- ยิงยอดขายจากเซิร์ฟเวอร์เข้า Meta (CAPI) ----------
+    //
+    // ⚠️ "บันทึกโทเคนแล้ว" กับ "โทเคนใช้ได้จริง" เป็นคนละเรื่อง
+    //    จึงยิงถาม Facebook จริงว่าโทเคนนี้เปิดพิกเซลตัวนี้ได้ไหม
+    //    ไม่ส่งเหตุการณ์ปลอมเข้าไป (แค่อ่านชื่อพิกเซล) ยอดจริงจึงไม่เพี้ยน
+    //
+    // ⚠️ ห้ามเขียนตายตัวว่า "ต่อแล้ว" เพราะเห็นว่ามีโทเคนอยู่
+    //    โทเคนหมดอายุ / ถูกเพิกถอน / วางผิดช่อง ก็ยังเป็นข้อความยาว ๆ เหมือนกัน
+    //    ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ
+    check("ยิงยอดขายเข้า Meta จากเซิร์ฟเวอร์", async () => {
+      const s = getStore({ name: "gucut-coupon", consistency: "strong" });
+      const m = (await s.get("marketing", { type: "json" }).catch(() => null)) || {};
+      const meta = m.meta || {};
+      if (!meta.on || !meta.pixelId) return { off: true, note: "ยังไม่ได้เปิดพิกเซล Meta" };
+      if (!meta.token) {
+        // ⚠️ ต้องเป็น warn ไม่ใช่ off — พิกเซลทำงานอยู่ แต่ยอดขายนับขาดเพราะยิงทางเดียว
+        return { warn: true, note: "ยังไม่ได้ใส่ Conversions API Token — ยอดขายที่ Facebook เห็นจะนับขาด (ตัวบล็อกโฆษณา · iOS ตัดคุกกี้)" };
+      }
+
+      const r = await fetch(
+        `https://graph.facebook.com/v21.0/${encodeURIComponent(meta.pixelId)}?fields=name&access_token=${encodeURIComponent(meta.token)}`,
+        { signal: AbortSignal.timeout(8000) },
+      );
+      const body = await r.json().catch(() => null);
+      if (!r.ok) {
+        throw new Error(body?.error?.message || `Facebook ตอบ ${r.status}`);
+      }
+      const extra = meta.testCode ? " ⚠️ ยังใส่ Test Event Code อยู่ ยอดจะไม่เข้าของจริง" : "";
+      return { note: `ใช้ได้จริง · พิกเซล "${body?.name || meta.pixelId}"${extra}` };
+    }),
+
     // ---------- รับเงินผ่าน Beam ----------
     check("รับเงินผ่าน Beam", async () => {
       const { BEAM_MERCHANT_ID: id, BEAM_API_KEY: key, BEAM_ENV: mode } = env;
