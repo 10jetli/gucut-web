@@ -230,13 +230,17 @@ export default async function handler(req, context) {
 
     // ---------- ยิงยอดขายจากเซิร์ฟเวอร์เข้า Meta (CAPI) ----------
     //
-    // ⚠️ "บันทึกโทเคนแล้ว" กับ "โทเคนใช้ได้จริง" เป็นคนละเรื่อง
-    //    จึงยิงถาม Facebook จริงว่าโทเคนนี้เปิดพิกเซลตัวนี้ได้ไหม
-    //    ไม่ส่งเหตุการณ์ปลอมเข้าไป (แค่อ่านชื่อพิกเซล) ยอดจริงจึงไม่เพี้ยน
+    // ⚠️ บทเรียน 20 ส.ค. 2569 — ตัวตรวจรอบแรกถามผิดคำถาม แล้วขึ้นแดงปลอม
+    //    เคยเช็คด้วย GET /<pixel-id>?fields=name แล้วได้ (#100) Missing Permission
+    //    ทั้งที่โทเคนไม่ได้เสีย — เพราะโทเคน CAPI มีสิทธิ์ "ส่งเหตุการณ์" อย่างเดียว
+    //    ไม่มีสิทธิ์ "อ่านข้อมูลพิกเซล" ซึ่งเป็นคนละเรื่องกัน
+    //    แดงปลอมอันตรายพอกับเขียวปลอม เพราะทำให้ไปไล่แก้ของที่ไม่ได้พัง
     //
-    // ⚠️ ห้ามเขียนตายตัวว่า "ต่อแล้ว" เพราะเห็นว่ามีโทเคนอยู่
-    //    โทเคนหมดอายุ / ถูกเพิกถอน / วางผิดช่อง ก็ยังเป็นข้อความยาว ๆ เหมือนกัน
-    //    ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ
+    // ตอนนี้จึงตรวจสองชั้น ตามความจริงที่รู้ได้จริง
+    //   1. โทเคนยังมีชีวิตไหม  → GET /me (ทุกโทเคนเรียกได้)
+    //   2. เคยยิงเข้าจริงหรือยัง → หมุดที่ marketing.mjs จดไว้ตอนมีออเดอร์
+    // ⚠️ ห้ามสรุปว่า "ใช้ได้" จากข้อ 1 อย่างเดียว — โทเคนมีชีวิตแต่ผูกผิดพิกเซลก็เป็นแบบนี้
+    //    จะรู้แน่ก็ต่อเมื่อมีออเดอร์จริงผ่านเข้าไปแล้ว (กติกาเดียวกับ Beam)
     check("ยิงยอดขายเข้า Meta จากเซิร์ฟเวอร์", async () => {
       const s = getStore({ name: "gucut-coupon", consistency: "strong" });
       const m = (await s.get("marketing", { type: "json" }).catch(() => null)) || {};
@@ -247,16 +251,31 @@ export default async function handler(req, context) {
         return { warn: true, note: "ยังไม่ได้ใส่ Conversions API Token — ยอดขายที่ Facebook เห็นจะนับขาด (ตัวบล็อกโฆษณา · iOS ตัดคุกกี้)" };
       }
 
+      // 1. โทเคนยังใช้ได้อยู่ไหม
       const r = await fetch(
-        `https://graph.facebook.com/v21.0/${encodeURIComponent(meta.pixelId)}?fields=name&access_token=${encodeURIComponent(meta.token)}`,
+        `https://graph.facebook.com/v21.0/me?access_token=${encodeURIComponent(meta.token)}`,
         { signal: AbortSignal.timeout(8000) },
       );
       const body = await r.json().catch(() => null);
-      if (!r.ok) {
-        throw new Error(body?.error?.message || `Facebook ตอบ ${r.status}`);
+      if (!r.ok) throw new Error(body?.error?.message || `Facebook ตอบ ${r.status}`);
+
+      const warnTest = meta.testCode
+        ? " ⚠️ ยังใส่ Test Event Code อยู่ ยอดจะไม่เข้าของจริง"
+        : "";
+
+      // 2. เคยยิงเข้าจริงหรือยัง — หมุดถูกจดตอนมีออเดอร์ผ่านเข้าไป
+      const last = await s.get("capi-last", { type: "json" }).catch(() => null);
+      if (!last?.at) {
+        return {
+          warn: true,
+          note: `โทเคนใช้ได้ แต่ยังไม่เคยยิงยอดขายจริงสักครั้ง — จะรู้แน่ว่าต่อถูกพิกเซลตอนมีออเดอร์ใบแรก${warnTest}`,
+        };
       }
-      const extra = meta.testCode ? " ⚠️ ยังใส่ Test Event Code อยู่ ยอดจะไม่เข้าของจริง" : "";
-      return { note: `ใช้ได้จริง · พิกเซล "${body?.name || meta.pixelId}"${extra}` };
+      const d = new Date(last.at).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+      if (!last.ok) {
+        return { warn: true, note: `ยิงล่าสุด ${d} แล้ว Facebook ปฏิเสธ: ${String(last.error || "").slice(0, 90)}` };
+      }
+      return { note: `ใช้ได้จริง · ยิงสำเร็จล่าสุด ${d} (ออเดอร์ ${last.orderId})${warnTest}` };
     }),
 
     // ---------- รับเงินผ่าน Beam ----------

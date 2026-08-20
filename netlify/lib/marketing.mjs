@@ -173,6 +173,17 @@ export async function sendPurchase(order, meta = {}) {
     } catch (e) {
       out.meta = { ok: false, body: String(e?.message || e).slice(0, 200) };
     }
+    // จดผลครั้งล่าสุดไว้ให้หน้าสถานะระบบอ่าน
+    //
+    // ⚠️ นี่เป็นหลักฐานเดียวที่บอกได้ว่า "ต่อถูกพิกเซลจริง"
+    //    เช็คว่าโทเคนยังมีชีวิตอยู่ไม่พอ — โทเคนดีแต่ผูกผิดพิกเซลก็ผ่านด่านนั้นได้
+    // ⚠️ ห้าม await และห้ามให้พังลามมาล้มการยิงจริง — เป็นแค่บันทึกช่วยจำ
+    void recordCapi({
+      at: Date.now(),
+      ok: !!out.meta?.ok,
+      orderId: String(order?.id ?? ""),
+      error: out.meta?.ok ? "" : String(out.meta?.body ?? "").slice(0, 200),
+    });
   }
 
   if (cfg.tiktok.on && cfg.tiktok.pixelId && cfg.tiktok.token) {
@@ -216,4 +227,19 @@ export async function sendPurchase(order, meta = {}) {
   }
 
   return out;
+}
+
+
+/**
+ * จดผลการยิง CAPI ครั้งล่าสุด ให้หน้าสถานะระบบเอาไปโชว์
+ * ⚠️ พังเงียบ ๆ ได้ ห้ามโยน error ออกไป — ถ้าจดไม่ได้ก็แค่ไม่มีข้อมูลโชว์
+ *    ไม่ควรทำให้ออเดอร์ที่ลูกค้าจ่ายเงินมาแล้วล้มเพราะบันทึกช่วยจำ
+ */
+async function recordCapi(entry) {
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    await getStore({ name: "gucut-coupon", consistency: "strong" }).setJSON("capi-last", entry);
+  } catch {
+    /* ไม่เป็นไร */
+  }
 }
