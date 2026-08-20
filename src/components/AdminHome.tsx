@@ -120,6 +120,7 @@ export default function AdminHome() {
     { href: "/admin/marketing/", title: "พิกเซลการตลาด", note: "ใส่รหัส Meta · TikTok · Google · LINE", badge: 0, icon: "tag" as const },
     { href: "/admin/ads/", title: "ค่าโฆษณา vs ยอดขาย", note: "จ่ายโฆษณาไปเท่าไหร่ ได้กลับมาเท่าไหร่", badge: 0, icon: "tag" as const },
     { href: "/admin/clips/", title: "สถิติคลิป", note: "คลิปไหนคนดูเยอะ · ดูจนจบกี่ %", badge: 0, icon: "video" as const },
+    { href: "/admin/attendance/", title: "ลงเวลาพนักงาน", note: "เข้า-ออกงาน · มาสาย · ชั่วโมงรวม", badge: 0, icon: "clock" as const },
     { href: "/admin/live/", title: "คนเข้าเว็บ", note: "ออนไลน์ตอนนี้กี่คน · กำลังดูหน้าไหน", badge: 0, icon: "pulse" as const },
     { href: "/admin/status/", title: "สถานะระบบ", note: "เช็คว่าอะไรใช้ได้ อะไรพัง", badge: 0, icon: "pulse" as const },
   ];
@@ -132,6 +133,7 @@ export default function AdminHome() {
     tag: "M4 12.5V5a1 1 0 011-1h7.5L21 12.5 12.5 21 4 12.5zM8 8.5v.01",
     search: "M11 4a7 7 0 100 14 7 7 0 000-14zM20 20l-4-4",
     star: "M12 3l2.6 5.6 6.4.8-4.7 4.3 1.3 6.3L12 17l-5.6 3 1.3-6.3L3 9.4l6.4-.8L12 3z",
+    clock: "M12 3a9 9 0 100 18 9 9 0 000-18zm0 4v5l3.5 2",
   };
 
   return (
