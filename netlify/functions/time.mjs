@@ -57,7 +57,10 @@ async function noteFail(ip) {
  */
 async function notifyLate(res) {
   const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
-  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) {
+    console.log("[time] ยังไม่ได้ตั้ง TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID");
+    return;
+  }
   const bits = [`⏰ ${res.name} ลงเวลาเข้างาน ${res.in}`];
   if (res.late > 0) bits.push(`สาย ${res.late} นาที (เข้างาน ${res.workStart})`);
   if (res.far > 0) bits.push(`📍 อยู่ห่างร้าน ~${res.far} เมตร`);
@@ -70,6 +73,9 @@ async function notifyLate(res) {
       disable_web_page_preview: true,
     }),
     signal: AbortSignal.timeout(5000),
+  }).then(async (r) => {
+    // เขียน log ไว้ให้ไล่ได้จากหน้า Netlify ถ้าวันหนึ่งไม่เด้งอีก
+    if (!r.ok) console.log("[time] Telegram ปฏิเสธ:", r.status, (await r.text()).slice(0, 200));
   });
 }
 
@@ -113,10 +119,19 @@ export default async function handler(req, context) {
         : null,
     });
 
-    // ⚠️ แจ้งเตือนต้องไม่ทำให้การลงเวลาช้าหรือล้ม — ปล่อยลอย ไม่ await
-    //    พนักงานยืนรอหน้าเครื่องอยู่ ห้ามให้เขารอ Telegram
+    // แจ้งเตือนเข้ากลุ่มร้านเมื่อมีคนมาสายหรือกดจากนอกร้าน
+    //
+    // ⚠️ ปล่อยลอยเฉย ๆ ไม่ได้ — ฟังก์ชันจบแล้วงานที่ค้างอยู่จะไม่ได้ทำงานต่อ
+    //    เขียนเป็น void notifyLate(...) ไว้ตอนแรก แล้วข้อความไม่เด้งเลยสักครั้ง
+    //    (เจอของจริง 21 ส.ค. 2569 — กับดักตัวเดียวกับ sweep() ใน live.mjs)
+    //
+    // ⚠️ และห้ามเขียน context?.waitUntil?.(job) เด็ดขาด
+    //    ถ้า waitUntil ไม่มี JavaScript จะข้ามการประเมิน argument ทั้งก้อน
+    //    แปลว่า notifyLate() ไม่เคยถูกเรียกเลย
     if (res.kind === "in" && (res.late > 0 || res.far > 0)) {
-      void notifyLate(res).catch(() => {});
+      const job = notifyLate(res).catch(() => {});
+      if (context?.waitUntil) context.waitUntil(job);
+      else await job;   // ไม่มี waitUntil ก็รอ — ยิง Telegram ใช้เวลาไม่ถึงครึ่งวินาที
     }
     return json(res);
   }
