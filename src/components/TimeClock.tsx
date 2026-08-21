@@ -3,7 +3,14 @@
 // หน้าพนักงานลงเวลาเข้า-ออกงาน — /time/
 // ใช้ในมือถือพนักงานหรือแท็บเล็ตหน้าร้านก็ได้: ใส่ PIN → กดปุ่มเดียว
 // ครั้งแรกของวัน = เข้างาน · ครั้งถัดไป = เลิกงาน (กดซ้ำอัปเดตเวลาเลิกล่าสุด)
-import { useEffect, useState } from "react";
+//
+// ⚠️ ถ้าเปิด "ถ่ายรูปตอนลงเวลา" ในหลังร้าน หน้านี้จะขอกล้องหน้าตอนเปิดหน้า
+//    ต้องขอ "ก่อน" ผู้ใช้กดปุ่ม ไม่ใช่ตอนกด — กล้องใช้เวลาเปิดราว 1 วินาที
+//    ถ้าไปเปิดตอนกด รูปจะเป็นเฟรมดำหรือหลุดไปเลย
+//
+// ⚠️ กล้องไม่ติด (ไม่ให้สิทธิ์ / เครื่องไม่มีกล้อง) ต้อง "ยังลงเวลาได้"
+//    ระบบลงเวลาที่กดไม่ได้เพราะกล้องพัง แย่กว่าไม่มีรูป
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Status {
   name: string;
@@ -15,6 +22,9 @@ interface Status {
 
 export default function TimeClock() {
   const [pin, setPin] = useState("");
+  const [needPhoto, setNeedPhoto] = useState(false);
+  const [camReady, setCamReady] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const [st, setSt] = useState<Status | null>(null);
@@ -29,6 +39,63 @@ export default function TimeClock() {
     return () => clearInterval(t);
   }, []);
 
+  // ถามหลังร้านก่อนว่าต้องถ่ายรูปไหม แล้วค่อยขอกล้อง
+  useEffect(() => {
+    let stream: MediaStream | null = null;
+    let dead = false;
+
+    (async () => {
+      let on = false;
+      try {
+        const r = await fetch("/api/time?public=1");
+        on = !!(await r.json())?.photo;
+      } catch {
+        /* ต่อไม่ได้ก็ถือว่าไม่ต้องถ่าย — ต้องลงเวลาได้ไว้ก่อน */
+      }
+      if (dead || !on) return;
+      setNeedPhoto(true);
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: "user", width: 480, height: 480 },
+          audio: false,
+        });
+        if (dead) { stream.getTracks().forEach((t) => t.stop()); return; }
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play().catch(() => {});
+        }
+        setCamReady(true);
+      } catch {
+        // ไม่ให้สิทธิ์กล้อง — ยังลงเวลาได้ แค่ไม่มีรูป
+        setCamReady(false);
+      }
+    })();
+
+    return () => {
+      dead = true;
+      stream?.getTracks().forEach((t) => t.stop());
+    };
+  }, []);
+
+  /** จับภาพหนึ่งเฟรมเป็น JPEG ย่อแล้ว — คืน null ถ้ากล้องไม่พร้อม */
+  const snap = useCallback((): string | null => {
+    const v = videoRef.current;
+    if (!v || !v.videoWidth) return null;
+    try {
+      // ⚠️ ย่อเหลือ 320px ก่อนส่ง — ส่งภาพเต็มคือหลักเมกต่อครั้ง
+      //    เก็บวันละสองใบต่อคน เดือนหนึ่งกลายเป็นหลาย GB โดยไม่ได้อะไรเพิ่ม
+      const w = 320;
+      const h = Math.round((v.videoHeight / v.videoWidth) * w);
+      const c = document.createElement("canvas");
+      c.width = w; c.height = h;
+      c.getContext("2d")?.drawImage(v, 0, 0, w, h);
+      return c.toDataURL("image/jpeg", 0.6);
+    } catch {
+      return null;
+    }
+  }, []);
+
   async function send(action: "clock" | "status") {
     if (busy || pin.length < 4) return;
     setBusy(true); setErr("");
@@ -36,7 +103,8 @@ export default function TimeClock() {
       const r = await fetch("/api/time", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action, pin }),
+        // ถ่ายเฉพาะตอนลงเวลาจริง — กด "ดูสถานะ" ไม่ต้องถ่าย
+        body: JSON.stringify({ action, pin, ...(action === "clock" ? { photo: snap() } : {}) }),
       });
       const d = await r.json();
       if (!r.ok) { setErr(d.error || "ไม่สำเร็จ ลองใหม่อีกครั้ง"); setSt(null); return; }
@@ -64,6 +132,22 @@ export default function TimeClock() {
       <p className="mt-4 font-heading text-[40px] font-bold tabular-nums leading-none text-ink" suppressHydrationWarning>
         {clock || "--:--:--"}
       </p>
+
+      {/* กล้องหน้า — พรีวิวเล็ก ๆ ให้รู้ว่ากำลังถ่ายอะไรอยู่
+          ⚠️ ต้องเห็นได้จริง ไม่ใช่ซ่อนไว้ — ถ่ายรูปคนโดยไม่บอกคือผิด PDPA */}
+      {needPhoto && (
+        <div className="mt-4 flex flex-col items-center">
+          <video
+            ref={videoRef}
+            muted
+            playsInline
+            className="h-24 w-24 rounded-full border-2 border-steel-600 bg-steel-800 object-cover"
+          />
+          <p className="mt-1.5 text-[11px] text-ink-300">
+            {camReady ? "ระบบจะถ่ายรูปตอนกดลงเวลา" : "เปิดกล้องไม่ได้ — ลงเวลาได้ปกติ แต่จะไม่มีรูป"}
+          </p>
+        </div>
+      )}
 
       {/* ผลหลังกด */}
       {st && (

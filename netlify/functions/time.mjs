@@ -13,7 +13,7 @@
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import {
-  editDay, findByPin, monthTable, publicEmp, punch,
+  editDay, findByPin, getPhoto, monthTable, publicEmp, punch,
   readCfg, readEmp, saveEmp, thaiDate, writeCfg,
 } from "../lib/attendance.mjs";
 
@@ -51,6 +51,15 @@ async function noteFail(ip) {
 }
 
 export default async function handler(req, context) {
+  const url = new URL(req.url);
+
+  // ค่าตั้งค่าที่หน้าพนักงานต้องรู้ก่อนกด — เปิดโล่งได้ ไม่มีอะไรเป็นความลับ
+  // (ต้องรู้ล่วงหน้าว่าจะถ่ายรูปไหม เพื่อขอสิทธิ์กล้องก่อนผู้ใช้กดปุ่ม)
+  if (req.method === "GET" && url.searchParams.get("public") === "1") {
+    const cfg = await readCfg();
+    return json({ photo: !!cfg.photo, workStart: cfg.start });
+  }
+
   let body = null;
   if (req.method === "POST") {
     try { body = await req.json(); } catch { return json({ error: "ข้อมูลไม่ถูกต้อง" }, 400); }
@@ -71,7 +80,10 @@ export default async function handler(req, context) {
       // ⚠️ ห้ามบอกว่า "ไม่มี PIN นี้" หรือ "ถูกพักงาน" แยกกัน — จะกลายเป็นเครื่องมือไล่เดา
       return json({ error: "PIN ไม่ถูกต้อง" }, 401);
     }
-    return json(await punch(emp, { peek: action === "status" }));
+    return json(await punch(emp, {
+      peek: action === "status",
+      photo: typeof body?.photo === "string" ? body.photo : null,
+    }));
   }
 
   // ------------------------------------------------------------------
@@ -81,8 +93,23 @@ export default async function handler(req, context) {
   if (gate.deny) return gate.deny;
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
+  // ดูรูปตอนลงเวลา — ต้องผ่านด่านรหัสหลังร้านแล้วเท่านั้น
+  if (req.method === "GET" && url.searchParams.get("photo")) {
+    const [date, id, kind] = String(url.searchParams.get("photo")).split("/");
+    const p = date && id && (kind === "in" || kind === "out")
+      ? await getPhoto(date, id, kind)
+      : null;
+    if (!p) return json({ error: "ไม่พบรูป" }, 404);
+    return new Response(p.data, {
+      headers: {
+        "content-type": p.type,
+        // รูปเก่าไม่มีวันเปลี่ยน แคชในเครื่องคนดูได้ยาว ๆ แต่ห้ามให้ตัวกลางแคช
+        "cache-control": "private, max-age=86400",
+      },
+    });
+  }
+
   if (req.method === "GET") {
-    const url = new URL(req.url);
     const today = thaiDate();
     const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "")
       ? url.searchParams.get("month")

@@ -8,13 +8,25 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
 interface Emp { id: string; name: string; pin: string; active: boolean }
-interface Rec { name: string; in: number; out: number | null; late: number; edited?: boolean }
+interface Rec { name: string; in: number; out: number | null; late: number; edited?: boolean; photoIn?: boolean; photoOut?: boolean }
 interface Data {
   month: string;                       // "YYYY-MM"
   today: string;                       // "YYYY-MM-DD"
   emp: Emp[];
-  cfg: { start: string; end: string };
+  cfg: { start: string; end: string; photo?: boolean };
   days: Record<string, Record<string, Rec>>;
+}
+
+/** เปิดรูปตอนลงเวลาในแท็บใหม่ — ต้องแนบรหัสหลังร้าน จึงดึงเป็นไฟล์แล้วเปิดจากหน่วยความจำ
+ *  ⚠️ ใส่ URL ตรง ๆ ในแท็บใหม่ไม่ได้ เพราะรหัสอยู่ในหัวข้อความ ไม่ได้อยู่ในคุกกี้ */
+async function openPhoto(key: string, adminKey: string) {
+  const { adminFetch: f } = await import("@/lib/admin");
+  const r = await f(`/api/time?photo=${encodeURIComponent(key)}`, adminKey);
+  if (!r.ok) { alert("ไม่พบรูปของรายการนี้"); return; }
+  const url = URL.createObjectURL(await r.blob());
+  window.open(url, "_blank", "noopener");
+  // ปล่อยคืนหน่วยความจำหลังเปิดแล้ว
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
 const hm = (ms: number) =>
@@ -219,16 +231,26 @@ export default function AdminAttendance() {
                     active.filter((e) => recs[e.id]).map((e) => {
                       const r = recs[e.id];
                       return (
-                        <button key={e.id} onClick={() => editCell(d, e, r)} disabled={busy}
-                                className="flex w-full items-center gap-2 py-0.5 text-left text-[12px]">
-                          <span className="min-w-0 flex-1 truncate text-ink">{e.name}</span>
-                          <span className="tabular-nums text-ink-500">
-                            {hm(r.in)}{r.late > 0 && <b className="text-safety"> สาย{r.late}น.</b>}
-                            {" – "}{r.out ? hm(r.out) : "?"}
-                            {r.out && <span className="text-ink-300"> · {hours(r)}</span>}
-                            {r.edited && <span className="text-ink-300"> ✎</span>}
-                          </span>
-                        </button>
+                        <div key={e.id} className="flex w-full items-center gap-1.5 py-0.5 text-[12px]">
+                          <button onClick={() => editCell(d, e, r)} disabled={busy}
+                                  className="flex min-w-0 flex-1 items-center gap-2 text-left">
+                            <span className="min-w-0 flex-1 truncate text-ink">{e.name}</span>
+                            <span className="tabular-nums text-ink-500">
+                              {hm(r.in)}{r.late > 0 && <b className="text-safety"> สาย{r.late}น.</b>}
+                              {" – "}{r.out ? hm(r.out) : "?"}
+                              {r.out && <span className="text-ink-300"> · {hours(r)}</span>}
+                              {r.edited && <span className="text-ink-300"> ✎</span>}
+                            </span>
+                          </button>
+                          {r.photoIn && (
+                            <button title="รูปตอนเข้างาน" onClick={() => openPhoto(`${d}/${e.id}/in`, key)}
+                                    className="shrink-0 text-[13px] leading-none">📷</button>
+                          )}
+                          {r.photoOut && (
+                            <button title="รูปตอนเลิกงาน" onClick={() => openPhoto(`${d}/${e.id}/out`, key)}
+                                    className="shrink-0 text-[13px] leading-none opacity-60">📷</button>
+                          )}
+                        </div>
                       );
                     })
                   )}
@@ -337,6 +359,24 @@ export default function AdminAttendance() {
             </button>
           </div>
           <p className="mt-1.5 text-[11px] text-ink-300">มาหลังเวลาเข้างาน = นับว่าสาย (โชว์ในรายงานและแจ้งใน Telegram)</p>
+
+          <label className="mt-3 flex items-start gap-2.5 border-t border-steel-800 pt-3">
+            <input
+              type="checkbox"
+              checked={!!data.cfg.photo}
+              disabled={busy}
+              onChange={(ev) => post({ action: "cfg", photo: ev.target.checked })}
+              className="mt-0.5 h-4 w-4 accent-[#c42d00]"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">ถ่ายรูปตอนลงเวลา</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-300">
+                กล้องหน้าจะถ่ายหนึ่งใบตอนกดปุ่ม กัน &ldquo;ฝากเพื่อนกดให้&rdquo; ·
+                ดูรูปได้จากไอคอน 📷 ในตาราง · กล้องไม่ติดก็ยังลงเวลาได้ปกติ ·
+                <b className="text-ink-500"> ต้องบอกพนักงานก่อนเปิดใช้ (กฎหมาย PDPA)</b>
+              </span>
+            </span>
+          </label>
         </section>
 
         <p className="px-1 text-[12px] leading-relaxed text-ink-300">

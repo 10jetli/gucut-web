@@ -15,7 +15,7 @@ const store = () => getStore({ name: "gucut-staff", consistency: "strong" });
 
 const CFG_KEY = "cfg";
 const EMP_KEY = "emp";
-const DEFAULT_CFG = { start: "08:30", end: "17:30" };
+const DEFAULT_CFG = { start: "08:30", end: "17:30", photo: false };
 
 const TZ_OFFSET_MS = 7 * 60 * 60 * 1000;   // ไทย = UTC+7 (ไม่มีปรับเวลาตามฤดู)
 
@@ -57,7 +57,11 @@ export async function readCfg() {
 export async function writeCfg(input) {
   const cur = await readCfg();
   const ok = (v) => (/^\d{2}:\d{2}$/.test(String(v || "")) ? String(v) : null);
-  const next = { start: ok(input?.start) ?? cur.start, end: ok(input?.end) ?? cur.end };
+  const next = {
+    start: ok(input?.start) ?? cur.start,
+    end: ok(input?.end) ?? cur.end,
+    photo: input?.photo === undefined ? cur.photo : !!input.photo,
+  };
   await store().setJSON(CFG_KEY, next);
   return next;
 }
@@ -149,7 +153,7 @@ function lateMinutes(inTs, date, cfg) {
  * กดลงเวลา — ครั้งแรกของวันคือเข้างาน ครั้งถัดไปคือเลิกงาน (กดซ้ำอัปเดตเวลาเลิก)
  * @param peek true = ดูสถานะเฉย ๆ ไม่บันทึกอะไร
  */
-export async function punch(emp, { peek = false } = {}) {
+export async function punch(emp, { peek = false, photo = null } = {}) {
   const cfg = await readCfg();
   const now = Date.now();
   const date = thaiDate(now);
@@ -162,10 +166,12 @@ export async function punch(emp, { peek = false } = {}) {
     if (!rec?.in) {
       rec = { name: emp.name, in: now, out: null, late: 0 };
       rec.late = lateMinutes(now, date, cfg);
+      if (photo && (await savePhoto(date, emp.id, "in", photo))) rec.photoIn = true;
     } else {
       // ⚠️ กดซ้ำ = อัปเดตเวลาเลิกงานเป็นครั้งล่าสุด ไม่ใช่สร้างรอบใหม่
       //    พนักงานมักกดซ้ำเพราะไม่แน่ใจว่ากดติดหรือยัง
       rec.out = now;
+      if (photo && (await savePhoto(date, emp.id, "out", photo))) rec.photoOut = true;
     }
     await s.setJSON(key, rec);
   }
@@ -236,3 +242,46 @@ export async function monthTable(month) {
 /** รายชื่อพนักงานแบบที่ส่งออกหน้าเว็บได้ — ไม่มีแฮช PIN ติดไป */
 export const publicEmp = (list) =>
   list.map((e) => ({ id: e.id, name: e.name, pin: "", active: e.active !== false }));
+
+
+// ---------------------------------------------------------------------------
+// รูปตอนลงเวลา — กัน "ฝากเพื่อนกดให้"
+//
+// ⚠️ รูปไม่ได้ "กัน" การโกงด้วยตัวเอง มันแค่ทำให้โกงแล้วมีหลักฐาน
+//    ค่าของมันคือคนรู้ว่ามีกล้อง เลยไม่ทำ — และเวลาสงสัยขึ้นมาก็ย้อนดูได้
+//
+// ⚠️ เก็บเป็นไฟล์แยกคีย์ละใบ (`ph/<วันที่>/<คนไหน>/<in|out>`)
+//    ห้ามยัดรูป base64 ลงในบันทึกรายวัน — ตารางทั้งเดือนต้องอ่านทุกใบ
+//    จะกลายเป็นโหลดรูปเป็นสิบเมกทุกครั้งที่เปิดหน้า
+//
+// ⚠️ รูปคนเป็นข้อมูลส่วนบุคคลตาม PDPA — หน้าพนักงานจึงต้องเขียนบอกให้เห็นชัด
+//    ว่ากำลังถ่าย และเปิด/ปิดได้จากหลังร้าน (ค่าเริ่มต้นคือปิด)
+const photoKey = (date, id, kind) => `ph/${date}/${id}/${kind}`;
+
+/** เก็บรูป (รับ data URL จากหน้าเว็บ) — คืน true ถ้าเก็บสำเร็จ */
+export async function savePhoto(date, id, kind, dataUrl) {
+  const m = /^data:image\/(jpeg|png|webp);base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl || ""));
+  if (!m) return false;
+  const buf = Buffer.from(m[2], "base64");
+  // ⚠️ เพดานขนาด — หน้าเว็บย่อมาให้แล้ว แต่ถ้ามีใครยิงตรงมาต้องไม่ให้ถมพื้นที่เก็บได้
+  if (!buf.length || buf.length > 400 * 1024) return false;
+  try {
+    await store().set(photoKey(date, id, kind), buf, {
+      metadata: { type: `image/${m[1] === "png" ? "png" : m[1]}` },
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** อ่านรูปกลับมา — คืน null ถ้าไม่มี */
+export async function getPhoto(date, id, kind) {
+  try {
+    const r = await store().getWithMetadata(photoKey(date, id, kind), { type: "arrayBuffer" });
+    if (!r?.data) return null;
+    return { data: r.data, type: String(r.metadata?.type || "image/jpeg") };
+  } catch {
+    return null;
+  }
+}
