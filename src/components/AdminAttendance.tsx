@@ -8,12 +8,12 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
 interface Emp { id: string; name: string; pin: string; active: boolean }
-interface Rec { name: string; in: number; out: number | null; late: number; edited?: boolean; photoIn?: boolean; photoOut?: boolean }
+interface Rec { name: string; in: number; out: number | null; late: number; edited?: boolean; photoIn?: boolean; photoOut?: boolean; farIn?: number; farOut?: number }
 interface Data {
   month: string;                       // "YYYY-MM"
   today: string;                       // "YYYY-MM-DD"
   emp: Emp[];
-  cfg: { start: string; end: string; photo?: boolean };
+  cfg: { start: string; end: string; photo?: boolean; gps?: boolean; lat?: number; lng?: number; radius?: number };
   days: Record<string, Record<string, Rec>>;
 }
 
@@ -240,6 +240,11 @@ export default function AdminAttendance() {
                               {" – "}{r.out ? hm(r.out) : "?"}
                               {r.out && <span className="text-ink-300"> · {hours(r)}</span>}
                               {r.edited && <span className="text-ink-300"> ✎</span>}
+                              {(r.farIn || r.farOut) && (
+                                <b className="text-safety" title="ลงเวลาจากนอกร้าน">
+                                  {" "}📍{Math.max(r.farIn || 0, r.farOut || 0)}ม.
+                                </b>
+                              )}
                             </span>
                           </button>
                           {r.photoIn && (
@@ -377,6 +382,72 @@ export default function AdminAttendance() {
               </span>
             </span>
           </label>
+
+          <label className="mt-3 flex items-start gap-2.5 border-t border-steel-800 pt-3">
+            <input
+              type="checkbox"
+              checked={!!data.cfg.gps}
+              disabled={busy}
+              onChange={(ev) => post({ action: "cfg", gps: ev.target.checked })}
+              className="mt-0.5 h-4 w-4 accent-[#c42d00]"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block text-[13px] font-medium text-ink">เช็คว่าอยู่ที่ร้านจริงไหม</span>
+              <span className="mt-0.5 block text-[11px] leading-relaxed text-ink-300">
+                กดจากนอกรัศมีจะติดธง 📍 พร้อมระยะห่าง —
+                <b className="text-ink-500"> ไม่บล็อกการลงเวลา</b> เพราะ GPS ในอาคารเพี้ยนได้ 30-100 เมตรเป็นปกติ
+              </span>
+            </span>
+          </label>
+
+          {data.cfg.gps && (
+            <div className="mt-2 rounded-sm bg-steel-900 p-2.5">
+              <p className="text-[11.5px] text-ink-700">
+                ตำแหน่งร้าน:{" "}
+                <b className="text-ink">
+                  {data.cfg.lat && data.cfg.lng
+                    ? `${data.cfg.lat.toFixed(5)}, ${data.cfg.lng.toFixed(5)}`
+                    : "ยังไม่ได้ตั้ง"}
+                </b>
+              </p>
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-[12px] text-ink">
+                รัศมี
+                <input
+                  type="number" min={50} max={5000} step={50}
+                  defaultValue={data.cfg.radius ?? 200} id="cfg-radius"
+                  className="w-20 rounded-sm border border-steel-600 px-2 py-1 outline-none focus:border-safety"
+                />
+                เมตร
+                <button
+                  disabled={busy}
+                  onClick={() =>
+                    post({ action: "cfg", radius: Number((document.getElementById("cfg-radius") as HTMLInputElement).value) })}
+                  className="rounded-sm bg-steel-700 px-2.5 py-1 text-[11.5px] font-medium text-ink disabled:opacity-50"
+                >
+                  บันทึกรัศมี
+                </button>
+              </div>
+              {/* ⚠️ ต้องกดปุ่มนี้ "ตอนยืนอยู่ที่ร้าน" ไม่ใช่ที่บ้าน */}
+              <button
+                disabled={busy}
+                onClick={() => {
+                  if (!navigator.geolocation) { setErr("เครื่องนี้บอกตำแหน่งไม่ได้"); return; }
+                  navigator.geolocation.getCurrentPosition(
+                    (p) => post({ action: "cfg", lat: p.coords.latitude, lng: p.coords.longitude }),
+                    () => setErr("ขอตำแหน่งไม่สำเร็จ — อนุญาตให้เว็บใช้ตำแหน่งก่อน"),
+                    { enableHighAccuracy: true, timeout: 8000 },
+                  );
+                }}
+                className="mt-2 w-full rounded-sm bg-safety py-2 text-[12px] font-semibold text-white disabled:opacity-50"
+              >
+                ตั้งจุดนี้เป็นตำแหน่งร้าน
+              </button>
+              <p className="mt-1 text-[11px] leading-relaxed text-ink-300">
+                ⚠️ กดปุ่มนี้ <b className="text-ink-500">ตอนยืนอยู่ที่ร้าน</b> เท่านั้น —
+                กดที่บ้านแล้วพนักงานจะติดธงกันทั้งร้าน
+              </p>
+            </div>
+          )}
         </section>
 
         <p className="px-1 text-[12px] leading-relaxed text-ink-300">

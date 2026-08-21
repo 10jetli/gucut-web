@@ -15,7 +15,7 @@ const store = () => getStore({ name: "gucut-staff", consistency: "strong" });
 
 const CFG_KEY = "cfg";
 const EMP_KEY = "emp";
-const DEFAULT_CFG = { start: "08:30", end: "17:30", photo: false };
+const DEFAULT_CFG = { start: "08:30", end: "17:30", photo: false, gps: false, lat: 0, lng: 0, radius: 200 };
 
 const TZ_OFFSET_MS = 7 * 60 * 60 * 1000;   // ไทย = UTC+7 (ไม่มีปรับเวลาตามฤดู)
 
@@ -57,10 +57,19 @@ export async function readCfg() {
 export async function writeCfg(input) {
   const cur = await readCfg();
   const ok = (v) => (/^\d{2}:\d{2}$/.test(String(v || "")) ? String(v) : null);
+  const num = (v, lo, hi, def) => {
+    const n = Number(v);
+    return Number.isFinite(n) && n >= lo && n <= hi ? n : def;
+  };
   const next = {
     start: ok(input?.start) ?? cur.start,
     end: ok(input?.end) ?? cur.end,
     photo: input?.photo === undefined ? cur.photo : !!input.photo,
+    gps: input?.gps === undefined ? cur.gps : !!input.gps,
+    lat: input?.lat === undefined ? cur.lat : num(input.lat, -90, 90, cur.lat),
+    lng: input?.lng === undefined ? cur.lng : num(input.lng, -180, 180, cur.lng),
+    // ⚠️ ต่ำกว่า 50 เมตรใช้ไม่ได้จริง — GPS ในอาคารเพี้ยนได้ 30-100 เมตรเป็นปกติ
+    radius: input?.radius === undefined ? cur.radius : num(input.radius, 50, 5000, cur.radius),
   };
   await store().setJSON(CFG_KEY, next);
   return next;
@@ -153,7 +162,23 @@ function lateMinutes(inTs, date, cfg) {
  * กดลงเวลา — ครั้งแรกของวันคือเข้างาน ครั้งถัดไปคือเลิกงาน (กดซ้ำอัปเดตเวลาเลิก)
  * @param peek true = ดูสถานะเฉย ๆ ไม่บันทึกอะไร
  */
-export async function punch(emp, { peek = false, photo = null } = {}) {
+/**
+ * ระยะห่างสองพิกัดเป็นเมตร (สูตร haversine)
+ * ⚠️ อย่าคิดง่าย ๆ ด้วยผลต่างองศาแล้วคูณ — ที่ละติจูดไทย 1 องศาลองจิจูด
+ *    สั้นกว่า 1 องศาละติจูดราว 3% ระยะจะเพี้ยนจนตั้งรัศมีไม่ได้
+ */
+export function metersBetween(a, b) {
+  const R = 6371000;
+  const rad = (d) => (d * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLng = rad(b.lng - a.lng);
+  const h =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLng / 2) ** 2;
+  return Math.round(2 * R * Math.asin(Math.sqrt(h)));
+}
+
+export async function punch(emp, { peek = false, photo = null, loc = null } = {}) {
   const cfg = await readCfg();
   const now = Date.now();
   const date = thaiDate(now);
@@ -162,16 +187,29 @@ export async function punch(emp, { peek = false, photo = null } = {}) {
 
   let rec = (await s.get(key, { type: "json" }).catch(() => null)) || null;
 
+  // ระยะห่างจากร้าน — คิดไว้ก่อนเพื่อติดธง แต่ "ไม่บล็อกการลงเวลา"
+  //
+  // ⚠️ ห้ามบล็อกเด็ดขาด GPS ในอาคารเพี้ยนได้ 30-100 เมตรเป็นเรื่องปกติ
+  //    และบางเครื่องไม่ให้สิทธิ์ตำแหน่งเลย ถ้าบล็อก = พนักงานที่มาทำงานจริงลงเวลาไม่ได้
+  //    หน้าที่ของมันคือ "ชี้ให้ดู" ไม่ใช่ "ตัดสิน"
+  let far = 0;
+  if (cfg.gps && cfg.lat && cfg.lng && loc && Number.isFinite(loc.lat) && Number.isFinite(loc.lng)) {
+    const d = metersBetween({ lat: cfg.lat, lng: cfg.lng }, loc);
+    if (d > cfg.radius) far = d;
+  }
+
   if (!peek) {
     if (!rec?.in) {
       rec = { name: emp.name, in: now, out: null, late: 0 };
       rec.late = lateMinutes(now, date, cfg);
       if (photo && (await savePhoto(date, emp.id, "in", photo))) rec.photoIn = true;
+      if (far) rec.farIn = far;
     } else {
       // ⚠️ กดซ้ำ = อัปเดตเวลาเลิกงานเป็นครั้งล่าสุด ไม่ใช่สร้างรอบใหม่
       //    พนักงานมักกดซ้ำเพราะไม่แน่ใจว่ากดติดหรือยัง
       rec.out = now;
       if (photo && (await savePhoto(date, emp.id, "out", photo))) rec.photoOut = true;
+      if (far) rec.farOut = far;
     }
     await s.setJSON(key, rec);
   }
@@ -182,6 +220,9 @@ export async function punch(emp, { peek = false, photo = null } = {}) {
     out: rec?.out ? thaiTime(rec.out) : null,
     late: rec?.late || 0,
     workStart: cfg.start,
+    far,
+    // บอกหน้าเว็บว่าเพิ่งบันทึกอะไรไป ไว้ใช้ตัดสินใจว่าจะเตือนร้านไหม
+    kind: peek ? "peek" : rec?.out ? "out" : "in",
   };
 }
 

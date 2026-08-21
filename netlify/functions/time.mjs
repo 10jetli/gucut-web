@@ -50,6 +50,29 @@ async function noteFail(ip) {
     .catch(() => {});
 }
 
+/**
+ * เตือนเข้ากลุ่ม Telegram ของร้านเมื่อมีคนมาสาย หรือกดจากนอกร้าน
+ * ⚠️ เตือนเฉพาะตอน "เข้างาน" เท่านั้น ไม่เตือนตอนเลิกงาน
+ *    ไม่งั้นวันหนึ่งเด้งสองครั้งต่อคน จนคนในกลุ่มเลิกอ่าน
+ */
+async function notifyLate(res) {
+  const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  const bits = [`⏰ ${res.name} ลงเวลาเข้างาน ${res.in}`];
+  if (res.late > 0) bits.push(`สาย ${res.late} นาที (เข้างาน ${res.workStart})`);
+  if (res.far > 0) bits.push(`📍 อยู่ห่างร้าน ~${res.far} เมตร`);
+  await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      chat_id: TELEGRAM_CHAT_ID,
+      text: bits.join("\n"),
+      disable_web_page_preview: true,
+    }),
+    signal: AbortSignal.timeout(5000),
+  });
+}
+
 export default async function handler(req, context) {
   const url = new URL(req.url);
 
@@ -57,7 +80,9 @@ export default async function handler(req, context) {
   // (ต้องรู้ล่วงหน้าว่าจะถ่ายรูปไหม เพื่อขอสิทธิ์กล้องก่อนผู้ใช้กดปุ่ม)
   if (req.method === "GET" && url.searchParams.get("public") === "1") {
     const cfg = await readCfg();
-    return json({ photo: !!cfg.photo, workStart: cfg.start });
+    // ⚠️ ส่งแค่ "ต้องขอสิทธิ์อะไรบ้าง" ไม่ส่งพิกัดร้านหรือรัศมีออกไป
+    //    ถ้าบอกพิกัดกับรัศมี พนักงานปลอมตำแหน่งให้อยู่ในวงได้พอดีเป๊ะ
+    return json({ photo: !!cfg.photo, gps: !!(cfg.gps && cfg.lat && cfg.lng), workStart: cfg.start });
   }
 
   let body = null;
@@ -80,10 +105,20 @@ export default async function handler(req, context) {
       // ⚠️ ห้ามบอกว่า "ไม่มี PIN นี้" หรือ "ถูกพักงาน" แยกกัน — จะกลายเป็นเครื่องมือไล่เดา
       return json({ error: "PIN ไม่ถูกต้อง" }, 401);
     }
-    return json(await punch(emp, {
+    const res = await punch(emp, {
       peek: action === "status",
       photo: typeof body?.photo === "string" ? body.photo : null,
-    }));
+      loc: body?.loc && typeof body.loc === "object"
+        ? { lat: Number(body.loc.lat), lng: Number(body.loc.lng) }
+        : null,
+    });
+
+    // ⚠️ แจ้งเตือนต้องไม่ทำให้การลงเวลาช้าหรือล้ม — ปล่อยลอย ไม่ await
+    //    พนักงานยืนรอหน้าเครื่องอยู่ ห้ามให้เขารอ Telegram
+    if (res.kind === "in" && (res.late > 0 || res.far > 0)) {
+      void notifyLate(res).catch(() => {});
+    }
+    return json(res);
   }
 
   // ------------------------------------------------------------------

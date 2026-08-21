@@ -18,11 +18,13 @@ interface Status {
   out: string | null;
   late: number;
   workStart: string;
+  far: number;
 }
 
 export default function TimeClock() {
   const [pin, setPin] = useState("");
   const [needPhoto, setNeedPhoto] = useState(false);
+  const [needGps, setNeedGps] = useState(false);
   const [camReady, setCamReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [busy, setBusy] = useState(false);
@@ -48,7 +50,11 @@ export default function TimeClock() {
       let on = false;
       try {
         const r = await fetch("/api/time?public=1");
-        on = !!(await r.json())?.photo;
+        const cfg = await r.json();
+        on = !!cfg?.photo;
+        // ⚠️ ขอตำแหน่งล่วงหน้าเหมือนกัน — ครั้งแรกเบราว์เซอร์ต้องเด้งถามสิทธิ์
+        //    ถ้าไปขอตอนกด พนักงานจะเจอกล่องถามคาหน้าจอแล้วงงว่ากดอะไรไม่ติด
+        if (cfg?.gps) { setNeedGps(true); void here(); }
       } catch {
         /* ต่อไม่ได้ก็ถือว่าไม่ต้องถ่าย — ต้องลงเวลาได้ไว้ก่อน */
       }
@@ -78,6 +84,24 @@ export default function TimeClock() {
     };
   }, []);
 
+  /**
+   * ตำแหน่งตอนนี้ — คืน null ถ้าไม่ได้สิทธิ์หรือหาไม่เจอ
+   * ⚠️ ต้องมี timeout เสมอ บางเครื่องค้างรอ GPS เป็นนาทีโดยไม่ตอบอะไรเลย
+   *    ปล่อยไว้ = พนักงานกดปุ่มแล้วหน้าค้าง
+   */
+  const here = useCallback(
+    () =>
+      new Promise<{ lat: number; lng: number } | null>((res) => {
+        if (!navigator.geolocation) return res(null);
+        navigator.geolocation.getCurrentPosition(
+          (p) => res({ lat: p.coords.latitude, lng: p.coords.longitude }),
+          () => res(null),
+          { enableHighAccuracy: true, timeout: 6000, maximumAge: 60_000 },
+        );
+      }),
+    [],
+  );
+
   /** จับภาพหนึ่งเฟรมเป็น JPEG ย่อแล้ว — คืน null ถ้ากล้องไม่พร้อม */
   const snap = useCallback((): string | null => {
     const v = videoRef.current;
@@ -103,8 +127,14 @@ export default function TimeClock() {
       const r = await fetch("/api/time", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        // ถ่ายเฉพาะตอนลงเวลาจริง — กด "ดูสถานะ" ไม่ต้องถ่าย
-        body: JSON.stringify({ action, pin, ...(action === "clock" ? { photo: snap() } : {}) }),
+        // ถ่ายรูป/ขอตำแหน่งเฉพาะตอนลงเวลาจริง — กด "ดูสถานะ" ไม่ต้อง
+        body: JSON.stringify({
+          action,
+          pin,
+          ...(action === "clock"
+            ? { photo: snap(), ...(needGps ? { loc: await here() } : {}) }
+            : {}),
+        }),
       });
       const d = await r.json();
       if (!r.ok) { setErr(d.error || "ไม่สำเร็จ ลองใหม่อีกครั้ง"); setSt(null); return; }
@@ -165,6 +195,11 @@ export default function TimeClock() {
           {st.late > 0 && (
             <p className="mt-1 text-[12px] font-medium text-safety">
               สาย {st.late} นาที (เวลาเข้างานร้าน {st.workStart})
+            </p>
+          )}
+          {st.far > 0 && (
+            <p className="mt-1 text-[12px] font-medium text-safety">
+              📍 ลงเวลาจากนอกร้าน (~{st.far} เมตร) — ร้านจะเห็นหมายเหตุนี้
             </p>
           )}
           {!st.out && st.in && (
