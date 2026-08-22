@@ -13,6 +13,34 @@ const root = process.cwd();
 const products = JSON.parse(fs.readFileSync(path.join(root, "src/data/products.json"), "utf8"));
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://gucut.com").replace(/\/$/, "");
 
+// รูปในไฟล์สินค้าเก็บเป็น URL เต็มของ Shopify CDN (ของเดิมสมัยอยู่ Shopify)
+// เราเก็บสำเนาไว้เองครบทุกใบแล้วที่ public/img/ — ต้องสลับมาใช้ของเราเสมอ
+//
+// ⚠️ บั๊กเดิม (เจอ 22 ส.ค. 2569): เขียน `${SITE}${p.img}` ตรง ๆ
+//    p.img เป็น URL เต็มอยู่แล้ว จึงได้ "https://gucut.comhttps://cdn.shopify.com/..."
+//    เสียไป 2,036 รายการ — และเป็นรูปที่ ChatGPT/Gemini เห็นในฟีดสินค้าของเรา
+//    ตรวจไม่เจอมานาน เพราะไม่มีอะไรพังให้เห็น แค่ AI มองไม่เห็นรูปเงียบ ๆ
+//
+// ⚠️ และหลัง 26 ส.ค. 2569 ร้าน Shopify ปิด ลิงก์ cdn.shopify.com จะตายทั้งหมด
+//    ต่อให้ต่อ URL ถูกก็ยังใช้ไม่ได้ ต้องชี้มาที่ /img/ ของเราเท่านั้น
+const archived = new Set(
+  JSON.parse(fs.readFileSync(path.join(root, "src/data/image-map.json"), "utf8")),
+);
+
+/** ชื่อไฟล์สำเนาในเครื่อง — กติกาเดียวกับ src/lib/local-images.ts ห้ามให้ต่างกัน */
+function localName(url) {
+  const base = String(url).split("?")[0].split("/").pop();
+  return base ? base.replace(/\.(jpe?g|png|webp|avif|gif)$/i, "") + ".webp" : null;
+}
+
+/** คืน URL รูปแบบเต็มที่ใช้ได้จริง — ชอบสำเนาของเราก่อนเสมอ */
+function imageUrl(raw) {
+  const n = localName(raw);
+  if (n && archived.has(n)) return `${SITE}/img/${n}`;
+  // ไม่มีสำเนา: ถ้าเป็น URL เต็มอยู่แล้วห้ามเอา SITE ไปต่อหน้า
+  return /^https?:\/\//i.test(raw) ? raw : `${SITE}${raw}`;
+}
+
 const brandOf = (t) =>
   /KINGKONG|KING KONG/i.test(t) ? "KINGKONG" : /NEWWAVE/i.test(t) ? "NEWWAVE" : "";
 
@@ -24,7 +52,7 @@ const list = products
     t: p.t,
     p: p.p,
     pmax: p.pmax > p.p ? p.pmax : undefined,
-    img: `${SITE}${p.img}`,
+    img: imageUrl(p.img),
     b: brandOf(p.t) || undefined,
     rv: p.rv ? [p.rv.a, p.rv.n] : undefined,
     st: p.st,                              // ตัวสำรอง ใช้เมื่อ ZORT ล่ม
