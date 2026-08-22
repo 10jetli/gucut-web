@@ -30,7 +30,10 @@ import { finalizeOrder } from "../lib/order-finalize.mjs";
 import { beamReady, chargePaid, createQrCharge, getCharge } from "../lib/beam.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
-export const STATUSES = ["pending", "new", "confirmed", "shipped", "done", "cancelled"];
+// ⚠️ "ยกเลิก" กับ "คืนของ" ต้องแยกกัน ห้ามยุบเป็นอันเดียว
+//    ยกเลิกก่อนส่ง = ไม่เสียอะไรเลย · คืนของหลังส่ง = เสียค่าส่งสองขา + ค่ากล่อง + เวลาแพ็ค
+//    ถ้านับรวมกัน ตัวเลข "สินค้าที่ถูกคืน" จะบวมจนเอาไปตัดสินใจอะไรไม่ได้
+export const STATUSES = ["pending", "new", "confirmed", "shipped", "done", "cancelled", "returned"];
 
 const MAX_ORDERS_PER_WINDOW = 10;     // กันสแปม: ออเดอร์ต่อ IP
 const WINDOW_MS = 10 * 60 * 1000;     // ในช่วงเวลาเท่านี้
@@ -304,6 +307,8 @@ export default async function handler(req, context) {
       const o = await store.get(`o/${id}`, { type: "json" }).catch(() => null);
       if (!o) return json({ error: "not found" }, 404);
       o.zort = await zortAddOrder(o);
+      // จดเวลาที่เปลี่ยนเป็น "คืนของ" ไว้ด้วย — รายงานต้องนับตามวันที่คืน ไม่ใช่วันที่สั่ง
+      if (status === "returned" && !o.returnedAt) o.returnedAt = Date.now();
       await store.setJSON(`o/${id}`, o);
       return json({ ok: o.zort.ok, order: o });
     }

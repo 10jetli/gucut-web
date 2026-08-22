@@ -7,7 +7,7 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch, clearKey, requireKey } from "@/lib/admin";
 import { formatPrice } from "@/lib/types";
 
-type Status = "pending" | "new" | "confirmed" | "shipped" | "done" | "cancelled";
+type Status = "pending" | "new" | "confirmed" | "shipped" | "done" | "cancelled" | "returned";
 
 interface OrderItem { title: string; variant: string; price: number; qty: number }
 interface Order {
@@ -41,6 +41,9 @@ const STATUS: { key: Status; t: string; cls: string }[] = [
   { key: "shipped",   t: "ส่งแล้ว",     cls: "bg-[#7c3aed] text-white" },
   { key: "done",      t: "จบงาน",       cls: "bg-[#1f9254] text-white" },
   { key: "cancelled", t: "ยกเลิก",      cls: "bg-steel-600 text-white" },
+  // ⚠️ แยกจาก "ยกเลิก" โดยตั้งใจ — ยกเลิกก่อนส่งไม่เสียอะไร
+  //    แต่คืนของหลังส่งแล้วเสียค่าส่งสองขา ต้องนับแยกถึงจะรู้ว่าเจ็บจริงเท่าไหร่
+  { key: "returned",  t: "คืนของ",       cls: "bg-[#c42d00] text-white" },
 ];
 const badge = (s: Status) => STATUS.find((x) => x.key === s) ?? STATUS[0];
 
