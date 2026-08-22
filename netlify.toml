@@ -3,6 +3,19 @@
   command = "npm run build"      # prebuild (gen-reviews.mjs) รันเองอัตโนมัติ
   publish = "out"
 
+  # ⚠️ ข้ามการ build ถ้าแก้แต่ไฟล์เอกสาร — Netlify คิดเครดิตทุกครั้งที่ build (~15 หน่วย)
+  #
+  #    วัดจริง 23 ส.ค. 2569: 7 วันมี 103 commit และ 30 ครั้งเป็นการแก้ CLAUDE.md ล้วน ๆ
+  #    = เสียไปเปล่า ๆ ราว 450 เครดิต/เดือน ทั้งที่หน้าเว็บไม่เปลี่ยนสักพิกเซล
+  #
+  #    วิธีอ่านคำสั่ง: exit 0 = "ข้าม build" · exit 1 = "build ต่อ"
+  #    git diff --quiet คืน 0 เมื่อ "ไม่มีอะไรต่างกัน"
+  #    จึงแปลว่า ถ้านอกเหนือจากไฟล์ที่ยกเว้นแล้วไม่มีอะไรเปลี่ยน → ข้าม build
+  #
+  #    ⚠️ ห้ามใส่ไฟล์ที่มีผลกับหน้าเว็บลงในรายการยกเว้นเด็ดขาด
+  #       ใส่ผิดครั้งเดียว = แก้เว็บแล้วไม่ขึ้น และไม่มีอะไรฟ้องให้รู้
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- . ':(exclude)CLAUDE.md' ':(exclude)README.md' ':(exclude)*.md'"
+
 [build.environment]
   NODE_VERSION = "20"
   NPM_FLAGS = "--no-audit --no-fund"
