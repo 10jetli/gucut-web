@@ -23,6 +23,25 @@ function cid() {
   return v;
 }
 
+/**
+ * ครั้งแรกที่เปิดควรเห็นอะไร
+ *
+ * ⚠️ ต้องอ่านค่าตั้งแต่ตอนสร้าง state ห้ามไปตั้งใน useEffect อย่างเดียว
+ *    ถ้าเริ่มด้วย "web" แล้วค่อยแก้เป็น "pick" ทีหลัง เอฟเฟกต์ที่ดึงข้อความ
+ *    จะทันได้วิ่งไปหนึ่งรอบก่อน แล้ว cid() ก็สร้างรหัสห้องแชททิ้งไว้เรียบร้อยแล้ว
+ *    (เจอของจริงตอนทดสอบบนเว็บจริง 24 ส.ค. 2569 — หน้าเลือกช่องทางขึ้นถูกต้อง
+ *     แต่มีห้องแชทค้างในเครื่องทุกครั้งที่เปิด ทั้งที่ยังไม่ได้เลือกอะไรเลย)
+ * ⚠️ ต้องกัน typeof window ด้วย ตัวนี้ถูกเรียกตอน build เป็น HTML ล่วงหน้าเหมือนกัน
+ */
+function initialWay(): "pick" | "web" {
+  if (typeof window === "undefined") return "pick";
+  try {
+    return localStorage.getItem(CID_KEY) || localStorage.getItem(WAY_KEY) === "web" ? "web" : "pick";
+  } catch {
+    return "pick";   // เบราว์เซอร์บางตัวปิด localStorage — ให้เลือกช่องทางเอาก็พอ
+  }
+}
+
 const clock = (ms: number) =>
   new Date(ms).toLocaleTimeString("th-TH", { hour: "2-digit", minute: "2-digit" });
 
@@ -33,7 +52,7 @@ export default function ChatSheet({
   //
   // ⚠️ คนที่เคยคุยในเว็บไว้แล้ว ต้องเข้าห้องเดิมทันที ห้ามเอาหน้าเลือกช่องทางมาขวาง
   //    ไม่งั้นข้อความที่ร้านตอบไว้จะถูกฝังอยู่หลังปุ่ม แล้วลูกค้าไม่มีวันเห็น
-  const [way, setWay] = useState<"pick" | "web">("web");
+  const [way, setWay] = useState<"pick" | "web">(initialWay);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [text, setText] = useState("");
   const [name, setName] = useState("");
@@ -43,9 +62,8 @@ export default function ChatSheet({
 
   useEffect(() => {
     if (!open) return;
-    // มีห้องแชทเดิม หรือเคยเลือก "คุยในเว็บ" ไว้ = เข้าห้องเลย
-    const hasThread = !!localStorage.getItem(CID_KEY);
-    setWay(hasThread || localStorage.getItem(WAY_KEY) === "web" ? "web" : "pick");
+    // เช็คซ้ำตอนเปิด เผื่อ state ค้างมาจากตอนหน้าโหลด (บางหน้าเมานต์แผ่นแชทไว้ตั้งแต่แรก)
+    setWay(initialWay());
   }, [open]);
 
   useEffect(() => {
