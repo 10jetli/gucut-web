@@ -5,7 +5,7 @@
 //
 // ทั้งสามอย่างกินข้อมูลชุดเดียวกัน: บอกให้ชัดว่า "นี่คือใคร ขายอะไร ราคาเท่าไหร่
 // มีของไหม ใครรีวิวว่ายังไง" ในรูปแบบที่เครื่องอ่านออก ไม่ใช่แค่ตัวหนังสือสวย ๆ
-import { activeLicenses, activeTrademarks, LICENSEE, TRADEMARK_AUTHORITY } from "./licenses";
+import { activeLicenses, activeTrademarks, DISTRIBUTORSHIPS, LICENSEE, TRADEMARK_AUTHORITY } from "./licenses";
 import { SHOP } from "./shop";
 import { BRAND } from "./shop";
 import { SITE_URL as SITE } from "./site";
@@ -49,17 +49,25 @@ export const organizationLd = () => ({
   //
   // ⚠️ ส่งเฉพาะใบที่ยังใช้ได้จริง คิดจากวันที่ทุกครั้งที่ build
   //    ใบหมดอายุแล้วยังส่งให้เครื่องอ่าน = ป้อนข้อมูลผิดให้ AI เอาไปตอบลูกค้า
+  // ⚠️ ใบอนุญาตเลื่อยโซ่ยนต์เป็นของ **ผู้ผลิต** ไม่ใช่ของร้าน
+  //    ร้าน (SHOP) เป็นตัวแทนจำหน่ายที่ได้รับแต่งตั้ง จึงผูกใบอนุญาตไว้กับ manufacturer
+  //    ไม่ใช่ hasCredential ของร้าน — อ้างใบอนุญาตของนิติบุคคลอื่นว่าเป็นของตัวเองคืออ้างเกินจริง
+  //    สิ่งที่เป็นของร้านจริง ๆ คือ "หนังสือแต่งตั้งตัวแทนจำหน่าย" ซึ่งอยู่ใน hasCredential ด้านล่าง
+  ...(DISTRIBUTORSHIPS.length
+    ? {
+        hasCredential: DISTRIBUTORSHIPS.map((d) => ({
+          "@type": "EducationalOccupationalCredential",
+          credentialCategory: "หนังสือแต่งตั้งตัวแทนจำหน่าย",
+          name: `${d.scope} (${d.brand})`,
+          datePublished: d.issued,
+          recognizedBy: { "@type": "Organization", name: d.appointer },
+        })),
+      }
+    : {}),
   ...(activeLicenses().length
     ? {
-        hasCredential: activeLicenses().map((l) => ({
-          "@type": "EducationalOccupationalCredential",
-          credentialCategory: "license",
-          name: l.kind,
-          identifier: l.no,
-          datePublished: l.issued,
-          recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
-        })),
-        knowsAbout: `ผู้ได้รับใบอนุญาตตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545 ในนาม ${LICENSEE.name}`,
+        knowsAbout:
+          `สินค้าที่จำหน่ายผลิตและนำเข้าโดย ${LICENSEE.name} ซึ่งได้รับใบอนุญาตตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545`,
       }
     : {}),
   // เครื่องหมายการค้าที่จดทะเบียนไว้ — ตอบคำถาม "ของแท้ไหม" ให้เครื่องอ่าน
@@ -86,19 +94,36 @@ export const organizationLd = () => ({
           itemOffered: {
             "@type": "Product",
             name: `เลื่อยโซ่ยนต์และอะไหล่ ${activeTrademarks().map((t) => t.mark).join(" / ")}`,
+            manufacturer: {
+              "@type": "Organization",
+              name: LICENSEE.name,
+              taxID: LICENSEE.taxId,
+              hasCredential: activeLicenses().map((l) => ({
+                "@type": "EducationalOccupationalCredential",
+                credentialCategory: "license",
+                name: l.kind,
+                identifier: l.no,
+                datePublished: l.issued,
+                recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
+              })),
+            },
           },
           seller: { "@type": "Organization", name: BRAND.name },
           areaServed: { "@type": "Country", name: "ประเทศไทย" },
           description:
-            `จำหน่ายโดยเจ้าของเครื่องหมายการค้าโดยตรง จดทะเบียนไว้กับ${TRADEMARK_AUTHORITY}`,
+            `จำหน่ายโดยตัวแทนจำหน่ายที่ได้รับแต่งตั้งจากเจ้าของเครื่องหมายการค้าโดยตรง จดทะเบียนไว้กับ${TRADEMARK_AUTHORITY}`,
         },
       }
     : {}),
   ...(SHOP.legalName ? { legalName: SHOP.legalName } : {}),
+  ...(SHOP.legalNameEn ? { alternateName: SHOP.legalNameEn } : {}),
   ...(SHOP.taxId ? { taxID: SHOP.taxId } : {}),
   ...(SHOP.phone ? { telephone: SHOP.phone } : {}),
   ...(SHOP.email ? { email: SHOP.email } : {}),
-  ...(SHOP.address ? { address: { "@type": "PostalAddress", streetAddress: SHOP.address, addressCountry: "TH" } } : {}),
+  // ⚠️ ไม่ส่งที่อยู่ออกไป — เจ้าของร้านสั่งไว้ 24 ส.ค. 2569 ว่าไม่อยากให้ที่อยู่เป็นสาธารณะ
+  //    (Shopee/Lazada ก็ไม่โชว์ที่อยู่ผู้ขาย) · ที่อยู่ไม่มีอยู่ในโค้ดแล้ว — ดูเหตุผลใน shop.ts
+  //    ส่งประเทศอย่างเดียวพอ ให้ Google/AI รู้ว่าร้านอยู่ไทย
+  address: { "@type": "PostalAddress", addressCountry: "TH" },
 });
 
 /** เว็บไซต์ + ช่องค้นหา (Google เอาไปทำช่องค้นในผลค้นหา) */

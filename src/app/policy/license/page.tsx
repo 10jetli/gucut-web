@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { BRAND, titleSuffix } from "@/lib/shop";
+import { BRAND, SHOP, titleSuffix } from "@/lib/shop";
 import { SITE_URL } from "@/lib/site";
 import {
   DISTRIBUTORSHIPS, LICENSEE, LICENSES, OFFICIAL_SOURCES, REGISTRY, TRADEMARKS,
@@ -11,8 +11,8 @@ import {
 export const metadata: Metadata = {
   title: titleSuffix("ใบอนุญาตประกอบกิจการ"),
   description:
-    `${LICENSEE.name} ผู้ผลิตและจำหน่ายเลื่อยโซ่ยนต์ ${BRAND.name} ` +
-    "ได้รับใบอนุญาตถูกต้องตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545 — ตรวจสอบเลขที่ใบอนุญาตได้",
+    `${BRAND.name} จำหน่ายเลื่อยโซ่ยนต์ในฐานะตัวแทนจำหน่ายที่ได้รับแต่งตั้งจากผู้ผลิต ` +
+    "ซึ่งได้รับใบอนุญาตตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545 — ตรวจสอบเลขที่ใบอนุญาตและเลขทะเบียนเครื่องหมายการค้าได้",
   alternates: { canonical: `${SITE_URL}/policy/license/` },
 };
 
@@ -20,23 +20,24 @@ export default function Page() {
   const active = activeLicenses();
   const activeTm = activeTrademarks();
 
-  // ⚠️ บอกเครื่องอ่านด้วยว่าใครได้รับอนุญาตอะไร ไม่ใช่แค่คนอ่าน
-  //    ผู้ช่วย AI หยิบตรงนี้ไปตอบลูกค้าที่ถามว่า "ร้านนี้ขายถูกกฎหมายไหม"
+  // ⚠️ หน้านี้พูดถึงสองนิติบุคคล อย่าผูกใบอนุญาตของผู้ผลิตไว้กับร้าน
+  //    ร้าน (SHOP) = ผู้จำหน่ายที่ได้รับแต่งตั้ง · LICENSEE = ผู้ผลิต/ผู้นำเข้าที่ถือใบอนุญาต
+  //    ผู้ช่วย AI หยิบตรงนี้ไปตอบลูกค้าที่ถามว่า "ร้านนี้ขายถูกกฎหมายไหม / ของแท้ไหม"
   const jsonLd = {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: BRAND.name,
-    legalName: LICENSEE.name,
-    taxID: LICENSEE.taxId,
+    legalName: SHOP.legalName,
+    alternateName: SHOP.legalNameEn,
+    taxID: SHOP.taxId,
     url: `${SITE_URL}/`,
-    address: { "@type": "PostalAddress", streetAddress: LICENSEE.address, addressCountry: "TH" },
-    hasCredential: active.map((l) => ({
+    address: { "@type": "PostalAddress", addressCountry: "TH" },
+    hasCredential: DISTRIBUTORSHIPS.map((d) => ({
       "@type": "EducationalOccupationalCredential",
-      credentialCategory: "license",
-      name: l.kind,
-      identifier: l.no,
-      datePublished: l.issued,
-      recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
+      credentialCategory: "หนังสือแต่งตั้งตัวแทนจำหน่าย",
+      name: `${d.scope} (${d.brand})`,
+      datePublished: d.issued,
+      recognizedBy: { "@type": "Organization", name: d.appointer },
     })),
     brand: activeTm.map((t) => ({
       "@type": "Brand",
@@ -50,6 +51,28 @@ export default function Page() {
       ],
       owner: { "@type": "Organization", name: t.owner },
     })),
+    // ใบอนุญาตเลื่อยโซ่ยนต์เป็นของผู้ผลิต จึงผูกไว้กับ manufacturer ไม่ใช่กับร้าน
+    makesOffer: {
+      "@type": "Offer",
+      itemOffered: {
+        "@type": "Product",
+        name: `เลื่อยโซ่ยนต์ ${activeTm.map((t) => t.mark).join(" / ")}`,
+        manufacturer: {
+          "@type": "Organization",
+          name: LICENSEE.name,
+          taxID: LICENSEE.taxId,
+          hasCredential: active.map((l) => ({
+            "@type": "EducationalOccupationalCredential",
+            credentialCategory: "license",
+            name: l.kind,
+            identifier: l.no,
+            datePublished: l.issued,
+            recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
+          })),
+        },
+      },
+      seller: { "@type": "Organization", name: BRAND.name },
+    },
   };
 
   return (
@@ -65,8 +88,36 @@ export default function Page() {
         ผู้ผลิต นำเข้า มีไว้ในครอบครอง หรือซ่อมแซมเพื่อสินจ้าง ต้องได้รับอนุญาตจากนายทะเบียนเลื่อยโซ่ยนต์
       </p>
 
+      {/*
+        ⚠️ สองนิติบุคคล อย่ารวมเป็นกล่องเดียว
+           คนขายกับคนถือใบอนุญาตเป็นคนละราย ถ้ารวมกันจะกลายเป็นอ้างใบอนุญาตของคนอื่นว่าเป็นของตัวเอง
+      */}
       <section className="mt-4 rounded-sm bg-white p-4">
-        <h2 className="text-[15px] font-semibold text-ink">ผู้ได้รับใบอนุญาต</h2>
+        <h2 className="text-[15px] font-semibold text-ink">ผู้จำหน่าย (เจ้าของเว็บนี้)</h2>
+        <dl className="mt-2 space-y-1 text-[14px]">
+          <div className="flex gap-2">
+            <dt className="w-32 shrink-0 text-ink-300">ชื่อนิติบุคคล</dt>
+            <dd className="text-ink">{SHOP.legalName}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-32 shrink-0 text-ink-300">ชื่อภาษาอังกฤษ</dt>
+            <dd className="text-ink">{SHOP.legalNameEn}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-32 shrink-0 text-ink-300">เลขนิติบุคคล</dt>
+            <dd className="tabular-nums text-ink">{SHOP.taxId}</dd>
+          </div>
+          <div className="flex gap-2">
+            <dt className="w-32 shrink-0 text-ink-300">สถานะ</dt>
+            <dd className="text-ink">
+              ตัวแทนจำหน่ายที่ได้รับแต่งตั้งจากเจ้าของเครื่องหมายการค้าและผู้นำเข้าโดยตรง
+            </dd>
+          </div>
+        </dl>
+      </section>
+
+      <section className="mt-3 rounded-sm bg-white p-4">
+        <h2 className="text-[15px] font-semibold text-ink">ผู้ผลิตและผู้นำเข้า (ผู้ถือใบอนุญาต)</h2>
         <dl className="mt-2 space-y-1 text-[14px]">
           <div className="flex gap-2">
             <dt className="w-32 shrink-0 text-ink-300">ชื่อนิติบุคคล</dt>
@@ -76,11 +127,10 @@ export default function Page() {
             <dt className="w-32 shrink-0 text-ink-300">เลขนิติบุคคล</dt>
             <dd className="tabular-nums text-ink">{LICENSEE.taxId}</dd>
           </div>
-          <div className="flex gap-2">
-            <dt className="w-32 shrink-0 text-ink-300">ที่ตั้ง</dt>
-            <dd className="text-ink">{LICENSEE.address}</dd>
-          </div>
         </dl>
+        <p className="mt-2 text-[12.5px] leading-relaxed text-ink-300">
+          ใบอนุญาตด้านล่างทุกฉบับออกให้ในนามนิติบุคคลนี้ ไม่ใช่ในนามผู้จำหน่าย
+        </p>
       </section>
 
       <h2 className="mt-6 text-[15px] font-semibold text-ink">
@@ -180,7 +230,7 @@ export default function Page() {
               ผู้แต่งตั้ง: {d.appointer} ({d.appointerRole})
             </p>
             <p className="mt-0.5 text-[12.5px] text-ink-300">
-              ผู้ได้รับแต่งตั้ง: {d.appointee} · {d.appointeeAddress}
+              ผู้ได้รับแต่งตั้ง: {d.appointee}
             </p>
             <p className="mt-0.5 text-[12.5px] text-ink-300">
               ออกให้เมื่อ {thaiDate(d.issued)}

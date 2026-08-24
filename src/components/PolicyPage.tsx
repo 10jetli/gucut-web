@@ -42,10 +42,13 @@ export default function PolicyPage({
   const [chat, setChat] = useState(false);
 
   // ช่องทางติดต่อที่กรอกไว้จริงเท่านั้น — ช่องว่างไม่ต้องขึ้น
+  //
+  // ⚠️ ไม่โชว์ที่อยู่ เจ้าของร้านสั่งไว้ 24 ส.ค. 2569 (Shopee/Lazada ก็ไม่โชว์)
+  //    ที่อยู่ถูกถอดออกจาก SHOP ไปเลย ไม่ใช่แค่ไม่แสดง — ดูเหตุผลใน shop.ts
+  //    ห้ามเอากลับมาใส่ตรงนี้ถ้าเจ้าของร้านไม่ได้สั่งเอง
   const contacts: [string, string][] = [
     ["ชื่อผู้ประกอบการ", SHOP.legalName],
     ["เลขประจำตัวผู้เสียภาษี", SHOP.taxId],
-    ["ที่อยู่", SHOP.address],
     ["อีเมล", SHOP.email],
     ["โทร", SHOP.phone],
   ].filter((c): c is [string, string] => !!c[1]);
