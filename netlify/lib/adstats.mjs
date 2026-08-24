@@ -19,8 +19,20 @@ const EMPTY = {
   google: {
     on: false, customerId: "", loginCustomerId: "",
     developerToken: "", clientId: "", clientSecret: "", refreshToken: "",
+    // ทางที่สอง — ให้สคริปต์ใน Google Ads ส่งตัวเลขมาหาเราเอง
+    //
+    // ⚠️ ศูนย์ API ของ Google เปิดได้เฉพาะ "บัญชีดูแลจัดการ (MCC)" เท่านั้น
+    //    ร้านมีแต่บัญชีโฆษณาธรรมดา จะขอ developer token ต้องสร้าง MCC
+    //    แล้วยื่นให้ Google ตรวจอีกหลายวัน — สคริปต์ได้ผลเหมือนกันโดยไม่ต้องขอใคร
+    // ⚠️ pushKey คือรหัสที่สคริปต์ใช้ยืนยันตัว ห้ามส่งกลับหน้าเว็บพร้อมรายงาน
+    //    (หน้าตั้งค่าหลังร้านเห็นได้ เพราะต้องเอาไปวางในสคริปต์)
+    pushKey: "", pushedAt: 0, daily: [],
   },
 };
+
+/** เก็บย้อนหลังกี่วัน — พอสำหรับกราฟ 90 วันและเผื่อสคริปต์ส่งย้อนหลัง */
+const KEEP_DAYS = 120;
+const MAX_ROWS = 6000;
 
 /** ค่าตั้งค่าทั้งหมด (มีโทเคน) — ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น */
 export async function readConfig() {
@@ -49,6 +61,11 @@ export async function saveConfig(input) {
       token: keep(fb.token, cur.fb.token),
     },
     google: {
+      // ⚠️ ค่าที่สคริปต์ส่งมาต้องรอดจากการกดบันทึกในหน้าตั้งค่าเสมอ
+      //    หน้าเว็บไม่เคยส่งสามค่านี้มา ถ้าไม่คัดลอกของเดิมไว้จะโดนล้างทุกครั้งที่กดบันทึก
+      pushKey: cur.google.pushKey,
+      pushedAt: cur.google.pushedAt,
+      daily: cur.google.daily,
       on: !!g.on,
       customerId: String(g.customerId ?? cur.google.customerId).replace(/[^0-9]/g, "").slice(0, 32),
       loginCustomerId: String(g.loginCustomerId ?? cur.google.loginCustomerId).replace(/[^0-9]/g, "").slice(0, 32),
@@ -66,6 +83,10 @@ export async function saveConfig(input) {
 export const publicView = (c) => ({
   fb: { on: c.fb.on, accountId: c.fb.accountId, hasToken: !!c.fb.token },
   google: {
+    pushKey: c.google.pushKey,
+    pushedAt: c.google.pushedAt,
+    pushRows: c.google.daily.length,
+    pushDays: new Set(c.google.daily.map((r) => r.d)).size,
     on: c.google.on,
     customerId: c.google.customerId,
     loginCustomerId: c.google.loginCustomerId,
@@ -123,4 +144,64 @@ export async function facebookInsights({ accountId, token, since, until }) {
 
   rows.sort((a, b) => b.spend - a.spend);
   return rows;
+}
+
+// ---------------------------------------------------------------------------
+// ทางที่สอง: สคริปต์ใน Google Ads ส่งตัวเลขมาให้เราเอง
+// ---------------------------------------------------------------------------
+
+/** รหัสให้สคริปต์ใช้ยืนยันตัว — สร้างครั้งเดียวแล้วใช้ตลอด */
+export async function ensurePushKey() {
+  const cur = await readConfig();
+  if (cur.google.pushKey) return cur.google.pushKey;
+  const key = [...crypto.getRandomValues(new Uint8Array(24))]
+    .map((b) => b.toString(16).padStart(2, "0")).join("");
+  await store().setJSON(KEY, { ...cur, google: { ...cur.google, pushKey: key } });
+  return key;
+}
+
+/**
+ * รับตัวเลขจากสคริปต์
+ *
+ * ⚠️ แถวของวันเดิมต้องถูก "แทนที่" ไม่ใช่บวกเพิ่ม
+ *    สคริปต์รันซ้ำได้ทุกเมื่อ (Google รันเองบ้าง เจ้าของร้านกดเองบ้าง)
+ *    ถ้าบวกทับ ค่าโฆษณาจะพองขึ้นเรื่อย ๆ ทุกครั้งที่รัน แล้วไม่มีใครจับได้
+ */
+export async function savePushed(input) {
+  const cur = await readConfig();
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const rows = (Array.isArray(input) ? input : []).slice(0, MAX_ROWS).map((r) => ({
+    d: String(r.date || "").slice(0, 10),
+    c: String(r.campaign || "(ไม่มีชื่อ)").slice(0, 120),
+    s: n(r.cost),
+    k: n(r.clicks),
+    i: n(r.impressions),
+    p: n(r.conversions),
+    r: n(r.convValue),
+  })).filter((r) => /^\d{4}-\d{2}-\d{2}$/.test(r.d));
+
+  const touched = new Set(rows.map((r) => r.d));
+  const cutoff = new Date(Date.now() - KEEP_DAYS * 86400000).toISOString().slice(0, 10);
+  const kept = cur.google.daily.filter((r) => !touched.has(r.d) && r.d >= cutoff);
+
+  const daily = [...kept, ...rows].slice(-MAX_ROWS);
+  const next = { ...cur, google: { ...cur.google, daily, pushedAt: Date.now() } };
+  await store().setJSON(KEY, next);
+  return { days: touched.size, rows: rows.length, total: daily.length };
+}
+
+/** รวมเป็นรายแคมเปญในช่วงวันที่ที่ขอ — รูปแบบเดียวกับที่ดึงสดจาก API */
+export function pushedRows(cfg, { since, until }) {
+  const byName = new Map();
+  for (const r of cfg.google.daily) {
+    if (r.d < since || r.d > until) continue;
+    const cur = byName.get(r.c) || { name: r.c, spend: 0, clicks: 0, impressions: 0, purchases: 0, revenue: 0 };
+    cur.spend += r.s;
+    cur.clicks += r.k;
+    cur.impressions += r.i;
+    cur.purchases += r.p;
+    cur.revenue += r.r;
+    byName.set(r.c, cur);
+  }
+  return [...byName.values()].sort((a, b) => b.spend - a.spend);
 }

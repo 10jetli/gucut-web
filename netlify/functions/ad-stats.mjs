@@ -7,7 +7,7 @@
 // ⚠️ ห้ามแคช — เป็นข้อมูลหลังร้านล้วน และมีโทเคนอยู่ในเส้นทางเดียวกัน
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
-import { facebookInsights, publicView, readConfig, saveConfig } from "../lib/adstats.mjs";
+import { ensurePushKey, facebookInsights, publicView, pushedRows, readConfig, saveConfig } from "../lib/adstats.mjs";
 import { googleInsights } from "../lib/googleads.mjs";
 
 const json = (o, s = 200) =>
@@ -82,7 +82,11 @@ export default async function handler(req, context) {
 
   const cfg = await readConfig();
 
-  if (url.searchParams.get("report") !== "1") return json(publicView(cfg));
+  if (url.searchParams.get("report") !== "1") {
+    // สร้างรหัสให้สคริปต์ตั้งแต่เปิดหน้าตั้งค่า จะได้คัดลอกไปวางได้เลย
+    await ensurePushKey();
+    return json(publicView(await readConfig()));
+  }
 
   // ช่วงวันที่ — นับรวมวันนี้ด้วย (days=7 คือ 7 วันย้อนหลังถึงเมื่อคืน + วันนี้)
   const days = Math.min(90, Math.max(1, Number(url.searchParams.get("days")) || 7));
@@ -100,13 +104,26 @@ export default async function handler(req, context) {
       (e) => ({ ok: false, error: String(e?.message || e), rows: [] }),
     );
 
+  const g = cfg.google;
+  const googleLive =
+    g.on && g.developerToken && g.clientId && g.clientSecret && g.refreshToken && g.customerId;
+
   const [fb, google, sales] = await Promise.all([
     cfg.fb.on && cfg.fb.token && cfg.fb.accountId
       ? guard(facebookInsights({ accountId: cfg.fb.accountId, token: cfg.fb.token, ...range }))
       : Promise.resolve({ ok: false, off: true, rows: [] }),
-    cfg.google.on
-      ? guard(googleInsights(cfg.google, range))
-      : Promise.resolve({ ok: false, off: true, rows: [] }),
+    // ⚠️ สองทางที่ได้ตัวเลขชุดเดียวกัน — ต่อ API ตรง (ต้องมี developer token)
+    //    หรือให้สคริปต์ในบัญชีส่งมา · เลือกทางที่ "ตั้งค่าไว้จริง" ไม่ใช่ทางที่ชอบ
+    googleLive
+      ? guard(googleInsights(cfg.google, range)).then((res) => ({ ...res, via: "api" }))
+      : cfg.google.daily.length
+        ? Promise.resolve({
+            ok: true,
+            via: "script",
+            pushedAt: cfg.google.pushedAt,
+            rows: pushedRows(cfg, range),
+          })
+        : Promise.resolve({ ok: false, off: true, rows: [] }),
     ownSales(sinceTs, untilTs),
   ]);
 

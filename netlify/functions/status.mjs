@@ -294,6 +294,31 @@ export default async function handler(req, context) {
       return { note: `ใช้ได้จริง · ยิงสำเร็จล่าสุด ${d} (ออเดอร์ ${last.orderId})${warnTest}` };
     }),
 
+    // ---------- ตัวเลขค่าโฆษณา Google ----------
+    //
+    // ⚠️ ต้องมีตัวเตือน เพราะสคริปต์อยู่ในบัญชี Google ไม่ได้อยู่ในมือเรา
+    //    เจ้าของร้านลบทิ้ง Google หยุดรัน หรือสิทธิ์หมดอายุเมื่อไหร่ ก็เงียบไปเฉย ๆ
+    //    แล้วหน้าโฆษณาจะโชว์ตัวเลขเก่าค้างโดยไม่มีอะไรบอกว่ามันหยุดไปแล้ว
+    check("ตัวเลขค่าโฆษณา Google (สคริปต์)", async () => {
+      const s = getStore({ name: "gucut-coupon", consistency: "strong" });
+      const cfg = (await s.get("adstats", { type: "json" }).catch(() => null)) || {};
+      const g = cfg.google || {};
+
+      // ต่อ API ตรงได้แล้วก็ไม่ต้องพึ่งสคริปต์
+      if (g.on && g.developerToken && g.refreshToken && g.customerId) {
+        return { note: "ใช้การต่อ API ตรง ไม่ได้พึ่งสคริปต์" };
+      }
+      if (!g.pushedAt) return { off: true, note: "ยังไม่เคยมีสคริปต์ส่งข้อมูลเข้ามา" };
+
+      const hours = Math.round((Date.now() - g.pushedAt) / 3600000);
+      const d = new Date(g.pushedAt).toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+      // สคริปต์ตั้งให้รันวันละครั้ง เกินสองวัน = หยุดไปแล้วแน่ ๆ
+      if (hours > 48) {
+        return { warn: true, note: `ไม่มีข้อมูลเข้ามา ${hours} ชั่วโมงแล้ว (ล่าสุด ${d}) — สคริปต์ใน Google Ads อาจถูกปิดหรือหมดสิทธิ์` };
+      }
+      return { note: `ส่งเข้ามาล่าสุด ${d} · เก็บไว้ ${new Set((g.daily || []).map((r) => r.d)).size} วัน` };
+    }),
+
     // ---------- รับเงินผ่าน Beam ----------
     check("รับเงินผ่าน Beam", async () => {
       const { BEAM_MERCHANT_ID: id, BEAM_API_KEY: key, BEAM_ENV: mode } = env;

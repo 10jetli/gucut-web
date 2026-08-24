@@ -18,6 +18,7 @@ interface Cfg {
     on: boolean; customerId: string; loginCustomerId: string;
     hasDeveloperToken: boolean; hasClientId: boolean;
     hasClientSecret: boolean; hasRefreshToken: boolean;
+    pushKey: string; pushedAt: number; pushRows: number; pushDays: number;
   };
 }
 
@@ -25,7 +26,7 @@ interface Row {
   name: string; spend: number; impressions: number; clicks: number;
   purchases: number; revenue: number;
 }
-interface Src { ok: boolean; off?: boolean; error?: string; rows: Row[] }
+interface Src { ok: boolean; off?: boolean; error?: string; via?: string; pushedAt?: number; rows: Row[] }
 interface Report {
   range: { since: string; until: string; days: number };
   fb: Src;
@@ -37,6 +38,60 @@ interface Report {
 }
 
 const baht = (n: number) => "฿" + Math.round(n).toLocaleString("th-TH");
+
+const when = (ms: number) =>
+  ms ? new Date(ms).toLocaleString("th-TH", { dateStyle: "medium", timeStyle: "short" }) : "";
+
+/**
+ * สคริปต์ที่เอาไปวางใน Google Ads
+ *
+ * ⚠️ ศูนย์ API ของ Google เปิดได้เฉพาะบัญชีดูแลจัดการ (MCC) — ร้านมีแต่บัญชีธรรมดา
+ *    ทางนี้จึงเป็นทางที่ใช้ได้จริงวันนี้ ไม่ต้องสร้าง MCC ไม่ต้องรออนุมัติ
+ * ⚠️ ดึงย้อนหลัง 8 วันทุกครั้ง ไม่ใช่เฉพาะเมื่อวาน
+ *    Google แก้ตัวเลขย้อนหลังได้อีกหลายวัน (ค่าคลิกไม่ถูกต้องถูกคืนเงินทีหลัง)
+ *    ฝั่งเราเขียนทับรายวันอยู่แล้ว ส่งซ้ำจึงไม่ทำให้ยอดพอง
+ */
+const adsScript = (site: string, key: string) => `// GUCUT — ส่งตัวเลขค่าโฆษณาเข้าหลังร้าน
+// ตั้งเวลาให้รันวันละครั้งก็พอ (รันซ้ำได้ ไม่ทำให้ยอดพอง)
+var ENDPOINT = '${site}/api/ads-push';
+var KEY = '${key}';
+
+function main() {
+  var tz = AdsApp.currentAccount().getTimeZone();
+  var day = function (back) {
+    var d = new Date();
+    d.setDate(d.getDate() - back);
+    return Utilities.formatDate(d, tz, 'yyyy-MM-dd');
+  };
+
+  var q =
+    'SELECT campaign.name, segments.date, metrics.cost_micros, metrics.clicks, ' +
+    'metrics.impressions, metrics.conversions, metrics.conversions_value ' +
+    'FROM campaign WHERE segments.date BETWEEN "' + day(7) + '" AND "' + day(0) + '"';
+
+  var rows = [];
+  var it = AdsApp.search(q);
+  while (it.hasNext()) {
+    var r = it.next();
+    rows.push({
+      date: r.segments.date,
+      campaign: r.campaign.name,
+      cost: Number(r.metrics.costMicros || 0) / 1000000,
+      clicks: Number(r.metrics.clicks || 0),
+      impressions: Number(r.metrics.impressions || 0),
+      conversions: Number(r.metrics.conversions || 0),
+      convValue: Number(r.metrics.conversionsValue || 0)
+    });
+  }
+
+  var res = UrlFetchApp.fetch(ENDPOINT, {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ key: KEY, rows: rows }),
+    muteHttpExceptions: true
+  });
+  Logger.log('ส่ง ' + rows.length + ' แถว → ' + res.getResponseCode() + ' ' + res.getContentText());
+}`;
 
 // ค่าลับที่เคยบันทึกไว้จะไม่ถูกส่งกลับมาหน้าเว็บเลย — ช่องจึงว่างเสมอ
 // เว้นว่างไว้ = ใช้ของเดิม (เซิร์ฟเวอร์เป็นคนคงค่าไว้ ดู saveConfig)
@@ -306,77 +361,140 @@ export default function AdminAds() {
 
             {/* ---------------------------- ตั้งค่า Google ---------------------------- */}
             <section className="mb-3 rounded-sm bg-white p-4">
-              <label className="flex items-start gap-2.5">
-                <input
-                  type="checkbox"
-                  checked={cfg.google.on}
-                  onChange={(e) => setCfg({ ...cfg, google: { ...cfg.google, on: e.target.checked } })}
-                  className="mt-0.5 h-4 w-4 accent-[#c42d00]"
-                />
-                <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] font-bold text-ink">Google Ads</span>
-                  <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
-                    ต้องขออนุมัติจาก Google ก่อน ใช้เวลา 1-3 วัน
-                  </span>
-                </span>
-              </label>
+              <h2 className="text-[14px] font-bold text-ink">Google Ads</h2>
 
-              {cfg.google.on && (
-                <div className="mt-2.5">
-                  <Field
-                    label="Customer ID"
-                    hint="เลขบัญชีโฆษณา ตัวเลขล้วนไม่ต้องมีขีด (745-572-5873 → 7455725873) ดูมุมขวาบนของหน้า Google Ads"
-                    value={cfg.google.customerId}
-                    onChange={(v) => setCfg({ ...cfg, google: { ...cfg.google, customerId: v } })}
-                  />
-                  <Field
-                    label="Login Customer ID (ใส่เฉพาะถ้ามีบัญชีผู้ดูแล)"
-                    hint="เลขบัญชีผู้ดูแล (MCC) ที่คุมบัญชีข้างบนอยู่ — ไม่มีก็เว้นว่าง"
-                    value={cfg.google.loginCustomerId}
-                    onChange={(v) => setCfg({ ...cfg, google: { ...cfg.google, loginCustomerId: v } })}
-                  />
-                  <Field
-                    label="Developer Token"
-                    value={secret.gDev || ""}
-                    onChange={(v) => setSecret({ ...secret, gDev: v })}
-                    secretMode
-                    saved={cfg.google.hasDeveloperToken}
-                  />
-                  <Field
-                    label="Client ID"
-                    value={secret.gId || ""}
-                    onChange={(v) => setSecret({ ...secret, gId: v })}
-                    secretMode
-                    saved={cfg.google.hasClientId}
-                  />
-                  <Field
-                    label="Client Secret"
-                    value={secret.gSecret || ""}
-                    onChange={(v) => setSecret({ ...secret, gSecret: v })}
-                    secretMode
-                    saved={cfg.google.hasClientSecret}
-                  />
-                  <Field
-                    label="Refresh Token"
-                    value={secret.gRefresh || ""}
-                    onChange={(v) => setSecret({ ...secret, gRefresh: v })}
-                    secretMode
-                    saved={cfg.google.hasRefreshToken}
-                  />
+              {/*
+                ⚠️ ทางหลักคือสคริปต์ ไม่ใช่ API
+                   ศูนย์ API ของ Google เปิดได้เฉพาะบัญชีดูแลจัดการ (MCC)
+                   บัญชีของร้านเป็นบัญชีโฆษณาธรรมดา จึงเข้าหน้าขอ token ไม่ได้เลย
+                   สคริปต์ได้ตัวเลขชุดเดียวกันโดยไม่ต้องสร้าง MCC และไม่ต้องรออนุมัติ
+              */}
+              <div className="mt-2 rounded-sm bg-steel-900 p-3">
+                <p className="text-[13px] font-semibold text-ink">
+                  วิธีที่ใช้อยู่: สคริปต์ในบัญชี Google Ads
+                </p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
+                  ศูนย์ API ของ Google เปิดได้เฉพาะบัญชีดูแลจัดการ (MCC) ซึ่งร้านไม่มี
+                  ทางนี้ได้ตัวเลขชุดเดียวกันโดยไม่ต้องสร้างบัญชีใหม่และไม่ต้องรออนุมัติ
+                </p>
 
-                  <div className="mt-2 rounded-sm bg-steel-900 p-2.5 text-[11px] leading-relaxed text-ink-300">
-                    <b className="text-ink-700">ทำไมช่องเยอะกว่า Facebook</b><br />
-                    Facebook ให้โทเคนใบเดียวจบ แต่ Google บังคับให้ผ่าน 3 ระบบ:
-                    บัญชีผู้ดูแล (Developer Token) · Google Cloud (Client ID/Secret) ·
-                    การกดยินยอม (Refresh Token)
-                    <span className="mt-1.5 block">
-                      <b className="text-ink-700">Developer Token ต้องรออนุมัติ</b> —
-                      ตอนขอครั้งแรกจะได้แบบ &ldquo;ทดสอบ&rdquo; ซึ่งดึงบัญชีจริงไม่ได้
-                      ต้องกดขอ <b className="text-ink-700">Basic Access</b> แล้วรอ Google ตรวจ 1-3 วัน
+                <p className="mt-2 text-[12px] font-medium text-ink-700">
+                  {cfg.google.pushedAt
+                    ? `✓ ได้รับข้อมูลล่าสุด ${when(cfg.google.pushedAt)} · ${cfg.google.pushDays} วัน`
+                    : "ยังไม่เคยได้รับข้อมูลจากสคริปต์"}
+                </p>
+
+                <ol className="mt-2 list-decimal space-y-1 pl-4 text-[11.5px] leading-relaxed text-ink-300">
+                  <li>
+                    เปิด Google Ads → <b className="text-ink-700">เครื่องมือ</b> →
+                    การดำเนินการแบบกลุ่ม → <b className="text-ink-700">สคริปต์</b>
+                  </li>
+                  <li>กด + สร้างสคริปต์ใหม่ ลบโค้ดตัวอย่างทิ้ง แล้ววางโค้ดข้างล่างนี้</li>
+                  <li>กด <b className="text-ink-700">ให้สิทธิ์</b> แล้วกด <b className="text-ink-700">เรียกใช้</b> หนึ่งครั้ง</li>
+                  <li>ตั้งความถี่เป็น <b className="text-ink-700">ทุกวัน</b> แล้วบันทึก</li>
+                </ol>
+
+                <button
+                  onClick={() => {
+                    void navigator.clipboard
+                      .writeText(adsScript(window.location.origin, cfg.google.pushKey))
+                      .then(() => setMsg("คัดลอกสคริปต์แล้ว — เอาไปวางใน Google Ads"))
+                      .catch(() => setMsg("คัดลอกไม่ได้ ให้ลากเลือกในกล่องแล้วคัดลอกเอง"));
+                  }}
+                  className="mt-2.5 w-full rounded-sm bg-ink py-2.5 text-[13px] font-semibold text-white"
+                >
+                  คัดลอกสคริปต์
+                </button>
+
+                {/*
+                  ⚠️ ในกล่องมีรหัสสำหรับส่งข้อมูล ห้ามเอาไปโชว์ที่อื่นนอกหลังร้าน
+                     ใครได้รหัสนี้ไปก็ยัดตัวเลขค่าโฆษณาปลอมเข้าระบบได้
+                */}
+                <pre className="mt-2 max-h-40 overflow-auto rounded-sm bg-white p-2 text-[10px] leading-relaxed text-ink-700">
+                  {cfg.google.pushKey
+                    ? adsScript(typeof window === "undefined" ? "" : window.location.origin, cfg.google.pushKey)
+                    : "กำลังเตรียมรหัส..."}
+                </pre>
+              </div>
+
+              {/* ทางที่สอง — เก็บไว้เผื่อวันหนึ่งมีบัญชีดูแลจัดการและได้ token มาแล้ว */}
+              <details className="mt-2">
+                <summary className="cursor-pointer text-[12px] text-ink-300">
+                  ทางที่สอง: ต่อ API ตรง (ต้องมีบัญชีดูแลจัดการ + developer token)
+                </summary>
+
+                <label className="mt-2 flex items-start gap-2.5">
+                  <input
+                    type="checkbox"
+                    checked={cfg.google.on}
+                    onChange={(e) => setCfg({ ...cfg, google: { ...cfg.google, on: e.target.checked } })}
+                    className="mt-0.5 h-4 w-4 accent-[#c42d00]"
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[13px] font-semibold text-ink">เปิดใช้การต่อ API ตรง</span>
+                    <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
+                      กรอกครบทุกช่องแล้วระบบจะดึงสดแทนตัวเลขจากสคริปต์เอง
                     </span>
+                  </span>
+                </label>
+
+                {cfg.google.on && (
+                  <div className="mt-2.5">
+                    <Field
+                      label="Customer ID"
+                      hint="เลขบัญชีโฆษณา ตัวเลขล้วนไม่ต้องมีขีด (745-572-5873 → 7455725873) ดูมุมขวาบนของหน้า Google Ads"
+                      value={cfg.google.customerId}
+                      onChange={(v) => setCfg({ ...cfg, google: { ...cfg.google, customerId: v } })}
+                    />
+                    <Field
+                      label="Login Customer ID (ใส่เฉพาะถ้ามีบัญชีผู้ดูแล)"
+                      hint="เลขบัญชีผู้ดูแล (MCC) ที่คุมบัญชีข้างบนอยู่ — ไม่มีก็เว้นว่าง"
+                      value={cfg.google.loginCustomerId}
+                      onChange={(v) => setCfg({ ...cfg, google: { ...cfg.google, loginCustomerId: v } })}
+                    />
+                    <Field
+                      label="Developer Token"
+                      value={secret.gDev || ""}
+                      onChange={(v) => setSecret({ ...secret, gDev: v })}
+                      secretMode
+                      saved={cfg.google.hasDeveloperToken}
+                    />
+                    <Field
+                      label="Client ID"
+                      value={secret.gId || ""}
+                      onChange={(v) => setSecret({ ...secret, gId: v })}
+                      secretMode
+                      saved={cfg.google.hasClientId}
+                    />
+                    <Field
+                      label="Client Secret"
+                      value={secret.gSecret || ""}
+                      onChange={(v) => setSecret({ ...secret, gSecret: v })}
+                      secretMode
+                      saved={cfg.google.hasClientSecret}
+                    />
+                    <Field
+                      label="Refresh Token"
+                      value={secret.gRefresh || ""}
+                      onChange={(v) => setSecret({ ...secret, gRefresh: v })}
+                      secretMode
+                      saved={cfg.google.hasRefreshToken}
+                    />
+
+                    <div className="mt-2 rounded-sm bg-steel-900 p-2.5 text-[11px] leading-relaxed text-ink-300">
+                      <b className="text-ink-700">ทำไมช่องเยอะกว่า Facebook</b><br />
+                      Facebook ให้โทเคนใบเดียวจบ แต่ Google บังคับให้ผ่าน 3 ระบบ:
+                      บัญชีผู้ดูแล (Developer Token) · Google Cloud (Client ID/Secret) ·
+                      การกดยินยอม (Refresh Token)
+                      <span className="mt-1.5 block">
+                        <b className="text-ink-700">และต้องมีบัญชีดูแลจัดการก่อน</b> —
+                        บัญชีโฆษณาธรรมดาเปิดหน้าขอ token ไม่ได้เลย ขึ้นว่า
+                        &ldquo;ใช้งานได้ในบัญชีดูแลจัดการเท่านั้น&rdquo;
+                      </span>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </details>
             </section>
 
             <button
