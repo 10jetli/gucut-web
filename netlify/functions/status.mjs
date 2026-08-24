@@ -53,6 +53,19 @@ export default async function handler(req, context) {
   const env = process.env;
   const origin = new URL(req.url).origin;
 
+  // ช่องทางที่ลูกค้าจ่ายเงินได้จริงตอนนี้ — คิดจาก env ทุกครั้ง ห้ามเขียนตายตัว
+  // ใช้ร่วมกันทั้งข้อพร้อมเพย์และข้อ COD จะได้ไม่มีวันบอกไม่ตรงกัน
+  const beamLive = () =>
+    Boolean(env.BEAM_MERCHANT_ID && env.BEAM_API_KEY && env.BEAM_ENV !== "playground");
+  const payWaysBesidesPromptPay = () => [
+    ...(beamLive() ? ["บัตร/QR ผ่าน Beam"] : []),
+    ...(env.NEXT_PUBLIC_COD === "1" ? ["เก็บเงินปลายทาง"] : []),
+  ];
+  const payWays = () => [
+    ...(env.NEXT_PUBLIC_PROMPTPAY_ID ? ["QR พร้อมเพย์"] : []),
+    ...payWaysBesidesPromptPay(),
+  ];
+
   const checks = await Promise.all([
     // ---------- ที่เก็บข้อมูลของเราเอง ----------
     check("ที่เก็บข้อมูล (ออเดอร์/บัญชี/แชท)", async () => {
@@ -108,14 +121,17 @@ export default async function handler(req, context) {
     }),
 
     // ---------- รับเงิน ----------
-    // ⚠️ ข้อความตรงนี้ต้องดูสถานะ COD ประกอบเสมอ
-    //    ของเดิมเขียนตายตัวว่า "ลูกค้าจ่ายได้แค่ปลายทาง" ซึ่งไม่จริงตั้งแต่ปิด COD
-    //    หน้าสถานะระบบมีไว้บอกความจริง ถ้ามันโกหกเสียเองก็ไม่มีประโยชน์
+    // ⚠️ ทุกข้อความตรงนี้ต้องคิดจาก "ช่องทางที่เปิดอยู่จริงทั้งหมด" ไม่ใช่ดูช่องเดียว
+    //    เคยพลาดสองรอบแล้ว: รอบแรกเขียนตายตัวว่า "จ่ายได้แค่ปลายทาง" ทั้งที่ COD ปิดไปแล้ว
+    //    รอบสองแก้ให้ดู COD ประกอบ แต่ลืม Beam ซึ่งเปิดรับเงินอยู่จริง
+    //    ผลคือหน้าจอขึ้นสีแดงว่า "ลูกค้าจ่ายเงินไม่ได้เลย" ทั้งที่จ่ายได้ตามปกติ
+    //    เตือนผิดอันตรายพอ ๆ กับไม่เตือน — คนอ่านจะเลิกเชื่อหน้านี้ทั้งหน้า
     check("รับเงินด้วย QR พร้อมเพย์", async () => {
       if (env.NEXT_PUBLIC_PROMPTPAY_ID) return {};
-      return env.NEXT_PUBLIC_COD === "1"
-        ? { off: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ — ลูกค้าจ่ายได้เฉพาะเก็บเงินปลายทาง" }
-        : { warn: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ และ COD ก็ปิดอยู่ — ลูกค้าจ่ายเงินไม่ได้เลย" };
+      const others = payWaysBesidesPromptPay();
+      return others.length
+        ? { off: true, note: `ยังไม่ได้ใส่เบอร์พร้อมเพย์ — ลูกค้าจ่ายทาง${others.join(" หรือ ")}ได้` }
+        : { warn: true, note: "ยังไม่ได้ใส่เบอร์พร้อมเพย์ และไม่มีช่องทางอื่นเปิดอยู่ — ลูกค้าจ่ายเงินไม่ได้เลย" };
     }),
 
     // ---------- โค้ดส่วนลด ----------
@@ -300,10 +316,16 @@ export default async function handler(req, context) {
     }),
 
     // ---------- เก็บเงินปลายทาง ----------
-    check("เก็บเงินปลายทาง (COD)", async () =>
-      env.NEXT_PUBLIC_COD === "1"
-        ? { note: "เปิดอยู่" }
-        : { off: true, note: "ปิดอยู่ — ลูกค้าจ่ายได้เฉพาะ QR พร้อมเพย์" }),
+    check("เก็บเงินปลายทาง (COD)", async () => {
+      if (env.NEXT_PUBLIC_COD === "1") return { note: "เปิดอยู่" };
+      const others = payWays();
+      return {
+        off: true,
+        note: others.length
+          ? `ปิดอยู่ — ลูกค้าจ่ายทาง${others.join(" หรือ ")}`
+          : "ปิดอยู่ และไม่มีช่องทางอื่นเปิดด้วย",
+      };
+    }),
 
     // ---------- ส่งออเดอร์ต่อไปที่อื่น ----------
     check("ส่งออเดอร์ต่อไป Make.com", async () =>
