@@ -3,7 +3,7 @@ import Link from "next/link";
 import { BRAND, titleSuffix } from "@/lib/shop";
 import { SITE_URL } from "@/lib/site";
 import {
-  LICENSEE, LICENSES, activeLicenses, isActive, summaryLine, thaiDate,
+  LICENSEE, LICENSES, OFFICIAL_SOURCES, REGISTRY, activeLicenses, isActive, summaryLine, thaiDate,
 } from "@/lib/licenses";
 
 export const metadata: Metadata = {
@@ -109,7 +109,46 @@ export default function Page() {
         {summaryLine()}
       </p>
 
-      <p className="mt-3 text-[12px] leading-relaxed text-ink-300">
+      <h2 className="mt-6 text-[15px] font-semibold text-ink">
+        มีชื่ออยู่ในบัญชีของกรมป่าไม้
+      </h2>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-700">
+        {REGISTRY.source}
+      </p>
+      <div className="mt-2 space-y-2">
+        {REGISTRY.entries.map((e) => (
+          <div key={e.no} className="rounded-sm bg-white p-3">
+            <p className="text-[13.5px] font-medium text-ink">
+              ลำดับที่ {e.no} · จังหวัด{e.province}
+            </p>
+            <p className="mt-0.5 text-[13px] text-ink-700">{e.name}</p>
+            <p className="mt-0.5 text-[12.5px] text-ink-300">ประเภท: {e.role}</p>
+          </div>
+        ))}
+      </div>
+
+      <h2 className="mt-6 text-[15px] font-semibold text-ink">ตรวจสอบกับหน่วยงานราชการ</h2>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-700">
+        กรมป่าไม้เผยแพร่ฐานข้อมูลผู้ประกอบการที่ได้รับอนุญาตไว้เอง ตรวจสอบได้จากลิงก์ด้านล่าง
+        ไม่ต้องเชื่อคำบอกเล่าของร้าน
+      </p>
+      <ul className="mt-2 space-y-2">
+        {OFFICIAL_SOURCES.map((s) => (
+          <li key={s.url} className="rounded-sm bg-white p-3">
+            <a
+              href={s.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-[13.5px] font-medium text-safety underline underline-offset-2"
+            >
+              {s.label} ↗
+            </a>
+            <p className="mt-0.5 text-[12px] text-ink-300">{s.note}</p>
+          </li>
+        ))}
+      </ul>
+
+      <p className="mt-4 text-[12px] leading-relaxed text-ink-300">
         ⚠️ ผู้ซื้อเลื่อยโซ่ยนต์มีหน้าที่ตามกฎหมายของตนเองด้วย —
         การมีเลื่อยโซ่ยนต์ไว้ในครอบครองต้องขอใบอนุญาต (แบบ ลซ.3) จากนายทะเบียนในพื้นที่
         ดูรายละเอียดที่ <Link href="/faq/" className="text-safety underline">คำถามที่พบบ่อย</Link>
