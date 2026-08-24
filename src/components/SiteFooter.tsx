@@ -21,9 +21,13 @@ export default function SiteFooter() {
         <Link href="/policy/privacy/" className="underline underline-offset-2">นโยบายความเป็นส่วนตัว</Link>
         <span aria-hidden>·</span>
         <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
-        <span aria-hidden>·</span>
-        {/* เลื่อยโซ่ยนต์เป็นสินค้าควบคุม — ลูกค้าถามเรื่องใบอนุญาตบ่อย ต้องหาเจอจากทุกหน้า */}
-        <Link href="/policy/license/" className="underline underline-offset-2">ใบอนุญาตประกอบกิจการ</Link>
+        {/* ⚠️ ไม่ใส่ลิงก์ "ใบอนุญาตประกอบกิจการ" ไว้ตรงนี้ตามที่เจ้าของร้านสั่ง (24 ส.ค. 2569)
+            พูดเรื่องใบอนุญาตให้ลูกค้าเห็นเด่น ๆ จะทำให้เขานึกขึ้นได้ว่าตัวเองต้องมีใบ ลซ.3 ด้วย
+            แล้วลังเลที่จะซื้อ — ทั้งที่เป็นหน้าที่ของผู้ซื้อตามกฎหมายอยู่แล้ว
+
+            หน้า /policy/license/ ยังอยู่ครบและเปิดดูได้ทุกคน · อยู่ใน sitemap ·
+            อยู่ใน llms.txt / llms-full.txt / agents.md · และใบอนุญาตถูกส่งเป็น JSON-LD ทุกหน้า
+            แค่ไม่ลิงก์จากท้ายเว็บเท่านั้น — ไม่ใช่การซ่อนจากใคร */}
       </nav>
       <p className="mt-3 text-[11px] text-[#a9a9a9]">{SITE_HOST}</p>
     </footer>

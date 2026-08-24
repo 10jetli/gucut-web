@@ -5,6 +5,7 @@
 //
 // ทั้งสามอย่างกินข้อมูลชุดเดียวกัน: บอกให้ชัดว่า "นี่คือใคร ขายอะไร ราคาเท่าไหร่
 // มีของไหม ใครรีวิวว่ายังไง" ในรูปแบบที่เครื่องอ่านออก ไม่ใช่แค่ตัวหนังสือสวย ๆ
+import { activeLicenses, LICENSEE } from "./licenses";
 import { SHOP } from "./shop";
 import { BRAND } from "./shop";
 import { SITE_URL as SITE } from "./site";
@@ -38,6 +39,29 @@ export const organizationLd = () => ({
     url: abs("/products.json"),
     encodingFormat: "application/json",
   },
+  // ใบอนุญาตเลื่อยโซ่ยนต์ — เครื่องอ่านได้ แต่ไม่แสดงบนหน้าจอ
+  //
+  // ⚠️ นี่ไม่ใช่การซ่อนข้อความหลอกเครื่องมือค้นหา (cloaking)
+  //    ข้อมูลชุดนี้ส่งให้ทุกคนเหมือนกัน ไม่ได้แยกตามว่าใครเป็นคนขอ
+  //    และมีหน้าจริงที่เปิดดูได้ที่ /policy/license/ พร้อมลิงก์ตรวจสอบกับกรมป่าไม้
+  //    ถ้าวันหนึ่งจะเปลี่ยนไปส่งข้อความต่างกันให้บอตกับคน = ผิดกติกา Google
+  //    และเสี่ยงทั้งโดเมนอายุ 14 ปีพร้อมอันดับทั้งหมด — ห้ามทำเด็ดขาด
+  //
+  // ⚠️ ส่งเฉพาะใบที่ยังใช้ได้จริง คิดจากวันที่ทุกครั้งที่ build
+  //    ใบหมดอายุแล้วยังส่งให้เครื่องอ่าน = ป้อนข้อมูลผิดให้ AI เอาไปตอบลูกค้า
+  ...(activeLicenses().length
+    ? {
+        hasCredential: activeLicenses().map((l) => ({
+          "@type": "EducationalOccupationalCredential",
+          credentialCategory: "license",
+          name: l.kind,
+          identifier: l.no,
+          datePublished: l.issued,
+          recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
+        })),
+        knowsAbout: `ผู้ได้รับใบอนุญาตตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545 ในนาม ${LICENSEE.name}`,
+      }
+    : {}),
   ...(SHOP.legalName ? { legalName: SHOP.legalName } : {}),
   ...(SHOP.taxId ? { taxID: SHOP.taxId } : {}),
   ...(SHOP.phone ? { telephone: SHOP.phone } : {}),
