@@ -410,11 +410,22 @@ export default function AdminAds() {
                   ⚠️ ในกล่องมีรหัสสำหรับส่งข้อมูล ห้ามเอาไปโชว์ที่อื่นนอกหลังร้าน
                      ใครได้รหัสนี้ไปก็ยัดตัวเลขค่าโฆษณาปลอมเข้าระบบได้
                 */}
+                {/*
+                  ⚠️ ห้ามโชว์รหัสจริงในกล่องนี้ — หน้านี้ถูกเปิดตอนแชร์จอและถ่ายรูปหน้าจอ
+                     รหัสหลุดเมื่อไหร่ ใครก็ยิงตัวเลขค่าโฆษณาปลอมเข้าระบบได้
+                     ปุ่มคัดลอกยังได้ของจริงครบ คนเอาไปวางได้โดยไม่ต้องเห็นรหัสด้วยตา
+                */}
                 <pre className="mt-2 max-h-40 overflow-auto rounded-sm bg-white p-2 text-[10px] leading-relaxed text-ink-700">
                   {cfg.google.pushKey
-                    ? adsScript(typeof window === "undefined" ? "" : window.location.origin, cfg.google.pushKey)
+                    ? adsScript(
+                        typeof window === "undefined" ? "" : window.location.origin,
+                        "••••••••  (รหัสจริงอยู่ในปุ่มคัดลอก)",
+                      )
                     : "กำลังเตรียมรหัส..."}
                 </pre>
+                <p className="mt-1 text-[10.5px] leading-relaxed text-ink-300">
+                  รหัสถูกซ่อนไว้โดยตั้งใจ — กดปุ่มคัดลอกจะได้โค้ดพร้อมรหัสจริงครบ
+                </p>
               </div>
 
               {/* ทางที่สอง — เก็บไว้เผื่อวันหนึ่งมีบัญชีดูแลจัดการและได้ token มาแล้ว */}
