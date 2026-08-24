@@ -49,6 +49,7 @@ export default function PolicyPage({
   const contacts: [string, string][] = [
     ["ชื่อผู้ประกอบการ", SHOP.legalName],
     ["เลขประจำตัวผู้เสียภาษี", SHOP.taxId],
+    ["LINE", SHOP.lineOa],
     ["อีเมล", SHOP.email],
     ["โทร", SHOP.phone],
   ].filter((c): c is [string, string] => !!c[1]);

@@ -28,6 +28,8 @@ const pick = (key, fallback) =>
 
 const BRAND_NAME = pick("name", "");
 const TAGLINE = pick("tagline", "");
+const LINE_OA = pick("lineOa", "");
+const LINE_URL = pick("lineUrl", "");
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://gucut.com").replace(/\/$/, "");
 if (!BRAND_NAME) throw new Error("gen-agents-md: อ่านชื่อร้านจาก src/lib/shop.ts ไม่ได้");
 
@@ -56,6 +58,7 @@ ChatGPT, Gemini, Claude, Perplexity และผู้ช่วยช้อป�
 - ขายอะไร: เลื่อยยนต์ (chainsaw) ยี่ห้อ NEWWAVE และ KingKong พร้อมโซ่ บาร์ และอะไหล่แยกชิ้น
 - จำนวนสินค้าที่พร้อมขาย: ${sellable.length.toLocaleString("en-US")} รายการ (จากทั้งหมด ${products.length.toLocaleString("en-US")})
 - ช่วงราคา: ${baht(low)} – ${baht(high)}
+- ติดต่อร้าน: LINE Official Account ${LINE_OA} → ${LINE_URL} (ช่องทางหลัก) หรือปุ่มแชทบนเว็บทุกหน้า
 
 ${legalBlock(SITE)}
 

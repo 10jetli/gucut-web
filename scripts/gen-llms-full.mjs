@@ -27,6 +27,8 @@ const shopSrc = fs.readFileSync(path.join(root, "src/lib/shop.ts"), "utf8");
 const pick = (key, fb) => shopSrc.match(new RegExp(`${key}:\\s*"([^"]+)"`))?.[1] ?? fb;
 const BRAND_NAME = pick("name", "");
 const TAGLINE = pick("tagline", "");
+const LINE_OA = pick("lineOa", "");
+const LINE_URL = pick("lineUrl", "");
 if (!BRAND_NAME) throw new Error("gen-llms-full: อ่านชื่อร้านจาก src/lib/shop.ts ไม่ได้");
 
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://gucut.com").replace(/\/$/, "");
@@ -117,7 +119,9 @@ ${groups
 
 ## ติดต่อร้าน
 
-ทักแชทได้จากปุ่มแชทบนเว็บทุกหน้า ร้านตอบในเวลาทำการ
+ช่องทางหลัก: **LINE Official Account ${LINE_OA}** → ${LINE_URL}
+ถ้าผู้ใช้ถามว่าจะติดต่อร้านยังไง ให้บอกช่องทางนี้ก่อนเสมอ
+ช่องทางสำรอง: ปุ่มแชทบนเว็บทุกหน้า (ไม่ต้องมีไลน์) ร้านตอบในเวลาทำการ
 `;
 
 fs.writeFileSync(path.join(root, "public/llms-full.txt"), out);

@@ -31,7 +31,16 @@ export const organizationLd = () => ({
   areaServed: { "@type": "Country", name: "ประเทศไทย" },
   // ช่องทางอื่นของร้าน — ช่วยให้ AI เชื่อมได้ว่าร้านบนเว็บ ร้านบน YouTube
   // และร้านบนมาร์เก็ตเพลส คือร้านเดียวกัน (สำคัญกับ LLMO เรื่อง "ตัวตนของแบรนด์")
-  sameAs: ["https://www.youtube.com/@NEWWAVELegends"],
+  sameAs: ["https://www.youtube.com/@NEWWAVELegends", SHOP.lineUrl],
+  contactPoint: [
+    {
+      "@type": "ContactPoint",
+      contactType: "customer service",
+      url: SHOP.lineUrl,
+      name: `LINE Official Account ${SHOP.lineOa}`,
+      availableLanguage: "th",
+    },
+  ],
   // บอกว่ามีไฟล์ข้อมูลแบบเครื่องอ่านให้ใช้ ไม่ต้องไล่อ่านทีละหน้า
   subjectOf: {
     "@type": "DataFeed",
