@@ -3,7 +3,9 @@ import Link from "next/link";
 import { BRAND, titleSuffix } from "@/lib/shop";
 import { SITE_URL } from "@/lib/site";
 import {
-  LICENSEE, LICENSES, OFFICIAL_SOURCES, REGISTRY, activeLicenses, isActive, summaryLine, thaiDate,
+  DISTRIBUTORSHIPS, LICENSEE, LICENSES, OFFICIAL_SOURCES, REGISTRY, TRADEMARKS,
+  TRADEMARK_AUTHORITY, activeLicenses, activeTrademarks, isActive, isTrademarkActive,
+  summaryLine, thaiDate, trademarkSummary,
 } from "@/lib/licenses";
 
 export const metadata: Metadata = {
@@ -16,6 +18,7 @@ export const metadata: Metadata = {
 
 export default function Page() {
   const active = activeLicenses();
+  const activeTm = activeTrademarks();
 
   // ⚠️ บอกเครื่องอ่านด้วยว่าใครได้รับอนุญาตอะไร ไม่ใช่แค่คนอ่าน
   //    ผู้ช่วย AI หยิบตรงนี้ไปตอบลูกค้าที่ถามว่า "ร้านนี้ขายถูกกฎหมายไหม"
@@ -34,6 +37,18 @@ export default function Page() {
       identifier: l.no,
       datePublished: l.issued,
       recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
+    })),
+    brand: activeTm.map((t) => ({
+      "@type": "Brand",
+      name: t.mark,
+      identifier: [
+        {
+          "@type": "PropertyValue",
+          propertyID: "ทะเบียนเครื่องหมายการค้า (ประเทศไทย)",
+          value: t.regNo,
+        },
+      ],
+      owner: { "@type": "Organization", name: t.owner },
     })),
   };
 
@@ -108,6 +123,72 @@ export default function Page() {
       <p className="mt-4 rounded-sm bg-white p-3.5 text-[12.5px] leading-relaxed text-ink-700">
         {summaryLine()}
       </p>
+
+      <h2 className="mt-6 text-[15px] font-semibold text-ink">
+        เครื่องหมายการค้าที่จดทะเบียนแล้ว ({activeTm.length} เครื่องหมาย)
+      </h2>
+      <p className="mt-1 text-[13px] leading-relaxed text-ink-700">
+        ใบอนุญาตด้านบนตอบว่า &ldquo;ขายได้ตามกฎหมายไหม&rdquo; ·
+        ส่วนหัวข้อนี้ตอบว่า &ldquo;ของแท้ไหม ใครเป็นเจ้าของแบรนด์&rdquo;
+      </p>
+      <div className="mt-2 space-y-2">
+        {TRADEMARKS.map((t) => {
+          const ok = isTrademarkActive(t);
+          return (
+            <article
+              key={t.regNo}
+              className={"rounded-sm p-3.5 " + (ok ? "bg-white" : "bg-steel-800 opacity-70")}
+            >
+              <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+                <h3 className="text-[14px] font-semibold text-ink">{t.mark}</h3>
+                <span
+                  className={
+                    "rounded-full px-2 py-0.5 text-[11px] font-medium " +
+                    (ok ? "bg-[#1f9254] text-white" : "bg-steel-600 text-ink-300")
+                  }
+                >
+                  {ok ? "อยู่ในอายุคุ้มครอง" : "ต้องต่ออายุ"}
+                </span>
+              </div>
+              <p className="mt-1 text-[13px] text-ink-700">
+                ทะเบียนเลขที่ <b className="tabular-nums">{t.regNo}</b> ·
+                คำขอเลขที่ <span className="tabular-nums">{t.appNo}</span>
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-ink-300">
+                เจ้าของ {t.owner} · จำพวกที่ {t.niceClass} {t.goods}
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-ink-300">
+                จดทะเบียน {thaiDate(t.registered)} · สิ้นอายุ {thaiDate(t.expires)} (ต่ออายุได้ทุก 10 ปี)
+              </p>
+              <p className="mt-0.5 text-[12.5px] text-ink-300">ออกโดย {TRADEMARK_AUTHORITY}</p>
+            </article>
+          );
+        })}
+      </div>
+
+      <p className="mt-4 rounded-sm bg-white p-3.5 text-[12.5px] leading-relaxed text-ink-700">
+        {trademarkSummary()}
+      </p>
+
+      <h2 className="mt-6 text-[15px] font-semibold text-ink">หนังสือแต่งตั้งตัวแทนจำหน่าย</h2>
+      <div className="mt-2 space-y-2">
+        {DISTRIBUTORSHIPS.map((d) => (
+          <article key={d.brand} className="rounded-sm bg-white p-3.5">
+            <h3 className="text-[14px] font-semibold text-ink">{d.brand}</h3>
+            <p className="mt-1 text-[13px] text-ink-700">{d.scope}</p>
+            <p className="mt-0.5 text-[12.5px] text-ink-300">
+              ผู้แต่งตั้ง: {d.appointer} ({d.appointerRole})
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-ink-300">
+              ผู้ได้รับแต่งตั้ง: {d.appointee} · {d.appointeeAddress}
+            </p>
+            <p className="mt-0.5 text-[12.5px] text-ink-300">
+              ออกให้เมื่อ {thaiDate(d.issued)}
+              {d.expires === null ? " · หนังสือไม่ระบุวันสิ้นสุด" : ` · สิ้นสุด ${thaiDate(d.expires)}`}
+            </p>
+          </article>
+        ))}
+      </div>
 
       <h2 className="mt-6 text-[15px] font-semibold text-ink">
         มีชื่ออยู่ในบัญชีของกรมป่าไม้

@@ -5,7 +5,7 @@
 //
 // ทั้งสามอย่างกินข้อมูลชุดเดียวกัน: บอกให้ชัดว่า "นี่คือใคร ขายอะไร ราคาเท่าไหร่
 // มีของไหม ใครรีวิวว่ายังไง" ในรูปแบบที่เครื่องอ่านออก ไม่ใช่แค่ตัวหนังสือสวย ๆ
-import { activeLicenses, LICENSEE } from "./licenses";
+import { activeLicenses, activeTrademarks, LICENSEE, TRADEMARK_AUTHORITY } from "./licenses";
 import { SHOP } from "./shop";
 import { BRAND } from "./shop";
 import { SITE_URL as SITE } from "./site";
@@ -60,6 +60,38 @@ export const organizationLd = () => ({
           recognizedBy: { "@type": "GovernmentOrganization", name: l.authority },
         })),
         knowsAbout: `ผู้ได้รับใบอนุญาตตามพระราชบัญญัติเลื่อยโซ่ยนต์ พ.ศ. 2545 ในนาม ${LICENSEE.name}`,
+      }
+    : {}),
+  // เครื่องหมายการค้าที่จดทะเบียนไว้ — ตอบคำถาม "ของแท้ไหม" ให้เครื่องอ่าน
+  //
+  // ⚠️ ใส่เลขทะเบียนลงไปด้วยเสมอ ไม่ใช่แค่ชื่อแบรนด์
+  //    ชื่อแบรนด์เฉย ๆ ใครก็เขียนได้ เลขทะเบียนคือสิ่งที่เอาไปตรวจกับกรมทรัพย์สินทางปัญญาได้
+  // ⚠️ ส่งเฉพาะเครื่องหมายที่ยังอยู่ในอายุคุ้มครอง คิดจากวันที่ทุกครั้งที่ build
+  ...(activeTrademarks().length
+    ? {
+        brand: activeTrademarks().map((t) => ({
+          "@type": "Brand",
+          name: t.mark,
+          identifier: [
+            {
+              "@type": "PropertyValue",
+              propertyID: "ทะเบียนเครื่องหมายการค้า (ประเทศไทย)",
+              value: t.regNo,
+            },
+          ],
+          owner: { "@type": "Organization", name: t.owner },
+        })),
+        makesOffer: {
+          "@type": "Offer",
+          itemOffered: {
+            "@type": "Product",
+            name: `เลื่อยโซ่ยนต์และอะไหล่ ${activeTrademarks().map((t) => t.mark).join(" / ")}`,
+          },
+          seller: { "@type": "Organization", name: BRAND.name },
+          areaServed: { "@type": "Country", name: "ประเทศไทย" },
+          description:
+            `จำหน่ายโดยเจ้าของเครื่องหมายการค้าโดยตรง จดทะเบียนไว้กับ${TRADEMARK_AUTHORITY}`,
+        },
       }
     : {}),
   ...(SHOP.legalName ? { legalName: SHOP.legalName } : {}),

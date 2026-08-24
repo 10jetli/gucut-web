@@ -156,3 +156,130 @@ export const OFFICIAL_SOURCES = [
     note: "กรมป่าไม้เผยแพร่เอง",
   },
 ] as const;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// เครื่องหมายการค้า — คนละเรื่องกับใบอนุญาตเลื่อยโซ่ยนต์ อย่าปนกัน
+//
+// ใบอนุญาต (ด้านบน) ตอบว่า "ขายได้ไหมตามกฎหมาย"
+// เครื่องหมายการค้า (ด้านล่าง) ตอบว่า "ของแท้ไหม ใครเป็นเจ้าของแบรนด์"
+// ลูกค้าและผู้ช่วย AI ถามสองอย่างนี้คนละคำถาม จึงต้องแยกกันตอบ
+//
+// ⚠️ อายุ 10 ปีนับจาก "วันจดทะเบียน" ไม่ใช่วันที่ออกหนังสือสำคัญ
+//    สองวันนี้ห่างกันได้หลายปี (NEW WAVE ห่างกัน 7 ปี) เขียนผิดคือคำนวณวันหมดอายุผิด
+// ⚠️ ต่ออายุได้ทุก 10 ปี — หมดอายุแล้วไม่ได้แปลว่าเสียสิทธิ์ถาวร แต่ต้องไม่เขียนว่ายังใช้ได้
+// ─────────────────────────────────────────────────────────────────────────────
+
+export interface Trademark {
+  /** ชื่อเครื่องหมายตามที่ปรากฏบนหนังสือสำคัญ */
+  mark: string;
+  /** ทะเบียนเลขที่ */
+  regNo: string;
+  /** คำขอเลขที่ */
+  appNo: string;
+  owner: string;
+  /** จำพวกสินค้า (Nice Classification) */
+  niceClass: number;
+  goods: string;
+  /** วันจดทะเบียน — วันที่เริ่มนับอายุ 10 ปี */
+  registered: string;
+  /** วันที่ออกหนังสือสำคัญ */
+  issued: string;
+  /** วันสิ้นอายุ (ต่ออายุได้ทุก 10 ปี) */
+  expires: string;
+}
+
+const TM_AUTHORITY = "กองเครื่องหมายการค้า กรมทรัพย์สินทางปัญญา กระทรวงพาณิชย์";
+
+export const TRADEMARKS: Trademark[] = [
+  {
+    mark: "NEW WAVE",
+    regNo: "181125034",
+    appNo: "170135768",
+    owner: "ห้างหุ้นส่วนจำกัด นิวเวฟ ซันไชน์",
+    niceClass: 7,
+    goods: "เลื่อยโซ่ยนต์ เลื่อยชนิดใช้ไฟฟ้า",
+    registered: "2017-10-09",
+    issued: "2024-10-11",
+    expires: "2027-10-08",
+  },
+  {
+    mark: "KINGKONG REDMOON",
+    regNo: "211107688",
+    appNo: "200106649",
+    owner: "นายอาทิตย์ บุญประกอบ",
+    niceClass: 7,
+    goods: "เลื่อยโซ่ยนต์ เลื่อยชนิดใช้ไฟฟ้า",
+    registered: "2020-02-21",
+    issued: "2021-04-19",
+    expires: "2030-02-20",
+  },
+];
+
+export const TRADEMARK_AUTHORITY = TM_AUTHORITY;
+
+/** ยังอยู่ในอายุคุ้มครองไหม — คิดจากวันที่เสมอ ห้ามเขียนตายตัว */
+export const isTrademarkActive = (t: Trademark, now = new Date()) =>
+  new Date(t.expires) >= now;
+
+export const activeTrademarks = (now = new Date()) =>
+  TRADEMARKS.filter((t) => isTrademarkActive(t, now));
+
+/**
+ * หนังสือแต่งตั้งตัวแทนจำหน่าย (Authorized distributor seller)
+ *
+ * ⚠️ ผู้แต่งตั้งของสองแบรนด์เป็นคนละราย — NEW WAVE แต่งตั้งโดยนิติบุคคลผู้นำเข้า
+ *    ส่วน KINGKONG REDMOON แต่งตั้งโดยเจ้าของเครื่องหมายซึ่งเป็นบุคคลธรรมดา
+ *    เขียนรวบว่า "ร้านแต่งตั้ง" ไม่ได้ ผิดจากเอกสาร
+ * ⚠️ หนังสือทั้งสองฉบับไม่ระบุวันสิ้นสุด ห้ามเดาวันหมดอายุใส่เอง
+ */
+export interface Distributorship {
+  brand: string;
+  /** ผู้แต่งตั้ง — เจ้าของเครื่องหมายการค้า หรือผู้นำเข้าอย่างเป็นทางการ */
+  appointer: string;
+  appointerRole: string;
+  /** ผู้ได้รับแต่งตั้ง */
+  appointee: string;
+  appointeeAddress: string;
+  scope: string;
+  issued: string;
+  /** null = หนังสือไม่ระบุวันสิ้นสุด */
+  expires: string | null;
+}
+
+export const DISTRIBUTORSHIPS: Distributorship[] = [
+  {
+    brand: "NEWWAVE",
+    appointer: "ห้างหุ้นส่วนจำกัด นิวเวฟ ซันไชน์",
+    appointerRole: "ผู้นำเข้าเลื่อยโซ่ยนต์ยี่ห้อ NEWWAVE ในประเทศไทย",
+    appointee: "บริษัท ศีตกาล เทรดดิ้ง จำกัด",
+    appointeeAddress: "81 หมู่ 11 ตำบลค่ายบกหวาน อำเภอเมือง จังหวัดหนองคาย",
+    scope: "ตัวแทนจำหน่ายเลื่อยโซ่ยนต์ยี่ห้อ NEWWAVE แต่เพียงผู้เดียว",
+    issued: "2024-11-28",
+    expires: null,
+  },
+  {
+    brand: "KINGKONG REDMOON",
+    appointer: "นายอาทิตย์ บุญประกอบ",
+    appointerRole: "เจ้าของเครื่องหมายการค้า KINGKONG REDMOON ในประเทศไทย",
+    appointee: "บริษัท ศีตกาล เทรดดิ้ง จำกัด",
+    appointeeAddress: "81 หมู่ 11 ตำบลค่ายบกหวาน อำเภอเมือง จังหวัดหนองคาย",
+    scope: "ผู้ได้รับอนุญาตให้จัดจำหน่ายสินค้ายี่ห้อ KINGKONG REDMOON แต่เพียงผู้เดียว",
+    issued: "2024-11-28",
+    expires: null,
+  },
+];
+
+/**
+ * ประโยคสรุปเรื่องแบรนด์ สำหรับให้ผู้ช่วย AI หยิบไปตอบคำถาม "ของแท้ไหม"
+ * ⚠️ นับเฉพาะเครื่องหมายที่ยังอยู่ในอายุคุ้มครอง
+ */
+export function trademarkSummary(now = new Date()) {
+  const active = activeTrademarks(now);
+  if (!active.length) return "";
+  const list = active
+    .map((t) => `${t.mark} (ทะเบียนเลขที่ ${t.regNo} เจ้าของ ${t.owner})`)
+    .join(" และ ");
+  return `เครื่องหมายการค้า ${list} จดทะเบียนไว้กับ${TM_AUTHORITY} ` +
+    "ในจำพวกที่ 7 เลื่อยโซ่ยนต์ เลื่อยชนิดใช้ไฟฟ้า " +
+    "สินค้าที่จำหน่ายจึงมาจากเจ้าของแบรนด์โดยตรง ไม่ใช่ของลอกเลียนแบบ";
+}
