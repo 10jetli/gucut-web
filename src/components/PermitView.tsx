@@ -720,6 +720,11 @@ export default function PermitView() {
               <span className="mt-1 block text-[11.5px] text-ink-300">
                 ที่ต้องจ่ายเองมีแค่ค่าใบรับรองแพทย์กับค่าถ่ายเอกสาร
               </span>
+              {/* ⚠️ คนมักเตรียมรูปไปเผื่อเพราะเอกสารราชการอื่นขอกัน
+                  บอกไปเลยว่าไม่ต้อง จะได้ไม่เสียเวลาไปถ่ายรูปก่อน */}
+              <span className="mt-1 block text-[11.5px] text-ink-300">
+                และไม่ต้องใช้รูปถ่าย ๑ นิ้วหรือ ๒ นิ้ว
+              </span>
             </p>
 
             <h3 className="mt-6 text-[14px] font-bold text-ink">เอกสารที่ต้องเตรียมไปด้วย</h3>
