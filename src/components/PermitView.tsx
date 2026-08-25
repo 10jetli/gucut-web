@@ -20,12 +20,13 @@ import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lz1Document, { type Lz1Data } from "./Lz1Document";
+import MedCertDocument from "./MedCertDocument";
 import {
   ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
 } from "@/lib/idcard";
 import {
   BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
-  PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl, officeSiteUrl,
+  DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { PROVINCES, findPostcode } from "@/lib/postcode";
 import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
@@ -566,8 +567,13 @@ export default function PermitView() {
               disabled={!canPrint}
               className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
             >
-              🖨️ พิมพ์แบบ ลซ.1
+              🖨️ พิมพ์เอกสาร (ลซ.๑ + ใบให้แพทย์)
             </button>
+            <p className="mt-1.5 text-[12px] leading-relaxed text-ink-300">
+              ได้ ๔ แผ่น — แบบ ลซ.๑ สามแผ่น และใบรับรองแพทย์อีกหนึ่งแผ่น
+              <b className="text-ink"> เอาใบรับรองแพทย์ไปให้หมอกรอกและเซ็นก่อน</b>
+              แล้วค่อยเอาไปยื่นพร้อมกันทั้งชุด
+            </p>
             {!canPrint && (
               <p className="mt-1.5 text-[12px] text-ink-300">
                 ต้องมี ชื่อ · เลขบัตรที่ถูกต้อง · จังหวัด · รุ่นเลื่อย และติ๊กคำรับรองก่อน
@@ -662,7 +668,35 @@ export default function PermitView() {
               );
             })()}
 
-            <h3 className="mt-5 text-[14px] font-bold text-ink">เอกสารที่ต้องเตรียมไปด้วย</h3>
+            {/* ⚠️ ขั้นนี้คนมักตกหล่น — ได้ ลซ.2 มาแล้วไม่รู้ว่าต้องส่งให้ร้าน
+                แล้วรอเครื่องอยู่บ้านโดยที่ร้านก็รออยู่เหมือนกัน */}
+            <h3 className="mt-6 text-[14px] font-bold text-ink">
+              ได้ใบ ลซ.๒ มาแล้ว ส่งมาที่ร้าน
+            </h3>
+            <div className="mt-1.5 rounded-sm bg-white p-3">
+              <p className="text-[13px] font-semibold text-ink">{DOC_MAILING.name}</p>
+              <p className="mt-0.5 text-[13px] leading-relaxed text-ink-700">
+                {DOC_MAILING.address}
+              </p>
+              <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
+              <button
+                onClick={() => {
+                  const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
+                  void navigator.clipboard.writeText(txt)
+                    .then(() => setBusy("คัดลอกที่อยู่แล้ว"))
+                    .catch(() => setBusy("คัดลอกไม่ได้ ลองจดเองนะครับ"));
+                }}
+                className="mt-2 w-full rounded-sm border border-steel-600 py-2 text-[13px] font-semibold text-ink"
+              >
+                คัดลอกที่อยู่สำหรับจ่าหน้าซอง
+              </button>
+              <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
+                ส่งมาทั้ง ๒ ตอน — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
+                แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์และเอกสารประกอบ
+              </p>
+            </div>
+
+            <h3 className="mt-6 text-[14px] font-bold text-ink">เอกสารที่ต้องเตรียมไปด้วย</h3>
             <ul className="mt-1.5 space-y-1.5">
               {REQUIRED_DOCS.map((doc) => (
                 <li key={doc.label} className="rounded-sm bg-white p-2.5 text-[13px] text-ink">
@@ -678,6 +712,9 @@ export default function PermitView() {
       {/* เอกสารจริง — ซ่อนบนจอ โผล่เฉพาะตอนสั่งพิมพ์ */}
       <div className="lz-print-root hidden print:block">
         <Lz1Document d={d} />
+        {/* ⚠️ พิมพ์มาพร้อมกันโดยตั้งใจ — แยกปุ่มแล้วลูกค้าจะลืมพิมพ์ใบหมอ
+            แล้วไปเจอปัญหาที่สำนักงานตอนที่กลับไปเอาใหม่ไม่ทันแล้ว */}
+        <MedCertDocument name={d.name} age={d.age} idNumber={d.idNumber} />
       </div>
     </>
   );
