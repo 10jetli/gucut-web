@@ -496,25 +496,46 @@ export default function PermitView() {
           </span>
         </p>
 
-        {/* ------------------------------------------------ 1. เลือกรุ่น */}
-        <h2 className="mt-5 text-[15px] font-bold text-ink">๑. เลื่อยรุ่นอะไร</h2>
-        <select
-          value={modelName}
-          onChange={(e) => setModelName(e.target.value)}
-          className="mt-2 w-full rounded-sm border border-steel-600 px-3 py-2.5 text-[14px]"
-        >
-          <option value="">— เลือกรุ่น —</option>
-          <optgroup label="ต้องขอใบอนุญาต">
-            {PERMIT_MODELS.map((m) => (
-              <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
-            ))}
-          </optgroup>
-          <optgroup label="ไม่ต้องขอใบอนุญาต">
-            {EXEMPT_MODELS.map((m) => (
-              <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
-            ))}
-          </optgroup>
-        </select>
+        {/* ------------------------------------------------ 1. เลือก
+            ⚠️ ภาพร่างของเจ้าของร้านวาง "เลื่อยยนต์" กับ "ขนาดบาร์" เป็นช่องเลือก
+               สองช่องเรียงคู่กันตั้งแต่แรก ใต้หัวข้อคำเดียวว่า "เลือก"
+               ⇒ ห้ามซ่อนช่องขนาดบาร์ไว้หลังการเลือกรุ่น (ของเดิมทำแบบนั้น)
+               ลูกค้าเห็นทีเดียวว่าต้องตอบแค่สองเรื่องก่อนจะเริ่มถ่ายบัตร */}
+        <h2 className="mt-5 text-[15px] font-bold text-ink">๑. เลือก</h2>
+        <div className="mt-2 grid grid-cols-2 gap-2">
+          <label>
+            <span className="mb-1 block text-[12px] text-ink-300">เลื่อยยนต์</span>
+            <select
+              value={modelName}
+              onChange={(e) => setModelName(e.target.value)}
+              className="w-full rounded-sm border border-steel-600 px-3 py-2.5 text-[14px]"
+            >
+              <option value="">— เลือกรุ่น —</option>
+              <optgroup label="ต้องขอใบอนุญาต">
+                {PERMIT_MODELS.map((m) => (
+                  <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
+                ))}
+              </optgroup>
+              <optgroup label="ไม่ต้องขอใบอนุญาต">
+                {EXEMPT_MODELS.map((m) => (
+                  <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
+                ))}
+              </optgroup>
+            </select>
+          </label>
+          <label>
+            <span className="mb-1 block text-[12px] text-ink-300">ขนาดบาร์</span>
+            <select
+              value={bar}
+              onChange={(e) => setBar(e.target.value)}
+              className="w-full rounded-sm border border-steel-600 px-3 py-2.5 text-[14px]"
+            >
+              {/* ⚠️ เว้นว่างได้จริง เจ้าของร้านบอกว่า "ลูกค้าบางคนก็ซื้อแต่เครื่อง" */}
+              <option value="">ไม่ระบุ (ซื้อแต่เครื่อง)</option>
+              {BAR_SIZES.map((b) => <option key={b} value={b}>{b} นิ้ว</option>)}
+            </select>
+          </label>
+        </div>
 
         {exempt && (
           <div className="mt-2 rounded-sm bg-[#e8f5ea] p-3.5">
@@ -568,27 +589,16 @@ export default function PermitView() {
               </div>
             </div>
 
-            <div className="mt-2 grid grid-cols-2 gap-2">
-              <label>
-                <span className="mb-1 block text-[12px] text-ink-300">ขนาดบาร์ (เว้นว่างได้)</span>
-                <select
-                  value={bar}
-                  onChange={(e) => setBar(e.target.value)}
-                  className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
-                >
-                  <option value="">ไม่ระบุ (ซื้อแต่เครื่อง)</option>
-                  {BAR_SIZES.map((b) => <option key={b} value={b}>{b} นิ้ว</option>)}
-                </select>
-              </label>
-              <label>
-                <span className="mb-1 block text-[12px] text-ink-300">จำนวนเครื่อง</span>
-                <input
-                  type="number" min={1} max={5} value={qty}
-                  onChange={(e) => setQty(e.target.value)}
-                  className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
-                />
-              </label>
-            </div>
+            {/* ⚠️ ขนาดบาร์ย้ายขึ้นไปอยู่คู่กับรุ่นตามภาพร่างแล้ว เหลือแค่จำนวนตรงนี้
+                จำนวนไม่ได้อยู่ในภาพร่าง แต่แบบ ลซ.๑ มีช่องให้กรอก จึงเก็บไว้ */}
+            <label className="mt-2 block w-1/2 pr-1">
+              <span className="mb-1 block text-[12px] text-ink-300">จำนวนเครื่อง</span>
+              <input
+                type="number" min={1} max={5} value={qty}
+                onChange={(e) => setQty(e.target.value)}
+                className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
+              />
+            </label>
             {picked.hp === null && (
               <p className="mt-1 text-[12px] text-[#b26a00]">
                 รุ่นนี้ยังไม่มีข้อมูลแรงม้าในระบบ — กรุณาถามทางร้านก่อนพิมพ์
@@ -615,12 +625,39 @@ export default function PermitView() {
               className="hidden"
               onChange={(e) => { const f = e.target.files?.[0]; if (f) void readCard(f); }}
             />
+            {/* ⚠️ ภาพร่างของเจ้าของร้านวาดตรงนี้เป็น "กรอบรูปบัตร" ไม่ใช่ปุ่มแท่งเดียว
+                ในกรอบมีรูปคนซ้าย · บรรทัดข้อความกลาง · ช่องสี่เหลี่ยมขวา
+                ⇒ ทำให้หน้าตาเหมือนบัตรจริง ลูกค้ารู้ทันทีว่าต้องเอาอะไรมาวาง
+                   โดยไม่ต้องอ่านตัวหนังสือ (คนที่มาหน้านี้บางส่วนอ่านหนังสือไม่คล่อง)
+                ⚠️ ทั้งกรอบคือปุ่ม ไม่ใช่แค่ข้อความข้างใน — นิ้วโป้งบนมือถือกดโดนง่ายกว่ามาก */}
             <button
               onClick={() => fileRef.current?.click()}
-              className="mt-2 w-full rounded-sm bg-safety py-3.5 text-[15px] font-bold text-white"
+              aria-label="ถ่ายบัตรประชาชน"
+              className="mt-2 block w-full rounded-sm border-2 border-safety bg-white p-3 text-left"
             >
-              📷 ถ่ายบัตรประชาชน
+              <span className="flex items-center gap-3">
+                {/* รูปคนบนบัตร */}
+                <span className="flex h-14 w-12 shrink-0 items-center justify-center rounded-sm bg-steel-900 text-[26px] leading-none">
+                  🧑
+                </span>
+                {/* บรรทัดชื่อ-ที่อยู่ */}
+                <span className="min-w-0 flex-1 space-y-1.5" aria-hidden>
+                  <span className="block h-2 w-11/12 rounded-full bg-steel-700" />
+                  <span className="block h-2 w-9/12 rounded-full bg-steel-700" />
+                  <span className="block h-2 w-10/12 rounded-full bg-steel-700" />
+                </span>
+                {/* ช่องสี่เหลี่ยมมุมขวาของบัตร */}
+                <span className="h-8 w-8 shrink-0 rounded-sm border border-steel-600" aria-hidden />
+              </span>
+              <span className="mt-2.5 block rounded-sm bg-safety py-2.5 text-center text-[15px] font-bold text-white">
+                📷 แสกนบัตรประชาชน
+              </span>
             </button>
+            {/* ⚠️ ลูกศรนี้อยู่ในภาพร่าง — บอกว่าแสกนแล้วข้อมูลไหลเข้าแบบ ลซ.๑ ให้เอง
+                เป็นเหตุผลเดียวที่ลูกค้ายอมถ่ายบัตร ต้องเห็นก่อนกด ไม่ใช่หลังกด */}
+            <p className="mt-1.5 text-center text-[12px] text-ink-300">
+              ↓ เข้าแบบฟอร์ม ลซ.๑ ให้อัตโนมัติ
+            </p>
             {busy && (
               <p className="mt-2 rounded-sm bg-steel-900 p-2.5 text-[12.5px] text-ink-700">{busy}</p>
             )}
@@ -686,7 +723,15 @@ export default function PermitView() {
               disabled={!canPrint}
               className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
             >
-              🖨️ พิมพ์เอกสาร (ลซ.๑ + ใบให้แพทย์)
+              {/* ⚠️ ภาพร่างเขียนปุ่มนี้ว่า "ขอใบอนุญาต" จึงใช้คำนั้นเป็นตัวใหญ่
+                  แต่ต้องมีบรรทัดล่างบอกว่าจริง ๆ แล้วมันคือการพิมพ์เอกสาร
+                  ปุ่มที่เขียนแค่ "ขอใบอนุญาต" เฉย ๆ = ลูกค้าเข้าใจว่ากดแล้วยื่นเรื่องให้ราชการแล้ว
+                  แล้วนั่งรอใบอนุญาตที่ไม่มีวันมา ซึ่งแย่กว่าคำที่ยาวขึ้นหนึ่งบรรทัดมาก
+                  ห้ามตัดบรรทัดล่างออก */}
+              ขอใบอนุญาต
+              <span className="mt-0.5 block text-[11.5px] font-normal opacity-80">
+                🖨️ พิมพ์แบบ ลซ.๑ + ใบรับรองแพทย์ แล้วนำไปยื่นเอง
+              </span>
             </button>
             <p className="mt-1.5 text-[12px] leading-relaxed text-ink-300">
               ได้ ๔ แผ่น — แบบ ลซ.๑ สามแผ่น และใบรับรองแพทย์อีกหนึ่งแผ่น
@@ -695,7 +740,7 @@ export default function PermitView() {
             </p>
             {!canPrint && (
               <p className="mt-1.5 text-[12px] text-ink-300">
-                ต้องมี ชื่อ · เลขบัตรที่ถูกต้อง · จังหวัด · รุ่นเลื่อย และติ๊กคำรับรองก่อน
+                ต้องมี ชื่อ · เลขบัตรที่ถูกต้อง · จังหวัด · รุ่นเลื่อย ก่อน
               </p>
             )}
 
