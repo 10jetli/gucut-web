@@ -150,8 +150,15 @@ export default async function handler(req, context) {
   }
 
   // ------------------------------------------------------------ ฝั่งร้าน
+  //
+  // ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น
+  //    เขียน `if (gate) return gate` ไม่ได้ เพราะ object เป็น truthy เสมอ
+  //    Netlify จะพังทันทีด้วย "Function returned an unsupported value"
+  //    ทั้งกับคนนอกและกับร้านเอง = หน้าหลังร้านใช้ไม่ได้เลยสักครั้ง
+  //    เจอตอนยิงทดสอบจริงหลัง deploy (25 ส.ค. 2569) ไม่ใช่ตอน build — tsc/build มองไม่เห็น
   const gate = await adminGate(req, context);
-  if (gate) return gate;
+  if (gate.deny) return gate.deny;
+  if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   if (req.method === "GET") {
     const url = new URL(req.url);
