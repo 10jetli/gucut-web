@@ -711,6 +711,17 @@ export default function PermitView() {
               </p>
             </div>
 
+            {/* ⚠️ เจ้าของร้านยืนยันว่าไม่มีค่าธรรมเนียม (25 ส.ค. 2569)
+                เขียนได้แค่ "ค่าขอใบอนุญาต" เท่านั้น ห้ามเหมารวมว่าไปแล้วไม่เสียอะไรเลย
+                ค่าใบรับรองแพทย์กับค่าถ่ายเอกสารยังเป็นเงินที่ลูกค้าต้องจ่ายอยู่ */}
+            <p className="mt-6 rounded-sm bg-[#e8f5ea] p-3 text-[13px] leading-relaxed text-ink">
+              <b className="text-[#1f7a3d]">ขอใบอนุญาตไม่มีค่าธรรมเนียม</b> —
+              ยื่นและรับใบอนุญาตไม่ต้องเสียเงินให้ทางราชการ
+              <span className="mt-1 block text-[11.5px] text-ink-300">
+                ที่ต้องจ่ายเองมีแค่ค่าใบรับรองแพทย์กับค่าถ่ายเอกสาร
+              </span>
+            </p>
+
             <h3 className="mt-6 text-[14px] font-bold text-ink">เอกสารที่ต้องเตรียมไปด้วย</h3>
             <ul className="mt-1.5 space-y-1.5">
               {REQUIRED_DOCS.map((doc) => (
