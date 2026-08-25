@@ -1,9 +1,13 @@
 // อ่านบัตรประชาชนด้วย AI — /api/read-id
 //
 // ---------------------------------------------------------------------------
-// เจ้าของร้านสั่ง (25 ส.ค. 2569): "ใช้ AI อ่านบัตรเลย ยอมจ่ายเครดิต"
+// เจ้าของร้านสั่ง (25 ส.ค. 2569): "ใช้ netlify AI อ่านบัตร จะได้แม่น ๆ ยอมจ่ายเครดิต"
 // ตัวอ่านในเครื่อง (tesseract) อ่านตัวหนังสือไทยจากรูปถ่ายไม่แม่นพอ
 // โดยเฉพาะวันเกิดและที่อยู่ ซึ่งเป็นช่องที่ผิดแล้วเสียเที่ยว
+//
+// ใช้ Netlify AI Gateway — ไม่ต้องหาคีย์จากที่อื่นมาใส่
+// Netlify ใส่ ANTHROPIC_API_KEY + ANTHROPIC_BASE_URL ให้เอง แล้วคิดเป็นเครดิตของร้าน
+// ($1 = 180 เครดิต · ขีดจำกัดต่อนาทีขึ้นกับแพ็กเกจ)
 //
 // ⚠️ ข้อแลกเปลี่ยนที่ต้องรู้ — รูปบัตร "ออกจากเครื่องลูกค้า" แล้ว
 //    ของเดิมอ่านในเครื่อง 100% รูปไม่เคยไปไหน ตอนนี้รูปวิ่งผ่านเซิร์ฟเวอร์ร้าน
@@ -75,6 +79,14 @@ const PROMPT = `อ่านข้อมูลจากรูปบัตรป�
 export default async function handler(req) {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
+  // ⚠️ ต้องยิงผ่าน ANTHROPIC_BASE_URL ของ Netlify AI Gateway ห้ามยิงตรงไป api.anthropic.com
+  //    Netlify ใส่ ANTHROPIC_API_KEY + ANTHROPIC_BASE_URL ให้เองทั้งคู่ (ไม่ต้องหาคีย์มาเอง)
+  //    แล้วคิดเงินเป็นเครดิต Netlify ของร้าน — $1 = 180 เครดิต
+  //    คีย์ที่ Netlify ใส่ให้ "ใช้กับปลายทางอื่นไม่ได้"
+  //    เคยพลาดมาแล้ว 25 ส.ค. 2569: ยิงตรงไป api.anthropic.com แล้วได้ invalid x-api-key
+  //    ทั้งที่คีย์มีอยู่ครบ ดูเหมือนคีย์เสียทั้งที่ที่อยู่ปลายทางผิด
+  //    ⚠️ ต้อง deploy ขึ้น production อย่างน้อยหนึ่งครั้ง Gateway ถึงจะเริ่มใส่ค่าให้
+  const base = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) {
     // ⚠️ บอกให้ชัดว่าเป็นเรื่องการตั้งค่า ไม่ใช่รูปลูกค้าไม่ดี
@@ -97,7 +109,7 @@ export default async function handler(req) {
   const media = /^data:(image\/\w+);/.exec(String(body?.image || ""))?.[1] || "image/jpeg";
 
   try {
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const r = await fetch(`${base}/v1/messages`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
@@ -105,7 +117,9 @@ export default async function handler(req) {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: "claude-sonnet-4-5",
+        // ⚠️ ใส่ชื่อรุ่นแบบมีวันที่ ตามรายชื่อที่ Netlify AI Gateway รองรับ
+        //    ชื่อย่อไม่มีวันที่ Gateway อาจไม่รู้จัก
+        model: process.env.READ_ID_MODEL || "claude-sonnet-4-5-20250929",
         max_tokens: 600,
         messages: [{
           role: "user",
@@ -120,7 +134,14 @@ export default async function handler(req) {
 
     const out = await r.json().catch(() => null);
     if (!r.ok) {
-      return json({ error: out?.error?.message || `ตัวอ่านตอบ ${r.status}` }, 502);
+      // ⚠️ ต้องแยก "เครดิตหมด / ยิงเร็วเกินโควตาต่อนาที" ออกจาก "ของพัง"
+      //    ถ้าเหมารวมเป็น 502 หมด หน้าเว็บจะถอยไปใช้ตัวอ่านในเครื่องเงียบ ๆ
+      //    แล้วเจ้าของร้านจะไม่มีวันรู้ว่าเครดิตหมดไปตั้งแต่เมื่อไหร่
+      //    รู้แต่ว่า "หลัง ๆ อ่านบัตรไม่ค่อยแม่น" ซึ่งตามหาสาเหตุไม่เจอ
+      const why = out?.error?.message || `ตัวอ่านตอบ ${r.status}`;
+      if (r.status === 429) return json({ error: "ตัวอ่านคิวเต็ม รอสักครู่แล้วลองใหม่", why }, 429);
+      if (r.status === 402) return json({ error: "เครดิตตัวอ่านหมด", credit: true, why }, 402);
+      return json({ error: why }, 502);
     }
 
     const text = (out?.content || []).map((c) => c.text || "").join("").trim();
