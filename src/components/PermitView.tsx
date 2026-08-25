@@ -238,10 +238,6 @@ export default function PermitView() {
     <>
       <main className="lz-noprint mx-auto max-w-2xl px-4 pb-24 pt-4">
         <h1 className="font-heading text-[22px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์</h1>
-        <p className="mt-1 text-[13.5px] leading-relaxed text-ink-700">
-          กรอกแบบ <b>ลซ.1</b> (คำขอรับใบอนุญาตให้มีเลื่อยโซ่ยนต์) ให้เสร็จในหน้าเดียว
-          แล้วพิมพ์ไปยื่นที่{REGISTRAR_OFFICE}ได้เลย — ใช้ฟรี ไม่ต้องซื้อของกับร้านก่อน
-        </p>
 
         {/* ⚠️ คลิปคือคำอธิบายหลัก ข้อความบนหน้าเป็นตัวเสริม (เจ้าของร้านสั่ง 25 ส.ค. 2569)
             "ลูกค้าทุกคนดูแล้วเขาเข้าใจ" — วางบนสุดก่อนอย่างอื่นทั้งหมด */}

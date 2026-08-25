@@ -40,44 +40,36 @@ export default function PermitVideo() {
 
   useHls(el, playing ? videoSrc(CLIP) : "", playing);
 
+  // ต่อ hls.js ตอนลูกค้ากดเล่นจริงเท่านั้น — ต่อไว้ตั้งแต่เปิดหน้าคือดูดเน็ตทิ้งเปล่า
   const start = () => {
+    if (playing) return;
     setPlaying(true);
-    // Safari เล่น HLS ได้เอง แต่ต้องป้อน src ด้วย JS
-    // ⚠️ ใส่ src ใน JSX ไม่ได้ เพราะหน้าถูก build เป็น HTML ล่วงหน้า
-    //    ตอน build ไม่มีเบราว์เซอร์ ค่าจึงเป็น false เสมอ แล้ว iPhone ได้ video ไร้ src
-    setTimeout(() => {
-      if (el && isSafariHls() && !el.src) el.src = videoSrc(CLIP);
-      void el?.play().catch(() => { /* กดเล่นไม่ติดก็ไม่ต้องรบกวน */ });
-    }, 0);
+    // ⚠️ Safari เล่น HLS ได้เอง แต่ต้องป้อน src ด้วย JS ใส่ใน JSX ไม่ได้
+    //    หน้าถูก build เป็น HTML ล่วงหน้า ตอน build ไม่มีเบราว์เซอร์ ค่าจึงเป็น false เสมอ
+    //    แล้ว iPhone จะได้ video ที่ไม่มี src ตลอดกาล (บทเรียนจากฟีดวิดีโอ)
+    if (el && isSafariHls() && !el.src) el.src = videoSrc(CLIP);
   };
 
   return (
     <div ref={wrap} className="mt-3 overflow-hidden rounded-sm bg-carbon">
+      {/*
+        ⚠️ ใช้ปุ่มควบคุมของเบราว์เซอร์เอง ไม่ทำปุ่มเล่นเอง
+           เคยทำปุ่มทับไว้ แต่ iOS วาดปุ่มของตัวเองทับอยู่ดี กลายเป็นสองชั้นซ้อนกัน
+           (เห็นของจริงบนมือถือ 25 ส.ค. 2569) — ของเบราว์เซอร์มีเลื่อนถอยหลัง
+           ปรับเสียง และส่งขึ้นทีวีได้ด้วย ดีกว่าที่ทำเองทุกทาง
+        ⚠️ preload="none" กับไม่ใส่ autoPlay คือสิ่งที่กันไม่ให้คลิปเล่นเอง
+           ห้ามถอดออก — คนเปิดหน้านี้มากรอกเอกสาร ไม่ได้มาดูคลิป
+      */}
       <div className="relative aspect-square w-full">
         <video
           ref={ref}
           poster={videoPoster(CLIP)}
           playsInline
-          controls={playing}
+          controls
           preload="none"
+          onPlay={start}
           className="h-full w-full object-contain"
         />
-        {!playing && (
-          <button
-            onClick={start}
-            aria-label="ดูคลิปอธิบายขั้นตอนขอใบอนุญาต"
-            className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/25"
-          >
-            <span className="flex h-14 w-14 items-center justify-center rounded-full bg-white/95">
-              <svg viewBox="0 0 24 24" className="ml-1 h-7 w-7 fill-ink">
-                <path d="M8 5v14l11-7z" />
-              </svg>
-            </span>
-            <span className="rounded-full bg-black/55 px-3 py-1 text-[12.5px] font-medium text-white">
-              ดูคลิปอธิบาย ๑ นาที ๒๐ วินาที
-            </span>
-          </button>
-        )}
       </div>
     </div>
   );
