@@ -146,10 +146,12 @@ body {
   font-size: 5mm;
   font-weight: 600;
 }
-.lz-idbox:nth-child(1) { margin-right: 1.4mm; }
-.lz-idbox:nth-child(5) { margin-right: 1.4mm; }
-.lz-idbox:nth-child(10) { margin-right: 1.4mm; }
-.lz-idbox:nth-child(12) { margin-right: 1.4mm; }
+/* ⚠️ แบ่งกลุ่ม 1-4-5-2-1 ตามฟอร์มจริง ไม่ใช่เรียงติดกัน 13 กล่อง
+   เจ้าหน้าที่อ่านทีละกลุ่ม แบ่งผิดกลุ่มทำให้อ่านยากและตรวจทานพลาดง่าย */
+.lz-idbox:nth-child(1) { margin-right: 2.2mm; }
+.lz-idbox:nth-child(5) { margin-right: 2.2mm; }
+.lz-idbox:nth-child(10) { margin-right: 2.2mm; }
+.lz-idbox:nth-child(12) { margin-right: 2.2mm; }
 
 .lz-sign { margin-top: 16mm; text-align: center; }
 .lz-sign p { display: flex; justify-content: center; align-items: baseline; margin: 0 0 1mm; }

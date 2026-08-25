@@ -113,7 +113,7 @@ export default function Lz1Document({ d }: { d: Lz1Data }) {
 
         <p className="lz-line">
           สัญชาติ<Fill v={d.nationality} w="26mm" />เชื้อชาติ<Fill v={d.ethnicity} w="26mm" />
-          วัน เดือน ปี เกิด<Fill v={d.birth} w="42mm" />อายุ<Fill v={t(d.age)} w="14mm" />ปี
+          วัน เดือน ปี เกิด<Fill v={t(d.birth)} w="42mm" />อายุ<Fill v={t(d.age)} w="14mm" />ปี
         </p>
         <p className="lz-line">
           มีภูมิลำเนาอยู่บ้านเลขที่<Fill v={t(d.houseNo)} w="20mm" />หมู่ที่<Fill v={t(d.moo)} w="16mm" />
