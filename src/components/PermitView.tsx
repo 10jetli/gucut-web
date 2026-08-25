@@ -108,8 +108,14 @@ export default function PermitView() {
   //    เคยพลาดแบบนี้มาแล้วกับแผ่นแชท — เอฟเฟกต์วิ่งก่อนค่าจะเปลี่ยน
   useEffect(() => {
     try {
+      // ⚠️ qualified ต้องทับเป็น true เสมอหลังเอาค่าที่เก็บไว้มาใช้
+      //    คนที่เคยกรอกไว้ก่อน 25 ส.ค. 2569 แล้วไม่ได้ติ๊ก จะมี qualified: false ค้างในเครื่อง
+      //    ค่านั้นชนะค่าตั้งต้นเพราะมันถูก spread ทับทีหลัง
+      //    ผลคือพิมพ์ออกมาได้ช่องว่าง ๑๑ ช่อง และ**ไม่มีอะไรบนจอให้กดแก้แล้ว**
+      //    (ช่องติ๊กถูกเอาออกไปแล้ว) ลูกค้าจึงติดตายโดยไม่รู้ตัว
+      //    ใช้กับลิงก์แชร์ที่สร้างไว้ก่อนหน้าด้วยเหตุผลเดียวกัน
       const raw = localStorage.getItem(KEY);
-      if (raw) setD({ ...blank(), ...JSON.parse(raw) });
+      if (raw) setD({ ...blank(), ...JSON.parse(raw), qualified: true });
       setPrinted(localStorage.getItem(KEY + "-printed") === "1");
       setUseProvince(localStorage.getItem(KEY + "-useprov") || "");
       // ⚠️ ลิงก์ที่ถูกส่งมาต้องชนะค่าที่เก็บไว้ในเครื่อง
@@ -117,7 +123,7 @@ export default function PermitView() {
       //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
       const shared = readShareLink<{ d: Lz1Data; m: string; b: string; q: string }>();
       if (shared?.d) {
-        setD({ ...blank(), ...shared.d });
+        setD({ ...blank(), ...shared.d, qualified: true });
         if (shared.m) setModelName(shared.m);
         if (shared.b) setBar(shared.b);
         if (shared.q) setQty(shared.q);
