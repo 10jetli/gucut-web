@@ -93,6 +93,13 @@ export default function PermitView() {
   const [modelName, setModelName] = useState("");
   const [bar, setBar] = useState("");
   const [qty, setQty] = useState("1");
+
+  // ---- ส่งรูปใบ ลซ.๒ ให้ร้าน (ขั้นหลังจากยื่นเรื่องแล้วประมาณ ๗ วัน)
+  const lz2Ref = useRef<HTMLInputElement>(null);
+  const [lz2Name, setLz2Name] = useState("");
+  const [lz2Phone, setLz2Phone] = useState("");
+  const [lz2Busy, setLz2Busy] = useState(false);
+  const [lz2Msg, setLz2Msg] = useState("");
   const [unsure, setUnsure] = useState<string[]>([]);
   const [busy, setBusy] = useState("");
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
@@ -327,6 +334,49 @@ export default function PermitView() {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");
     }
   }, [readLocal]);
+
+  /**
+   * ส่งรูปใบ ลซ.๒ ให้ร้าน
+   *
+   * ⚠️ เป็นที่เดียวในหน้านี้ที่ส่งข้อมูลออกจากเครื่องลูกค้าไปเก็บที่ร้าน
+   *    (ตัวอ่านบัตรส่งออกไปอ่านแล้วลืม ไม่ได้เก็บ — อันนี้เก็บจริง)
+   *    ห้ามเอาข้อมูลในแบบ ลซ.๑ ที่กรอกไว้ติดไปด้วยเด็ดขาด
+   *    ส่งเฉพาะสิ่งที่ลูกค้าพิมพ์ในกล่องนี้กับรูปที่เขาเลือกถ่ายเท่านั้น
+   */
+  const sendLz2 = useCallback(async (files: File[]) => {
+    if (!lz2Name.trim() || lz2Phone.replace(/\D/g, "").length < 9) {
+      setLz2Msg("กรอกชื่อกับเบอร์โทรก่อนนะครับ ร้านจะได้รู้ว่าเป็นของใคร");
+      return;
+    }
+    setLz2Busy(true);
+    setLz2Msg("กำลังย่อรูป…");
+    try {
+      // ย่อก่อนส่งเหมือนตอนถ่ายบัตร — กล้องมือถือให้ไฟล์หลายเมกต่อใบ
+      const images = await Promise.all(files.slice(0, 2).map((f) => shrink(f)));
+      setLz2Msg("กำลังส่ง…");
+      const r = await fetch("/api/permit-doc", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: lz2Name.trim(),
+          phone: lz2Phone.trim(),
+          saw: modelName ? `${modelName}${bar ? ` · บาร์ ${bar} นิ้ว` : ""}` : "",
+          province: useProvince,
+          images,
+        }),
+      });
+      const out = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(out?.error || `ส่งไม่สำเร็จ (${r.status})`);
+      setLz2Msg(
+        "ส่งให้ร้านแล้ว ทางร้านจะติดต่อกลับเรื่องยอดและการส่งเครื่อง — " +
+        "อย่าลืมส่งใบตัวจริงตามมาด้วย รูปใช้แทนไม่ได้",
+      );
+    } catch (e) {
+      setLz2Msg("ส่งไม่สำเร็จ — " + (e as Error).message + " · ทักไลน์ร้านส่งให้ก็ได้");
+    } finally {
+      setLz2Busy(false);
+    }
+  }, [lz2Name, lz2Phone, modelName, bar, useProvince]);
 
   const idOk = validThaiId(d.idNumber);
   // ⚠️ ไม่มี d.qualified ในเงื่อนไขแล้ว — ช่องติ๊กถูกเอาออกตามคำสั่งเจ้าของร้าน
@@ -874,6 +924,76 @@ export default function PermitView() {
                   เฉพาะคนที่ซื้อเลื่อยจากร้านนี้ — ซื้อจากร้านอื่นให้ส่งไปที่ร้านนั้น
                 </b>
               </p>
+              </div>
+
+              {/* ------------------------------------ ถ่ายใบ ลซ.๒ ส่งมาก่อน
+                  เจ้าของร้านเสนอเอง: "พอลูกค้าได้ใบจริงมาก็ถ่ายอัพโหลดมาที่นี่"
+                  แก้ปัญหาที่เว็บไม่มีทางรู้ว่าลูกค้าเดินมาถึงขั้นไหนแล้ว
+                  เพราะใบ ลซ.๒ มาทางไปรษณีย์ ไม่ได้ผ่านเว็บเลย
+
+                  ⚠️ ต้องบอกให้ชัดว่ารูป "ไม่แทน" การส่งเอกสารตัวจริง
+                     ร้านต้องเก็บ ลซ.๒ ตอนกลางตัวจริงไว้เป็นหลักฐานการจำหน่ายตามกฎหมาย
+                     ปล่อยให้ลูกค้าเข้าใจว่าอัปแล้วจบ = เขานั่งรอเครื่องที่ร้านส่งไม่ได้
+                  ⚠️ ตรงนี้ "ส่งข้อมูลออกจากเครื่อง" ต่างจากส่วนอื่นของหน้านี้ทั้งหมด
+                     ต้องเขียนบอกก่อนกดส่ง ไม่ใช่หลังส่ง */}
+              <div className="mt-3 rounded-sm border border-steel-700 bg-white p-3">
+                <p className="text-[13px] font-bold text-ink">ถ่ายใบส่งมาให้ร้านดูก่อนได้</p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
+                  ร้านจะได้เตรียมเครื่องและแจ้งยอดให้ทันที ไม่ต้องรอซองมาถึง
+                  <b className="mt-1 block text-ink-700">
+                    ยังต้องส่งใบตัวจริงมาอยู่ — รูปใช้แทนไม่ได้
+                    เพราะร้านต้องเก็บตอนกลางตัวจริงไว้เป็นหลักฐานการจำหน่าย
+                  </b>
+                </p>
+
+                <div className="mt-2 grid grid-cols-2 gap-2">
+                  <label>
+                    <span className="mb-1 block text-[12px] text-ink-300">ชื่อผู้ขออนุญาต</span>
+                    <input
+                      value={lz2Name}
+                      onChange={(e) => setLz2Name(e.target.value)}
+                      className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
+                    />
+                  </label>
+                  <label>
+                    <span className="mb-1 block text-[12px] text-ink-300">เบอร์โทร</span>
+                    <input
+                      value={lz2Phone}
+                      onChange={(e) => setLz2Phone(e.target.value)}
+                      inputMode="tel"
+                      className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
+                    />
+                  </label>
+                </div>
+
+                <input
+                  ref={lz2Ref}
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  multiple
+                  className="hidden"
+                  onChange={(e) => {
+                    const fs = Array.from(e.target.files || []);
+                    if (fs.length) void sendLz2(fs);
+                  }}
+                />
+                <button
+                  onClick={() => lz2Ref.current?.click()}
+                  disabled={lz2Busy}
+                  className="mt-2 w-full rounded-sm bg-ink py-2.5 text-[14px] font-bold text-white disabled:bg-steel-700"
+                >
+                  {lz2Busy ? "กำลังส่ง…" : "📷 ถ่ายใบ ลซ.๒ ส่งให้ร้าน"}
+                </button>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-ink-300">
+                  ถ่ายได้ทั้ง ๒ ตอนในครั้งเดียว · รูปเก็บไว้ที่ร้าน
+                  เปิดดูได้เฉพาะคนที่มีรหัสหลังร้าน
+                </p>
+                {lz2Msg && (
+                  <p className="mt-2 rounded-sm bg-steel-900 p-2.5 text-[12.5px] leading-relaxed text-ink-700">
+                    {lz2Msg}
+                  </p>
+                )}
               </div>
             </details>
 
