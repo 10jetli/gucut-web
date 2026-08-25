@@ -16,6 +16,7 @@
 //    ต้องเขียนให้ชัดบนหน้าจอ ไม่งั้นลูกค้าที่ถูกปฏิเสธจะมาเอาเรื่องกับร้าน
 // ---------------------------------------------------------------------------
 
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lz1Document, { type Lz1Data } from "./Lz1Document";
@@ -27,6 +28,8 @@ import {
   PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { PROVINCES, findPostcode } from "@/lib/postcode";
+import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
+import SAW_IMG from "@/data/permit-saws.json";
 
 const TH_MONTHS = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -97,6 +100,16 @@ export default function PermitView() {
       if (raw) setD({ ...blank(), ...JSON.parse(raw) });
       setPrinted(localStorage.getItem(KEY + "-printed") === "1");
       setUseProvince(localStorage.getItem(KEY + "-useprov") || "");
+      // ⚠️ ลิงก์ที่ถูกส่งมาต้องชนะค่าที่เก็บไว้ในเครื่อง
+      //    คนที่เปิดลิงก์คือคนที่ "ช่วยพิมพ์ให้" ไม่ใช่เจ้าของข้อมูล
+      //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
+      const shared = readShareLink<{ d: Lz1Data; m: string; b: string; q: string }>();
+      if (shared?.d) {
+        setD({ ...blank(), ...shared.d });
+        if (shared.m) setModelName(shared.m);
+        if (shared.b) setBar(shared.b);
+        if (shared.q) setQty(shared.q);
+      }
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
   }, []);
 
@@ -397,6 +410,38 @@ export default function PermitView() {
 
         {picked && (
           <>
+            {/* ⚠️ มาจากภาพร่างที่วาดรูปเลื่อยไว้ — ลูกค้าต้องเห็นว่าเลือกถูกตัวก่อนกรอกยาว
+                และเห็นเลย ว่าค่าอะไรจะถูกกรอกลงฟอร์มแทนเขา ไม่ใช่กรอกให้เงียบ ๆ */}
+            <div className="mt-2 flex items-center gap-3 rounded-sm bg-white p-3">
+              {SAW_IMG[picked.model as keyof typeof SAW_IMG]?.img && (
+                <div className="relative h-20 w-20 shrink-0 overflow-hidden rounded-sm bg-steel-900">
+                  <Image
+                    src={SAW_IMG[picked.model as keyof typeof SAW_IMG].img as string}
+                    alt={`${picked.brand} ${picked.model}`}
+                    fill
+                    sizes="80px"
+                    className="object-contain"
+                  />
+                </div>
+              )}
+              <div className="min-w-0 flex-1">
+                <p className="text-[14px] font-bold text-ink">{picked.brand} {picked.model}</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-300">
+                  ระบบจะกรอกให้: {ENGINE_TYPE}
+                  {picked.hp !== null && <> · {picked.hp} แรงม้า</>}
+                  {bar && <> · บาร์ {bar} นิ้ว</>}
+                </p>
+                {SAW_IMG[picked.model as keyof typeof SAW_IMG]?.handle && (
+                  <Link
+                    href={`/products/${SAW_IMG[picked.model as keyof typeof SAW_IMG].handle}/`}
+                    className="mt-1 inline-block text-[12px] font-semibold text-safety underline"
+                  >
+                    ดูหน้าสินค้า →
+                  </Link>
+                )}
+              </div>
+            </div>
+
             <div className="mt-2 grid grid-cols-2 gap-2">
               <label>
                 <span className="mb-1 block text-[12px] text-ink-300">ขนาดบาร์ (เว้นว่างได้)</span>
@@ -527,6 +572,42 @@ export default function PermitView() {
               <p className="mt-1.5 text-[12px] text-ink-300">
                 ต้องมี ชื่อ · เลขบัตรที่ถูกต้อง · จังหวัด · รุ่นเลื่อย และติ๊กคำรับรองก่อน
               </p>
+            )}
+
+            {/* ⚠️ มาจากภาพร่าง: "สแกนเสร็จมีลิงค์ ส่งไป Line ได้ และปริ้นได้"
+                ของจริงคือลูกค้ากรอกในมือถือแต่ไม่มีเครื่องปริ้น ต้องส่งให้คนอื่นช่วยพิมพ์ */}
+            {canPrint && (
+              <div className="mt-2 space-y-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <a
+                    href={lineShareUrl(makeShareLink({ d, m: modelName, b: bar, q: qty }))}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="rounded-sm bg-[#06C755] py-3 text-center text-[14px] font-semibold text-white"
+                  >
+                    ส่งไปไลน์
+                  </a>
+                  <button
+                    onClick={() => {
+                      const link = makeShareLink({ d, m: modelName, b: bar, q: qty });
+                      void navigator.clipboard.writeText(link)
+                        .then(() => setBusy("คัดลอกลิงก์แล้ว — เอาไปวางที่ไหนก็ได้"))
+                        .catch(() => setBusy("คัดลอกไม่ได้ ลองใช้ปุ่มส่งไปไลน์แทน"));
+                    }}
+                    className="rounded-sm border border-steel-600 bg-white py-3 text-[14px] font-semibold text-ink"
+                  >
+                    คัดลอกลิงก์
+                  </button>
+                </div>
+                {/* ⚠️ ต้องบอกตรง ๆ ก่อนลูกค้ากด ไม่ใช่ซ่อนไว้ในนโยบาย */}
+                <p className="rounded-sm bg-[#fffbe6] p-2.5 text-[11.5px] leading-relaxed text-ink-700">
+                  <b>ลิงก์นี้มีข้อมูลของคุณอยู่ข้างใน</b> รวมถึงเลขบัตรประชาชน —
+                  ส่งให้เฉพาะคนที่จะช่วยพิมพ์ให้เท่านั้น ใครได้ลิงก์ไปก็เปิดดูได้
+                  <span className="mt-1 block text-ink-300">
+                    ข้อมูลไม่ได้ถูกเก็บไว้ที่ทางร้าน — มันเดินทางไปกับตัวลิงก์เอง
+                  </span>
+                </p>
+              </div>
             )}
 
             <label className="mt-3 block">
