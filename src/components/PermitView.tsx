@@ -24,9 +24,9 @@ import {
 } from "@/lib/idcard";
 import {
   BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
-  REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl,
+  PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl,
 } from "@/lib/permit";
-import { findPostcode } from "@/lib/postcode";
+import { PROVINCES, findPostcode } from "@/lib/postcode";
 
 const TH_MONTHS = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -83,6 +83,10 @@ export default function PermitView() {
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
   const [printed, setPrinted] = useState(false);
+  // ⚠️ จังหวัดที่ยื่น = จังหวัด "ที่จะใช้เลื่อย" ไม่ใช่จังหวัดตามทะเบียนบ้าน
+  //    คนทำงานต่างจังหวัดพลาดข้อนี้แล้วเสียเที่ยวทั้งวัน
+  //    ตั้งค่าเริ่มต้นเป็นจังหวัดตามบัตรเพราะส่วนใหญ่ตรงกัน แต่ต้องแก้ได้
+  const [useProvince, setUseProvince] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ⚠️ อ่านค่าที่เคยกรอกตั้งแต่ตอนสร้าง state ไม่ใช่ใน useEffect
@@ -92,6 +96,7 @@ export default function PermitView() {
       const raw = localStorage.getItem(KEY);
       if (raw) setD({ ...blank(), ...JSON.parse(raw) });
       setPrinted(localStorage.getItem(KEY + "-printed") === "1");
+      setUseProvince(localStorage.getItem(KEY + "-useprov") || "");
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
   }, []);
 
@@ -287,6 +292,47 @@ export default function PermitView() {
               </li>
             ))}
           </ul>
+          {/*
+            ⚠️ ต้องบอกให้ครบทั้ง 8 ขั้น ไม่ใช่แค่ "กรอก → ยื่น → จบ"
+               ของจริงต้องไปสำนักงาน 2 รอบ และมีร้านอยู่ตรงกลาง
+               ลูกค้าที่ไปรอบแรกแล้วคิดว่าจบ พอไม่มีใบอนุญาตมาก็จะมาโวยร้าน
+          */}
+          <details className="mt-2.5 rounded-sm bg-steel-900 p-2.5">
+            <summary className="cursor-pointer text-[12.5px] font-semibold text-ink">
+              ดูขั้นตอนทั้งหมด ๘ ขั้น (ต้องไปสำนักงาน ๒ รอบ)
+            </summary>
+            <ol className="mt-2 space-y-2">
+              {PROCESS_STEPS.map((st) => (
+                <li key={st.n} className="flex gap-2">
+                  <span
+                    className={
+                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white " +
+                      (st.by === "คุณ" ? "bg-[#1f7a3d]" : st.by === "ร้าน" ? "bg-safety" : "bg-steel-600")
+                    }
+                  >
+                    {st.n}
+                  </span>
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-[12.5px] font-medium leading-snug text-ink">
+                      {st.title}
+                      <span className="ml-1 text-[10.5px] font-normal text-ink-300">({st.by}ทำ)</span>
+                    </span>
+                    <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
+                      {st.detail}
+                    </span>
+                  </span>
+                </li>
+              ))}
+            </ol>
+          </details>
+
+          {/* ⚠️ เรื่องนี้ต้องเห็นโดยไม่ต้องกดเปิด — ลูกค้าเข้าใจผิดกันบ่อยที่สุด */}
+          <p className="mt-2 rounded-sm bg-safety-tint p-2.5 text-[12px] leading-relaxed text-ink">
+            <b>ต้องขออนุญาตก่อน ร้านถึงส่งเครื่องให้ได้</b> —
+            รุ่นที่ต้องขอทะเบียนซื้อแล้วหิ้วกลับบ้านเลยไม่ได้ตามกฎหมาย
+            และต้องยื่นที่จังหวัด<b>ที่จะเอาเลื่อยไปใช้</b> ไม่ใช่จังหวัดตามทะเบียนบ้าน
+          </p>
+
           {printed ? (
             <p className="mt-2 rounded-sm bg-[#e8f5ea] p-2.5 text-[12px] leading-relaxed text-ink-700">
               <b className="text-[#1f7a3d]">ใบแรกเสร็จแล้ว</b> —
@@ -483,14 +529,36 @@ export default function PermitView() {
               </p>
             )}
 
-            {d.province && (
+            <label className="mt-3 block">
+              <span className="mb-1 block text-[12px] text-ink-300">
+                จังหวัดที่จะเอาเลื่อยไปใช้ (จังหวัดที่ต้องไปยื่น)
+              </span>
+              <select
+                value={useProvince || d.province}
+                onChange={(e) => {
+                  setUseProvince(e.target.value);
+                  try { localStorage.setItem(KEY + "-useprov", e.target.value); } catch { /* โหมดส่วนตัว */ }
+                }}
+                className="w-full rounded-sm border border-steel-600 px-3 py-2.5 text-[14px]"
+              >
+                <option value="">— เลือกจังหวัด —</option>
+                {PROVINCES.map((pv) => <option key={pv} value={pv}>{pv}</option>)}
+              </select>
+              {useProvince && d.province && useProvince !== d.province && (
+                <span className="mt-1 block text-[11.5px] text-[#b26a00]">
+                  ต่างจากจังหวัดในบัตร ({d.province}) — ถูกต้องแล้วถ้าคุณจะเอาเลื่อยไปใช้ที่{useProvince}
+                </span>
+              )}
+            </label>
+
+            {(useProvince || d.province) && (
               <a
-                href={officeMapUrl(d.province)}
+                href={officeMapUrl(useProvince || d.province)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-2 block w-full rounded-sm border border-steel-600 bg-white py-3 text-center text-[14px] font-semibold text-ink"
               >
-                📍 หาสำนักงานที่รับยื่นในจังหวัด{d.province}
+                📍 หาสำนักงานที่รับยื่นในจังหวัด{useProvince || d.province}
               </a>
             )}
 
@@ -498,7 +566,7 @@ export default function PermitView() {
             <ul className="mt-1.5 space-y-1.5">
               {REQUIRED_DOCS.map((doc) => (
                 <li key={doc.label} className="rounded-sm bg-white p-2.5 text-[13px] text-ink">
-                  {doc.label}
+                  {doc.label} <b className="text-safety">{doc.qty}</b>
                   <span className="mt-0.5 block text-[11.5px] text-ink-300">{doc.note}</span>
                 </li>
               ))}
