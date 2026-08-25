@@ -173,3 +173,18 @@ body {
   }
   @page { size: A4; margin: 0; }
 }
+
+/* รถวิ่งในลูกศร ลซ.1 → ลซ.2 — ช่วง "ถือกระดาษไปยื่นเอง"
+   ⚠️ ต้องอ่านรู้เรื่องแม้ไม่ขยับ คนที่ปิดอนิเมชันไว้ยังต้องเห็นว่าเป็นรถ */
+@keyframes permit-drive {
+  0%   { transform: translateX(-5px); }
+  55%  { transform: translateX(5px); }
+  100% { transform: translateX(-5px); }
+}
+.permit-truck { animation: permit-drive 2.4s ease-in-out infinite; }
+
+/* ⚠️ บางคนเวียนหัวกับของที่ขยับ และ iOS ปิดอนิเมชันทั้งเครื่องได้
+   ต้องหยุดให้เมื่อเครื่องบอกว่าไม่อยากให้ขยับ */
+@media (prefers-reduced-motion: reduce) {
+  .permit-truck { animation: none; }
+}

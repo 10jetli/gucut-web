@@ -48,6 +48,31 @@ const blank = (): Lz1Data => {
   };
 };
 
+/**
+ * ลูกศรที่มีรถวิ่ง — ช่วง "ถือกระดาษไปยื่นเอง"
+ *
+ * ⚠️ ใช้ CSS ล้วน ไม่โหลดรูปหรือไลบรารีเพิ่ม
+ * ⚠️ เคารพ prefers-reduced-motion — บางคนเวียนหัวกับของที่ขยับ
+ *    และ iOS ปิดอนิเมชันให้ทั้งเครื่องได้ ต้องยังอ่านรู้เรื่องตอนไม่ขยับ
+ */
+function TruckArrow() {
+  return (
+    <span className="relative flex w-8 shrink-0 items-center justify-center self-center">
+      <span className="absolute inset-x-0 top-1/2 h-px bg-[#1f7a3d]/40" />
+      <svg
+        viewBox="0 0 24 24"
+        aria-hidden
+        className="permit-truck relative h-4 w-4 fill-none stroke-[#1f7a3d] stroke-[1.8]"
+      >
+        <path d="M1 6h11v9H1z" strokeLinejoin="round" />
+        <path d="M12 9h4.5l2.5 3v3H12z" strokeLinejoin="round" />
+        <circle cx="5" cy="17.5" r="1.8" />
+        <circle cx="16" cy="17.5" r="1.8" />
+      </svg>
+    </span>
+  );
+}
+
 export default function PermitView() {
   const [d, setD] = useState<Lz1Data>(blank);
   const [modelName, setModelName] = useState("");
@@ -55,6 +80,9 @@ export default function PermitView() {
   const [qty, setQty] = useState("1");
   const [unsure, setUnsure] = useState<string[]>([]);
   const [busy, setBusy] = useState("");
+  // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
+  //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
+  const [printed, setPrinted] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // ⚠️ อ่านค่าที่เคยกรอกตั้งแต่ตอนสร้าง state ไม่ใช่ใน useEffect
@@ -63,6 +91,7 @@ export default function PermitView() {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) setD({ ...blank(), ...JSON.parse(raw) });
+      setPrinted(localStorage.getItem(KEY + "-printed") === "1");
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
   }, []);
 
@@ -203,25 +232,31 @@ export default function PermitView() {
         <div className="mt-4 rounded-sm bg-white p-3.5">
           <p className="text-[13px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์มี ๓ ใบ</p>
           <div className="mt-2.5 flex items-stretch gap-1.5">
-            {PERMIT_STEPS.map((st, i) => (
+            {PERMIT_STEPS.map((st, i) => {
+              // ปริ้นแล้ว = ใบแรกเสร็จ ตัวไฮไลต์ขยับไปใบที่สอง
+              const done = printed && st.tone === "now";
+              const active = printed ? st.tone === "next" : st.tone === "now";
+              return (
               <div key={st.code} className="flex min-w-0 flex-1 items-stretch gap-1.5">
                 <div
                   className={
                     "min-w-0 flex-1 rounded-sm p-2 text-center " +
-                    (st.tone === "now" ? "bg-[#e8f5ea] ring-1 ring-[#1f7a3d]" : "bg-steel-900")
+                    (active ? "bg-[#e8f5ea] ring-1 ring-[#1f7a3d]" : "bg-steel-900")
                   }
                 >
                   <span
                     className={
                       "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold " +
-                      (st.tone === "now"
+                      (done
                         ? "bg-[#1f7a3d] text-white"
-                        : st.tone === "next"
-                          ? "bg-safety text-white"
-                          : "bg-ink text-white")
+                        : active
+                          ? "bg-[#1f7a3d] text-white"
+                          : st.tone === "next"
+                            ? "bg-safety text-white"
+                            : "bg-ink text-white")
                     }
                   >
-                    {st.code.replace("ลซ.", "")}
+                    {done ? "✓" : st.code.replace("ลซ.", "")}
                   </span>
                   <span className="mt-1.5 block text-[11px] font-semibold leading-tight text-ink">
                     {st.code}
@@ -230,11 +265,19 @@ export default function PermitView() {
                     {st.title.replace("ให้มีเลื่อยโซ่ยนต์", "")}
                   </span>
                 </div>
-                {i < PERMIT_STEPS.length - 1 && (
+                {/* ⚠️ รถขึ้นเฉพาะช่องแรกและเฉพาะหลังปริ้นแล้ว
+                    เพราะช่วงนี้คือ "ลูกค้าถือกระดาษไปยื่นเอง" ตามภาพร่างของเจ้าของร้าน
+                    ขึ้นตั้งแต่แรกจะกลายเป็นบอกให้ไปก่อนที่จะมีอะไรถือไป */}
+                {i === 0 && printed && <TruckArrow />}
+                {i === 0 && !printed && (
+                  <span className="self-center text-[15px] text-ink-300">→</span>
+                )}
+                {i === 1 && (
                   <span className="self-center text-[15px] text-ink-300">→</span>
                 )}
               </div>
-            ))}
+              );
+            })}
           </div>
           <ul className="mt-2.5 space-y-1">
             {PERMIT_STEPS.map((st) => (
@@ -244,10 +287,18 @@ export default function PermitView() {
               </li>
             ))}
           </ul>
-          <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
-            หน้านี้ช่วยคุณทำ <b className="text-[#1f7a3d]">ใบแรก</b> ให้เสร็จ
-            ส่วนอีกสองใบเป็นหน้าที่ของเจ้าหน้าที่หลังคุณยื่นคำขอแล้ว
-          </p>
+          {printed ? (
+            <p className="mt-2 rounded-sm bg-[#e8f5ea] p-2.5 text-[12px] leading-relaxed text-ink-700">
+              <b className="text-[#1f7a3d]">ใบแรกเสร็จแล้ว</b> —
+              ขั้นต่อไปคือถือเอกสารไปยื่นที่{REGISTRAR_OFFICE}
+              พร้อมสำเนาบัตรประชาชนและสำเนาทะเบียนบ้าน
+            </p>
+          ) : (
+            <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
+              หน้านี้ช่วยคุณทำ <b className="text-[#1f7a3d]">ใบแรก</b> ให้เสร็จ
+              ส่วนอีกสองใบเป็นหน้าที่ของเจ้าหน้าที่หลังคุณยื่นคำขอแล้ว
+            </p>
+          )}
         </div>
 
         {/* ⚠️ ต้องขึ้นก่อนที่ลูกค้าจะเริ่มกรอก ไม่ใช่ซ่อนไว้ท้ายหน้า */}
@@ -416,7 +467,11 @@ export default function PermitView() {
             {/* ------------------------------------------ 5. พิมพ์ */}
             <h2 className="mt-6 text-[15px] font-bold text-ink">๕. พิมพ์แล้วนำไปยื่น</h2>
             <button
-              onClick={() => window.print()}
+              onClick={() => {
+                window.print();
+                setPrinted(true);
+                try { localStorage.setItem(KEY + "-printed", "1"); } catch { /* โหมดส่วนตัว */ }
+              }}
               disabled={!canPrint}
               className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
             >
