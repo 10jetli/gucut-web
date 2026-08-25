@@ -3,30 +3,25 @@
 import Link from "next/link";
 import { SHELL_W } from "@/lib/layout";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-import { cartCount } from "@/lib/cart";
 
 // เมนูล่าง 5 ปุ่มแบบแอพ Shopee
+//
+// ⚠️ ตะกร้าย้ายขึ้นไปอยู่บนหัวเว็บแล้ว (25 ส.ค. 2569) พร้อมตัวเลขจำนวนสินค้า
+//    ห้ามเอาตะกร้ากลับมาใส่ตรงนี้โดยไม่ถอดออกจากหัวเว็บก่อน
+//    มีสองที่พร้อมกัน = ตัวเลขจำนวนสองจุดที่ต้องคอยให้ตรงกัน แล้วมันจะไม่ตรง
+//
+// ⚠️ "ขอทะเบียน" มาแทนเพราะเป็นสิ่งที่คนหาแล้วไม่รู้จะไปหาที่ไหน
+//    ส่วนตะกร้าคนรู้อยู่แล้วว่าอยู่มุมขวาบนเหมือนทุกเว็บ
 const items = [
   { href: "/", label: "หน้าแรก", icon: HomeIcon },
   { href: "/categories", label: "หมวดหมู่", icon: GridIcon },
   { href: "/videos", label: "วิดีโอ", icon: PlayIcon },
-  { href: "/cart", label: "ตะกร้า", icon: CartIcon },
+  { href: "/permit", label: "ขอทะเบียน", icon: DocIcon },
   { href: "/account", label: "บัญชี", icon: UserIcon },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [count, setCount] = useState(0);
-
-  // badge จำนวนสินค้าในตะกร้า — refresh เมื่อตะกร้าเปลี่ยน
-  useEffect(() => {
-    const load = () => setCount(cartCount());
-    load();
-    window.addEventListener("cart-updated", load);
-    return () => window.removeEventListener("cart-updated", load);
-  }, []);
-
   // หน้าสินค้าใช้แถบ "ใส่ตะกร้า / ซื้อเลย" แทน เมนูล่างจึงต้องหลบ
   // (เช็คหลังเรียก hooks ครบแล้ว ไม่งั้นผิดกฎ React)
   if (pathname?.startsWith("/products/")) return null;
@@ -44,14 +39,7 @@ export default function BottomNav() {
                 active ? "text-safety" : "text-steel-300 hover:text-[#1a1a1a]"
               }`}
             >
-              <span className="relative">
-                <Icon />
-                {href === "/cart" && count > 0 && (
-                  <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-safety px-1 text-[9px] font-bold text-white">
-                    {count > 99 ? "99+" : count}
-                  </span>
-                )}
-              </span>
+              <Icon />
               {label}
             </Link>
           );
@@ -86,11 +74,12 @@ function PlayIcon() {
     </svg>
   );
 }
-function CartIcon() {
+// เอกสารมีเส้นข้อความ — สื่อว่า "กรอกฟอร์ม" ไม่ใช่ "อ่านบทความ"
+function DocIcon() {
   return (
     <svg className={cls} fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" d="M3 4h2l2.4 12.2a1 1 0 0 0 1 .8h9.7a1 1 0 0 0 1-.76L21 8H6" />
-      <circle cx="10" cy="20" r="1.4" fill="currentColor" /><circle cx="17.5" cy="20" r="1.4" fill="currentColor" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+      <path strokeLinecap="round" strokeLinejoin="round" d="M14 3v5h5M9 13h6M9 17h4" />
     </svg>
   );
 }

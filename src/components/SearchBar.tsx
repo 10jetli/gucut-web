@@ -1,4 +1,5 @@
 import Link from "next/link";
+import CartLink from "./CartLink";
 import { BRAND } from "@/lib/shop";
 import HeaderChat from "./HeaderChat";
 import ScanButton from "./ScanButton";
@@ -34,13 +35,10 @@ export default function SearchBar() {
           <ScanButton />
         </div>
         <HeaderChat />
-        <Link href="/cart/" aria-label="ตะกร้า" className="shrink-0 p-1">
-          <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-white stroke-[1.8]">
-            <path d="M3 4h2l2.4 11.2a2 2 0 002 1.6h7.7a2 2 0 002-1.6L21 8H6" strokeLinecap="round" strokeLinejoin="round" />
-            <circle cx="10" cy="20" r="1.2" className="fill-white" />
-            <circle cx="18" cy="20" r="1.2" className="fill-white" />
-          </svg>
-        </Link>
+        {/* ⚠️ ตัวเลขจำนวนสินค้าย้ายมาจากเมนูล่าง (25 ส.ค. 2569)
+            ถ้าไม่มีตัวเลข ลูกค้าที่ใส่ของไว้แล้วจะลืมว่ามีของค้างอยู่
+            ซึ่งเป็นสาเหตุที่คนกดสั่งไม่จบอันดับต้น ๆ ของร้านออนไลน์ */}
+        <CartLink />
       </div>
     </header>
   );
