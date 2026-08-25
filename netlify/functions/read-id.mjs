@@ -79,15 +79,24 @@ const PROMPT = `อ่านข้อมูลจากรูปบัตรป�
 export default async function handler(req) {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
-  // ⚠️ ต้องยิงผ่าน ANTHROPIC_BASE_URL ของ Netlify AI Gateway ห้ามยิงตรงไป api.anthropic.com
-  //    Netlify ใส่ ANTHROPIC_API_KEY + ANTHROPIC_BASE_URL ให้เองทั้งคู่ (ไม่ต้องหาคีย์มาเอง)
-  //    แล้วคิดเงินเป็นเครดิต Netlify ของร้าน — $1 = 180 เครดิต
-  //    คีย์ที่ Netlify ใส่ให้ "ใช้กับปลายทางอื่นไม่ได้"
-  //    เคยพลาดมาแล้ว 25 ส.ค. 2569: ยิงตรงไป api.anthropic.com แล้วได้ invalid x-api-key
-  //    ทั้งที่คีย์มีอยู่ครบ ดูเหมือนคีย์เสียทั้งที่ที่อยู่ปลายทางผิด
+  // ⚠️ ต้องใช้ NETLIFY_AI_GATEWAY_* เป็นตัวแรกเสมอ ห้ามเอา ANTHROPIC_API_KEY ขึ้นก่อน
+  //
+  //    Netlify AI Gateway "ไม่ใส่ ANTHROPIC_API_KEY/ANTHROPIC_BASE_URL ให้ ถ้ามีคนตั้งค่าไว้เองแล้ว"
+  //    ร้านนี้มี ANTHROPIC_API_KEY ตั้งไว้เองอยู่ก่อน Gateway จึงเงียบไปทั้งคู่
+  //    ผลคือได้คีย์ที่ตั้งไว้เองมาโดยไม่มี base url แล้วยิงไป api.anthropic.com
+  //    ปลายทางตอบ invalid x-api-key — อาการหลอกตามาก ดูเหมือนคีย์เสีย ทั้งที่เป็นเรื่องคนละเรื่อง
+  //    (เจอของจริง 25 ส.ค. 2569 หลังยิงทดสอบสองรอบ)
+  //
+  //    NETLIFY_AI_GATEWAY_KEY / _BASE_URL ถูกใส่ให้ "เสมอ" ไม่สนใจว่าใครตั้งอะไรไว้
+  //    จึงเป็นทางเดียวที่ไม่พังเมื่อร้านไปตั้งคีย์ของตัวเองเพิ่มทีหลัง
   //    ⚠️ ต้อง deploy ขึ้น production อย่างน้อยหนึ่งครั้ง Gateway ถึงจะเริ่มใส่ค่าให้
-  const base = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/+$/, "");
-  const key = process.env.ANTHROPIC_API_KEY;
+  //    คิดเงินเป็นเครดิต Netlify ของร้าน — $1 = 180 เครดิต
+  const gwKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+  const gwBase = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
+  const key = gwKey || process.env.ANTHROPIC_API_KEY;
+  const base = (
+    (gwKey ? gwBase : process.env.ANTHROPIC_BASE_URL) || "https://api.anthropic.com"
+  ).replace(/\/+$/, "");
   if (!key) {
     // ⚠️ บอกให้ชัดว่าเป็นเรื่องการตั้งค่า ไม่ใช่รูปลูกค้าไม่ดี
     //    หน้าเว็บจะได้บอกลูกค้าให้กรอกเองแทนการให้ถ่ายซ้ำไปเรื่อย ๆ
@@ -109,11 +118,20 @@ export default async function handler(req) {
   const media = /^data:(image\/\w+);/.exec(String(body?.image || ""))?.[1] || "image/jpeg";
 
   try {
-    const r = await fetch(`${base}/v1/messages`, {
+    // ⚠️ รูปแบบที่อยู่ของ NETLIFY_AI_GATEWAY_BASE_URL ไม่มีเขียนไว้ในเอกสาร
+    //    บางแบบต้องต่อชื่อผู้ให้บริการเข้าไปด้วย (/anthropic) บางแบบไม่ต้อง
+    //    จึงลองแบบตรง ๆ ก่อน เจอ 404 ค่อยลองแบบมีชื่อผู้ให้บริการ
+    //    404 ไม่เสียเครดิต จึงถูกกว่าการเดาผิดแล้วต้อง deploy ใหม่ (deploy ละ 15 เครดิต)
+    const paths = base.includes("/anthropic")
+      ? ["/v1/messages"]
+      : ["/v1/messages", "/anthropic/v1/messages"];
+
+    const send = (path) => fetch(`${base}${path}`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         "x-api-key": key,
+        authorization: `Bearer ${key}`,
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
@@ -132,6 +150,9 @@ export default async function handler(req) {
       signal: AbortSignal.timeout(25000),
     });
 
+    let r = await send(paths[0]);
+    if (r.status === 404 && paths[1]) r = await send(paths[1]);
+
     const out = await r.json().catch(() => null);
     if (!r.ok) {
       // ⚠️ ต้องแยก "เครดิตหมด / ยิงเร็วเกินโควตาต่อนาที" ออกจาก "ของพัง"
@@ -141,7 +162,12 @@ export default async function handler(req) {
       const why = out?.error?.message || `ตัวอ่านตอบ ${r.status}`;
       if (r.status === 429) return json({ error: "ตัวอ่านคิวเต็ม รอสักครู่แล้วลองใหม่", why }, 429);
       if (r.status === 402) return json({ error: "เครดิตตัวอ่านหมด", credit: true, why }, 402);
-      return json({ error: why }, 502);
+      // ⚠️ บอกแค่ "ใช้ตัวแปรไหน" กับ "โฮสต์ปลายทาง" ห้ามใส่ค่าคีย์ลงไปเด็ดขาด
+      //    ชื่อตัวแปรกับชื่อโฮสต์ไม่ใช่ความลับ แต่ค่าคีย์เป็น
+      //    มีไว้เพื่อแยก "คีย์ผิด" กับ "ที่อยู่ปลายทางผิด" ออกจากกันได้โดยไม่ต้อง deploy ซ้ำ
+      let host = "";
+      try { host = new URL(base).host; } catch { /* ที่อยู่เพี้ยนก็ปล่อยว่าง */ }
+      return json({ error: why, via: gwKey ? "gateway" : "own-key", host }, 502);
     }
 
     const text = (out?.content || []).map((c) => c.text || "").join("").trim();
