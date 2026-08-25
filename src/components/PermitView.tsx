@@ -20,7 +20,7 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Lz1Document, { type Lz1Data } from "./Lz1Document";
 import {
-  ageFromBirth, formatThaiId, parseIdCard, thaiDateLabel, validThaiId,
+  ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
 } from "@/lib/idcard";
 import {
   BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, REGISTRAR_OFFICE,
@@ -125,18 +125,32 @@ export default function PermitView() {
       await worker.terminate();
 
       const got = parseIdCard(data.text);
+      // ⚠️ ต้องแยกที่อยู่เป็นช่อง ๆ ด้วย ไม่ใช่อ่านมาแล้วทิ้ง
+      //    เคยพลาดมาแล้ว 25 ส.ค. 2569 — อ่านที่อยู่ได้แต่ไม่ได้ต่อสายเข้าฟอร์ม
+      //    ลูกค้าจึงเห็นช่องที่อยู่ว่างทั้งหมดทั้งที่กล้องอ่านออก
+      const a = parseThaiAddress(got.address || "");
       setD((p) => ({
         ...p,
         name: got.name || p.name,
         idNumber: got.idNumber || p.idNumber,
         birth: got.birth ? thaiDateLabel(got.birth) : p.birth,
         age: got.birth ? String(ageFromBirth(got.birth) ?? "") : p.age,
+        houseNo: a.houseNo || p.houseNo,
+        moo: a.moo || p.moo,
+        soi: a.soi || p.soi,
+        road: a.road || p.road,
+        tambon: a.tambon || p.tambon,
+        amphoe: a.amphoe || p.amphoe,
+        province: a.province || p.province,
       }));
-      setUnsure(got.unsure);
+      // ที่อยู่อ่านพลาดบ่อยที่สุด ให้ไฮไลต์ทุกช่องที่มาจากบัตรเสมอ
+      const addrKeys = Object.keys(a).filter((k) => k !== "houseNo" && k !== "moo");
+      setUnsure([...got.unsure.filter((u) => u !== "address"), ...addrKeys]);
+      const n = [got.name, got.idNumber, got.birth, a.province].filter(Boolean).length;
       setBusy(
-        got.idNumber || got.name
-          ? "อ่านได้แล้ว — ช่วยตรวจข้อมูลด้านล่างก่อนพิมพ์"
-          : "อ่านไม่ออก ลองถ่ายใหม่ให้ชัดขึ้น หรือกรอกเองด้านล่างได้เลย",
+        n === 0
+          ? "อ่านไม่ออก ลองถ่ายใหม่ให้ชัดขึ้น หรือกรอกเองด้านล่างได้เลย"
+          : `อ่านได้ ${n} จาก 4 ส่วนหลัก — ช่วยตรวจข้อมูลด้านล่างก่อนพิมพ์`,
       );
     } catch (e) {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");
