@@ -127,7 +127,7 @@ export default function AdminHome() {
     { href: "/admin/marketing/", title: "พิกเซลการตลาด", note: "ใส่รหัส Meta · TikTok · Google · LINE", badge: 0, icon: "tag" as const },
     { href: "/admin/ads/", title: "ค่าโฆษณา vs ยอดขาย", note: "จ่ายโฆษณาไปเท่าไหร่ ได้กลับมาเท่าไหร่", badge: 0, icon: "tag" as const },
     { href: "/admin/clips/", title: "สถิติคลิป", note: "คลิปไหนคนดูเยอะ · ดูจนจบกี่ %", badge: 0, icon: "video" as const },
-    { href: "/admin/permits/", title: "ใบ ลซ.๒ ที่ลูกค้าส่งมา", note: "ลูกค้าได้ใบอนุญาตแล้ว ถ่ายส่งมาให้ร้าน", badge: newPermits, icon: "order" as const },
+    { href: "/admin/permits/", title: "ขอทะเบียนเลื่อยยนต์", note: "ลูกค้าแต่ละคนเดินมาถึงขั้นไหน · ใบ ลซ.๒ ที่ส่งมา", badge: newPermits, icon: "order" as const },
     { href: "/admin/attendance/", title: "ลงเวลาพนักงาน", note: "เข้า-ออกงาน · มาสาย · ชั่วโมงรวม", badge: 0, icon: "clock" as const },
     { href: "/admin/legacy/", title: "ประวัติลูกค้าเก่า", note: "เคยซื้ออะไรสมัยยังอยู่ Shopify", badge: 0, icon: "order" as const },
     { href: "/admin/live/", title: "คนเข้าเว็บ", note: "ออนไลน์ตอนนี้กี่คน · กำลังดูหน้าไหน", badge: 0, icon: "pulse" as const },

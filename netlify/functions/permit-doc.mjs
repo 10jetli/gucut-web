@@ -1,35 +1,43 @@
-// ลูกค้าส่งรูปใบ ลซ.๒ เข้ามา — /api/permit-doc
+// เรื่องขอทะเบียนเลื่อยยนต์ของลูกค้าแต่ละคน — /api/permit-doc
 //
 // ---------------------------------------------------------------------------
-// เจ้าของร้านเสนอเอง (25 ส.ค. 2569): "พอลูกค้าได้ใบจริงมาก็ถ่ายอัพโหลดมาที่นี่"
-// แก้ปัญหาที่ว่าเว็บไม่มีทางรู้ว่าลูกค้าเดินมาถึงขั้นไหนแล้ว
-// เพราะใบ ลซ.๒ มาทางไปรษณีย์จากสำนักงาน ไม่ได้ผ่านเว็บเลย
+// เจ้าของร้านสั่ง (25 ส.ค. 2569):
+//   "ต้องล็อคอิน web เท่านั้นถึงทำการขอทะเบียนได้ ลูกค้าจะได้รู้ว่าทำถึงไหนแล้ว"
 //
-// ⚠️ รูปที่อัปมา "ไม่ได้แทนการส่งเอกสารตัวจริง"
-//    ร้านต้องเก็บ ลซ.๒ ตอนกลางตัวจริงไว้เป็นหลักฐานการจำหน่ายตามกฎหมาย
-//    รูปมีไว้ให้ร้าน "รู้ล่วงหน้า" ว่าลูกค้าได้ใบแล้ว จะได้เตรียมเครื่องและแจ้งยอด
-//    ⇒ ข้อความบนหน้าเว็บต้องบอกให้ชัด ห้ามปล่อยให้เข้าใจว่าอัปแล้วจบ
+// ⚠️ คำสั่งนี้ "กลับทาง" กติกาเดิมที่เคยเขียนไว้ว่าห้ามบังคับล็อกอิน
+//    (กติกาเดิมมาจาก "เน้นสะดวกล้วน") เจ้าของร้านเปลี่ยนใจเองพร้อมเหตุผล
+//    ⇒ ห้าม "แก้กลับ" ให้ทำได้โดยไม่ล็อกอินอีก และห้ามลบคอมเมนต์นี้
+//    เหตุผลคือเรื่องขอทะเบียนกินเวลาหลายสัปดาห์และมีร้านอยู่ตรงกลาง
+//    ถ้าไม่รู้ว่าใครเป็นใคร ก็บอกไม่ได้ว่าเดินมาถึงขั้นไหนแล้ว
 //
-// ⚠️ ทำไมไม่เก็บที่ R2 ตามที่เจ้าของร้านบอก
-//    ถัง R2 ที่มีอยู่ (gucut-video) เปิดสาธารณะ เพราะต้องเสิร์ฟคลิปที่ video.gucut.com
+// หนึ่งลูกค้า = หนึ่งเรื่อง ผูกกับ "เบอร์โทรของบัญชี" เหมือนทุกอย่างในเว็บนี้
+//   c/<เบอร์>       ตัวเรื่อง (เล็ก)   → หน้ารายการหลังร้านโหลดเร็ว
+//   img/<เบอร์>/<n> รูปใบ ลซ.๒         → โหลดเฉพาะตอนกดเปิดดู
+//
+// ⚠️ เก็บที่ Netlify Blobs ห้ามเอาไป R2
+//    ถัง R2 ที่มี (gucut-video) เปิดสาธารณะ เพราะต้องเสิร์ฟคลิปที่ video.gucut.com
 //    ใบ ลซ.๒ มีชื่อ · เลขบัตร · ที่อยู่ · เลขที่ใบอนุญาต ของลูกค้า
-//    วางในถังสาธารณะ = ใครได้ลิงก์ไปก็เปิดดูได้ และคีย์ปัจจุบันสร้างถังใหม่ไม่ได้
-//    ⇒ เก็บที่ Netlify Blobs แทน ที่เดียวกับสลิปโอนเงิน ปิดอยู่โดยปริยาย
-//       ต้องผ่าน admin-gate ถึงจะเปิดดูได้ · อยากย้ายไป R2 ต้องสร้างถังใหม่แบบปิดก่อน
+//    วางในถังสาธารณะ = ใครได้ลิงก์ก็เปิดดูได้ · คีย์ปัจจุบันสร้างถังใหม่ก็ไม่ได้
 //
-// วิธีเก็บ — แยกรูปออกจากตัวรายการ (กติกาเดียวกับออเดอร์/สลิป)
-//   d/<id>       ตัวรายการ (เล็ก)  → หน้ารายการหลังร้านโหลดเร็ว
-//   img/<id>/<n> รูป base64        → โหลดเฉพาะตอนกดเปิดดูใบนั้น
+// ⚠️ รูปที่อัปมา "ไม่แทน" การส่งเอกสารตัวจริง
+//    ร้านต้องเก็บ ลซ.๒ ตอนกลางตัวจริงไว้เป็นหลักฐานการจำหน่ายตามกฎหมาย
+//    สถานะจึงแยก "ลูกค้าส่งรูปมา" ออกจาก "ร้านได้ตัวจริงแล้ว" คนละขั้นกัน
 //
-// ฝั่งลูกค้า   POST /api/permit-doc            ส่งรูป (ไม่ต้องล็อกอิน)
-// ฝั่งร้าน     GET  /api/permit-doc            รายการ (ไม่รวมรูป)
-//             GET  /api/permit-doc?id=xxx     เปิดใบเดียว + รูป
-//             PATCH /api/permit-doc {id,status}
+// ฝั่งลูกค้า (ต้องล็อกอิน)
+//   GET  /api/permit-doc?mine=1              เรื่องของฉัน + เดินมาถึงขั้นไหน
+//   POST /api/permit-doc {stage}             ลูกค้ากดบอกเองว่าทำขั้นนั้นแล้ว
+//   POST /api/permit-doc {images:[...]}      ส่งรูปใบ ลซ.๒
+// ฝั่งร้าน (ต้องมีรหัสหลังร้าน)
+//   GET  /api/permit-doc                     รายการทุกเรื่อง
+//   GET  /api/permit-doc?phone=xxx           เปิดเรื่องเดียว + รูป
+//   GET  /api/permit-doc?stat=1              นับเรื่องที่รอร้านทำ (ทำ badge)
+//   PATCH /api/permit-doc {phone, stage}
 // ---------------------------------------------------------------------------
 
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { pushToAdmins } from "../lib/push.mjs";
+import { currentUser, store as usersStore } from "../lib/session.mjs";
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
@@ -38,18 +46,25 @@ const json = (o, s = 200) =>
   });
 
 const WINDOW_MS = 10 * 60 * 1000;
-const MAX_PER_IP = 6;
+const MAX_PER_IP = 12;
 const MAX_BYTES = 4 * 1024 * 1024;
-// ⚠️ เกณฑ์เดียวกับตัวอ่านบัตร — เล็กกว่านี้ไม่ใช่รูปถ่ายเอกสารจริง
-//    กันคนยิงรูปเปล่าเข้ามาถล่มรายการหลังร้าน
+// เกณฑ์เดียวกับตัวอ่านบัตร — เล็กกว่านี้ไม่ใช่รูปถ่ายเอกสารจริง
 const MIN_BYTES = 12 * 1024;
-const MAX_IMAGES = 2;   // ลซ.๒ มี ๒ ตอน ถ่ายมาได้สูงสุดสองรูป
+const MAX_IMAGES = 2;   // ลซ.๒ มี ๒ ตอน
 
-const STATUSES = ["new", "got", "done"];
+/**
+ * ขั้นของเรื่อง — เรียงตามลำดับจริงที่เจ้าของร้านเล่าไว้
+ *
+ * ⚠️ ลำดับใน array นี้คือความหมาย ห้ามสลับหรือแทรกกลางโดยไม่ดูที่หน้าจอด้วย
+ *    ทั้งฝั่งลูกค้าและฝั่งร้านวาดแถบความคืบหน้าจากลำดับนี้
+ */
+const STAGES = ["printed", "submitted", "lz2", "got", "shipped", "done"];
+/** ขั้นที่ "ร้าน" เป็นคนกด ลูกค้ากดเองไม่ได้ */
+const SHOP_STAGES = new Set(["got", "shipped"]);
 
 const nowIso = () => new Date().toISOString();
-
 const store = () => getStore({ name: "gucut-permits", consistency: "strong" });
+const clean = (v, max) => String(v ?? "").trim().slice(0, max);
 
 async function overLimit(s, ip) {
   try {
@@ -62,11 +77,10 @@ async function overLimit(s, ip) {
     await s.setJSON(key, hits).catch(() => {});
     return false;
   } catch {
-    return false;   // ตัวนับพังต้องไม่ทำให้ลูกค้าส่งเอกสารไม่ได้
+    return false;   // ตัวนับพังต้องไม่ทำให้ลูกค้าใช้งานไม่ได้
   }
 }
 
-/** แจ้งเข้ากลุ่ม Telegram เดิมของร้าน — ไม่ต้องตั้งอะไรเพิ่ม */
 async function tell(text) {
   const { TELEGRAM_BOT_TOKEN: tok, TELEGRAM_CHAT_ID: chat } = process.env;
   if (!tok || !chat) return;
@@ -77,135 +91,176 @@ async function tell(text) {
   }).catch(() => {});
 }
 
-const clean = (v, max) => String(v ?? "").trim().slice(0, max);
+const blank = (phone, name) => ({
+  phone, name,
+  at: nowIso(),
+  stage: "",          // ยังไม่ได้ทำอะไรเลย
+  history: {},        // ขั้นไหนทำเมื่อไหร่
+  images: 0,
+  saw: "", province: "", note: "",
+});
+
+/** ⚠️ ขั้นเดินหน้าอย่างเดียว ห้ามถอยหลังเพราะลูกค้ากดผิด — ร้านแก้ให้ได้ทาง PATCH */
+function advance(rec, stage) {
+  const cur = STAGES.indexOf(rec.stage);
+  const next = STAGES.indexOf(stage);
+  if (next > cur) rec.stage = stage;
+  rec.history = rec.history || {};
+  if (!rec.history[stage]) rec.history[stage] = nowIso();
+  return rec;
+}
 
 export default async function handler(req, context) {
   const s = store();
+  const url = new URL(req.url);
 
-  // ------------------------------------------------------------ ลูกค้าส่งเข้ามา
-  if (req.method === "POST") {
+  // ---------------------------------------------------------------- ฝั่งลูกค้า
+  const mine = url.searchParams.get("mine");
+  if (req.method === "POST" || mine) {
+    let me = null;
+    try { me = await currentUser(req, usersStore()); } catch { /* ถือว่าไม่ได้ล็อกอิน */ }
+    // ⚠️ ไม่ล็อกอิน = 401 เสมอ ห้ามปล่อยผ่านแบบไม่ระบุตัวตน
+    //    เจ้าของร้านสั่งไว้ว่าต้องล็อกอินถึงทำเรื่องได้
+    if (!me?.user?.phone) return json({ error: "ต้องเข้าสู่ระบบก่อน", needLogin: true }, 401);
+
+    const phone = me.user.phone;
+    const key = `c/${phone}`;
+    let rec = await s.get(key, { type: "json" }).catch(() => null);
+    if (!rec) rec = blank(phone, me.user.name || "");
+
+    if (mine) return json({ item: rec });
+
     const ip = req.headers.get("x-nf-client-connection-ip") || "unknown";
     if (await overLimit(s, ip)) {
-      return json({ error: "ส่งถี่เกินไป พักสัก 10 นาทีแล้วลองใหม่" }, 429);
+      return json({ error: "ทำรายการถี่เกินไป พักสัก 10 นาทีแล้วลองใหม่" }, 429);
     }
 
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
-    const name = clean(body?.name, 120);
-    const phone = clean(body?.phone, 20).replace(/[^\d+]/g, "");
-    if (!name || phone.replace(/\D/g, "").length < 9) {
-      return json({ error: "ต้องกรอกชื่อและเบอร์โทรที่ติดต่อได้" }, 400);
-    }
+    // ลูกค้าเติมข้อมูลประกอบได้ (ไม่บังคับ) — ช่วยร้านจับคู่กับออเดอร์
+    if (body?.saw !== undefined) rec.saw = clean(body.saw, 80);
+    if (body?.province !== undefined) rec.province = clean(body.province, 40);
+    if (body?.note !== undefined) rec.note = clean(body.note, 300);
+    if (me.user.name) rec.name = me.user.name;
 
+    // ---- ส่งรูปใบ ลซ.๒
     const raw = Array.isArray(body?.images) ? body.images.slice(0, MAX_IMAGES) : [];
-    const images = [];
-    for (const one of raw) {
-      const b64 = String(one || "").replace(/^data:image\/\w+;base64,/, "");
-      if (!b64) continue;
-      const bytes = b64.length * 0.75;
-      if (bytes > MAX_BYTES) return json({ error: "รูปใหญ่เกินไป" }, 413);
-      if (bytes < MIN_BYTES) {
-        return json({ error: "รูปไม่ชัด ถ่ายใหม่ให้เห็นตัวหนังสือบนใบชัด ๆ" }, 422);
+    if (raw.length) {
+      const images = [];
+      for (const one of raw) {
+        const b64 = String(one || "").replace(/^data:image\/\w+;base64,/, "");
+        if (!b64) continue;
+        const bytes = b64.length * 0.75;
+        if (bytes > MAX_BYTES) return json({ error: "รูปใหญ่เกินไป" }, 413);
+        if (bytes < MIN_BYTES) {
+          return json({ error: "รูปไม่ชัด ถ่ายใหม่ให้เห็นตัวหนังสือบนใบชัด ๆ" }, 422);
+        }
+        images.push(String(one));
       }
-      images.push(String(one));
+      if (!images.length) return json({ error: "ยังไม่ได้แนบรูปใบ ลซ.๒" }, 400);
+
+      // ⚠️ เขียนรูปแยกคีย์ละใบ ห้ามยัดรวมลงตัวเรื่อง
+      //    หน้ารายการหลังร้านอ่านทุกเรื่อง จะกลายเป็นโหลดรูปเป็นสิบเมกทุกครั้งที่เปิดหน้า
+      await Promise.all(images.map((img, i) => s.set(`img/${phone}/${i}`, img)));
+      rec.images = images.length;
+      advance(rec, "lz2");
+      await s.setJSON(key, rec);
+
+      // ⚠️ ห้าม await ตัวแจ้งเตือน ลูกค้ายืนรอหน้าจออยู่
+      void tell(
+        `📄 <b>ลูกค้าส่งใบ ลซ.๒ เข้ามา</b>\n` +
+        `${rec.name || "-"} · ${phone}\n` +
+        (rec.saw ? `เลื่อย: ${rec.saw}\n` : "") +
+        (rec.province ? `ยื่นที่: ${rec.province}\n` : "") +
+        `รูป ${rec.images} ใบ — เปิดดูที่หลังร้าน → ขอทะเบียนเลื่อยยนต์`,
+      );
+      void pushToAdmins({
+        title: "ลูกค้าส่งใบ ลซ.๒",
+        body: `${rec.name || ""} · ${phone}`,
+        url: "/admin/permits/",
+      }).catch(() => {});
+
+      return json({ ok: true, item: rec });
     }
-    if (!images.length) return json({ error: "ยังไม่ได้แนบรูปใบ ลซ.๒" }, 400);
 
-    const id = `${Date.now().toString(36)}${Math.floor(Math.random() * 1e6).toString(36)}`;
-    const rec = {
-      id,
-      at: nowIso(),
-      name,
-      phone,
-      saw: clean(body?.saw, 80),
-      province: clean(body?.province, 40),
-      note: clean(body?.note, 300),
-      images: images.length,
-      status: "new",
-    };
+    // ---- ลูกค้ากดบอกว่าทำขั้นนั้นแล้ว
+    const stage = clean(body?.stage, 16);
+    if (stage) {
+      if (!STAGES.includes(stage)) return json({ error: "ขั้นไม่ถูกต้อง" }, 400);
+      // ⚠️ ลูกค้ากดขั้นของร้านเองไม่ได้ ไม่งั้นกด "ส่งเครื่องแล้ว" ให้ตัวเองได้
+      if (SHOP_STAGES.has(stage)) return json({ error: "ขั้นนี้ทางร้านเป็นคนอัปเดต" }, 403);
+      advance(rec, stage);
+      await s.setJSON(key, rec);
+      if (stage === "submitted") {
+        void tell(`📮 <b>ลูกค้ายื่นเรื่องที่สำนักงานแล้ว</b>\n${rec.name || "-"} · ${phone}`);
+      }
+      return json({ ok: true, item: rec });
+    }
 
-    // ⚠️ เขียนรูปแยกคีย์ละใบ ห้ามยัดรวมลงตัวรายการ
-    //    หน้ารายการหลังร้านอ่านทุกใบ จะกลายเป็นโหลดรูปเป็นสิบเมกทุกครั้งที่เปิดหน้า
-    //    (กติกาเดียวกับรูปลงเวลาพนักงานและสลิปโอนเงิน)
-    await Promise.all(images.map((img, i) => s.set(`img/${id}/${i}`, img)));
-    await s.setJSON(`d/${id}`, rec);
-
-    // ⚠️ ห้าม await ตัวแจ้งเตือน ลูกค้ายืนรอหน้าจออยู่
-    void tell(
-      `📄 <b>ลูกค้าส่งใบ ลซ.๒ เข้ามา</b>\n` +
-      `${rec.name} · ${rec.phone}\n` +
-      (rec.saw ? `เลื่อย: ${rec.saw}\n` : "") +
-      (rec.province ? `ยื่นที่: ${rec.province}\n` : "") +
-      (rec.note ? `หมายเหตุ: ${rec.note}\n` : "") +
-      `รูป ${rec.images} ใบ — เปิดดูที่หลังร้าน → ใบ ลซ.๒`,
-    );
-    void pushToAdmins({
-      title: "ลูกค้าส่งใบ ลซ.๒",
-      body: `${rec.name} · ${rec.phone}`,
-      url: "/admin/permits/",
-    }).catch(() => {});
-
-    return json({ ok: true, id });
+    // แค่บันทึกข้อมูลประกอบ
+    await s.setJSON(key, rec);
+    return json({ ok: true, item: rec });
   }
 
-  // ------------------------------------------------------------ ฝั่งร้าน
+  // ---------------------------------------------------------------- ฝั่งร้าน
   //
   // ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น
   //    เขียน `if (gate) return gate` ไม่ได้ เพราะ object เป็น truthy เสมอ
-  //    Netlify จะพังทันทีด้วย "Function returned an unsupported value"
-  //    ทั้งกับคนนอกและกับร้านเอง = หน้าหลังร้านใช้ไม่ได้เลยสักครั้ง
-  //    เจอตอนยิงทดสอบจริงหลัง deploy (25 ส.ค. 2569) ไม่ใช่ตอน build — tsc/build มองไม่เห็น
+  //    Netlify จะพังด้วย "Function returned an unsupported value" ทุกคำขอ
+  //    รวมทั้งของร้านเอง = หน้าหลังร้านใช้ไม่ได้เลย (เจอของจริง 25 ส.ค. 2569)
+  //    tsc กับ build มองไม่เห็น เพราะ .mjs ไม่มีชนิดข้อมูล
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
-  if (req.method === "GET") {
-    const url = new URL(req.url);
-    const id = url.searchParams.get("id");
-
-    if (id) {
-      const rec = await s.get(`d/${id}`, { type: "json" }).catch(() => null);
-      if (!rec) return json({ error: "ไม่พบรายการนี้" }, 404);
-      const imgs = [];
-      for (let i = 0; i < (rec.images || 0); i++) {
-        const one = await s.get(`img/${id}/${i}`).catch(() => null);
-        if (one) imgs.push(one);
-      }
-      return json({ ...rec, imageData: imgs });
-    }
-
-    if (url.searchParams.get("stat")) {
-      const { blobs } = await s.list({ prefix: "d/" }).catch(() => ({ blobs: [] }));
-      let n = 0;
-      for (const b of blobs) {
-        const rec = await s.get(b.key, { type: "json" }).catch(() => null);
-        if (rec?.status === "new") n++;
-      }
-      return json({ waiting: n });
-    }
-
-    const { blobs } = await s.list({ prefix: "d/" }).catch(() => ({ blobs: [] }));
+  const readAll = async () => {
+    const { blobs } = await s.list({ prefix: "c/" }).catch(() => ({ blobs: [] }));
     const items = [];
     for (const b of blobs) {
       const rec = await s.get(b.key, { type: "json" }).catch(() => null);
       if (rec) items.push(rec);
     }
     items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-    return json({ items });
+    return items;
+  };
+
+  if (req.method === "GET") {
+    const phone = url.searchParams.get("phone");
+    if (phone) {
+      const rec = await s.get(`c/${phone}`, { type: "json" }).catch(() => null);
+      if (!rec) return json({ error: "ไม่พบเรื่องนี้" }, 404);
+      const imgs = [];
+      for (let i = 0; i < (rec.images || 0); i++) {
+        const one = await s.get(`img/${phone}/${i}`).catch(() => null);
+        if (one) imgs.push(one);
+      }
+      return json({ ...rec, imageData: imgs });
+    }
+
+    if (url.searchParams.get("stat")) {
+      // รอร้านทำ = ลูกค้าส่งรูปมาแล้วแต่ร้านยังไม่ได้กดว่าได้ตัวจริง
+      const items = await readAll();
+      return json({ waiting: items.filter((x) => x.stage === "lz2").length });
+    }
+
+    return json({ items: await readAll() });
   }
 
   if (req.method === "PATCH") {
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
-    const id = clean(body?.id, 40);
-    const status = clean(body?.status, 16);
-    if (!STATUSES.includes(status)) return json({ error: "สถานะไม่ถูกต้อง" }, 400);
-    const rec = await s.get(`d/${id}`, { type: "json" }).catch(() => null);
-    if (!rec) return json({ error: "ไม่พบรายการนี้" }, 404);
-    rec.status = status;
+    const phone = clean(body?.phone, 20);
+    const stage = clean(body?.stage, 16);
+    if (!STAGES.includes(stage)) return json({ error: "ขั้นไม่ถูกต้อง" }, 400);
+    const rec = await s.get(`c/${phone}`, { type: "json" }).catch(() => null);
+    if (!rec) return json({ error: "ไม่พบเรื่องนี้" }, 404);
+    // ร้านตั้งขั้นได้อิสระ (รวมถอยหลัง) เพราะเป็นคนแก้ให้ตอนลูกค้ากดผิด
+    rec.stage = stage;
+    rec.history = rec.history || {};
+    rec.history[stage] = nowIso();
     rec.updatedAt = nowIso();
-    await s.setJSON(`d/${id}`, rec);
+    await s.setJSON(`c/${phone}`, rec);
     return json({ ok: true, item: rec });
   }
 

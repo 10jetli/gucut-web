@@ -31,9 +31,11 @@ import {
   ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
 } from "@/lib/idcard";
 import {
-  BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
-  DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl, officeSiteUrl,
+  BAR_SIZES, CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
+  DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, stageDone,
+  officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
+import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { PROVINCES, findPostcode } from "@/lib/postcode";
 import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
@@ -94,10 +96,25 @@ export default function PermitView() {
   const [bar, setBar] = useState("");
   const [qty, setQty] = useState("1");
 
+  // ---- บัญชีลูกค้า
+  //
+  // ⚠️ เจ้าของร้านสั่ง (25 ส.ค. 2569) "ต้องล็อคอิน web เท่านั้นถึงทำการขอทะเบียนได้
+  //    ลูกค้าจะได้รู้ว่าทำถึงไหนแล้ว" — กลับทางกติกาเดิมที่เคยห้ามบังคับล็อกอิน
+  //    ⇒ ห้ามแก้กลับให้ทำได้โดยไม่ล็อกอิน
+  // ⚠️ แต่ "อ่าน" ต้องไม่ต้องล็อกอิน — คลิปกับขั้นตอนยังเห็นได้ทุกคน
+  //    ปิดทั้งหน้า = คนที่ยังไม่ตัดสินใจซื้อไม่มีทางรู้ว่าต้องทำอะไรบ้าง
+  //    และ Google เก็บหน้านี้ไม่ได้เลย
+  // ⚠️ เริ่มจาก cachedUser เพื่อไม่ให้หน้ากระพริบเป็น "ยังไม่ได้เข้าสู่ระบบ"
+  //    แล้วค่อยเด้งกลับตอน fetchMe ตอบ (ตัวจริงคือฝั่งเซิร์ฟเวอร์เสมอ)
+  const [me, setMe] = useState<User | null>(cachedUser);
+  const [meReady, setMeReady] = useState(false);
+
+  // ---- เรื่องขอทะเบียนของฉัน — เดินมาถึงขั้นไหนแล้ว
+  const [stage, setStage] = useState("");
+  const [stageBusy, setStageBusy] = useState(false);
+
   // ---- ส่งรูปใบ ลซ.๒ ให้ร้าน (ขั้นหลังจากยื่นเรื่องแล้วประมาณ ๗ วัน)
   const lz2Ref = useRef<HTMLInputElement>(null);
-  const [lz2Name, setLz2Name] = useState("");
-  const [lz2Phone, setLz2Phone] = useState("");
   const [lz2Busy, setLz2Busy] = useState(false);
   const [lz2Msg, setLz2Msg] = useState("");
   const [unsure, setUnsure] = useState<string[]>([]);
@@ -335,6 +352,49 @@ export default function PermitView() {
     }
   }, [readLocal]);
 
+  // ถามเซิร์ฟเวอร์ว่าตอนนี้เป็นใคร แล้วดึงเรื่องของคนนั้นมา
+  useEffect(() => {
+    let live = true;
+    fetchMe()
+      .then((u) => { if (live) setMe(u); })
+      .catch(() => { /* เน็ตหลุด ใช้ของที่จำไว้ไปก่อน */ })
+      .finally(() => { if (live) setMeReady(true); });
+    return () => { live = false; };
+  }, []);
+
+  useEffect(() => {
+    if (!me?.phone) { setStage(""); return; }
+    let live = true;
+    fetch("/api/permit-doc?mine=1", { credentials: "same-origin", cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => { if (live && d?.item) setStage(String(d.item.stage || "")); })
+      .catch(() => { /* ไม่ได้ก็ไม่เป็นไร แถบความคืบหน้าแค่ว่างไว้ */ });
+    return () => { live = false; };
+  }, [me?.phone]);
+
+  /**
+   * บอกเซิร์ฟเวอร์ว่าทำขั้นนี้แล้ว
+   *
+   * ⚠️ ห้ามล้มทั้งงานเพราะบันทึกไม่สำเร็จ
+   *    เช่นตอนกดพิมพ์ — เอกสารต้องออกมาให้ได้ แม้เน็ตจะสะดุด
+   *    แถบความคืบหน้าเป็นของเสริม ไม่ใช่เงื่อนไขของงานหลัก
+   */
+  const markStage = useCallback(async (next: string) => {
+    if (!me?.phone) return;
+    setStageBusy(true);
+    try {
+      const r = await fetch("/api/permit-doc", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ stage: next }),
+      });
+      const d = await r.json().catch(() => null);
+      if (r.ok && d?.item) setStage(String(d.item.stage || ""));
+    } catch { /* เงียบไว้ ไม่ใช่เรื่องที่ลูกค้าต้องมาแก้ */ }
+    finally { setStageBusy(false); }
+  }, [me?.phone]);
+
   /**
    * ส่งรูปใบ ลซ.๒ ให้ร้าน
    *
@@ -344,10 +404,9 @@ export default function PermitView() {
    *    ส่งเฉพาะสิ่งที่ลูกค้าพิมพ์ในกล่องนี้กับรูปที่เขาเลือกถ่ายเท่านั้น
    */
   const sendLz2 = useCallback(async (files: File[]) => {
-    if (!lz2Name.trim() || lz2Phone.replace(/\D/g, "").length < 9) {
-      setLz2Msg("กรอกชื่อกับเบอร์โทรก่อนนะครับ ร้านจะได้รู้ว่าเป็นของใคร");
-      return;
-    }
+    // ⚠️ ตัวตนมาจากบัญชีที่ล็อกอิน ไม่ใช่ชื่อ/เบอร์ที่พิมพ์เอง
+    //    พิมพ์เองได้ = ใครก็ยัดรูปในชื่อคนอื่นได้ และร้านจับคู่กับออเดอร์ไม่ได้
+    if (!me?.phone) { setLz2Msg("ต้องเข้าสู่ระบบก่อนถึงจะส่งใบให้ร้านได้"); return; }
     setLz2Busy(true);
     setLz2Msg("กำลังย่อรูป…");
     try {
@@ -357,9 +416,8 @@ export default function PermitView() {
       const r = await fetch("/api/permit-doc", {
         method: "POST",
         headers: { "content-type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({
-          name: lz2Name.trim(),
-          phone: lz2Phone.trim(),
           saw: modelName ? `${modelName}${bar ? ` · บาร์ ${bar} นิ้ว` : ""}` : "",
           province: useProvince,
           images,
@@ -367,6 +425,7 @@ export default function PermitView() {
       });
       const out = await r.json().catch(() => null);
       if (!r.ok) throw new Error(out?.error || `ส่งไม่สำเร็จ (${r.status})`);
+      if (out?.item?.stage) setStage(String(out.item.stage));
       setLz2Msg(
         "ส่งให้ร้านแล้ว ทางร้านจะติดต่อกลับเรื่องยอดและการส่งเครื่อง — " +
         "อย่าลืมส่งใบตัวจริงตามมาด้วย รูปใช้แทนไม่ได้",
@@ -376,7 +435,7 @@ export default function PermitView() {
     } finally {
       setLz2Busy(false);
     }
-  }, [lz2Name, lz2Phone, modelName, bar, useProvince]);
+  }, [me?.phone, modelName, bar, useProvince]);
 
   const idOk = validThaiId(d.idNumber);
   // ⚠️ ไม่มี d.qualified ในเงื่อนไขแล้ว — ช่องติ๊กถูกเอาออกตามคำสั่งเจ้าของร้าน
@@ -545,6 +604,100 @@ export default function PermitView() {
             <b>ไม่รับประกันว่าจะได้รับอนุญาต</b> — ผู้ขออนุญาตคือตัวคุณเอง
           </span>
         </p>
+
+        {/* ------------------------------------------------ ด่านล็อกอิน
+            ⚠️ เจ้าของร้านสั่ง (25 ส.ค. 2569) "ต้องล็อคอิน web เท่านั้นถึงทำการขอทะเบียนได้
+               ลูกค้าจะได้รู้ว่าทำถึงไหนแล้ว" — กลับทางกติกาเดิมที่ห้ามบังคับล็อกอิน
+               ⇒ ห้ามแก้กลับ และห้ามลบคอมเมนต์นี้
+            ⚠️ ปิดเฉพาะ "ส่วนที่ทำเรื่อง" เท่านั้น คลิปกับขั้นตอนด้านบนยังเปิดให้ทุกคนอ่าน
+               ปิดทั้งหน้า = คนที่ยังไม่ตัดสินใจซื้อไม่มีทางรู้ว่าต้องทำอะไรบ้าง
+               และ Google เก็บหน้านี้ไม่ได้เลย
+            ⚠️ ระหว่างที่ยังไม่รู้ว่าล็อกอินอยู่ไหม ห้ามขึ้นหน้า "ต้องเข้าสู่ระบบ"
+               คนที่ล็อกอินอยู่แล้วจะเห็นหน้านั้นแวบหนึ่งทุกครั้งที่เปิด ซึ่งดูเหมือนระบบเตะออก */}
+        {!meReady ? (
+          <p className="mt-5 rounded-sm bg-steel-900 p-4 text-center text-[13px] text-ink-300">
+            กำลังตรวจสอบบัญชี…
+          </p>
+        ) : !me ? (
+          <div className="mt-5 rounded-sm bg-white p-4 text-center">
+            <p className="text-[15px] font-bold text-ink">เข้าสู่ระบบก่อนเริ่มทำเรื่อง</p>
+            <p className="mx-auto mt-1.5 max-w-[320px] text-[12.5px] leading-relaxed text-ink-300">
+              เรื่องขอทะเบียนใช้เวลาหลายสัปดาห์และมีหลายขั้น
+              เข้าสู่ระบบไว้แล้ว<b className="text-ink-700">เปิดมาดูได้ตลอดว่าทำถึงไหนแล้ว</b>
+              และร้านตามเรื่องให้คุณได้ถูกคน
+            </p>
+            <Link
+              href="/account/login/?next=/permit/"
+              className="mt-4 inline-block rounded-sm bg-safety px-8 py-2.5 text-[15px] font-bold text-white"
+            >
+              เข้าสู่ระบบ
+            </Link>
+            <p className="mt-2 text-[12px] text-ink-300">
+              ยังไม่มีบัญชี?{" "}
+              <Link href="/account/register/?next=/permit/" className="text-safety underline">
+                สมัครด้วยเบอร์โทร
+              </Link>
+            </p>
+          </div>
+        ) : (
+        <>
+        {/* ------------------------------------------------ แถบความคืบหน้า
+            ⚠️ ขึ้นเฉพาะคนที่เริ่มเดินแล้ว (มี stage) — คนที่เพิ่งเข้ามาครั้งแรก
+               ยังไม่ได้ทำอะไรเลย เอาแถบว่าง ๖ ขั้นมาขวางคือทำให้ดูยุ่งยากเกินจริง */}
+        {stage && (
+          <section className="mt-5 rounded-sm bg-white p-3">
+            <h2 className="text-[14px] font-bold text-ink">เรื่องของคุณตอนนี้</h2>
+            <ol className="mt-2 space-y-1.5">
+              {CASE_STAGES.map((st) => {
+                const done = stageDone(stage, st.key);
+                const now = stage === st.key;
+                return (
+                  <li key={st.key} className="flex gap-2">
+                    <span
+                      className={
+                        "mt-0.5 flex h-4.5 w-[18px] shrink-0 items-center justify-center rounded-full text-[10px] font-bold " +
+                        (done ? "bg-[#1f7a3d] text-white" : "bg-steel-700 text-steel-300")
+                      }
+                    >
+                      {done ? "✓" : ""}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className={"block text-[13px] leading-snug " + (now ? "font-bold text-ink" : done ? "text-ink-700" : "text-ink-300")}>
+                        {st.label}
+                        <span className="ml-1 text-[10.5px] font-normal text-ink-300">({st.by}ทำ)</span>
+                      </span>
+                      {now && (
+                        <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
+                          {st.hint}
+                        </span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
+            {/* ⚠️ ปุ่มนี้ต้องเป็นของลูกค้ากดเอง เว็บไม่มีทางรู้ว่าเขาไปสำนักงานมาแล้ว
+                และฝั่งเซิร์ฟเวอร์กันไม่ให้ลูกค้ากดขั้นของร้านไว้แล้ว */}
+            {stage === "printed" && (
+              <button
+                onClick={() => void markStage("submitted")}
+                disabled={stageBusy}
+                className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
+              >
+                {stageBusy ? "กำลังบันทึก…" : "ยื่นที่สำนักงานเรียบร้อยแล้ว"}
+              </button>
+            )}
+            {stage === "shipped" && (
+              <button
+                onClick={() => void markStage("done")}
+                disabled={stageBusy}
+                className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
+              >
+                {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๓ ครบแล้ว"}
+              </button>
+            )}
+          </section>
+        )}
 
         {/* ------------------------------------------------ 1. เลือก
             ⚠️ ภาพร่างของเจ้าของร้านวาง "เลื่อยยนต์" กับ "ขนาดบาร์" เป็นช่องเลือก
@@ -769,6 +922,9 @@ export default function PermitView() {
                 window.print();
                 setPrinted(true);
                 try { localStorage.setItem(KEY + "-printed", "1"); } catch { /* โหมดส่วนตัว */ }
+                // ⚠️ บันทึกขั้นแบบไม่รอผล เอกสารต้องพิมพ์ออกมาให้ได้แม้เน็ตสะดุด
+                //    แถบความคืบหน้าเป็นของเสริม ไม่ใช่เงื่อนไขของงานหลัก
+                void markStage("printed");
               }}
               disabled={!canPrint}
               className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
@@ -946,25 +1102,11 @@ export default function PermitView() {
                   </b>
                 </p>
 
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  <label>
-                    <span className="mb-1 block text-[12px] text-ink-300">ชื่อผู้ขออนุญาต</span>
-                    <input
-                      value={lz2Name}
-                      onChange={(e) => setLz2Name(e.target.value)}
-                      className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
-                    />
-                  </label>
-                  <label>
-                    <span className="mb-1 block text-[12px] text-ink-300">เบอร์โทร</span>
-                    <input
-                      value={lz2Phone}
-                      onChange={(e) => setLz2Phone(e.target.value)}
-                      inputMode="tel"
-                      className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
-                    />
-                  </label>
-                </div>
+                {/* ⚠️ ไม่มีช่องกรอกชื่อ/เบอร์แล้ว — ตัวตนมาจากบัญชีที่ล็อกอิน
+                    ให้พิมพ์เอง = ใครก็ยัดรูปในชื่อคนอื่นได้ และร้านจับคู่กับออเดอร์ไม่ได้ */}
+                <p className="mt-2 rounded-sm bg-steel-900 p-2 text-[12px] text-ink-700">
+                  ส่งในชื่อ <b>{me?.name || me?.phone}</b>
+                </p>
 
                 <input
                   ref={lz2Ref}
@@ -1011,6 +1153,8 @@ export default function PermitView() {
               ))}
             </ul>
           </>
+        )}
+        </>
         )}
       </main>
 

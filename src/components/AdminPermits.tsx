@@ -1,6 +1,9 @@
 "use client";
 
-// ใบ ลซ.๒ ที่ลูกค้าถ่ายส่งมา — หน้าสำหรับร้านดูและติดตาม
+// ขอทะเบียนเลื่อยยนต์ — หน้าสำหรับร้านติดตามว่าลูกค้าแต่ละคนเดินมาถึงขั้นไหน
+//
+// ⚠️ ลูกค้าต้องล็อกอินถึงทำเรื่องได้ (เจ้าของร้านสั่ง 25 ส.ค. 2569)
+//    หนึ่งลูกค้า = หนึ่งเรื่อง ผูกกับเบอร์โทรของบัญชี
 //
 // ⚠️ รูปในหน้านี้เป็นเอกสารราชการของลูกค้า มีชื่อ เลขบัตร ที่อยู่ และเลขที่ใบอนุญาต
 //    ห้ามทำปุ่มแชร์ ปุ่มดาวน์โหลดเป็นลิงก์สาธารณะ หรือส่งต่อไปที่อื่น
@@ -14,31 +17,32 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
+import { CASE_STAGES, type CaseStage } from "@/lib/permit";
 
+// ⚠️ หนึ่งลูกค้า = หนึ่งเรื่อง ผูกกับเบอร์โทรของบัญชี (ไม่ใช่ id สุ่มอีกแล้ว)
+//    เจ้าของร้านสั่งให้ต้องล็อกอินถึงทำเรื่องได้ ตัวตนจึงมาจากบัญชีเสมอ
 interface Doc {
-  id: string;
-  at: string;
-  name: string;
   phone: string;
+  name: string;
+  at: string;
+  stage: string;
+  history?: Record<string, string>;
   saw?: string;
   province?: string;
   note?: string;
   images: number;
-  status: "new" | "got" | "done";
   updatedAt?: string;
 }
 
-const LABEL: Record<Doc["status"], string> = {
-  new: "เพิ่งส่งรูปมา",
-  got: "ได้ใบตัวจริงแล้ว",
-  done: "ส่งเครื่องแล้ว",
-};
+const LABEL = (st: string) =>
+  CASE_STAGES.find((x) => x.key === st)?.label || "ยังไม่เริ่ม";
 
-const TONE: Record<Doc["status"], string> = {
-  new: "bg-safety text-white",
-  got: "bg-[#1f7a3d] text-white",
-  done: "bg-steel-700 text-ink-700",
-};
+// รอร้านทำ = ลูกค้าส่งรูปมาแล้วแต่ร้านยังไม่ได้กดว่าได้ตัวจริง
+const TONE = (st: string) =>
+  st === "lz2" ? "bg-safety text-white"
+  : st === "done" ? "bg-steel-700 text-ink-700"
+  : st ? "bg-[#1f7a3d] text-white"
+  : "bg-steel-700 text-ink-700";
 
 /** วันเวลาแบบไทย — ครอบ try เผื่อเบราว์เซอร์เก่าสร้าง Intl ไม่ได้ */
 function whenLabel(iso: string): string {
@@ -56,7 +60,7 @@ export default function AdminPermits() {
   const [key, setKey] = useState("");
   const [items, setItems] = useState<Doc[] | null>(null);
   const [err, setErr] = useState("");
-  const [openId, setOpenId] = useState("");
+  const [openId, setOpenId] = useState("");   // เก็บเบอร์ของเรื่องที่กางอยู่
   const [imgs, setImgs] = useState<string[]>([]);
   const [loadingImg, setLoadingImg] = useState(false);
 
@@ -84,7 +88,7 @@ export default function AdminPermits() {
     setImgs([]);
     setLoadingImg(true);
     try {
-      const r = await adminFetch(`/api/permit-doc?id=${encodeURIComponent(id)}`, key);
+      const r = await adminFetch(`/api/permit-doc?phone=${encodeURIComponent(id)}`, key);
       const d = await r.json().catch(() => null);
       setImgs(Array.isArray(d?.imageData) ? d.imageData : []);
     } catch {
@@ -94,24 +98,24 @@ export default function AdminPermits() {
     }
   };
 
-  const setStatus = async (id: string, status: Doc["status"]) => {
+  const setStage = async (phone: string, stage: CaseStage) => {
     setErr("");
     const r = await adminFetch("/api/permit-doc", key, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ id, status }),
+      body: JSON.stringify({ phone, stage }),
     });
-    if (!r.ok) { setErr("เปลี่ยนสถานะไม่สำเร็จ"); return; }
-    setItems((cur) => (cur ?? []).map((x) => (x.id === id ? { ...x, status } : x)));
+    if (!r.ok) { setErr("เปลี่ยนขั้นไม่สำเร็จ"); return; }
+    setItems((cur) => (cur ?? []).map((x) => (x.phone === phone ? { ...x, stage } : x)));
   };
 
-  const waiting = (items ?? []).filter((x) => x.status === "new").length;
+  const waiting = (items ?? []).filter((x) => x.stage === "lz2").length;
 
   return (
     <main className="mx-auto w-full max-w-[760px] px-3 pb-16 pt-4">
-      <h1 className="text-[18px] font-bold text-ink">ใบ ลซ.๒ ที่ลูกค้าส่งมา</h1>
+      <h1 className="text-[18px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์</h1>
       <p className="mt-1 text-[12.5px] leading-relaxed text-ink-300">
-        ลูกค้าถ่ายใบส่งมาก่อนเพื่อให้ร้านเตรียมเครื่องได้เลย
+        ลูกค้าที่ล็อกอินแล้วทำเรื่องผ่านหน้า /permit/ — ที่นี่เห็นว่าแต่ละคนเดินมาถึงขั้นไหน
         <b className="mt-1 block text-ink-700">
           รูปใช้แทนเอกสารตัวจริงไม่ได้ — ยังต้องได้ ลซ.๒ ตอนกลางตัวจริงมาเก็บไว้เป็นหลักฐานการจำหน่าย
         </b>
@@ -138,13 +142,13 @@ export default function AdminPermits() {
       {items === null && <p className="mt-4 text-[13px] text-ink-300">กำลังโหลด…</p>}
       {items?.length === 0 && !err && (
         <p className="mt-4 rounded-sm bg-steel-900 p-3 text-[13px] text-ink-300">
-          ยังไม่มีลูกค้าส่งใบ ลซ.๒ เข้ามา
+          ยังไม่มีลูกค้าเริ่มทำเรื่องขอทะเบียน
         </p>
       )}
 
       <ul className="mt-3 space-y-2">
         {(items ?? []).map((x) => (
-          <li key={x.id} className="rounded-sm bg-white p-3">
+          <li key={x.phone} className="rounded-sm bg-white p-3">
             <div className="flex items-start gap-2">
               <div className="min-w-0 flex-1">
                 <p className="text-[14px] font-bold text-ink">{x.name}</p>
@@ -156,37 +160,42 @@ export default function AdminPermits() {
                 {x.note && <p className="mt-0.5 text-[12px] text-ink-700">“{x.note}”</p>}
                 <p className="mt-0.5 text-[11px] text-ink-300">{whenLabel(x.at)}</p>
               </div>
-              <span className={"shrink-0 rounded-sm px-2 py-1 text-[11px] font-bold " + TONE[x.status]}>
-                {LABEL[x.status]}
+              <span className={"shrink-0 rounded-sm px-2 py-1 text-[11px] font-bold " + TONE(x.stage)}>
+                {LABEL(x.stage)}
               </span>
             </div>
 
             <div className="mt-2 flex flex-wrap gap-1.5">
-              <button
-                onClick={() => open(x.id)}
-                className="rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
-              >
-                {openId === x.id ? "ซ่อนรูป" : `ดูรูป (${x.images})`}
-              </button>
-              {x.status !== "got" && (
+              {x.images > 0 && (
                 <button
-                  onClick={() => setStatus(x.id, "got")}
+                  onClick={() => open(x.phone)}
+                  className="rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
+                >
+                  {openId === x.phone ? "ซ่อนรูป" : `ดูใบ ลซ.๒ (${x.images})`}
+                </button>
+              )}
+              {/* ⚠️ ปุ่มของร้านมีแค่สองขั้นที่ร้านทำจริง (ได้ตัวจริง · ส่งเครื่อง)
+                  ขั้นอื่นลูกค้ากดเองจากหน้า /permit/ ฝั่งเซิร์ฟเวอร์กันไว้แล้ว
+                  แต่ร้านตั้งขั้นไหนก็ได้ผ่าน PATCH เพราะเป็นคนแก้ให้ตอนลูกค้ากดผิด */}
+              {x.stage !== "got" && (
+                <button
+                  onClick={() => setStage(x.phone, "got")}
                   className="rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
                 >
                   ได้ใบตัวจริงแล้ว
                 </button>
               )}
-              {x.status !== "done" && (
+              {x.stage !== "shipped" && (
                 <button
-                  onClick={() => setStatus(x.id, "done")}
+                  onClick={() => setStage(x.phone, "shipped")}
                   className="rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
                 >
-                  ส่งเครื่องแล้ว
+                  ส่งเลื่อยแล้ว
                 </button>
               )}
             </div>
 
-            {openId === x.id && (
+            {openId === x.phone && (
               <div className="mt-2 space-y-2">
                 {loadingImg && <p className="text-[12.5px] text-ink-300">กำลังเปิดรูป…</p>}
                 {/* eslint-disable-next-line @next/next/no-img-element --
