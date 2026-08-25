@@ -6,7 +6,7 @@
 //   /api/*        ห้ามแคชเด็ดขาด (ล็อกอิน สต็อก ราคา ต้องสดเสมอ)
 //   หน้าเว็บ      ขอเน็ตก่อน ถ้าไม่ได้ค่อยใช้ของเก่า → deploy ใหม่แล้วเห็นทันที
 //   ไฟล์คงที่     ใช้ของเก่าก่อน (ชื่อไฟล์มี hash อยู่แล้ว เปลี่ยนเมื่อไหร่ชื่อเปลี่ยน)
-const VERSION = "gucut-v3";
+const VERSION = "gucut-v4";
 const SHELL = `${VERSION}-shell`;
 const PAGES = `${VERSION}-pages`;
 const ASSETS = `${VERSION}-assets`;
@@ -28,11 +28,16 @@ self.addEventListener("activate", (e) => {
 });
 
 // /model/ กับ /img-vectors.bin คือตัวคิดของ "แสกนภาพหาสินค้า" รวม ~6.5MB
+// /ocr/ คือตัวอ่านบัตรประชาชนในหน้าขอทะเบียนเลื่อยยนต์ อีก ~5.7MB
 // ต้องแคชแบบใช้ของเก่าก่อน ไม่งั้นลูกค้าโหลดใหม่ทุกครั้งที่กดกล้อง
-// (ทั้งสองอย่างเปลี่ยนพร้อมกันตอน deploy — ขึ้น VERSION แล้วของเก่าถูกลบให้เอง)
+// (เปลี่ยนพร้อมกันตอน deploy — ขึ้น VERSION แล้วของเก่าถูกลบให้เอง)
+//
+// ⚠️ /img/ ย้ายไป R2 แล้วตั้งแต่ 25 ส.ค. 2569 กติกานี้จึงไม่ค่อยได้ใช้กับรูปสินค้า
+//    แต่คงไว้เพราะยังมีรูปที่เสิร์ฟจากโดเมนนี้อยู่ (เช่น cover-all.jpg ต้นฉบับ)
 const isStatic = (p) =>
   p.startsWith("/_next/static/") || p.startsWith("/img/") || p.startsWith("/rv") ||
-  p.startsWith("/icon-") || p.startsWith("/model/") || p === "/img-vectors.bin";
+  p.startsWith("/icon-") || p.startsWith("/model/") || p.startsWith("/ocr/") ||
+  p === "/img-vectors.bin";
 
 self.addEventListener("fetch", (event) => {
   const { request } = event;

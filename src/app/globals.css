@@ -48,3 +48,126 @@ body {
 .article-body table { width: 100%; border-collapse: collapse; margin: 1em 0; font-size: 14px; }
 .article-body th, .article-body td { border: 1px solid #dcdcdc; padding: 0.5em 0.6em; text-align: left; }
 .article-body th { background: #f6f6f6; font-weight: 600; }
+
+/* ---------------------------------------------------------------------------
+   แบบ ลซ.1 — คำขอรับใบอนุญาตให้มีเลื่อยโซ่ยนต์
+   ใช้กับ Lz1Document.tsx เท่านั้น
+
+   ⚠️ ขนาดทุกอย่างเป็น mm เพราะเอกสารนี้ "ต้องพิมพ์ลงกระดาษ A4 จริง"
+      ใช้ px แล้วขนาดจะเพี้ยนตามความละเอียดจอ พอพิมพ์ออกมาไม่ตรงหน้า
+   ⚠️ ตอนพิมพ์ต้องเหลือแต่เอกสาร ซ่อนทุกอย่างของเว็บ (เมนู ปุ่ม ฟอร์มกรอก)
+      ไม่งั้นลูกค้าได้กระดาษที่มีปุ่มเว็บติดไปด้วย
+--------------------------------------------------------------------------- */
+
+.lz-doc {
+  /* ฟอนต์มีหัวอ่านง่ายกว่าตอนพิมพ์ และเป็นแบบที่เอกสารราชการไทยใช้กัน */
+  font-family: "Sarabun", "TH Sarabun New", "Noto Sans Thai", sans-serif;
+  color: #000;
+  background: #fff;
+}
+
+.lz-page {
+  position: relative;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 18mm 16mm 16mm;
+  margin: 0 auto 6mm;
+  background: #fff;
+  font-size: 3.9mm;
+  line-height: 2.05;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+.lz-page + .lz-page { page-break-before: always; }
+
+.lz-corner {
+  position: absolute;
+  top: 8mm;
+  left: 16mm;
+  width: 62mm;
+  border: 0.3mm solid #000;
+  padding: 2mm 3mm;
+  font-size: 3.4mm;
+  line-height: 1.7;
+}
+.lz-code { position: absolute; top: 10mm; right: 16mm; font-size: 3.9mm; }
+.lz-pageno { text-align: center; }
+
+.lz-title { text-align: center; font-weight: 700; font-size: 4.4mm; margin: 26mm 0 6mm; }
+.lz-h2 { text-align: center; font-weight: 700; margin: 0 0 3mm; }
+
+.lz-right { margin: 0 0 8mm; padding-left: 92mm; }
+.lz-ind { margin: 0 0 1mm; padding-left: 22mm; }
+.lz-ind2 { margin: 0 0 1mm; padding-left: 26mm; }
+.lz-line { margin: 0 0 1mm; }
+.lz-item { margin: 3mm 0 1mm; padding-left: 10mm; }
+.lz-sub { margin: 0 0 1mm; padding-left: 20mm; }
+.lz-sub2 { margin: 0 0 1mm; padding-left: 30mm; }
+.lz-qual { line-height: 1.75; }
+.lz-mt { margin-top: 6mm; }
+.lz-note { font-size: 3.2mm; color: #444; padding-left: 10mm; line-height: 1.6; }
+
+/* ⚠️ หัวใจของการ "เพิ่มจุดไข่ปลาได้" — ช่องยืดตามเนื้อหา ข้อความจึงไม่มีวันล้น
+   ปัญหาเดิมตอนวางทับรูปสแกนคือช่องกว้างตายตัว พอข้อความยาวก็ทับช่องถัดไป */
+.lz-fill {
+  display: inline-block;
+  border-bottom: 0.25mm dotted #000;
+  padding: 0 1.5mm;
+  text-align: center;
+  white-space: pre-wrap;
+  vertical-align: baseline;
+}
+.lz-grow { min-width: 24mm; flex: 1; width: auto; }
+.lz-line, .lz-item, .lz-sub, .lz-sub2, .lz-ind { display: flex; flex-wrap: wrap; align-items: baseline; }
+.lz-line .lz-grow, .lz-item .lz-grow, .lz-sub .lz-grow, .lz-ind .lz-grow { flex: 1 1 24mm; }
+
+.lz-box {
+  display: inline-block;
+  width: 4.2mm;
+  height: 4.2mm;
+  border: 0.3mm solid #000;
+  text-align: center;
+  line-height: 3.8mm;
+  font-size: 3.6mm;
+  margin-right: 1.5mm;
+  vertical-align: -0.6mm;
+}
+
+/* เลขบัตร 13 หลัก — ฟอร์มจริงเป็นกล่องเรียงกัน แบ่งกลุ่ม 1-4-5-2-1 */
+.lz-id { display: inline-flex; gap: 0.8mm; vertical-align: -1.8mm; }
+/* ⚠️ กล่องเลขบัตรทำใหญ่กว่าฟอร์มเดิมโดยตั้งใจ (เจ้าของร้านอนุญาต 25 ส.ค. 2569)
+   เลข 13 หลักคือช่องที่ผิดแล้วเจ็บที่สุด — เจ้าหน้าที่ต้องอ่านออกตั้งแต่ครั้งแรก
+   และลูกค้าต้องตรวจทานได้ง่ายก่อนพิมพ์ */
+.lz-idbox {
+  width: 6.4mm;
+  height: 7.4mm;
+  border: 0.3mm solid #000;
+  text-align: center;
+  line-height: 7mm;
+  font-size: 5mm;
+  font-weight: 600;
+}
+.lz-idbox:nth-child(1) { margin-right: 1.4mm; }
+.lz-idbox:nth-child(5) { margin-right: 1.4mm; }
+.lz-idbox:nth-child(10) { margin-right: 1.4mm; }
+.lz-idbox:nth-child(12) { margin-right: 1.4mm; }
+
+.lz-sign { margin-top: 16mm; text-align: center; }
+.lz-sign p { display: flex; justify-content: center; align-items: baseline; margin: 0 0 1mm; }
+.lz-signname { font-size: 3.6mm; }
+
+@media print {
+  /* ⚠️ ซ่อนทุกอย่างที่ไม่ใช่เอกสาร — ลูกค้าต้องได้กระดาษที่ยื่นได้เลย
+     ไม่ใช่หน้าเว็บที่มีปุ่มกับเมนูติดไปด้วย */
+  body > *:not(.lz-print-root) { display: none !important; }
+  .lz-print-root, .lz-print-root * { visibility: visible; }
+  .lz-print-only { display: block !important; }
+  .lz-noprint { display: none !important; }
+  .lz-page {
+    box-shadow: none;
+    margin: 0;
+    width: auto;
+    min-height: auto;
+    padding: 14mm 14mm 10mm;
+  }
+  @page { size: A4; margin: 0; }
+}
