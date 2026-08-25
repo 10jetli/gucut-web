@@ -26,6 +26,7 @@ import {
   BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, REGISTRAR_OFFICE,
   REQUIRED_DOCS, officeMapUrl,
 } from "@/lib/permit";
+import { findPostcode } from "@/lib/postcode";
 
 const TH_MONTHS = [
   "มกราคม", "กุมภาพันธ์", "มีนาคม", "เมษายน", "พฤษภาคม", "มิถุนายน",
@@ -70,6 +71,15 @@ export default function PermitView() {
   }, [d]);
 
   const set = (k: keyof Lz1Data, v: string) => setD((p) => ({ ...p, [k]: v }));
+
+  // ⚠️ บัตรประชาชนไม่มีรหัสไปรษณีย์ แต่ฟอร์มมีช่องให้กรอก — เติมให้จากตำบล/อำเภอ/จังหวัด
+  //    เติมเฉพาะตอนช่องยังว่าง ห้ามทับค่าที่ลูกค้าแก้เอง
+  //    (ชื่อตำบลที่กล้องอ่านมาอาจสะกดเพี้ยนแล้วได้รหัสผิด ลูกค้าต้องแก้ทับได้เสมอ)
+  useEffect(() => {
+    if (d.postcode || !d.province || !d.amphoe) return;
+    const code = findPostcode(d.province, d.amphoe, d.tambon);
+    if (code) setD((p) => (p.postcode ? p : { ...p, postcode: code }));
+  }, [d.province, d.amphoe, d.tambon, d.postcode]);
 
   const picked = useMemo(
     () => PERMIT_MODELS.find((m) => m.model === modelName),
