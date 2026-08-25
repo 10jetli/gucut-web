@@ -188,28 +188,45 @@ export default function PermitView() {
       //    เคยพลาดมาแล้ว 25 ส.ค. 2569 — อ่านที่อยู่ได้แต่ไม่ได้ต่อสายเข้าฟอร์ม
       //    ลูกค้าจึงเห็นช่องที่อยู่ว่างทั้งหมดทั้งที่กล้องอ่านออก
       const a = parseThaiAddress(got.address || "");
+      // ⚠️ ช่องที่อ่านไม่ออกต้อง "ล้างทิ้ง" ไม่ใช่เก็บค่าเก่าไว้
+      //    ของเดิมเขียน got.birth ? ... : p.birth — พอรอบนี้อ่านวันเกิดไม่ออก
+      //    มันเก็บวันเกิดจากการสแกนครั้งก่อนไว้ ลูกค้าเห็นข้อมูลผิดที่ดูเหมือนเพิ่งอ่านมา
+      //    เจอของจริง 25 ส.ค. 2569: บัตรเขียน 2 พ.ค. 2512 แต่ช่องขึ้น 10 เมษายน 2503
+      //    ซึ่งเป็นค่าค้างจากรอบก่อน — อันตรายเพราะเป็นคำรับรองต่อนายทะเบียน
+      //    ⇒ สแกนใหม่ = ล้างทุกช่องที่มาจากบัตรก่อนเสมอ ว่างดีกว่าผิด
       setD((p) => ({
         ...p,
-        name: got.name || p.name,
-        idNumber: got.idNumber || p.idNumber,
-        birth: got.birth ? thaiDateLabel(got.birth) : p.birth,
-        age: got.birth ? String(ageFromBirth(got.birth) ?? "") : p.age,
-        houseNo: a.houseNo || p.houseNo,
-        moo: a.moo || p.moo,
-        soi: a.soi || p.soi,
-        road: a.road || p.road,
-        tambon: a.tambon || p.tambon,
-        amphoe: a.amphoe || p.amphoe,
-        province: a.province || p.province,
+        name: got.name || "",
+        idNumber: got.idNumber || "",
+        birth: got.birth ? thaiDateLabel(got.birth) : "",
+        age: got.birth ? String(ageFromBirth(got.birth) ?? "") : "",
+        houseNo: a.houseNo || "",
+        moo: a.moo || "",
+        soi: a.soi || "",
+        road: a.road || "",
+        tambon: a.tambon || "",
+        amphoe: a.amphoe || "",
+        province: a.province || "",
+        // รหัสไปรษณีย์คิดใหม่จากที่อยู่ใหม่เสมอ ไม่งั้นค้างรหัสของจังหวัดเดิม
+        postcode: "",
       }));
       // ที่อยู่อ่านพลาดบ่อยที่สุด ให้ไฮไลต์ทุกช่องที่มาจากบัตรเสมอ
       const addrKeys = Object.keys(a).filter((k) => k !== "houseNo" && k !== "moo");
       setUnsure([...got.unsure.filter((u) => u !== "address"), ...addrKeys]);
-      const n = [got.name, got.idNumber, got.birth, a.province].filter(Boolean).length;
+      // ⚠️ บอกให้ชัดว่า "อะไรที่อ่านไม่ออก" ไม่ใช่แค่นับจำนวน
+      //    ลูกค้าจะได้รู้ว่าต้องกรอกช่องไหนเอง ไม่ต้องไล่หาเองทีละช่อง
+      const missing = [
+        !got.name && "ชื่อ",
+        !got.idNumber && "เลขบัตร",
+        !got.birth && "วันเกิด",
+        !a.province && "ที่อยู่",
+      ].filter(Boolean) as string[];
       setBusy(
-        n === 0
-          ? "อ่านไม่ออก ลองถ่ายใหม่ให้ชัดขึ้น หรือกรอกเองด้านล่างได้เลย"
-          : `อ่านได้ ${n} จาก 4 ส่วนหลัก — ช่วยตรวจข้อมูลด้านล่างก่อนพิมพ์`,
+        missing.length === 4
+          ? "อ่านไม่ออกเลย — ลองถ่ายใหม่ให้ชัดขึ้น หรือกรอกเองด้านล่างได้"
+          : missing.length
+            ? `อ่านไม่ออก: ${missing.join(" · ")} — กรอกช่องนั้นเองด้านล่าง ที่เหลืออ่านให้แล้ว`
+            : "อ่านได้ครบทุกส่วน — ช่วยตรวจอีกทีก่อนพิมพ์",
       );
     } catch (e) {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");

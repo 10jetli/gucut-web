@@ -115,16 +115,50 @@ const EN_MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep"
  *    ถ้าไม่เจอค่อยถอยไปอ่านบรรทัดไทยที่ตามหลัง "เกิดวันที่"
  */
 function birthFrom(text: string): string | null {
-  const en = /(\d{1,2})\s+([A-Za-z]{3,9})\.?\s+(\d{4})/.exec(text);
-  if (en) {
-    const mi = EN_MONTHS.indexOf(en[2].slice(0, 3).toLowerCase());
-    const y = Number(en[3]);
-    if (mi >= 0 && y > 1900 && y < 2200) {
-      return `${y}-${String(mi + 1).padStart(2, "0")}-${String(en[1]).padStart(2, "0")}`;
+  // ⚠️ ตัวอ่านมักสับสนอักษรโรมันบางตัว ต้องแก้ก่อนเทียบชื่อเดือน
+  //    O↔0 · l/I↔1 · S↔5 — "Jun" อ่านเป็น "Jvn" หรือ "1969" เป็น "l969" ได้
+  const fix = (w: string) =>
+    w.toLowerCase().replace(/0/g, "o").replace(/1/g, "l").replace(/5/g, "s");
+
+  // ⚠️ ต้องหา "ทุกวันที่แบบอังกฤษ" แล้วเลือกอันที่เป็นวันเกิดจริง
+  //    บนบัตรมีสามวันที่ (เกิด / ออกบัตร / หมดอายุ) เอาอันแรกที่เจอไม่ได้
+  //    วันเกิดคือ "อันที่เก่าที่สุด" เสมอ เพราะออกบัตรและหมดอายุต้องหลังวันเกิด
+  // ⚠️ ยอมให้ตัวเลขเป็นตัวอักษรที่หน้าตาเหมือนกันได้ แล้วค่อยแปลงกลับ
+  //    ตัวอ่านสับสน l/I↔1 · O↔0 · S↔5 เป็นเรื่องปกติกับตัวเลขบนบัตร
+  //    ปลอดภัยเพราะยังบังคับว่าต้องมีชื่อเดือนคั่นกลางและปีต้องอยู่ในช่วงที่เป็นไปได้
+  const digits = (w: string) =>
+    Number(w.replace(/[lI]/g, "1").replace(/[oO]/g, "0").replace(/[sS]/g, "5"));
+
+  const all: string[] = [];
+  const re = /([\dlIoOsS]{1,2})\s*([A-Za-z]{3,9})\.?\s*([\dlIoOsS]{4})/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text))) {
+    const w = fix(m[2]).slice(0, 3);
+    const mi = EN_MONTHS.findIndex((x) => x === w);
+    const y = digits(m[3]);
+    const d = digits(m[1]);
+    if (mi >= 0 && y > 1900 && y < 2200 && d >= 1 && d <= 31) {
+      all.push(`${y}-${String(mi + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
     }
   }
-  const th = /เกิดวันที่\s*([^\n]{6,30})/.exec(text);
-  return th ? parseThaiDate(th[1]) : null;
+  if (all.length) return all.sort()[0];
+
+  // ถอยไปอ่านบรรทัดไทยที่ตามหลังป้าย — ยอมให้ป้ายเพี้ยนได้บ้าง
+  const th = /เกิด\s*วั?น?ที่?\s*([^\n]{6,32})/.exec(text);
+  if (th) {
+    const got = parseThaiDate(th[1]);
+    if (got) return got;
+  }
+
+  // ⚠️ ทางสุดท้าย: หาวันที่ไทยทุกอันแล้วเอาอันเก่าสุดเหมือนกัน
+  //    ห้ามเอาอันแรกที่เจอ เพราะบนบัตรวันออกบัตรอยู่ล่างสุดแต่ OCR อาจสลับลำดับ
+  const thAll: string[] = [];
+  const thRe = /(\d{1,2})\s*([ก-๛.]{2,12})\s*(\d{4})/g;
+  while ((m = thRe.exec(text))) {
+    const got = parseThaiDate(m[0]);
+    if (got) thAll.push(got);
+  }
+  return thAll.length ? thAll.sort()[0] : null;
 }
 
 export function parseIdCard(text: string): IdCardData {
