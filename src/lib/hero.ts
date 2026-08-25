@@ -6,12 +6,15 @@
 //    เคยประกาศไว้ใน BannerSlider แล้ว build ฟ้องว่า
 //    "Attempted to call half() from the server but half is on the client"
 //
-// เอารูปปกร้าน (ทรงจัตุรัส 1500×1500) มาผ่าครึ่งด้วย Netlify Image CDN
+// เอารูปปกร้าน (ทรงจัตุรัส 1500×1500) มาผ่าครึ่ง
 //   ครึ่งบน  = โลโก้ NEW WAVE + เลื่อยแถวบน
 //   ครึ่งล่าง = เลื่อยรุ่นใหญ่ + บาร์ + ใบอนุญาต
 // ไม่ได้ตัดไฟล์ทิ้ง ใช้ไฟล์ต้นฉบับใบเดียว อยากปรับตำแหน่งแก้ที่นี่ได้เลย
 
-const HERO = "/img/cover-all.jpg";
+import { IMG_HOST } from "./image-loader";
+
+// เก็บที่อยู่ไฟล์ต้นฉบับไว้ให้รู้ว่า scripts/hero-to-r2.mjs อ่านจากไหน
+export const HERO_SOURCE = "/img/cover-all.jpg";
 export const HERO_W = 1500;       // ความกว้างไฟล์ต้นฉบับ
 export const HERO_HALF_H = 750;   // ครึ่งความสูง → แต่ละสไลด์เป็นทรง 2:1
 
@@ -24,17 +27,19 @@ export const HERO_WIDTHS = [640, 750, 828, 1080, 1200, 1500];
 // ⚠️ ใส่เลขผิดแล้วเบราว์เซอร์จะโหลดรูปเล็กเกินไปมายืด ภาพจะแตกบนคอม
 export const HERO_SIZES = "(max-width: 536px) 100vw, (max-width: 1023px) 744px, 1128px";
 
-/** URL รูปครึ่งบน/ครึ่งล่าง ผ่าน Netlify Image CDN */
+/**
+ * URL รูปครึ่งบน/ครึ่งล่าง — ไฟล์ถูกผ่าและย่อไว้ล่วงหน้าแล้วเก็บที่ R2
+ *
+ * ⚠️ เดิมให้ Netlify Image CDN ผ่าและย่อสดให้ทุกครั้ง วัดได้ 0.73 วิ ตอนแคชเย็น
+ *    และมีจังหวะพุ่งถึง 1.3 วิ — รูปนี้เป็นชิ้นใหญ่สุดที่ลูกค้าเห็น (LCP)
+ *    พอไปโดนจังหวะนั้นเข้า คะแนน PageSpeed ตกทันที
+ *    ย่อไว้ก่อนแล้วเสิร์ฟตรงจาก R2 เหลือ ~0.07 วิ และนิ่ง
+ *
+ * ⚠️ เปลี่ยนไฟล์ต้นฉบับเมื่อไหร่ ต้องรัน scripts/hero-to-r2.mjs ใหม่ทุกครั้ง
+ *    ไม่มีอะไรทำให้อัตโนมัติ ไฟล์เก่าจะค้างอยู่บน R2 ตลอดไป
+ */
 export function heroHalf(w: number, position: "top" | "bottom") {
-  const p = new URLSearchParams({
-    url: HERO,
-    w: String(w),
-    h: String(Math.round((w * HERO_HALF_H) / HERO_W)),
-    fit: "cover",
-    position,
-    q: "60",   // รูปถ่ายฉากร้าน ลดคุณภาพลงหน่อยตาเปล่าดูไม่ออก แต่ไฟล์เบาลงราวหนึ่งในสาม
-  });
-  return `/.netlify/images?${p}`;
+  return `${IMG_HOST}/hero/${position}-${w}.webp`;
 }
 
 /** srcset ของสไลด์ใบหนึ่ง — ใช้ทั้งใน <img> และในแท็กสั่งโหลดล่วงหน้า ต้องตรงกันเป๊ะ */
