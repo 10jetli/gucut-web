@@ -23,8 +23,8 @@ import {
   ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
 } from "@/lib/idcard";
 import {
-  BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, REGISTRAR_OFFICE,
-  REQUIRED_DOCS, officeMapUrl,
+  BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
+  REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl,
 } from "@/lib/permit";
 import { findPostcode } from "@/lib/postcode";
 
@@ -193,6 +193,62 @@ export default function PermitView() {
           กรอกแบบ <b>ลซ.1</b> (คำขอรับใบอนุญาตให้มีเลื่อยโซ่ยนต์) ให้เสร็จในหน้าเดียว
           แล้วพิมพ์ไปยื่นที่{REGISTRAR_OFFICE}ได้เลย — ใช้ฟรี ไม่ต้องซื้อของกับร้านก่อน
         </p>
+
+        {/*
+          ⚠️ แผนภาพสามใบต้องอยู่บนสุด ก่อนช่องกรอกทุกช่อง
+             ลูกค้าที่ไม่รู้ว่า "กรอกใบนี้แล้วยังไงต่อ" จะกลัวว่าทำผิดขั้นตอนแล้วเลิกกลางคัน
+             ทั้งที่จริงกรอกใบเดียวก็จบหน้าที่ของตัวเองแล้ว (มาจากภาพร่างของเจ้าของร้าน)
+          ⚠️ ห้ามเขียนว่าร้านจะทำขั้น ลซ.2 / ลซ.3 ให้ — เจ้าหน้าที่เป็นคนออก ร้านไม่เกี่ยว
+        */}
+        <div className="mt-4 rounded-sm bg-white p-3.5">
+          <p className="text-[13px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์มี ๓ ใบ</p>
+          <div className="mt-2.5 flex items-stretch gap-1.5">
+            {PERMIT_STEPS.map((st, i) => (
+              <div key={st.code} className="flex min-w-0 flex-1 items-stretch gap-1.5">
+                <div
+                  className={
+                    "min-w-0 flex-1 rounded-sm p-2 text-center " +
+                    (st.tone === "now" ? "bg-[#e8f5ea] ring-1 ring-[#1f7a3d]" : "bg-steel-900")
+                  }
+                >
+                  <span
+                    className={
+                      "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold " +
+                      (st.tone === "now"
+                        ? "bg-[#1f7a3d] text-white"
+                        : st.tone === "next"
+                          ? "bg-safety text-white"
+                          : "bg-ink text-white")
+                    }
+                  >
+                    {st.code.replace("ลซ.", "")}
+                  </span>
+                  <span className="mt-1.5 block text-[11px] font-semibold leading-tight text-ink">
+                    {st.code}
+                  </span>
+                  <span className="mt-0.5 block text-[10.5px] leading-tight text-ink-300">
+                    {st.title.replace("ให้มีเลื่อยโซ่ยนต์", "")}
+                  </span>
+                </div>
+                {i < PERMIT_STEPS.length - 1 && (
+                  <span className="self-center text-[15px] text-ink-300">→</span>
+                )}
+              </div>
+            ))}
+          </div>
+          <ul className="mt-2.5 space-y-1">
+            {PERMIT_STEPS.map((st) => (
+              <li key={st.code} className="text-[11.5px] leading-relaxed text-ink-700">
+                <b className={st.tone === "now" ? "text-[#1f7a3d]" : "text-ink"}>{st.code}</b>{" "}
+                {st.title} — {st.who}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
+            หน้านี้ช่วยคุณทำ <b className="text-[#1f7a3d]">ใบแรก</b> ให้เสร็จ
+            ส่วนอีกสองใบเป็นหน้าที่ของเจ้าหน้าที่หลังคุณยื่นคำขอแล้ว
+          </p>
+        </div>
 
         {/* ⚠️ ต้องขึ้นก่อนที่ลูกค้าจะเริ่มกรอก ไม่ใช่ซ่อนไว้ท้ายหน้า */}
         <p className="mt-3 rounded-sm bg-steel-900 p-3 text-[12px] leading-relaxed text-ink-700">

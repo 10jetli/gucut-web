@@ -16,7 +16,10 @@ const items = [
   { href: "/", label: "หน้าแรก", icon: HomeIcon },
   { href: "/categories", label: "หมวดหมู่", icon: GridIcon },
   { href: "/videos", label: "วิดีโอ", icon: PlayIcon },
-  { href: "/permit", label: "ขอทะเบียน", icon: DocIcon },
+  // ⚠️ คำในเมนูล่างต้องยาวพอ ๆ กับคำอื่น ไม่งั้นช่องนั้นดูอัดแน่นกว่าเพื่อน
+  //    "ขอทะเบียน" 9 ตัวยาวกว่าทุกคำ → ย่อเหลือ "ทะเบียน" 7 ตัว เท่ากับ "หน้าแรก" พอดี
+  //    ความหมายไม่หายเพราะไอคอนเป็นรูปเอกสารอยู่แล้ว
+  { href: "/permit", label: "ทะเบียน", icon: DocIcon },
   { href: "/account", label: "บัญชี", icon: UserIcon },
 ];
 
