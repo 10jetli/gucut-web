@@ -7,10 +7,15 @@
 //    ⇒ ถ่ายบัตรเป็นทางหลัก ไม่ใช่ทางเลือก · พิมพ์เองเป็นทางสำรอง
 //    ⇒ ห้ามมีขั้นตอนไหนบังคับให้ล็อกอิน ใส่เลขออเดอร์ หรือติดต่อร้านก่อน
 //
-// ⚠️ รูปบัตรกับข้อมูลทุกอย่างอยู่ในเครื่องลูกค้าเท่านั้น
-//    ไม่มี fetch ไปหาเซิร์ฟเวอร์ร้านสักบรรทัดในไฟล์นี้ — ตั้งใจให้เป็นแบบนั้น
+// ⚠️ "รูปบัตร" ถูกส่งออกจากเครื่องไปให้ AI อ่านแล้ว (เปลี่ยน 25 ส.ค. 2569)
+//    เจ้าของร้านสั่งเอง — ตัวอ่านในเครื่องอ่านตัวหนังสือไทยจากรูปถ่ายไม่แม่นพอ
+//    ⇒ ต้องเขียนบอกลูกค้าบนหน้าจอตรง ๆ ก่อนกดถ่าย ห้ามซ่อน
+//    ⇒ ส่งไปอ่านอย่างเดียว ไม่เก็บที่ไหน (ดู netlify/functions/read-id.mjs)
+//
+// ⚠️ "ข้อมูลที่กรอกในฟอร์ม" ยังอยู่ในเครื่องล้วน ไม่มีการส่งไปเซิร์ฟเวอร์ร้าน
 //    เลขประจำตัวประชาชนเป็นข้อมูลอ่อนไหวตาม PDPA เก็บไว้บนเซิร์ฟเวอร์ร้าน
 //    คือรับความเสี่ยงฟรี ๆ โดยไม่ได้อะไรกลับมา
+//    ห้ามเผลอเอาข้อมูลฟอร์มยัดเข้า /api/ ตัวไหน
 //
 // ⚠️ ระบบนี้ช่วยกรอกกับพิมพ์เท่านั้น ไม่ได้ยื่นแทนลูกค้า และไม่รับประกันว่าจะได้อนุญาต
 //    ต้องเขียนให้ชัดบนหน้าจอ ไม่งั้นลูกค้าที่ถูกปฏิเสธจะมาเอาเรื่องกับร้าน
@@ -48,7 +53,12 @@ const blank = (): Lz1Data => {
     name: "", idNumber: "", nationality: "ไทย", ethnicity: "ไทย", birth: "", age: "",
     houseNo: "", moo: "", soi: "", road: "", tambon: "", amphoe: "", province: "",
     postcode: "", phone: "", email: "", occupation: "",
-    saws: [], area: "", purpose: "", qualified: false,
+    // ⚠️ qualified เป็น true ตายตัวหลังเอาช่องติ๊กบนจอออก (25 ส.ค. 2569)
+    //    ค่านี้คุมแค่ "ติ๊กช่อง ๕.๑–๕.๑๑ บนกระดาษที่พิมพ์ออกมาไหม"
+    //    ต้องเป็น true เพื่อให้ใบที่พิมพ์เหมือนใบที่เจ้าหน้าที่รับไปแล้ว
+    //    ปล่อยเป็น false = พิมพ์ออกมาได้ช่องว่าง ๑๑ ช่อง ลูกค้าต้องนั่งติ๊กเองด้วยปากกา
+    //    คำรับรองยังมีผลเพราะลูกค้าเซ็นชื่อใต้ข้อความนั้นบนกระดาษเอง
+    saws: [], area: "", purpose: "", qualified: true,
     docs: { idCopy: true, house: true, job: false, jobDetail: false },
   };
 };
@@ -153,9 +163,68 @@ export default function PermitView() {
   }, [picked, bar, qty]);
 
   // ---------------------------------------------------------------- ถ่ายบัตร
-  const readCard = useCallback(async (file: File) => {
-    setBusy("กำลังเปิดตัวอ่าน…");
-    try {
+  //
+  // ⚠️ ย่อรูปในเครื่องก่อนส่งเสมอ
+  //    กล้องมือถือให้ไฟล์ 4-8 MB ลูกค้าเน็ตช้าจะรอนาน และเปลืองเครดิตร้านฟรี ๆ
+  //    1400px กว้างพอให้อ่านตัวหนังสือบนบัตรออกครบ
+  const shrink = (file: File) =>
+    new Promise<string>((ok, no) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const scale = Math.min(1, 1400 / Math.max(img.width, img.height));
+        const c = document.createElement("canvas");
+        c.width = Math.round(img.width * scale) || 1;
+        c.height = Math.round(img.height * scale) || 1;
+        const ctx = c.getContext("2d");
+        if (!ctx) { no(new Error("ย่อรูปไม่ได้")); return; }
+        ctx.drawImage(img, 0, 0, c.width, c.height);
+        ok(c.toDataURL("image/jpeg", 0.85));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); no(new Error("เปิดรูปไม่ได้")); };
+      img.src = url;
+    });
+
+  /**
+   * ทางหลัก — ให้ AI อ่าน (เจ้าของร้านสั่ง 25 ส.ค. 2569 "ยอมจ่ายเครดิต")
+   *
+   * ⚠️ ใช้ไม่ได้ต้องโยน error ออกไป ห้ามคืนค่าว่างเงียบ ๆ
+   *    ตัวเรียกใช้ error เป็นสัญญาณว่าให้ถอยไปใช้ตัวอ่านในเครื่อง
+   *    คืนค่าว่าง = ลูกค้าเห็นฟอร์มเปล่าโดยไม่มีใครรู้ว่าตัวอ่านล่ม
+   */
+  const readByAi = async (file: File) => {
+    const image = await shrink(file);
+    const r = await fetch("/api/read-id", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image }),
+    });
+    const out = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((out && out.error) || "ตัวอ่านตอบ " + r.status);
+    const g = (out || {}) as Record<string, string>;
+    return {
+      got: {
+        name: g.name || "",
+        idNumber: g.idNumber || "",
+        birth: g.birth || "",
+        unsure: [] as string[],
+      },
+      a: {
+        houseNo: g.houseNo || "", moo: g.moo || "", soi: g.soi || "", road: g.road || "",
+        tambon: g.tambon || "", amphoe: g.amphoe || "", province: g.province || "",
+      } as Record<string, string>,
+    };
+  };
+
+  /**
+   * ทางสำรอง — อ่านในเครื่องด้วย tesseract
+   *
+   * ⚠️ ห้ามลบทิ้งถึงจะมี AI แล้ว
+   *    เน็ตล่ม · เครดิตหมด · ยังไม่ได้ตั้งคีย์ — ลูกค้าต้องยังใช้งานได้
+   *    และไฟล์ 5.7 MB จะไม่ถูกโหลดเลยถ้า AI ทำงานปกติ จึงไม่มีต้นทุนกับคนส่วนใหญ่
+   */
+  const readLocal = useCallback(async (file: File) => {
       // ⚠️ โหลดตอนกดปุ่มเท่านั้น ไฟล์รวม 5.7 MB
       //    คนที่กรอกเองไม่ควรต้องจ่ายค่าเน็ตส่วนนี้
       const w = window as unknown as { Tesseract?: { createWorker: (...a: unknown[]) => Promise<unknown> } };
@@ -187,7 +256,27 @@ export default function PermitView() {
       // ⚠️ ต้องแยกที่อยู่เป็นช่อง ๆ ด้วย ไม่ใช่อ่านมาแล้วทิ้ง
       //    เคยพลาดมาแล้ว 25 ส.ค. 2569 — อ่านที่อยู่ได้แต่ไม่ได้ต่อสายเข้าฟอร์ม
       //    ลูกค้าจึงเห็นช่องที่อยู่ว่างทั้งหมดทั้งที่กล้องอ่านออก
-      const a = parseThaiAddress(got.address || "");
+      return { got, a: parseThaiAddress(got.address || "") as Record<string, string> };
+  }, []);
+
+  const readCard = useCallback(async (file: File) => {
+    setBusy("กำลังอ่านบัตร…");
+    try {
+      let got: { name?: string; idNumber?: string; birth?: string; unsure: string[] };
+      let a: Record<string, string>;
+      try {
+        ({ got, a } = await readByAi(file));
+      } catch (e) {
+        // ⚠️ "ถ่ายถี่เกินไป" กับ "ไม่ใช่บัตรประชาชน" ไม่ใช่อาการที่ของพัง
+        //    ถอยไปใช้ตัวอ่านในเครื่องก็ได้ผลแย่กว่าเปล่า ๆ บอกลูกค้าตรง ๆ ดีกว่า
+        const msg = String((e as Error).message || "");
+        if (msg.includes("ถี่เกินไป") || msg.includes("ไม่ใช่บัตรประชาชน")) {
+          setBusy(msg);
+          return;
+        }
+        setBusy("ตัวอ่านหลักใช้ไม่ได้ กำลังลองตัวอ่านในเครื่องแทน… (ใช้เวลาสักครู่)");
+        ({ got, a } = await readLocal(file));
+      }
       // ⚠️ ช่องที่อ่านไม่ออกต้อง "ล้างทิ้ง" ไม่ใช่เก็บค่าเก่าไว้
       //    ของเดิมเขียน got.birth ? ... : p.birth — พอรอบนี้อ่านวันเกิดไม่ออก
       //    มันเก็บวันเกิดจากการสแกนครั้งก่อนไว้ ลูกค้าเห็นข้อมูลผิดที่ดูเหมือนเพิ่งอ่านมา
@@ -231,10 +320,12 @@ export default function PermitView() {
     } catch (e) {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");
     }
-  }, []);
+  }, [readLocal]);
 
   const idOk = validThaiId(d.idNumber);
-  const canPrint = Boolean(d.name && idOk && d.province && picked && d.qualified);
+  // ⚠️ ไม่มี d.qualified ในเงื่อนไขแล้ว — ช่องติ๊กถูกเอาออกตามคำสั่งเจ้าของร้าน
+  //    ถ้ายังเช็คอยู่ ปุ่มพิมพ์จะเป็นสีเทาตลอดกาลโดยไม่มีอะไรบนจอบอกว่าทำไม
+  const canPrint = Boolean(d.name && idOk && d.province && picked);
 
   const field = (k: keyof Lz1Data, label: string, extra?: { wide?: boolean; type?: string }) => (
     <label className={extra?.wide ? "col-span-2" : ""}>
@@ -503,6 +594,13 @@ export default function PermitView() {
             <p className="mt-1 text-[12.5px] text-ink-300">
               วางบัตรบนพื้นเรียบ แสงสว่าง ถ่ายให้เต็มกรอบและไม่เอียง
             </p>
+            {/* ⚠️ ต้องบอกก่อนกดถ่าย ไม่ใช่หลังถ่าย
+                รูปบัตรออกจากเครื่องไปให้ตัวอ่านอ่าน ลูกค้ามีสิทธิ์รู้ก่อนตัดสินใจ
+                ห้ามลบบรรทัดนี้ตราบใดที่ยังส่งรูปออกไปข้างนอก */}
+            <p className="mt-1.5 rounded-sm bg-[#fffbe6] p-2 text-[12px] leading-relaxed text-ink-700">
+              รูปบัตรจะถูกส่งไปให้ตัวอ่านอัตโนมัติอ่านข้อความ <b>เพื่ออ่านอย่างเดียว
+              ไม่ได้เก็บไว้ที่ไหน</b> — ไม่อยากส่งรูปก็กรอกเองด้านล่างได้เลย
+            </p>
             <input
               ref={fileRef}
               type="file"
@@ -566,26 +664,13 @@ export default function PermitView() {
               {field("writtenAt", "เขียนคำขอที่ (ชื่อสถานที่)", { wide: true })}
             </div>
 
-            {/* ------------------------------------------ 4. คำรับรอง */}
-            <h2 className="mt-6 text-[15px] font-bold text-ink">๔. คำรับรองคุณสมบัติ</h2>
-            {/* ⚠️ ห้ามติ๊กให้ล่วงหน้า — เป็นคำรับรองต่อนายทะเบียน
-                ติ๊กแทนกันคือให้เขารับรองสิ่งที่ยังไม่ได้อ่าน */}
-            <label className="mt-2 flex items-start gap-2.5 rounded-sm bg-white p-3">
-              <input
-                type="checkbox"
-                checked={d.qualified}
-                onChange={(e) => setD((p) => ({ ...p, qualified: e.target.checked }))}
-                className="mt-0.5 h-5 w-5 shrink-0 accent-[#c42d00]"
-              />
-              <span className="text-[13px] leading-relaxed text-ink-700">
-                ข้าพเจ้าอ่านคุณสมบัติทั้ง ๑๑ ข้อในแบบ ลซ.1 แล้ว และขอรับรองว่าข้าพเจ้ามีคุณสมบัติ
-                และไม่มีลักษณะต้องห้ามตามที่ระบุไว้ทุกข้อ
-                <Link href="/policy/license/" className="ml-1 text-safety underline">อ่านทั้ง ๑๑ ข้อ</Link>
-              </span>
-            </label>
-
-            {/* ------------------------------------------ 5. พิมพ์ */}
-            <h2 className="mt-6 text-[15px] font-bold text-ink">๕. พิมพ์แล้วนำไปยื่น</h2>
+            {/* ------------------------------------------ 4. พิมพ์
+                ⚠️ เจ้าของร้านสั่งให้เอาช่องติ๊ก "คำรับรองคุณสมบัติ" ออก (25 ส.ค. 2569)
+                   ไม่ได้ทำให้คำรับรองหายไป — คุณสมบัติทั้ง ๑๑ ข้ออยู่ในแบบ ลซ.1 ที่พิมพ์ออกมา
+                   และลูกค้าเซ็นชื่อรับรองบนกระดาษอยู่แล้ว ซึ่งเป็นการรับรองที่มีผลจริง
+                   ช่องติ๊กบนจอจึงเป็นแค่ขั้นตอนซ้ำที่ขวางทางลูกค้าเปล่า ๆ
+                ⚠️ ห้ามเอากลับมาโดยไม่ถามเจ้าของร้านก่อน */}
+            <h2 className="mt-6 text-[15px] font-bold text-ink">๔. พิมพ์แล้วนำไปยื่น</h2>
             <button
               onClick={() => {
                 window.print();
