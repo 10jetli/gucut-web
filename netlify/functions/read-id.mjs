@@ -167,7 +167,12 @@ export default async function handler(req) {
       //    มีไว้เพื่อแยก "คีย์ผิด" กับ "ที่อยู่ปลายทางผิด" ออกจากกันได้โดยไม่ต้อง deploy ซ้ำ
       let host = "";
       try { host = new URL(base).host; } catch { /* ที่อยู่เพี้ยนก็ปล่อยว่าง */ }
-      return json({ error: why, via: gwKey ? "gateway" : "own-key", host }, 502);
+      // ⚠️ ชั่วคราว — เอกสาร Netlify ไม่ได้เขียนชื่อตัวแปรที่อยู่ปลายทางไว้
+      //    จึงต้องถามระบบว่ามีตัวแปรชื่ออะไรบ้าง **เอาแค่ชื่อ ห้ามเอาค่าเด็ดขาด**
+      //    ชื่อตัวแปรไม่ใช่ความลับ ค่าเป็น — เอาออกทันทีที่รู้ชื่อจริงแล้ว
+      const names = Object.keys(process.env)
+        .filter((k) => /AI_GATEWAY|ANTHROPIC/.test(k)).sort();
+      return json({ error: why, via: gwKey ? "gateway" : "own-key", host, names }, 502);
     }
 
     const text = (out?.content || []).map((c) => c.text || "").join("").trim();
