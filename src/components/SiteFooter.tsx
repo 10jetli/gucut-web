@@ -21,6 +21,12 @@ export default function SiteFooter() {
         <Link href="/policy/privacy/" className="underline underline-offset-2">นโยบายความเป็นส่วนตัว</Link>
         <span aria-hidden>·</span>
         <Link href="/policy/terms/" className="underline underline-offset-2">เงื่อนไขการใช้บริการ</Link>
+        <span aria-hidden>·</span>
+        {/* ⚠️ เว็บเก่าแยกคืนเงินกับจัดส่งเป็นคนละหน้า พอเอาเงื่อนไขฉบับ Shopify มาแทน
+            สองเรื่องนี้จะไม่มีที่อยู่เลย ต้องมีลิงก์ให้ลูกค้าหาเจอ ไม่งั้นเข้าได้แค่ทาง sitemap */}
+        <Link href="/policy/refund/" className="underline underline-offset-2">การคืนเงิน</Link>
+        <span aria-hidden>·</span>
+        <Link href="/policy/shipping/" className="underline underline-offset-2">การจัดส่ง</Link>
         {/* ⚠️ ไม่ใส่ลิงก์ "ใบอนุญาตประกอบกิจการ" ไว้ตรงนี้ตามที่เจ้าของร้านสั่ง (24 ส.ค. 2569)
             พูดเรื่องใบอนุญาตให้ลูกค้าเห็นเด่น ๆ จะทำให้เขานึกขึ้นได้ว่าตัวเองต้องมีใบ ลซ.3 ด้วย
             แล้วลังเลที่จะซื้อ — ทั้งที่เป็นหน้าที่ของผู้ซื้อตามกฎหมายอยู่แล้ว
