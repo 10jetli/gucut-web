@@ -24,7 +24,7 @@ import {
 } from "@/lib/idcard";
 import {
   BAR_SIZES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
-  PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl,
+  PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { PROVINCES, findPostcode } from "@/lib/postcode";
 
@@ -551,16 +551,35 @@ export default function PermitView() {
               )}
             </label>
 
-            {(useProvince || d.province) && (
-              <a
-                href={officeMapUrl(useProvince || d.province)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 block w-full rounded-sm border border-steel-600 bg-white py-3 text-center text-[14px] font-semibold text-ink"
-              >
-                📍 หาสำนักงานที่รับยื่นในจังหวัด{useProvince || d.province}
-              </a>
-            )}
+            {/* ⚠️ ให้เว็บทางการมาก่อนแผนที่ — เว็บ ทสจ. มีทั้งแผนที่ ที่อยู่ เบอร์
+                และเวลาทำการที่หน่วยงานอัปเดตเอง แม่นกว่าและครบกว่าผลค้นหา
+                แต่ 2 จังหวัดไม่มีเว็บในรูปแบบนี้ (ตรวจแล้ว) จึงต้องมีทางถอยกลับเสมอ */}
+            {(useProvince || d.province) && (() => {
+              const pv = useProvince || d.province;
+              const site = officeSiteUrl(pv);
+              return (
+                <div className="mt-2 space-y-2">
+                  {site && (
+                    <a
+                      href={site}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="block w-full rounded-sm bg-ink py-3 text-center text-[14px] font-semibold text-white"
+                    >
+                      🏛️ เว็บทางการ ทสจ.{pv} — มีแผนที่ ที่อยู่ และเบอร์โทร
+                    </a>
+                  )}
+                  <a
+                    href={officeMapUrl(pv)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="block w-full rounded-sm border border-steel-600 bg-white py-3 text-center text-[14px] font-semibold text-ink"
+                  >
+                    📍 เปิดแผนที่นำทางไป ทสจ.{pv}
+                  </a>
+                </div>
+              );
+            })()}
 
             <h3 className="mt-5 text-[14px] font-bold text-ink">เอกสารที่ต้องเตรียมไปด้วย</h3>
             <ul className="mt-1.5 space-y-1.5">
