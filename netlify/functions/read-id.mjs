@@ -91,12 +91,23 @@ export default async function handler(req) {
   //    จึงเป็นทางเดียวที่ไม่พังเมื่อร้านไปตั้งคีย์ของตัวเองเพิ่มทีหลัง
   //    ⚠️ ต้อง deploy ขึ้น production อย่างน้อยหนึ่งครั้ง Gateway ถึงจะเริ่มใส่ค่าให้
   //    คิดเงินเป็นเครดิต Netlify ของร้าน — $1 = 180 เครดิต
+  //
+  //    ⚠️ ชื่อตัวแปรคือ NETLIFY_AI_GATEWAY_URL — **ไม่ใช่** _BASE_URL ตามที่เอกสารเขียนไว้
+  //       เอกสาร Netlify เขียนชื่อผิด เสียเวลาไปสองรอบ deploy กว่าจะรู้
+  //       ถามระบบตรง ๆ ว่ามีตัวแปรชื่ออะไรบ้างถึงได้คำตอบ
+  //       (ของจริงมี 4 ตัว: ANTHROPIC_API_KEY · ANTHROPIC_BASE_URL ·
+  //        NETLIFY_AI_GATEWAY_KEY · NETLIFY_AI_GATEWAY_URL)
   const gwKey = process.env.NETLIFY_AI_GATEWAY_KEY;
-  const gwBase = process.env.NETLIFY_AI_GATEWAY_BASE_URL;
-  const key = gwKey || process.env.ANTHROPIC_API_KEY;
-  const base = (
-    (gwKey ? gwBase : process.env.ANTHROPIC_BASE_URL) || "https://api.anthropic.com"
-  ).replace(/\/+$/, "");
+  const gwBase = process.env.NETLIFY_AI_GATEWAY_URL;
+  //
+  // ⚠️ คีย์กับที่อยู่ปลายทางต้อง "มาเป็นคู่" เสมอ ห้ามหยิบข้ามคู่กัน
+  //    คีย์ของ Gateway ใช้กับ api.anthropic.com ไม่ได้ และกลับกันก็เช่นกัน
+  //    ใช้คู่ Gateway ก่อน เพราะเป็นคู่เดียวที่ Netlify ใส่ให้เสมอไม่ว่าร้านจะตั้งอะไรไว้เอง
+  const pair = gwKey && gwBase
+    ? { key: gwKey, base: gwBase }
+    : { key: process.env.ANTHROPIC_API_KEY, base: process.env.ANTHROPIC_BASE_URL };
+  const key = pair.key;
+  const base = (pair.base || "https://api.anthropic.com").replace(/\/+$/, "");
   if (!key) {
     // ⚠️ บอกให้ชัดว่าเป็นเรื่องการตั้งค่า ไม่ใช่รูปลูกค้าไม่ดี
     //    หน้าเว็บจะได้บอกลูกค้าให้กรอกเองแทนการให้ถ่ายซ้ำไปเรื่อย ๆ
@@ -167,12 +178,8 @@ export default async function handler(req) {
       //    มีไว้เพื่อแยก "คีย์ผิด" กับ "ที่อยู่ปลายทางผิด" ออกจากกันได้โดยไม่ต้อง deploy ซ้ำ
       let host = "";
       try { host = new URL(base).host; } catch { /* ที่อยู่เพี้ยนก็ปล่อยว่าง */ }
-      // ⚠️ ชั่วคราว — เอกสาร Netlify ไม่ได้เขียนชื่อตัวแปรที่อยู่ปลายทางไว้
-      //    จึงต้องถามระบบว่ามีตัวแปรชื่ออะไรบ้าง **เอาแค่ชื่อ ห้ามเอาค่าเด็ดขาด**
-      //    ชื่อตัวแปรไม่ใช่ความลับ ค่าเป็น — เอาออกทันทีที่รู้ชื่อจริงแล้ว
-      const names = Object.keys(process.env)
-        .filter((k) => /AI_GATEWAY|ANTHROPIC/.test(k)).sort();
-      return json({ error: why, via: gwKey ? "gateway" : "own-key", host, names }, 502);
+      // ตัวถามชื่อตัวแปรถูกถอดออกแล้ว รู้ชื่อจริงแล้ว (NETLIFY_AI_GATEWAY_URL)
+      return json({ error: why, via: gwKey && gwBase ? "gateway" : "own-key", host }, 502);
     }
 
     const text = (out?.content || []).map((c) => c.text || "").join("").trim();
