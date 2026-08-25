@@ -95,6 +95,10 @@ export default function PermitView() {
   const [modelName, setModelName] = useState("");
   const [bar, setBar] = useState("");
   const [qty, setQty] = useState("1");
+  // ⚠️ จำนวนบาร์แยกจากจำนวนเครื่อง (เจ้าของร้านสั่ง 25 ส.ค. 2569 "เลือกจำนวนได้ ทั้ง 2")
+  //    ลูกค้าซื้อเครื่อง ๑ ตัวแต่เอาบาร์ ๒ แผ่นได้ เป็นเรื่องปกติของร้าน
+  //    ⚠️ ตัวเลขนี้ "ไม่ขึ้นบนแบบ ลซ.๑" — ดูเหตุผลตรงที่ประกอบรายการเลื่อย
+  const [barQty, setBarQty] = useState("1");
 
   // ---- บัญชีลูกค้า
   //
@@ -145,11 +149,12 @@ export default function PermitView() {
       // ⚠️ ลิงก์ที่ถูกส่งมาต้องชนะค่าที่เก็บไว้ในเครื่อง
       //    คนที่เปิดลิงก์คือคนที่ "ช่วยพิมพ์ให้" ไม่ใช่เจ้าของข้อมูล
       //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
-      const shared = readShareLink<{ d: Lz1Data; m: string; b: string; q: string }>();
+      const shared = readShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }>();
       if (shared?.d) {
         setD({ ...blank(), ...shared.d, qualified: true });
         if (shared.m) setModelName(shared.m);
         if (shared.b) setBar(shared.b);
+        if (shared.bq) setBarQty(shared.bq);
         if (shared.q) setQty(shared.q);
       }
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
@@ -180,6 +185,11 @@ export default function PermitView() {
   );
 
   // รวมรุ่นที่เลือกเข้าเป็นรายการเลื่อยในคำขอ
+  //
+  // ⚠️ ใส่เฉพาะ "จำนวนเครื่อง" ลงแบบ ลซ.๑ ห้ามเอาจำนวนบาร์ไปใส่ด้วย
+  //    แบบราชการมีช่องเดียวคือ "จำนวน ___ เครื่อง" ไม่มีช่องจำนวนแผ่นบาร์เลย
+  //    ยัดลงไป = เอกสารไม่ตรงกับแบบ และต่างจากใบที่เจ้าหน้าที่รับไปแล้ว
+  //    จำนวนบาร์เป็นข้อมูลของ "ออเดอร์" ไม่ใช่ของ "คำขออนุญาต" — คนละเรื่องกัน
   useEffect(() => {
     if (!picked) { setD((p) => ({ ...p, saws: [] })); return; }
     setD((p) => ({
@@ -418,7 +428,9 @@ export default function PermitView() {
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
         body: JSON.stringify({
-          saw: modelName ? `${modelName}${bar ? ` · บาร์ ${bar} นิ้ว` : ""}` : "",
+          saw: modelName
+            ? `${modelName} ${qty || "1"} เครื่อง${bar ? ` · บาร์ ${bar} นิ้ว ${barQty || "1"} แผ่น` : ""}`
+            : "",
           province: useProvince,
           images,
         }),
@@ -435,7 +447,8 @@ export default function PermitView() {
     } finally {
       setLz2Busy(false);
     }
-  }, [me?.phone, modelName, bar, useProvince]);
+    // ⚠️ qty กับ barQty ต้องอยู่ในรายการนี้ด้วย ไม่งั้นร้านได้จำนวนเก่าติดไปกับใบ ลซ.๒
+  }, [me?.phone, modelName, bar, qty, barQty, useProvince]);
 
   const idOk = validThaiId(d.idNumber);
   // ⚠️ ไม่มี d.qualified ในเงื่อนไขแล้ว — ช่องติ๊กถูกเอาออกตามคำสั่งเจ้าของร้าน
@@ -779,7 +792,7 @@ export default function PermitView() {
                 <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-300">
                   ระบบจะกรอกให้: {ENGINE_TYPE}
                   {picked.hp !== null && <> · {picked.hp} แรงม้า</>}
-                  {bar && <> · บาร์ {bar} นิ้ว</>}
+                  {bar && <> · บาร์ {bar} นิ้ว {barQty || "1"} แผ่น</>}
                 </p>
                 {SAW_IMG[picked.model as keyof typeof SAW_IMG]?.handle && (
                   <Link
@@ -792,16 +805,32 @@ export default function PermitView() {
               </div>
             </div>
 
-            {/* ⚠️ ขนาดบาร์ย้ายขึ้นไปอยู่คู่กับรุ่นตามภาพร่างแล้ว เหลือแค่จำนวนตรงนี้
-                จำนวนไม่ได้อยู่ในภาพร่าง แต่แบบ ลซ.๑ มีช่องให้กรอก จึงเก็บไว้ */}
-            <label className="mt-2 block w-1/2 pr-1">
-              <span className="mb-1 block text-[12px] text-ink-300">จำนวนเครื่อง</span>
-              <input
-                type="number" min={1} max={5} value={qty}
-                onChange={(e) => setQty(e.target.value)}
-                className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
-              />
-            </label>
+            {/* ⚠️ เลือกจำนวนได้ทั้งสองอย่าง (เจ้าของร้านสั่ง 25 ส.ค. 2569)
+                ลูกค้าซื้อเครื่อง ๑ ตัวแต่เอาบาร์ ๒ แผ่นได้ เป็นเรื่องปกติของร้าน
+                ⚠️ จำนวนบาร์กดไม่ได้ถ้ายังไม่ได้เลือกขนาดบาร์
+                   ปล่อยให้กรอกได้ = ได้ "บาร์ ๓ แผ่น" ที่ไม่มีขนาด ซึ่งร้านเอาไปทำอะไรไม่ได้ */}
+            <div className="mt-2 grid grid-cols-2 gap-2">
+              <label>
+                <span className="mb-1 block text-[12px] text-ink-300">จำนวนเครื่อง</span>
+                <input
+                  type="number" min={1} max={5} value={qty}
+                  onChange={(e) => setQty(e.target.value)}
+                  className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px]"
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-[12px] text-ink-300">
+                  จำนวนบาร์ (แผ่น)
+                </span>
+                <input
+                  type="number" min={1} max={9} value={bar ? barQty : ""}
+                  disabled={!bar}
+                  placeholder={bar ? "" : "เลือกขนาดบาร์ก่อน"}
+                  onChange={(e) => setBarQty(e.target.value)}
+                  className="w-full rounded-sm border border-steel-600 px-3 py-2 text-[14px] placeholder:text-[12px] disabled:bg-steel-900 disabled:text-ink-300"
+                />
+              </label>
+            </div>
             {picked.hp === null && (
               <p className="mt-1 text-[12px] text-[#b26a00]">
                 รุ่นนี้ยังไม่มีข้อมูลแรงม้าในระบบ — กรุณาถามทางร้านก่อนพิมพ์
@@ -956,7 +985,7 @@ export default function PermitView() {
               <div className="mt-2 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
                   <a
-                    href={lineShareUrl(makeShareLink({ d, m: modelName, b: bar, q: qty }))}
+                    href={lineShareUrl(makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty }))}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="rounded-sm bg-[#06C755] py-3 text-center text-[14px] font-semibold text-white"
@@ -965,7 +994,7 @@ export default function PermitView() {
                   </a>
                   <button
                     onClick={() => {
-                      const link = makeShareLink({ d, m: modelName, b: bar, q: qty });
+                      const link = makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty });
                       void navigator.clipboard.writeText(link)
                         .then(() => setBusy("คัดลอกลิงก์แล้ว — เอาไปวางที่ไหนก็ได้"))
                         .catch(() => setBusy("คัดลอกไม่ได้ ลองใช้ปุ่มส่งไปไลน์แทน"));
