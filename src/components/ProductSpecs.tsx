@@ -24,27 +24,39 @@ export default function ProductSpecs({ d, attrs }: { d?: Detail; attrs: [string,
         </section>
       )}
 
-      {/* เอกสารดาวน์โหลด — แบบฟอร์ม ลซ.1 / คู่มืออะไหล่ */}
+      {/*
+        ⚠️ ลิงก์ดาวน์โหลด ลซ.1 ของเดิมเป็นไฟล์ Google Drive แยกตามรุ่น
+           ที่กรอกข้อมูลเครื่องมาให้แล้ว แต่ลูกค้ายังต้องเขียนข้อมูลตัวเองด้วยมือ
+           แทนที่ด้วยหน้า /permit/ ตามที่เจ้าของร้านสั่ง (25 ส.ค. 2569)
+           หน้านั้นถ่ายบัตรแล้วกรอกให้หมด พิมพ์ได้เลย และมีใบรับรองแพทย์แถมมาด้วย
+        ⚠️ เปลี่ยนที่ตอนแสดงผล ไม่ได้แก้ details.json
+           เพราะไฟล์นั้นถูกเขียนทับทุกครั้งที่รัน gen-details — แก้ไปก็หายอยู่ดี
+        ⚠️ ลิงก์อื่น (คู่มืออะไหล่) ต้องคงไว้เหมือนเดิม
+      */}
       {d?.docs && d.docs.length > 0 && (
         <section className="mt-3 bg-steel-800 px-3 py-3">
           <SectionHead title="เอกสารดาวน์โหลด" bare />
           <ul className="space-y-2">
-            {d.docs.map((doc) => (
+            {d.docs.map((doc) => {
+              const isLz1 = /ลซ\.?\s*1|ใบอนุญาตให้มีเลื่อย/.test(doc.label);
+              return (
               <li key={doc.url}>
                 <a
-                  href={doc.url}
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={isLz1 ? "/permit/" : doc.url}
+                  {...(isLz1 ? {} : { target: "_blank", rel: "noopener noreferrer" })}
                   className="flex items-center gap-2 rounded-sm border border-safety/40 bg-safety-tint px-3 py-2.5 text-[13px] font-medium text-safety"
                 >
                   <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-current stroke-2">
                     <path d="M12 3v12m0 0l-4-4m4 4l4-4" strokeLinecap="round" strokeLinejoin="round" />
                     <path d="M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2" strokeLinecap="round" />
                   </svg>
-                  <span className="flex-1">{doc.label}</span>
+                  <span className="flex-1">
+                    {isLz1 ? "กรอกแบบ ลซ.๑ ออนไลน์ — ถ่ายบัตรแล้วกรอกให้เลย" : doc.label}
+                  </span>
                 </a>
               </li>
-            ))}
+              );
+            })}
           </ul>
         </section>
       )}

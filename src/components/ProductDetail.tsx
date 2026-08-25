@@ -12,6 +12,7 @@ import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { discountPercent, formatPrice, type Product } from "@/lib/types";
 import Price from "@/components/Price";
 import ProductVideoFloat from "./ProductVideoFloat";
+import { PERMIT_MODELS } from "@/lib/permit";
 import ProductTopBar from "./ProductTopBar";
 import { videoForProduct } from "@/lib/videos";
 import { track } from "@/lib/track";
@@ -39,6 +40,11 @@ export default function ProductDetail({
   const [i, setI] = useState(0);
   const [sheet, setSheet] = useState<null | "cart" | "buy">(null);
   const [chat, setChat] = useState(false);
+
+  // ⚠️ ดูจากรายการ PERMIT_MODELS ไม่ใช่เดาจากคำในชื่อ
+  //    ชื่อสินค้าแก้ได้ทุกเมื่อ ถ้าเดาจากคำว่า "มีทะเบียน" แล้ววันหนึ่งมีคนแก้ชื่อ
+  //    ปุ่มซื้อจะกลับมาให้จ่ายเงินทันทีโดยไม่มีใครรู้
+  const needsPermitProduct = PERMIT_MODELS.some((m) => p.t.includes(m.model));
   const off = discountPercent(p);
   const clip = videoForProduct(p.h);   // มีเฉพาะสินค้าที่ผูกคลิปไว้จริง
   const imgs = p.imgs.length ? p.imgs : [];
@@ -206,6 +212,34 @@ export default function ProductDetail({
       {/* คลิปลอยมุมจอแบบ Shopee — ลอยเหนือแถบซื้อ ปิดทิ้งได้ */}
       {clip && <ProductVideoFloat video={clip} />}
 
+      {/*
+        ⚠️ รุ่นที่ต้องขอทะเบียน "ห้ามให้กดซื้อจ่ายเงินทันที"
+           ลำดับจริงของร้าน (เจ้าของร้านยืนยัน 25 ส.ค. 2569):
+             ขอทะเบียนก่อน → ได้ใบ ลซ.2 → ส่งให้ร้านพร้อมจ่ายเงิน → ร้านถึงส่งเครื่อง
+           ถ้าปล่อยให้จ่ายก่อน ลูกค้าจ่ายหมื่นเจ็ดแล้วเพิ่งรู้ว่าต้องรอเป็นสัปดาห์
+           และถ้าขอไม่ผ่านก็ต้องมานั่งคืนเงินกันทีหลัง
+        ⚠️ ดูจากป้าย "(มีทะเบียน)" ในชื่อสินค้า — ตรงกับรายการ PERMIT_MODELS ทุกตัว
+           ตรวจแล้วเมื่อ 25 ส.ค. 2569 ไม่ผิดสักรุ่น
+      */}
+      {needsPermitProduct && (
+        <div className="mx-2 mb-2 rounded-sm bg-[#fffbe6] p-3">
+          <p className="text-[13.5px] font-bold text-ink">รุ่นนี้ต้องขอทะเบียนก่อน</p>
+          <p className="mt-1 text-[12.5px] leading-relaxed text-ink-700">
+            เลื่อยโซ่ยนต์รุ่นนี้เป็นสินค้าควบคุมตามกฎหมาย —
+            ต้องได้ใบอนุญาตก่อน ทางร้านถึงจะส่งเครื่องให้ได้
+            <span className="mt-1 block text-ink-300">
+              ขั้นตอน: ขอทะเบียน → ได้ใบ ลซ.๒ → ส่งให้ร้านพร้อมชำระเงิน → ร้านส่งเครื่อง
+            </span>
+          </p>
+          <Link
+            href="/permit/"
+            className="mt-2 block w-full rounded-sm bg-ink py-2.5 text-center text-[14px] font-bold text-white"
+          >
+            เริ่มขอทะเบียน — กรอกให้ฟรี
+          </Link>
+        </div>
+      )}
+
       {/* แถบซื้อติดล่างจอ — แชท | ตะกร้า | ซื้อเลย+ราคา */}
       <div className={`fixed inset-x-0 bottom-0 z-[60] mx-auto flex ${SHELL_W} items-stretch border-t border-steel-700 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.06)]`}>
         <button
@@ -239,7 +273,9 @@ export default function ProductDetail({
             <span className="text-sm font-semibold">สินค้าหมด</span>
           ) : (
             <>
-              <span className="text-[11px] font-medium opacity-90">ซื้อเลย</span>
+              <span className="text-[11px] font-medium opacity-90">
+                {needsPermitProduct ? "จองไว้ก่อน" : "ซื้อเลย"}
+              </span>
               <Price value={live && p.pmax <= p.p ? live.p : p.p} className="text-[17px] font-bold" />
             </>
           )}
