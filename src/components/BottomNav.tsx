@@ -16,10 +16,10 @@ const items = [
   { href: "/", label: "หน้าแรก", icon: HomeIcon },
   { href: "/categories", label: "หมวดหมู่", icon: GridIcon },
   { href: "/videos", label: "วิดีโอ", icon: PlayIcon },
-  // ⚠️ คำในเมนูล่างต้องยาวพอ ๆ กับคำอื่น ไม่งั้นช่องนั้นดูอัดแน่นกว่าเพื่อน
-  //    "ขอทะเบียน" 9 ตัวยาวกว่าทุกคำ → ย่อเหลือ "ทะเบียน" 7 ตัว เท่ากับ "หน้าแรก" พอดี
-  //    ความหมายไม่หายเพราะไอคอนเป็นรูปเอกสารอยู่แล้ว
-  { href: "/permit", label: "ทะเบียน", icon: DocIcon },
+  // ⚠️ เจ้าของร้านสั่งให้ใช้คำว่า "ขอใบอนุญาต" (26 ส.ค. 2569) ห้ามย่อเอง
+  //    เดิมย่อเป็น "ทะเบียน" เพราะกลัวคำยาวกว่าเพื่อนแล้วช่องดูอัดแน่น
+  //    ⇒ แก้ด้วยขนาดตัวอักษรแทนการย่อคำ (ดู clamp ที่คลาสของ Link)
+  { href: "/permit", label: "ขอใบอนุญาต", icon: DocIcon },
   { href: "/account", label: "บัญชี", icon: UserIcon },
 ];
 
@@ -38,7 +38,7 @@ export default function BottomNav() {
             <Link
               key={href}
               href={href}
-              className={`flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] transition-colors ${
+              className={`flex min-w-0 flex-1 flex-col items-center gap-0.5 whitespace-nowrap py-2 text-[clamp(9px,2.93vw,11px)] transition-colors ${
                 active ? "text-safety" : "text-steel-300 hover:text-[#1a1a1a]"
               }`}
             >
