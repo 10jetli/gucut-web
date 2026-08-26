@@ -24,8 +24,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import Lz1Document, { type Lz1Data } from "./Lz1Document";
-import MedCertDocument from "./MedCertDocument";
+import { type Lz1Data } from "@/lib/lz1data";
 import PermitVideo from "./PermitVideo";
 import {
   ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
@@ -424,6 +423,69 @@ export default function PermitView() {
     finally { setStageBusy(false); }
   }, [me?.phone]);
 
+  // ---- สร้างแบบ ลซ.๑ จากฟอร์มทางการ
+  const [genBusy, setGenBusy] = useState(false);
+  const [genError, setGenError] = useState("");
+
+  /**
+   * สร้าง PDF ที่กรอกแล้วจากฟอร์มทางการ แล้วเปิดให้พิมพ์/บันทึก
+   *
+   * ⚠️ ทุกอย่างเกิดในเครื่องลูกค้า — ฟอร์มเปล่ากับฟอนต์เป็นไฟล์นิ่งจาก public/doc/
+   *    ข้อมูลที่กรอกไม่วิ่งออกไปไหน (เลขบัตรเป็นข้อมูลอ่อนไหวตาม PDPA)
+   * ⚠️ สร้างพลาดต้องมีทางไปต่อเสมอ — ปุ่มโหลดฟอร์มเปล่าไปเขียนมืออยู่ในรายการเอกสาร
+   */
+  const printOfficialForm = useCallback(async () => {
+    setGenBusy(true);
+    setGenError("");
+    try {
+      const [formRes, fontRes, mod] = await Promise.all([
+        fetch("/doc/lz1-form.pdf"),
+        fetch("/doc/Sarabun-Regular.ttf"),
+        import("@/lib/lz1pdf"),
+      ]);
+      if (!formRes.ok || !fontRes.ok) throw new Error("โหลดแบบฟอร์มไม่สำเร็จ");
+      const bytes = await mod.buildLz1Pdf(
+        {
+          day: d.day, month: d.month, year: d.year,
+          name: d.name, idNumber: d.idNumber,
+          nationality: d.nationality, ethnicity: d.ethnicity,
+          birth: d.birth, age: d.age,
+          houseNo: d.houseNo, moo: d.moo, soi: d.soi, road: d.road,
+          tambon: d.tambon, amphoe: d.amphoe, province: d.province,
+          postcode: d.postcode, phone: d.phone, email: d.email,
+          saws: d.saws.map((s) => ({ engine: s.engine, hp: s.hp, bar: s.bar, qty: s.qty })),
+          docs: { idCopy: d.docs.idCopy, house: d.docs.house },
+        },
+        await formRes.arrayBuffer(),
+        await fontRes.arrayBuffer(),
+      );
+      // เปิดในแท็บใหม่ให้กดพิมพ์/บันทึกจากตัวเปิด PDF ของเครื่อง
+      // ⚠️ ห้ามใช้ window.open หลัง await ตรง ๆ — iOS บล็อกป๊อปอัปที่ไม่ได้มาจากการกดทันที
+      //    ใช้ลิงก์ blob แล้วสั่งกดแทน ซึ่ง Safari นับเป็นการนำทางปกติ
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const aEl = document.createElement("a");
+      aEl.href = url;
+      aEl.target = "_blank";
+      aEl.rel = "noopener";
+      aEl.download = "แบบ-ลซ1-กรอกแล้ว.pdf";
+      document.body.appendChild(aEl);
+      aEl.click();
+      aEl.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+
+      setPrinted(true);
+      try { localStorage.setItem(KEY + "-printed", "1"); } catch { /* โหมดส่วนตัว */ }
+      // ⚠️ บันทึกขั้นแบบไม่รอผล เอกสารต้องออกมาให้ได้แม้เน็ตสะดุด
+      void markStage("printed");
+    } catch (e) {
+      setGenError("สร้างเอกสารไม่สำเร็จ (" + (e as Error).message + ")");
+    } finally {
+      setGenBusy(false);
+    }
+  }, [d, markStage]);
+
+
   /**
    * เริ่มเรื่องใหม่ทั้งหมด — กลับไปขั้น ๑
    *
@@ -533,7 +595,7 @@ export default function PermitView() {
 
   return (
     <>
-      <main className="lz-noprint mx-auto max-w-2xl px-4 pb-24 pt-4">
+      <main className="mx-auto max-w-2xl px-4 pb-24 pt-4">
         {/* ⚠️ ช่องรับไฟล์ต้องอยู่นอก <details> เสมอ
             เนื้อหาใน details ที่ยังไม่กางจะไม่ถูกวาดลงหน้าเลย สั่ง .click() ไม่ติด
             แล้วปุ่มถ่ายรูปในแถบความคืบหน้าจะกดไม่ขึ้นแบบเงียบ ๆ */}
@@ -1094,15 +1156,8 @@ export default function PermitView() {
                 ⚠️ ห้ามเอากลับมาโดยไม่ถามเจ้าของร้านก่อน */}
             <h2 className="mt-6 text-[15px] font-bold text-ink">๔. พิมพ์แล้วนำไปยื่น</h2>
             <button
-              onClick={() => {
-                window.print();
-                setPrinted(true);
-                try { localStorage.setItem(KEY + "-printed", "1"); } catch { /* โหมดส่วนตัว */ }
-                // ⚠️ บันทึกขั้นแบบไม่รอผล เอกสารต้องพิมพ์ออกมาให้ได้แม้เน็ตสะดุด
-                //    แถบความคืบหน้าเป็นของเสริม ไม่ใช่เงื่อนไขของงานหลัก
-                void markStage("printed");
-              }}
-              disabled={!canPrint}
+              onClick={() => void printOfficialForm()}
+              disabled={!canPrint || genBusy}
               className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
             >
               {/* ⚠️ ภาพร่างเขียนปุ่มนี้ว่า "ขอใบอนุญาต" จึงใช้คำนั้นเป็นตัวใหญ่
@@ -1110,13 +1165,19 @@ export default function PermitView() {
                   ปุ่มที่เขียนแค่ "ขอใบอนุญาต" เฉย ๆ = ลูกค้าเข้าใจว่ากดแล้วยื่นเรื่องให้ราชการแล้ว
                   แล้วนั่งรอใบอนุญาตที่ไม่มีวันมา ซึ่งแย่กว่าคำที่ยาวขึ้นหนึ่งบรรทัดมาก
                   ห้ามตัดบรรทัดล่างออก */}
-              ขอใบอนุญาต
+              {genBusy ? "กำลังเตรียมเอกสาร…" : "ขอใบอนุญาต"}
               <span className="mt-0.5 block text-[11.5px] font-normal opacity-80">
-                🖨️ พิมพ์แบบ ลซ.๑ + ใบรับรองแพทย์ แล้วนำไปยื่นเอง
+                🖨️ พิมพ์แบบ ลซ.๑ (ฉบับทางการ) + ใบรับรองแพทย์ แล้วนำไปยื่นเอง
               </span>
             </button>
+            {genError && (
+              <p className="mt-1.5 rounded-sm bg-[#fdecea] p-2.5 text-[12px] text-[#b3261e]">
+                {genError} — โหลดฟอร์มเปล่าไปเขียนมือแทนได้จากปุ่มในรายการเอกสารด้านล่าง
+              </p>
+            )}
             <p className="mt-1.5 text-[12px] leading-relaxed text-ink-300">
-              ได้ ๔ แผ่น — แบบ ลซ.๑ สามแผ่น และใบรับรองแพทย์อีกหนึ่งแผ่น
+              ได้แบบ ลซ.๑ ฉบับทางการที่กรอกข้อมูลให้แล้ว (๘ หน้า — หน้า ๕-๘ เป็นของเจ้าหน้าที่)
+              และใบรับรองแพทย์อีกหนึ่งแผ่น
               <b className="text-ink"> เอาใบรับรองแพทย์ไปให้หมอกรอกและเซ็นก่อน</b>
               แล้วค่อยเอาไปยื่นพร้อมกันทั้งชุด
             </p>
@@ -1534,13 +1595,10 @@ export default function PermitView() {
         )}
       </main>
 
-      {/* เอกสารจริง — ซ่อนบนจอ โผล่เฉพาะตอนสั่งพิมพ์ */}
-      <div className="lz-print-root hidden print:block">
-        <Lz1Document d={d} />
-        {/* ⚠️ พิมพ์มาพร้อมกันโดยตั้งใจ — แยกปุ่มแล้วลูกค้าจะลืมพิมพ์ใบหมอ
-            แล้วไปเจอปัญหาที่สำนักงานตอนที่กลับไปเอาใหม่ไม่ทันแล้ว */}
-        <MedCertDocument name={d.name} age={d.age} idNumber={d.idNumber} />
-      </div>
+      {/* ⚠️ ไม่มีการพิมพ์จากหน้าเว็บ (window.print) อีกแล้ว — เจ้าของร้านสั่ง
+             "ยึดฟอร์มทางการเป็นหลัก อันเก่าลบทิ้ง" (26 ส.ค. 2569)
+          เอกสารสร้างเป็น PDF จากฟอร์มทางการใน printOfficialForm()
+          ห้ามเอาเอกสารที่วาดเองด้วย HTML กลับมาอีก */}
     </>
   );
 }
