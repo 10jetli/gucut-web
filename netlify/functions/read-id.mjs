@@ -24,6 +24,7 @@
 // ---------------------------------------------------------------------------
 
 import { getStore } from "@netlify/blobs";
+import { adminGate } from "../lib/admin-gate.mjs";
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
@@ -54,6 +55,37 @@ function validThaiId(id) {
   let sum = 0;
   for (let i = 0; i < 12; i++) sum += Number(id[i]) * (13 - i);
   return (11 - (sum % 11)) % 10 === Number(id[12]);
+}
+
+// ---------------------------------------------------------------------------
+// เก็บภาพที่สแกนไว้ให้ร้านตรวจสอบย้อนหลัง — เจ้าของร้านสั่งเอง 27 ส.ค. 2569
+// ("คุณต้องเก็บภาพไว้ · เก็บภาพไว้ตรวจสอบ") ⇒ กลับคำกติกาเดิมที่ห้ามเก็บ
+//
+// ⚠️ เงื่อนไขที่ทำให้เก็บได้โดยไม่ผิด PDPA — ห้ามถอดข้อไหนออก
+//   1. ถังปิด (Netlify Blobs store gucut-idscan) เปิดดูได้เฉพาะรหัสหลังร้าน
+//      ห้ามย้ายไป R2 เด็ดขาด — ถังที่มีเปิดสาธารณะ (กติกาเดียวกับใบ ลซ.๒)
+//   2. เก็บ 7 วันแล้วลบอัตโนมัติ — มีไว้ไล่ปัญหาการอ่าน ไม่ใช่คลังเอกสาร
+//   3. หน้าเว็บบอกลูกค้าตรง ๆ ก่อนกดถ่ายว่าเก็บ 7 วัน (แก้ประกาศแล้ว)
+//   4. ห้าม await — ลูกค้าไม่ควรรอการเก็บภาพ เก็บพลาดบ้างยอมได้
+// ---------------------------------------------------------------------------
+function keepScan(b64, turn, zone, outcome, context) {
+  try {
+    const store = getStore({ name: "gucut-idscan", consistency: "strong" });
+    const day = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+    const key = `img/${day}/${Date.now()}-t${turn}${zone === "address" ? "z" : ""}-${outcome}`;
+    const job = store.set(key, Buffer.from(b64, "base64"))
+      .then(async () => {
+        const cutoff = new Date(Date.now() + 7 * 3600 * 1000 - 7 * 24 * 3600 * 1000)
+          .toISOString().slice(0, 10);
+        const { blobs } = await store.list({ prefix: "img/" });
+        for (const b of blobs) {
+          const d = b.key.split("/")[1];
+          if (d && d < cutoff) await store.delete(b.key).catch(() => {});
+        }
+      })
+      .catch(() => {});
+    if (context?.waitUntil) context.waitUntil(job);
+  } catch { /* เก็บไม่ได้ต้องไม่กระทบลูกค้า */ }
 }
 
 /** กันยิงรัว — หนึ่งคีย์ต่อ IP เก็บเวลาที่ยิง */
@@ -152,7 +184,28 @@ const PROMPT_ADDR = `รูปนี้คือภาพซูมบางส�
 ถ้าไม่เห็นทั้งบรรทัดชื่อและบรรทัดที่อยู่เลย ตอบ {"notIdCard": true}
 ตอบ JSON ล้วน ไม่มีคำอธิบาย`;
 
-export default async function handler(req) {
+export default async function handler(req, context) {
+  // ---------- ฝั่งร้าน: เปิดดูภาพที่เก็บไว้ตรวจสอบ ----------
+  // GET ?scan=<key> = ตัวรูป · GET เฉย ๆ = รายชื่อ 300 รายการล่าสุด
+  // ⚠️ ดูรูปต้องดึงผ่าน adminFetch (รหัสอยู่ในหัวข้อความ) เปิด URL ตรง ๆ ไม่ได้
+  if (req.method === "GET") {
+    const gate = await adminGate(req, context);
+    if (gate.deny) return gate.deny;
+    if (!gate.ok) return json({ error: "unauthorized" }, 401);
+    const u = new URL(req.url);
+    const store = getStore({ name: "gucut-idscan", consistency: "strong" });
+    const key = u.searchParams.get("scan");
+    if (key) {
+      const buf = await store.get(key, { type: "arrayBuffer" }).catch(() => null);
+      if (!buf) return json({ error: "not found" }, 404);
+      return new Response(buf, {
+        headers: { "content-type": "image/jpeg", "cache-control": "no-store" },
+      });
+    }
+    const { blobs } = await store.list({ prefix: "img/" });
+    return json({ scans: blobs.map((b) => b.key).sort().reverse().slice(0, 300) });
+  }
+
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   // ⚠️ ต้องใช้ NETLIFY_AI_GATEWAY_* เป็นตัวแรกเสมอ ห้ามเอา ANTHROPIC_API_KEY ขึ้นก่อน
@@ -294,6 +347,7 @@ export default async function handler(req) {
     const d1 = r1.data, d2 = r2.data;
     if (d1.notIdCard || d2.notIdCard) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
+      keepScan(b64, turn, zone, "notIdCard", context);
       // ⚠️ สาเหตุที่พบบ่อยจริงคือ "รูปเบลอ/มืด" ไม่ใช่รูปผิดประเภท (เจอจริง 26 ส.ค. 2569
       //    บัตรจริงถ่ายกลางคืนแสงน้อย AI ปฏิเสธถูกต้องแล้ว แต่ข้อความเดิมทำลูกค้างง)
       return json({ error: "อ่านบัตรจากรูปนี้ไม่ได้ — รูปอาจเบลอหรือมืดเกินไป ลองถ่ายใหม่ในที่สว่าง ถือมือนิ่ง ๆ ให้บัตรชัดเต็มกรอบ" }, 422);
@@ -312,6 +366,7 @@ export default async function handler(req) {
       let ag = 0;
       for (const k of AF) { o[k] = agree(k); if (o[k]) ag++; }
       console.log(`read-id turn=${turn} bytes=${bytes} out=ok-zone agree=${ag}/8`);
+      keepScan(b64, turn, zone, `zone-agree${ag}`, context);
       return json(o);
     }
 
@@ -321,6 +376,7 @@ export default async function handler(req) {
     const idB = norm(d2, "idNumber").replace(/\D/g, "").slice(0, 13);
     if (id !== idB || !validThaiId(id)) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=id-mismatch`);
+      keepScan(b64, turn, zone, "id-mismatch", context);
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
     }
 
@@ -329,6 +385,7 @@ export default async function handler(req) {
     let agreed = 0;
     for (const k of FIELDS) { outData[k] = agree(k); if (outData[k]) agreed++; }
     console.log(`read-id turn=${turn} bytes=${bytes} out=ok agree=${agreed}/9 addr=${outData.tambon && outData.province ? "full" : "partial"}`);
+    keepScan(b64, turn, zone, `ok-agree${agreed}`, context);
     return json(outData);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 502);
