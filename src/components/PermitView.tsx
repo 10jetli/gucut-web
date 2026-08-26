@@ -784,137 +784,6 @@ export default function PermitView() {
                 );
               })}
             </ol>
-            {/* ⚠️ ปุ่มนี้ต้องเป็นของลูกค้ากดเอง เว็บไม่มีทางรู้ว่าเขาไปสำนักงานมาแล้ว
-                และฝั่งเซิร์ฟเวอร์กันไม่ให้ลูกค้ากดขั้นของร้านไว้แล้ว */}
-            {stage === "printed" && (
-              <button
-                onClick={() => void markStage("submitted")}
-                disabled={stageBusy}
-                className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
-              >
-                {stageBusy ? "กำลังบันทึก…" : "ยื่นที่สำนักงานเรียบร้อยแล้ว"}
-              </button>
-            )}
-
-            {/* ======================================== ขั้นที่หลุดง่ายที่สุด
-                เจ้าของร้านสั่ง (26 ส.ค. 2569)
-                "ขั้นตอนนี้สำคัญ ทำยังไงก็ได้ให้ลูกค้ากดเมื่อได้รับใบ ลซ.๒ แล้ว
-                 เราจะส่งที่อยู่จ่าหน้าซองให้ลูกค้าส่งมา"
-
-                ⚠️ ทำไมขั้นนี้หลุดง่ายกว่าทุกขั้น
-                   ลูกค้าห่างจากเว็บไปแล้วอย่างน้อย ๗ วัน · ใบมาทางไปรษณีย์ ไม่ผ่านเว็บ
-                   และตอนนั้นเขาจำไม่ได้แล้วว่าต้องส่งไปไหน
-                   ของเดิมที่อยู่ร้านถูกพับไว้ในกล่องท้ายหน้า = ต้องรู้ก่อนว่ามีถึงจะไปหาเจอ
-                ⇒ พลิกเป็น "ปุ่มมาหาเขา" กดปุ่มเดียวแล้วที่อยู่โผล่ตรงนั้นเลย
-                ⚠️ ห้ามเอาปุ่มนี้ออกไปซ่อนในส่วนที่ต้องกดเปิด */}
-            {stage === "submitted" && (
-              <div className="mt-3 rounded-lg bg-safety-tint p-3">
-                <p className="text-[13px] font-bold text-ink">ได้ใบ ลซ.๒ มาแล้วหรือยัง</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
-                  สำนักงานจะส่งมาให้ประมาณ ๗ วันหลังยื่น — พอได้มาแล้วกดปุ่มนี้
-                  ร้านจะส่งที่อยู่จ่าหน้าซองให้ทันที
-                </p>
-                <button
-                  onClick={() => void markStage("gotlz2")}
-                  disabled={stageBusy}
-                  className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
-                >
-                  {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๒ มาแล้ว"}
-                </button>
-
-                {/* ⚠️ ช่องโหว่ที่ทำให้ระบบตามเตือนทาง LINE ส่งไม่ถึงแบบเงียบ ๆ
-                       ถึงลูกค้าจะล็อกอินด้วย LINE แล้ว ถ้าเขา "ไม่ได้เพิ่มเพื่อน" กับ OA
-                       LINE จะตอบ 403 แล้วข้อความไม่ถึงเขาเลย โดยไม่มีอะไรฟ้องทั้งสองฝั่ง
-                    ⇒ ต้องชวนเพิ่มเพื่อนตรงนี้ ซึ่งเป็นจังหวะที่เขาเห็นประโยชน์พอดี
-                      (กำลังจะรอใบอีก ๗ วัน และอยากให้มีคนมาเตือน)
-                    ⚠️ ห้ามบังคับ ให้เป็นทางเลือก — คนที่ไม่กดยังได้รับทาง Web Push
-                      และร้านยังเห็นชื่อเขาในรายการค้างทาง Telegram อยู่ดี */}
-                <a
-                  href={SHOP.lineUrl}
-                  target="_blank"
-                  rel="noopener"
-                  className="mt-2 flex items-center justify-center gap-1.5 rounded-sm border border-[#06C755] bg-white py-2.5 text-[13px] font-semibold text-[#06C755]"
-                >
-                  เพิ่มเพื่อน {SHOP.lineOa} ให้ร้านเตือนทางไลน์ได้
-                </a>
-                <p className="mt-1 text-center text-[11px] text-ink-300">
-                  ไม่เพิ่มก็ได้ — ร้านจะติดต่อทางเบอร์โทรแทน
-                </p>
-              </div>
-            )}
-
-            {/* ⚠️ ลำดับที่เจ้าของร้านสั่ง (26 ส.ค. 2569)
-                   "ให้กลับมากดและถ่ายรูปส่งมา แล้วร้านจะส่งที่อยู่ให้"
-                   ⇒ กด → ถ่ายรูปส่ง → ถึงจะได้ที่อยู่  ห้ามสลับลำดับ
-                   ที่อยู่มาทีหลังโดยตั้งใจ เพราะเป็นสิ่งที่ทำให้ลูกค้ายอมถ่ายรูปส่ง
-                   ให้ที่อยู่ไปก่อน = ร้านไม่มีทางรู้เลยว่าเขาได้ใบมาจริงไหม
-                   จนกว่าซองจะมาถึงอีกหลายวัน */}
-            {stage === "gotlz2" && (
-              <div className="mt-3 rounded-lg bg-safety-tint p-3">
-                <p className="text-[13px] font-bold text-ink">ถ่ายรูปใบ ลซ.๒ ส่งให้ร้าน</p>
-                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
-                  ถ่ายให้เห็นตัวหนังสือชัด ๆ ทั้ง ๒ ตอน — ส่งเสร็จร้านจะให้ที่อยู่จ่าหน้าซองทันที
-                </p>
-                <button
-                  onClick={() => lz2Ref.current?.click()}
-                  disabled={lz2Busy}
-                  className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
-                >
-                  {lz2Busy ? "กำลังส่ง…" : "📷 ถ่ายใบ ลซ.๒ ส่งให้ร้าน"}
-                </button>
-                {lz2Msg && (
-                  <p className="mt-2 rounded-sm bg-white p-2.5 text-[12.5px] leading-relaxed text-ink-700">
-                    {lz2Msg}
-                  </p>
-                )}
-              </div>
-            )}
-
-            {/* ส่งรูปแล้ว → ร้านให้ที่อยู่ */}
-            {stage === "lz2" && (
-              <div className="mt-3 rounded-lg bg-[#e8f5ea] p-3">
-                <p className="text-[13px] font-bold text-[#1f7a3d]">
-                  ได้รับรูปแล้ว — ส่งใบตัวจริงมาตามที่อยู่นี้
-                </p>
-                <div className="mt-2 rounded-sm bg-white p-2.5">
-                  <p className="text-[13px] font-semibold text-ink">{DOC_MAILING.name}</p>
-                  <p className="mt-0.5 text-[13px] leading-relaxed text-ink-700">
-                    {DOC_MAILING.address}
-                  </p>
-                  <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
-                </div>
-                <button
-                  onClick={() => {
-                    const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
-                    void navigator.clipboard.writeText(txt)
-                      .then(() => setLz2Msg("คัดลอกที่อยู่แล้ว"))
-                      .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะครับ"));
-                  }}
-                  className="mt-2 w-full rounded-sm border border-[#1f7a3d] bg-white py-2.5 text-[13.5px] font-semibold text-[#1f7a3d]"
-                >
-                  คัดลอกที่อยู่สำหรับจ่าหน้าซอง
-                </button>
-                {/* ⚠️ ต้องบอกว่าส่งทั้ง ๒ ตอน ลูกค้าส่งมาตอนเดียวบ่อยมาก
-                    แล้วร้านไม่มีตอนกลางเก็บเป็นหลักฐานการจำหน่าย */}
-                <p className="mt-2 text-[11.5px] leading-relaxed text-ink-700">
-                  <b>ส่งมาทั้ง ๒ ตอน</b> — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
-                  แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์
-                </p>
-                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
-                  ร้านเตรียมเครื่องให้แล้วจากรูปที่ส่งมา และจะติดต่อกลับเรื่องยอด
-                </p>
-              </div>
-            )}
-
-            {stage === "shipped" && (
-              <button
-                onClick={() => void markStage("done")}
-                disabled={stageBusy}
-                className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
-              >
-                {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๓ ครบแล้ว"}
-              </button>
-            )}
           </section>
         )}
 
@@ -1441,6 +1310,155 @@ export default function PermitView() {
             </details>
           );
         })()}
+
+        {/* ==================================== ปุ่มของขั้นที่ต้องทำตอนนี้
+            ⚠️ เจ้าของร้านสั่ง (26 ส.ค. 2569) "ตัวใหม่อยากให้อยู่ล่างสุดเสมอ"
+               พร้อมลูกศรชี้ให้กล่องปุ่มลงล่าง และกล่อง "แก้ข้อมูล/พิมพ์ใหม่" ขึ้นไปอยู่บน
+
+            ⇒ ปุ่มของขั้นปัจจุบันย้ายออกมาจากในแถบความคืบหน้า มาอยู่ล่างสุดของหน้าเสมอ
+              บนมือถือล่างสุดคือที่ที่นิ้วโป้งถึงง่ายที่สุด
+              และเป็นสิ่งสุดท้ายที่ลูกค้าเห็นก่อนลงมือทำ
+            ⚠️ ต้องอยู่ล่างสุดจริง ๆ ทุกขั้น ห้ามเอาอะไรมาต่อท้ายอีก
+               มีอะไรมาต่อ = ปุ่มถูกดันขึ้นไปกลางหน้า ซึ่งผิดจากที่เจ้าของร้านสั่ง
+            ⚠️ ต้องวางหลัง })()} "ตัวนอกสุด" ของบล็อกฟอร์มเท่านั้น
+               ในไฟล์มีสองตัว อีกตัวเป็นของแผนที่ ทสจ. ซึ่งอยู่ข้างในฟอร์ม
+               วางผิดตัวแล้ว build ยังผ่าน แต่ปุ่มจะโผล่เฉพาะตอนกางฟอร์ม (พลาดมาแล้ว)
+            ⚠️ ขึ้นเฉพาะตอนมี stage คนที่ยังไม่เริ่มไม่ต้องเห็นปุ่มลอย ๆ */}
+        {stage && (
+          <div className="mt-3">
+          {/* ⚠️ ปุ่มนี้ต้องเป็นของลูกค้ากดเอง เว็บไม่มีทางรู้ว่าเขาไปสำนักงานมาแล้ว
+              และฝั่งเซิร์ฟเวอร์กันไม่ให้ลูกค้ากดขั้นของร้านไว้แล้ว */}
+          {stage === "printed" && (
+            <button
+              onClick={() => void markStage("submitted")}
+              disabled={stageBusy}
+              className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
+            >
+              {stageBusy ? "กำลังบันทึก…" : "ยื่นที่สำนักงานเรียบร้อยแล้ว"}
+            </button>
+          )}
+
+          {/* ======================================== ขั้นที่หลุดง่ายที่สุด
+              เจ้าของร้านสั่ง (26 ส.ค. 2569)
+              "ขั้นตอนนี้สำคัญ ทำยังไงก็ได้ให้ลูกค้ากดเมื่อได้รับใบ ลซ.๒ แล้ว
+               เราจะส่งที่อยู่จ่าหน้าซองให้ลูกค้าส่งมา"
+
+              ⚠️ ทำไมขั้นนี้หลุดง่ายกว่าทุกขั้น
+                 ลูกค้าห่างจากเว็บไปแล้วอย่างน้อย ๗ วัน · ใบมาทางไปรษณีย์ ไม่ผ่านเว็บ
+                 และตอนนั้นเขาจำไม่ได้แล้วว่าต้องส่งไปไหน
+                 ของเดิมที่อยู่ร้านถูกพับไว้ในกล่องท้ายหน้า = ต้องรู้ก่อนว่ามีถึงจะไปหาเจอ
+              ⇒ พลิกเป็น "ปุ่มมาหาเขา" กดปุ่มเดียวแล้วที่อยู่โผล่ตรงนั้นเลย
+              ⚠️ ห้ามเอาปุ่มนี้ออกไปซ่อนในส่วนที่ต้องกดเปิด */}
+          {stage === "submitted" && (
+            <div className="mt-3 rounded-lg bg-safety-tint p-3">
+              <p className="text-[13px] font-bold text-ink">ได้ใบ ลซ.๒ มาแล้วหรือยัง</p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
+                สำนักงานจะส่งมาให้ประมาณ ๗ วันหลังยื่น — พอได้มาแล้วกดปุ่มนี้
+                ร้านจะส่งที่อยู่จ่าหน้าซองให้ทันที
+              </p>
+              <button
+                onClick={() => void markStage("gotlz2")}
+                disabled={stageBusy}
+                className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
+              >
+                {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๒ มาแล้ว"}
+              </button>
+
+              {/* ⚠️ ช่องโหว่ที่ทำให้ระบบตามเตือนทาง LINE ส่งไม่ถึงแบบเงียบ ๆ
+                     ถึงลูกค้าจะล็อกอินด้วย LINE แล้ว ถ้าเขา "ไม่ได้เพิ่มเพื่อน" กับ OA
+                     LINE จะตอบ 403 แล้วข้อความไม่ถึงเขาเลย โดยไม่มีอะไรฟ้องทั้งสองฝั่ง
+                  ⇒ ต้องชวนเพิ่มเพื่อนตรงนี้ ซึ่งเป็นจังหวะที่เขาเห็นประโยชน์พอดี
+                    (กำลังจะรอใบอีก ๗ วัน และอยากให้มีคนมาเตือน)
+                  ⚠️ ห้ามบังคับ ให้เป็นทางเลือก — คนที่ไม่กดยังได้รับทาง Web Push
+                    และร้านยังเห็นชื่อเขาในรายการค้างทาง Telegram อยู่ดี */}
+              <a
+                href={SHOP.lineUrl}
+                target="_blank"
+                rel="noopener"
+                className="mt-2 flex items-center justify-center gap-1.5 rounded-sm border border-[#06C755] bg-white py-2.5 text-[13px] font-semibold text-[#06C755]"
+              >
+                เพิ่มเพื่อน {SHOP.lineOa} ให้ร้านเตือนทางไลน์ได้
+              </a>
+              <p className="mt-1 text-center text-[11px] text-ink-300">
+                ไม่เพิ่มก็ได้ — ร้านจะติดต่อทางเบอร์โทรแทน
+              </p>
+            </div>
+          )}
+
+          {/* ⚠️ ลำดับที่เจ้าของร้านสั่ง (26 ส.ค. 2569)
+                 "ให้กลับมากดและถ่ายรูปส่งมา แล้วร้านจะส่งที่อยู่ให้"
+                 ⇒ กด → ถ่ายรูปส่ง → ถึงจะได้ที่อยู่  ห้ามสลับลำดับ
+                 ที่อยู่มาทีหลังโดยตั้งใจ เพราะเป็นสิ่งที่ทำให้ลูกค้ายอมถ่ายรูปส่ง
+                 ให้ที่อยู่ไปก่อน = ร้านไม่มีทางรู้เลยว่าเขาได้ใบมาจริงไหม
+                 จนกว่าซองจะมาถึงอีกหลายวัน */}
+          {stage === "gotlz2" && (
+            <div className="mt-3 rounded-lg bg-safety-tint p-3">
+              <p className="text-[13px] font-bold text-ink">ถ่ายรูปใบ ลซ.๒ ส่งให้ร้าน</p>
+              <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
+                ถ่ายให้เห็นตัวหนังสือชัด ๆ ทั้ง ๒ ตอน — ส่งเสร็จร้านจะให้ที่อยู่จ่าหน้าซองทันที
+              </p>
+              <button
+                onClick={() => lz2Ref.current?.click()}
+                disabled={lz2Busy}
+                className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
+              >
+                {lz2Busy ? "กำลังส่ง…" : "📷 ถ่ายใบ ลซ.๒ ส่งให้ร้าน"}
+              </button>
+              {lz2Msg && (
+                <p className="mt-2 rounded-sm bg-white p-2.5 text-[12.5px] leading-relaxed text-ink-700">
+                  {lz2Msg}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* ส่งรูปแล้ว → ร้านให้ที่อยู่ */}
+          {stage === "lz2" && (
+            <div className="mt-3 rounded-lg bg-[#e8f5ea] p-3">
+              <p className="text-[13px] font-bold text-[#1f7a3d]">
+                ได้รับรูปแล้ว — ส่งใบตัวจริงมาตามที่อยู่นี้
+              </p>
+              <div className="mt-2 rounded-sm bg-white p-2.5">
+                <p className="text-[13px] font-semibold text-ink">{DOC_MAILING.name}</p>
+                <p className="mt-0.5 text-[13px] leading-relaxed text-ink-700">
+                  {DOC_MAILING.address}
+                </p>
+                <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
+              </div>
+              <button
+                onClick={() => {
+                  const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
+                  void navigator.clipboard.writeText(txt)
+                    .then(() => setLz2Msg("คัดลอกที่อยู่แล้ว"))
+                    .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะครับ"));
+                }}
+                className="mt-2 w-full rounded-sm border border-[#1f7a3d] bg-white py-2.5 text-[13.5px] font-semibold text-[#1f7a3d]"
+              >
+                คัดลอกที่อยู่สำหรับจ่าหน้าซอง
+              </button>
+              {/* ⚠️ ต้องบอกว่าส่งทั้ง ๒ ตอน ลูกค้าส่งมาตอนเดียวบ่อยมาก
+                  แล้วร้านไม่มีตอนกลางเก็บเป็นหลักฐานการจำหน่าย */}
+              <p className="mt-2 text-[11.5px] leading-relaxed text-ink-700">
+                <b>ส่งมาทั้ง ๒ ตอน</b> — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
+                แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์
+              </p>
+              <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
+                ร้านเตรียมเครื่องให้แล้วจากรูปที่ส่งมา และจะติดต่อกลับเรื่องยอด
+              </p>
+            </div>
+          )}
+
+          {stage === "shipped" && (
+            <button
+              onClick={() => void markStage("done")}
+              disabled={stageBusy}
+              className="mt-2.5 w-full rounded-sm border border-steel-600 py-2.5 text-[13.5px] font-semibold text-ink disabled:text-steel-300"
+            >
+              {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๓ ครบแล้ว"}
+            </button>
+          )}
+          </div>
+        )}
         </>
         )}
       </main>
