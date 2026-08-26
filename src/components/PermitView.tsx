@@ -342,7 +342,7 @@ export default function PermitView() {
           return;
         }
         // "ไม่ใช่บัตรประชาชน" อาจเพราะบัตรกลับหัวจนดูไม่ออก — ลองอีกด้านก่อนยอมแพ้
-        if (msg.includes("ไม่ใช่บัตรประชาชน")) {
+        if (msg.includes("ไม่ใช่บัตรประชาชน") || msg.includes("เบลอหรือมืด")) {
           try {
             ({ got, a } = await readByAi(file, 1));
           } catch {
