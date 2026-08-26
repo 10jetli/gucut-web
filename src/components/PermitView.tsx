@@ -491,6 +491,22 @@ export default function PermitView() {
   return (
     <>
       <main className="lz-noprint mx-auto max-w-2xl px-4 pb-24 pt-4">
+        {/* ⚠️ ช่องรับไฟล์ต้องอยู่นอก <details> เสมอ
+            เนื้อหาใน details ที่ยังไม่กางจะไม่ถูกวาดลงหน้าเลย สั่ง .click() ไม่ติด
+            แล้วปุ่มถ่ายรูปในแถบความคืบหน้าจะกดไม่ขึ้นแบบเงียบ ๆ */}
+        <input
+          ref={lz2Ref}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            const fs = Array.from(e.target.files || []);
+            if (fs.length) void sendLz2(fs);
+          }}
+        />
+
         <h1 className="font-heading text-[22px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์</h1>
 
         {/* ⚠️ คลิปคือคำอธิบายหลัก ข้อความบนหน้าเป็นตัวเสริม (เจ้าของร้านสั่ง 25 ส.ค. 2569)
@@ -778,6 +794,98 @@ export default function PermitView() {
                 {stageBusy ? "กำลังบันทึก…" : "ยื่นที่สำนักงานเรียบร้อยแล้ว"}
               </button>
             )}
+
+            {/* ======================================== ขั้นที่หลุดง่ายที่สุด
+                เจ้าของร้านสั่ง (26 ส.ค. 2569)
+                "ขั้นตอนนี้สำคัญ ทำยังไงก็ได้ให้ลูกค้ากดเมื่อได้รับใบ ลซ.๒ แล้ว
+                 เราจะส่งที่อยู่จ่าหน้าซองให้ลูกค้าส่งมา"
+
+                ⚠️ ทำไมขั้นนี้หลุดง่ายกว่าทุกขั้น
+                   ลูกค้าห่างจากเว็บไปแล้วอย่างน้อย ๗ วัน · ใบมาทางไปรษณีย์ ไม่ผ่านเว็บ
+                   และตอนนั้นเขาจำไม่ได้แล้วว่าต้องส่งไปไหน
+                   ของเดิมที่อยู่ร้านถูกพับไว้ในกล่องท้ายหน้า = ต้องรู้ก่อนว่ามีถึงจะไปหาเจอ
+                ⇒ พลิกเป็น "ปุ่มมาหาเขา" กดปุ่มเดียวแล้วที่อยู่โผล่ตรงนั้นเลย
+                ⚠️ ห้ามเอาปุ่มนี้ออกไปซ่อนในส่วนที่ต้องกดเปิด */}
+            {stage === "submitted" && (
+              <div className="mt-3 rounded-lg bg-safety-tint p-3">
+                <p className="text-[13px] font-bold text-ink">ได้ใบ ลซ.๒ มาแล้วหรือยัง</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
+                  สำนักงานจะส่งมาให้ประมาณ ๗ วันหลังยื่น — พอได้มาแล้วกดปุ่มนี้
+                  ร้านจะส่งที่อยู่จ่าหน้าซองให้ทันที
+                </p>
+                <button
+                  onClick={() => void markStage("gotlz2")}
+                  disabled={stageBusy}
+                  className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
+                >
+                  {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๒ มาแล้ว"}
+                </button>
+              </div>
+            )}
+
+            {/* ⚠️ ลำดับที่เจ้าของร้านสั่ง (26 ส.ค. 2569)
+                   "ให้กลับมากดและถ่ายรูปส่งมา แล้วร้านจะส่งที่อยู่ให้"
+                   ⇒ กด → ถ่ายรูปส่ง → ถึงจะได้ที่อยู่  ห้ามสลับลำดับ
+                   ที่อยู่มาทีหลังโดยตั้งใจ เพราะเป็นสิ่งที่ทำให้ลูกค้ายอมถ่ายรูปส่ง
+                   ให้ที่อยู่ไปก่อน = ร้านไม่มีทางรู้เลยว่าเขาได้ใบมาจริงไหม
+                   จนกว่าซองจะมาถึงอีกหลายวัน */}
+            {stage === "gotlz2" && (
+              <div className="mt-3 rounded-lg bg-safety-tint p-3">
+                <p className="text-[13px] font-bold text-ink">ถ่ายรูปใบ ลซ.๒ ส่งให้ร้าน</p>
+                <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-700">
+                  ถ่ายให้เห็นตัวหนังสือชัด ๆ ทั้ง ๒ ตอน — ส่งเสร็จร้านจะให้ที่อยู่จ่าหน้าซองทันที
+                </p>
+                <button
+                  onClick={() => lz2Ref.current?.click()}
+                  disabled={lz2Busy}
+                  className="mt-2.5 w-full rounded-sm bg-safety py-3 text-[14.5px] font-bold text-white disabled:bg-steel-700"
+                >
+                  {lz2Busy ? "กำลังส่ง…" : "📷 ถ่ายใบ ลซ.๒ ส่งให้ร้าน"}
+                </button>
+                {lz2Msg && (
+                  <p className="mt-2 rounded-sm bg-white p-2.5 text-[12.5px] leading-relaxed text-ink-700">
+                    {lz2Msg}
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* ส่งรูปแล้ว → ร้านให้ที่อยู่ */}
+            {stage === "lz2" && (
+              <div className="mt-3 rounded-lg bg-[#e8f5ea] p-3">
+                <p className="text-[13px] font-bold text-[#1f7a3d]">
+                  ได้รับรูปแล้ว — ส่งใบตัวจริงมาตามที่อยู่นี้
+                </p>
+                <div className="mt-2 rounded-sm bg-white p-2.5">
+                  <p className="text-[13px] font-semibold text-ink">{DOC_MAILING.name}</p>
+                  <p className="mt-0.5 text-[13px] leading-relaxed text-ink-700">
+                    {DOC_MAILING.address}
+                  </p>
+                  <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
+                </div>
+                <button
+                  onClick={() => {
+                    const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
+                    void navigator.clipboard.writeText(txt)
+                      .then(() => setLz2Msg("คัดลอกที่อยู่แล้ว"))
+                      .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะครับ"));
+                  }}
+                  className="mt-2 w-full rounded-sm border border-[#1f7a3d] bg-white py-2.5 text-[13.5px] font-semibold text-[#1f7a3d]"
+                >
+                  คัดลอกที่อยู่สำหรับจ่าหน้าซอง
+                </button>
+                {/* ⚠️ ต้องบอกว่าส่งทั้ง ๒ ตอน ลูกค้าส่งมาตอนเดียวบ่อยมาก
+                    แล้วร้านไม่มีตอนกลางเก็บเป็นหลักฐานการจำหน่าย */}
+                <p className="mt-2 text-[11.5px] leading-relaxed text-ink-700">
+                  <b>ส่งมาทั้ง ๒ ตอน</b> — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
+                  แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์
+                </p>
+                <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
+                  ร้านเตรียมเครื่องให้แล้วจากรูปที่ส่งมา และจะติดต่อกลับเรื่องยอด
+                </p>
+              </div>
+            )}
+
             {stage === "shipped" && (
               <button
                 onClick={() => void markStage("done")}
@@ -1222,18 +1330,6 @@ export default function PermitView() {
                   ส่งในชื่อ <b>{me?.name || me?.phone}</b>
                 </p>
 
-                <input
-                  ref={lz2Ref}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  multiple
-                  className="hidden"
-                  onChange={(e) => {
-                    const fs = Array.from(e.target.files || []);
-                    if (fs.length) void sendLz2(fs);
-                  }}
-                />
                 <button
                   onClick={() => lz2Ref.current?.click()}
                   disabled={lz2Busy}

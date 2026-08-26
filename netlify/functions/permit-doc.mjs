@@ -58,7 +58,7 @@ const MAX_IMAGES = 2;   // ลซ.๒ มี ๒ ตอน
  * ⚠️ ลำดับใน array นี้คือความหมาย ห้ามสลับหรือแทรกกลางโดยไม่ดูที่หน้าจอด้วย
  *    ทั้งฝั่งลูกค้าและฝั่งร้านวาดแถบความคืบหน้าจากลำดับนี้
  */
-const STAGES = ["printed", "submitted", "lz2", "got", "shipped", "done"];
+const STAGES = ["printed", "submitted", "gotlz2", "lz2", "got", "shipped", "done"];
 /** ขั้นที่ "ร้าน" เป็นคนกด ลูกค้ากดเองไม่ได้ */
 const SHOP_STAGES = new Set(["got", "shipped"]);
 
@@ -195,6 +195,20 @@ export default async function handler(req, context) {
       if (stage === "submitted") {
         void tell(`📮 <b>ลูกค้ายื่นเรื่องที่สำนักงานแล้ว</b>\n${rec.name || "-"} · ${phone}`);
       }
+      // ⚠️ ขั้นนี้ร้านต้องรู้ทันที — ลูกค้าถือใบ ลซ.๒ อยู่ในมือแล้ว
+      //    เป็นสัญญาณให้ร้านเตรียมเครื่องและแจ้งยอด ไม่ต้องรอซองมาถึง
+      if (stage === "gotlz2") {
+        void tell(
+          `📨 <b>ลูกค้าได้ใบ ลซ.๒ มาแล้ว กำลังจะส่งมาที่ร้าน</b>\n` +
+          `${rec.name || "-"} · ${phone}` +
+          (rec.saw ? `\nเลื่อย: ${rec.saw}` : ""),
+        );
+        void pushToAdmins({
+          title: "ลูกค้าได้ใบ ลซ.๒ แล้ว",
+          body: `${rec.name || ""} · ${phone}`,
+          url: "/admin/permits/",
+        }).catch(() => {});
+      }
       return json({ ok: true, item: rec });
     }
 
@@ -224,6 +238,17 @@ export default async function handler(req, context) {
     items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
     return items;
   };
+
+  // ⚠️ สั่งตามเตือนเดี๋ยวนั้น — ต้องมีรหัสหลังร้าน (ผ่าน adminGate มาแล้วด้านบน)
+  //    ฟังก์ชันตามเวลาเรียกผ่าน HTTP ไม่ได้ ทางนี้จึงเป็นทางเดียวที่ร้านสั่งเองได้
+  if (url.searchParams.get("remind")) {
+    const { runReminders } = await import("../lib/permit-remind.mjs");
+    try {
+      return json({ ok: true, ...(await runReminders()) });
+    } catch (e) {
+      return json({ error: String(e?.message || e) }, 500);
+    }
+  }
 
   if (req.method === "GET") {
     const phone = url.searchParams.get("phone");
