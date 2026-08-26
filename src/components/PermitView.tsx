@@ -122,6 +122,10 @@ export default function PermitView() {
   const [lz2Busy, setLz2Busy] = useState(false);
   const [lz2Msg, setLz2Msg] = useState("");
   const [unsure, setUnsure] = useState<string[]>([]);
+  // ชื่อยืนยันแล้วหรือยัง — เขียวเฉพาะเมื่อ "อ่านซูมตรงกับอ่านเต็มใบ" หรือลูกค้าพิมพ์เอง
+  // (เจ้าของร้านสั่ง 27 ส.ค. 2569: ตรวจผิดห้ามขึ้นเขียว ให้เหลืองแล้วตรวจใหม่ —
+  //  นามสกุลเคยเพี้ยน บุญ→มูล ทั้งที่ช่องขึ้นเขียวเพราะเช็คแค่รูปแบบ)
+  const [nameOk, setNameOk] = useState(false);
   const [busy, setBusy] = useState("");
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
@@ -284,8 +288,10 @@ export default function PermitView() {
         fc.translate(rw / 2, rh / 2);
         fc.rotate((deg * Math.PI) / 180);
         fc.drawImage(img, -w / 2, -h / 2, w, h);
-        // โซนที่อยู่ของบัตร ≈ ซ้ายล่าง (กว้าง 68% · สูงช่วง 50-95%)
-        const cy = Math.round(rh * 0.50), cw = Math.round(rw * 0.68), ch = Math.round(rh * 0.45);
+        // โซนชื่อ+ที่อยู่ของบัตร ≈ ซีกซ้าย (กว้าง 68% · สูงช่วง 25-95%)
+        // ⚠️ ขยายขึ้นไปครอบบรรทัด "ชื่อตัวและชื่อสกุล" ด้วย — นามสกุลเคยเพี้ยน
+        //    บุญ→มูล ซ้ำสองรูปที่ความละเอียดเต็มใบ (27 ส.ค. 2569) ซูมแล้วอ่านชัดกว่า
+        const cy = Math.round(rh * 0.25), cw = Math.round(rw * 0.68), ch = Math.round(rh * 0.70);
         const c = document.createElement("canvas");
         const scale = Math.min(2.5, 1400 / cw);
         c.width = Math.round(cw * scale) || 1;
@@ -355,6 +361,7 @@ export default function PermitView() {
 
   const readCard = useCallback(async (file: File) => {
     setBusy("กำลังอ่านบัตร…");
+    setNameOk(false);
     try {
       let got: { name?: string; idNumber?: string; birth?: string; unsure: string[] } | undefined;
       let a: Record<string, string> | undefined;
@@ -453,6 +460,16 @@ export default function PermitView() {
               tambon: z.tambon || "", amphoe: z.amphoe || "", province: z.province || "",
               houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
             };
+          }
+          // ชื่อจากซูมชนะเต็มใบเช่นกัน — บรรทัดชื่อในภาพซูมใหญ่กว่าหลายเท่า
+          // (นามสกุลเคยเพี้ยน บุญ→มูล ที่เต็มใบ ซ้ำสองรูป)
+          if (got && /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(z.name || "")) {
+            // ซูมกับเต็มใบตรงกัน = ยืนยันสองชั้นอิสระ → ช่องชื่อขึ้นเขียวได้
+            // ไม่ตรงกัน = ใช้ค่าจากซูม (ชัดกว่า) แต่คงเหลืองให้ลูกค้าตรวจ
+            const same = (z.name || "").replace(/\s+/g, " ").trim() ===
+              (got.name || "").replace(/\s+/g, " ").trim();
+            got = { ...got, name: z.name };
+            setNameOk(same);
           }
         } catch { /* ซูมอ่านไม่ได้ก็ปล่อยว่างตามกติกาเดิม */ }
       }
@@ -739,7 +756,9 @@ export default function PermitView() {
     if (!v) return false;
     switch (k) {
       case "idNumber": return idOk;
-      case "name": return /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(v);
+      // ⚠️ ชื่อห้ามเขียวจากแค่รูปแบบครบ — ต้องผ่านการยืนยัน (ซูมตรงกับเต็มใบ
+      //    หรือลูกค้าพิมพ์เอง) เคยขึ้นเขียวทั้งที่นามสกุลเพี้ยน
+      case "name": return nameOk && /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(v);
       case "birth": return ageFromBirth(v) !== null;
       case "age": {
         const fromBirth = ageFromBirth(d.birth);
@@ -766,7 +785,7 @@ export default function PermitView() {
         <input
           type={extra?.type || "text"}
           value={String(d[k] ?? "")}
-          onChange={(e) => set(k, e.target.value)}
+          onChange={(e) => { if (k === "name") setNameOk(true); set(k, e.target.value); }}
           className={
             "w-full rounded-sm border px-3 py-2 text-[14px] outline-none focus:border-safety " +
             (ok
