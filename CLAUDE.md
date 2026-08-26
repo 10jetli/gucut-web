@@ -354,6 +354,12 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
 - เลขเงินคิดใหม่ฝั่งเซิร์ฟเวอร์ ไม่เชื่อยอดจากเบราว์เซอร์ · จ่ายแบบ QR ต้องมีสลิปถึงรับ
 - กันสแปม 10 ออเดอร์/IP/10 นาที · สถานะ: new → confirmed → shipped → done / cancelled
 - หน้าจัดการอยู่ `/admin/orders/` (ดูเต็มใบ กดโทร เปิดสลิป เปลี่ยนสถานะ)
+- **รู้ว่าจ่ายผ่าน Beam แล้ว — มีตาข่าย 3 ชั้น อย่าถอดชั้นไหนออก** (26 ส.ค. 2569)
+  ① webhook `/api/beam/webhook` (วินาทีเดียว) ② หน้าจอลูกค้า poll `?id=..&t=..` ตอนเปิดค้าง
+  ③ `beam-sweep.mjs` กวาดเองทุกครึ่งชั่วโมง (สั่งเดี๋ยวนั้น: `/api/orders?sweep=1`)
+  ⚠️ **บทเรียนเงินเข้าใบแรก**: ลูกค้าจ่าย ~09:00 ร้านรู้ 16:09 เพราะใน Beam dashboard
+  ติ๊ก event ไว้ผิดตัว (`purchase.succeeded` แต่เว็บใช้ Charge API ต้อง **`charge.succeeded`**)
+  แล้วลูกค้าก็ปิดหน้าไปก่อน — แก้ในหน้า Webhooks ของ Beam แล้ว · Event log ในนั้นใช้ตรวจได้ว่ายิงจริงไหม
 - **ส่งเข้า ZORT อัตโนมัติ** (แบบเดียวกับตอนขายผ่าน Shopify) — `zortAddOrder()` ยิง
   `POST /v4/Order/AddOrder` ด้วยรหัสชุดเดียวกับ `/api/stock` (`ZORT_STORENAME/APIKEY/APISECRET`)
   ZORT จับคู่สินค้าด้วย **SKU** แล้วตัดสต็อกเอง (ตะกร้าเก็บ SKU ของตัวเลือกที่หยิบตั้งแต่ `VariantSheet`)

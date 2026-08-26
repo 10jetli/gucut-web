@@ -278,6 +278,14 @@ export default async function handler(req, context) {
   if (!asAdmin) return json({ error: "unauthorized" }, 401);
 
   if (req.method === "GET") {
+    // สั่งกวาดออเดอร์ Beam ค้างจ่ายเดี๋ยวนั้น (ตัวจริงรันเองทุกครึ่งชั่วโมง —
+    // ดู netlify/functions/beam-sweep.mjs ซึ่งไม่มี URL ให้เรียกเพราะมี schedule)
+    if (url.searchParams.get("sweep") === "1") {
+      const { sweepBeamOrders } = await import("../lib/beam-sweep.mjs");
+      const r = await sweepBeamOrders().catch((e) => ({ error: String(e?.message || e) }));
+      return json(r);
+    }
+
     const id = clean(url.searchParams.get("id") || "", 40);
 
     // ดูใบเดียวเต็ม ๆ + สลิป
