@@ -823,7 +823,7 @@ export default function PermitView() {
               : unsure.includes(k as string) ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
           }
         />
-        {listId && (
+        {listId && options && (
           <datalist id={listId}>
             {options.map((o) => <option key={o} value={o} />)}
           </datalist>
