@@ -355,7 +355,11 @@ export default async function handler(req, context) {
 
 // ชื่อที่จะไปโชว์ในหน้า "รายการขาย" ของ ZORT — แก้ที่นี่ หรือทับด้วย env ก็ได้
 // ต้องสะกดตรงกับช่องทาง/ขนส่งที่ตั้งไว้ใน ZORT เป๊ะ ๆ ไม่งั้น ZORT ไม่รู้จักแล้วปล่อยว่าง
-const SALES_CHANNEL = process.env.ZORT_SALES_CHANNEL || "gucut";
+// ⚠️ ชื่อนี้ต้องมีอยู่ใน ZORT (ตั้งค่า → ช่องทางการขาย) สะกดตรงทุกตัวรวม emoji
+//    เจ้าของร้านสั่งใส่ 🔮 นำหน้า (26 ส.ค. 2569) · ใช้ .COM ต่อท้ายเพราะ ZORT
+//    เช็คชื่อซ้ำแบบไม่นับ emoji — "🔮GUCUT" เฉย ๆ ชนกับช่อง "gucut" เดิม
+//    (ช่อง "gucut" เดิมยังอยู่ใน ZORT ห้ามลบ — ออเดอร์เว็บเก่ายังอ้างถึง)
+const SALES_CHANNEL = process.env.ZORT_SALES_CHANNEL || "🔮GUCUT.COM";
 const SHIPPING_CHANNEL = process.env.ZORT_SHIPPING_CHANNEL || "Flash Express";
 const PAYMENT_METHOD = process.env.ZORT_PAYMENT_METHOD || "เงินโอน";
 
