@@ -32,7 +32,7 @@ import {
 } from "@/lib/idcard";
 import {
   BAR_SIZES, CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
-  DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, stageDone,
+  DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, STAGE_AT_STEP, stageDone,
   officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
@@ -503,125 +503,179 @@ export default function PermitView() {
              ทั้งที่จริงกรอกใบเดียวก็จบหน้าที่ของตัวเองแล้ว (มาจากภาพร่างของเจ้าของร้าน)
           ⚠️ ห้ามเขียนว่าร้านจะทำขั้น ลซ.2 / ลซ.3 ให้ — เจ้าหน้าที่เป็นคนออก ร้านไม่เกี่ยว
         */}
-        <div className="mt-4 rounded-sm bg-white p-3.5">
-          <p className="text-[13px] font-bold text-ink">ขอทะเบียนเลื่อยยนต์มี ๓ ใบ</p>
-          <div className="mt-2.5 flex items-stretch gap-1.5">
-            {PERMIT_STEPS.map((st, i) => {
-              // ปริ้นแล้ว = ใบแรกเสร็จ ตัวไฮไลต์ขยับไปใบที่สอง
-              const done = printed && st.tone === "now";
-              const active = printed ? st.tone === "next" : st.tone === "now";
-              return (
-              <div key={st.code} className="flex min-w-0 flex-1 items-stretch gap-1.5">
-                <div
-                  className={
-                    "min-w-0 flex-1 rounded-sm p-2 text-center " +
-                    (active ? "bg-[#e8f5ea] ring-1 ring-[#1f7a3d]" : "bg-steel-900")
-                  }
-                >
-                  <span
+        {/* ==================================================== เส้นทาง ๓ ใบ
+            ออกแบบใหม่ตามคำสั่งเจ้าของร้าน (26 ส.ค. 2569)
+            "ออกแบบ UI ให้ทันสมัย สวยงาม เรียบง่าย"
+
+            หลักที่ใช้ตัดสินใจ — ทุกข้อแก้ปัญหาที่เห็นในของเดิม
+            1. ของเดิมเล่าเรื่องเดียวกันสองรอบ (ป้าย ๓ ใบ + รายการ ๘ ขั้น) ซ้อนกัน
+               ⇒ ป้าย ๓ ใบเหลือเป็น "ราง" บาง ๆ ไม่ใช่กล่องสามกล่อง
+                 แล้วให้รายการ ๘ ขั้นเป็นรายละเอียดที่กดเปิด
+            2. ของเดิมเขียน "(คุณทำ)" ต่อท้ายทุกขั้น ทั้งที่ ๕ ใน ๘ ขั้นเป็นของลูกค้า
+               ⇒ ค่าเริ่มต้นคือคุณทำ ติดป้ายเฉพาะขั้นที่ "ไม่ใช่" คุณ ลดคำซ้ำไป ๕ จุด
+            3. ของเดิมใช้สามสี (เขียว/ส้ม/เทา) แทน "ใครทำ" ซึ่งอ่านไม่ออกถ้าไม่มีคำกำกับ
+               และสีส้มบนขั้นของร้านดูเหมือนคำเตือน
+               ⇒ เหลือสองสถานะที่ลูกค้าใช้จริง: ทำแล้ว(เขียว) · ตานี้(เข้ม) · ยังไม่ถึง(จาง)
+            4. กล่องซ้อนกล่องซ้อนกล่อง ⇒ ใช้เส้นคั่นบาง ๆ แทนพื้นสีทึบ
+
+            ⚠️ ไทม์ไลน์เดินตาม stage จริงของลูกค้า ไม่ใช่รายการนิ่ง ๆ
+               เป็นเหตุผลที่เจ้าของร้านสั่งให้บังคับล็อกอิน "ลูกค้าจะได้รู้ว่าทำถึงไหนแล้ว"
+            ⚠️ ห้ามเขียนว่าร้านจะทำขั้น ลซ.2 / ลซ.3 ให้ — เจ้าหน้าที่เป็นคนออก ร้านไม่เกี่ยว
+            ⚠️ รถวิ่งขึ้นเฉพาะหลังปริ้นแล้ว มาจากภาพร่างของเจ้าของร้าน
+               "แสกนเสร็จปริ้นแล้วค่อยมีรถวิ่ง" ห้ามให้ขึ้นตั้งแต่แรก
+        */}
+        <section className="mt-4 overflow-hidden rounded-xl bg-white ring-1 ring-black/5">
+          <div className="px-4 pt-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="text-[14px] font-bold text-ink">เส้นทางขอใบอนุญาต</h2>
+              <span className="shrink-0 text-[11px] text-ink-300">๓ ใบ · ไปสำนักงาน ๒ รอบ</span>
+            </div>
+
+            {/* รางสามจุด — เส้นเชื่อมวาดด้วย before ของช่องที่ ๒ และ ๓
+                จึงลากจากจุดก่อนหน้ามาถึงจุดตัวเองพอดีทุกความกว้างจอ
+                (วิธีวางเส้นเป็น flex-1 คั่นกลางจะทำให้จุดแรกไม่อยู่กลางช่อง) */}
+            <ol className="mt-4 flex">
+              {PERMIT_STEPS.map((st, i) => {
+                const done = printed && i === 0;
+                const active = printed ? i === 1 : i === 0;
+                return (
+                  <li
+                    key={st.code}
                     className={
-                      "mx-auto flex h-8 w-8 items-center justify-center rounded-full text-[12px] font-bold " +
-                      (done
-                        ? "bg-[#1f7a3d] text-white"
-                        : active
+                      "relative flex min-w-0 flex-1 flex-col items-center text-center " +
+                      (i > 0
+                        ? "before:absolute before:left-[-50%] before:right-1/2 before:top-[13px] before:h-px before:bg-steel-700"
+                        : "")
+                    }
+                  >
+                    {/* รถวิ่งบนเส้นช่วงแรก — ขึ้นหลังปริ้นแล้วเท่านั้น */}
+                    {i === 1 && printed && (
+                      <span className="absolute left-0 top-[13px] z-10 -translate-x-1/2 -translate-y-1/2 bg-white px-1">
+                        <TruckArrow />
+                      </span>
+                    )}
+                    <span
+                      className={
+                        // ⚠️ ขั้นที่ยังไม่ถึงต้องเป็นวงกลม "มีเส้นขอบ" ไม่ใช่พื้นสี steel-800
+                        //    เพราะ steel-800 ในจานสีนี้คือสีขาว วงกลมจะจมหายไปกับพื้นการ์ด
+                        //    เหลือเป็นเลขลอย ๆ แล้วเส้นเชื่อมวิ่งทะลุตัวเลข (เห็นตอนลองจริง)
+                        "relative z-10 flex h-[26px] w-[26px] items-center justify-center rounded-full text-[11px] font-bold ring-4 ring-white " +
+                        (done
                           ? "bg-[#1f7a3d] text-white"
-                          : st.tone === "next"
-                            ? "bg-safety text-white"
-                            : "bg-ink text-white")
-                    }
-                  >
-                    {done ? "✓" : st.code.replace("ลซ.", "")}
-                  </span>
-                  <span className="mt-1.5 block text-[11px] font-semibold leading-tight text-ink">
-                    {st.code}
-                  </span>
-                  <span className="mt-0.5 block text-[10.5px] leading-tight text-ink-300">
-                    {st.title.replace("ให้มีเลื่อยโซ่ยนต์", "")}
-                  </span>
-                </div>
-                {/* ⚠️ รถขึ้นเฉพาะช่องแรกและเฉพาะหลังปริ้นแล้ว
-                    เพราะช่วงนี้คือ "ลูกค้าถือกระดาษไปยื่นเอง" ตามภาพร่างของเจ้าของร้าน
-                    ขึ้นตั้งแต่แรกจะกลายเป็นบอกให้ไปก่อนที่จะมีอะไรถือไป */}
-                {i === 0 && printed && <TruckArrow />}
-                {i === 0 && !printed && (
-                  <span className="self-center text-[15px] text-ink-300">→</span>
-                )}
-                {i === 1 && (
-                  <span className="self-center text-[15px] text-ink-300">→</span>
-                )}
-              </div>
-              );
-            })}
-          </div>
-          {/* ⚠️ รายการอธิบาย ลซ.๑/๒/๓ สามบรรทัดใต้ป้ายถูกเอาออกตามคำสั่งเจ้าของร้าน
-                 (26 ส.ค. 2569) ห้ามเอากลับมาโดยไม่ถามก่อน
-              ข้อความไม่ได้หายไปไหน — ป้ายสามใบด้านบนยังบอกชื่อใบครบ
-              และรายละเอียดเต็มอยู่ในส่วน "ดูขั้นตอนทั้งหมด ๘ ขั้น" ที่กดเปิดได้ */}
-          {/*
-            ⚠️ ต้องบอกให้ครบทั้ง 8 ขั้น ไม่ใช่แค่ "กรอก → ยื่น → จบ"
-               ของจริงต้องไปสำนักงาน 2 รอบ และมีร้านอยู่ตรงกลาง
-               ลูกค้าที่ไปรอบแรกแล้วคิดว่าจบ พอไม่มีใบอนุญาตมาก็จะมาโวยร้าน
-          */}
-          <details className="mt-2.5 rounded-sm bg-steel-900 p-2.5">
-            <summary className="cursor-pointer text-[12.5px] font-semibold text-ink">
-              ดูขั้นตอนทั้งหมด ๘ ขั้น (ต้องไปสำนักงาน ๒ รอบ)
-            </summary>
-            <ol className="mt-2 space-y-2">
-              {PROCESS_STEPS.map((st) => (
-                <li key={st.n} className="flex gap-2">
-                  <span
-                    className={
-                      "mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold text-white " +
-                      (st.by === "คุณ" ? "bg-[#1f7a3d]" : st.by === "ร้าน" ? "bg-safety" : "bg-steel-600")
-                    }
-                  >
-                    {st.n}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block text-[12.5px] font-medium leading-snug text-ink">
-                      {st.title}
-                      <span className="ml-1 text-[10.5px] font-normal text-ink-300">({st.by}ทำ)</span>
+                          : active
+                            ? "bg-ink text-white"
+                            : "border border-steel-600 bg-white text-ink-300")
+                      }
+                    >
+                      {done ? "✓" : i + 1}
                     </span>
-                    <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
-                      {st.detail}
+                    <span
+                      className={
+                        "mt-2 block text-[12px] font-bold leading-tight " +
+                        (active || done ? "text-ink" : "text-ink-300")
+                      }
+                    >
+                      {st.code}
                     </span>
-                  </span>
-                </li>
-              ))}
+                    <span className="mt-0.5 block text-[10.5px] leading-tight text-ink-300">
+                      {st.title.replace("ให้มีเลื่อยโซ่ยนต์", "")}
+                    </span>
+                  </li>
+                );
+              })}
             </ol>
-            {/* ⚠️ ย่อหน้า "หน้านี้สำหรับคนที่ซื้อเลื่อยจากร้านนี้..." ถูกเอาออกตามคำสั่ง
-                   เจ้าของร้าน (26 ส.ค. 2569) ห้ามเอากลับมาโดยไม่ถามก่อน
-                เรื่องที่ย่อหน้านั้นบอกยังอยู่ที่อื่นครบ
-                · ขั้นที่ ๕ ในรายการด้านบนบอกอยู่แล้วว่าต้องส่ง ลซ.๒ ให้ร้าน
-                · กล่อง "ได้ใบ ลซ.๒ มาแล้ว" ที่พับไว้ก็เขียนไว้ว่า
-                  "เฉพาะคนที่ซื้อเลื่อยจากร้านนี้ — ซื้อจากร้านอื่นให้ส่งไปที่ร้านนั้น" */}
+
+            {/* ⚠️ บรรทัดนี้ต้องเห็นโดยไม่ต้องกดเปิด ลูกค้าเข้าใจผิดกันบ่อยที่สุด
+                ⚠️ เจ้าของร้านสั่งให้สั้น "ผมมีคลิปสรุปให้ลูกค้า" ห้ามเขียนยาวกลับมาอีก */}
+            <p className="mt-4 flex gap-2 rounded-lg bg-safety-tint px-3 py-2.5 text-[12.5px] leading-relaxed text-ink">
+              <span aria-hidden className="shrink-0">⚠️</span>
+              <span>
+                <b>ต้องขออนุญาตก่อน ร้านถึงส่งเครื่องให้ได้</b>
+                <span className="mt-0.5 block text-ink-700">
+                  ยื่นที่จังหวัด<b className="text-ink">ที่จะเอาเลื่อยไปใช้</b> ไม่ใช่จังหวัดตามทะเบียนบ้าน
+                </span>
+              </span>
+            </p>
+
+            {printed && (
+              <p className="mt-2 rounded-lg bg-[#e8f5ea] px-3 py-2.5 text-[12.5px] leading-relaxed text-ink-700">
+                <b className="text-[#1f7a3d]">ใบแรกเสร็จแล้ว</b> — ถือเอกสารไปยื่นที่
+                {REGISTRAR_OFFICE} พร้อมสำเนาบัตรประชาชนและสำเนาทะเบียนบ้าน
+              </p>
+            )}
+          </div>
+
+          {/* ⚠️ ต้องบอกให้ครบทั้ง ๘ ขั้น ไม่ใช่แค่ "กรอก → ยื่น → จบ"
+              ของจริงต้องไปสำนักงาน ๒ รอบ และมีร้านอยู่ตรงกลาง
+              ลูกค้าที่ไปรอบแรกแล้วคิดว่าจบ พอไม่มีใบอนุญาตมาก็จะมาโวยร้าน */}
+          <details className="group mt-4 border-t border-steel-800">
+            <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-[12.5px] font-semibold text-ink">
+              <span>ขั้นตอนทั้งหมด ๘ ขั้น</span>
+              <span
+                aria-hidden
+                className="shrink-0 text-[11px] font-normal text-ink-300 transition-transform group-open:rotate-180"
+              >
+                ▾
+              </span>
+            </summary>
+
+            <ol className="px-4 pb-4">
+              {PROCESS_STEPS.map((st, i) => {
+                const at = STAGE_AT_STEP[stage] ?? 2;
+                const done = st.n < at;
+                const now = st.n === at;
+                const last = i === PROCESS_STEPS.length - 1;
+                return (
+                  <li key={st.n} className="relative flex gap-3 pb-3 last:pb-0">
+                    {/* เส้นไทม์ไลน์ต่อลงไปหาขั้นถัดไป ขั้นสุดท้ายไม่ต้องมี */}
+                    {!last && (
+                      <span
+                        aria-hidden
+                        className={
+                          "absolute left-[10px] top-[22px] w-px " +
+                          (done ? "bg-[#1f7a3d]/40 " : "bg-steel-700 ") +
+                          "bottom-0"
+                        }
+                      />
+                    )}
+                    <span
+                      className={
+                        "relative z-10 mt-[3px] flex h-[21px] w-[21px] shrink-0 items-center justify-center rounded-full text-[10px] font-bold " +
+                        (done
+                          ? "bg-[#1f7a3d] text-white"
+                          : now
+                            ? "bg-ink text-white ring-4 ring-ink/10"
+                            : "border border-steel-700 bg-white text-ink-300")
+                      }
+                    >
+                      {done ? "✓" : st.n}
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span
+                        className={
+                          "block text-[13px] leading-snug " +
+                          (now ? "font-bold text-ink" : done ? "text-ink-700" : "text-ink")
+                        }
+                      >
+                        {st.title}
+                        {/* ⚠️ ติดป้ายเฉพาะขั้นที่ "ไม่ใช่คุณทำ"
+                            ค่าเริ่มต้นคือคุณทำ ๕ ใน ๘ ขั้นจึงไม่ต้องมีป้ายเลย */}
+                        {st.by !== "คุณ" && (
+                          <span className="ml-1.5 whitespace-nowrap rounded-full bg-steel-900 px-1.5 py-0.5 align-middle text-[10px] font-normal text-ink-300">
+                            {st.by}ทำ
+                          </span>
+                        )}
+                      </span>
+                      <span className="mt-0.5 block text-[11.5px] leading-relaxed text-ink-300">
+                        {st.detail}
+                      </span>
+                    </span>
+                  </li>
+                );
+              })}
+            </ol>
           </details>
-
-          {/* ⚠️ เรื่องนี้ต้องเห็นโดยไม่ต้องกดเปิด — ลูกค้าเข้าใจผิดกันบ่อยที่สุด */}
-          {/*
-            ⚠️ เจ้าของร้านสั่งตัดข้อความให้สั้น (25 ส.ค. 2569)
-               "ผมมีคลิปสรุปให้ลูกค้า ลูกค้าทุกคนดูแล้วเขาเข้าใจ"
-               ⇒ เหลือบรรทัดเดียวที่ต้องเห็นแน่ ๆ ส่วนรายละเอียดอยู่ในส่วนที่กดเปิด
-               ห้ามเอาข้อความยาว ๆ กลับมาใส่ตรงนี้อีก
-          */}
-          <p className="mt-2 rounded-sm bg-safety-tint p-2.5 text-[12.5px] leading-relaxed text-ink">
-            <b>ต้องขออนุญาตก่อน ร้านถึงส่งเครื่องให้ได้</b> ·
-            ยื่นที่จังหวัด<b>ที่จะเอาเลื่อยไปใช้</b>
-          </p>
-
-          {printed ? (
-            <p className="mt-2 rounded-sm bg-[#e8f5ea] p-2.5 text-[12px] leading-relaxed text-ink-700">
-              <b className="text-[#1f7a3d]">ใบแรกเสร็จแล้ว</b> —
-              ขั้นต่อไปคือถือเอกสารไปยื่นที่{REGISTRAR_OFFICE}
-              พร้อมสำเนาบัตรประชาชนและสำเนาทะเบียนบ้าน
-            </p>
-          ) : (
-            <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
-              หน้านี้ช่วยคุณทำ <b className="text-[#1f7a3d]">ใบแรก</b> ให้เสร็จ
-              ส่วนอีกสองใบเป็นหน้าที่ของเจ้าหน้าที่หลังคุณยื่นคำขอแล้ว
-            </p>
-          )}
-        </div>
+        </section>
 
         {/* ⚠️ ต้องขึ้นก่อนที่ลูกค้าจะเริ่มกรอก ไม่ใช่ซ่อนไว้ท้ายหน้า
             ⚠️ ข้อความ "ไม่รับประกันว่าจะได้รับอนุญาต" ถูกเอาออกตามคำสั่งเจ้าของร้าน
