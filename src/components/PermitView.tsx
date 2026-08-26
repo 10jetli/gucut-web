@@ -207,14 +207,10 @@ export default function PermitView() {
   // ⚠️ ย่อรูปในเครื่องก่อนส่งเสมอ
   //    กล้องมือถือให้ไฟล์ 4-8 MB ลูกค้าเน็ตช้าจะรอนาน และเปลืองเครดิตร้านฟรี ๆ
   //    1400px กว้างพอให้อ่านตัวหนังสือบนบัตรออกครบ
-  // ⚠️ หมุนรูปให้บัตร "นอนตามแนวบัตรจริง" ก่อนส่งเสมอ — บทเรียน 26 ส.ค. 2569
-  //    ลูกค้าถ่ายบัตรที่วางนอนด้วยมือถือแนวตั้ง = ได้รูปบัตรตะแคง 90°
-  //    AI อ่านชื่อ/เลขบัตร (ตัวใหญ่) ออก แต่บรรทัดที่อยู่ (ตัวเล็ก) เพี้ยนทุกครั้ง
-  //    และเพี้ยนแบบ "ดูเหมือนอ่านสำเร็จ" — เลื่อนช่อง+สะกดมั่ว ไม่มีอะไรฟ้อง
-  //    บัตรประชาชนเป็นแนวนอนเสมอ: รูปแนวตั้ง = บัตรตะแคงแน่นอน หมุน 90° ก่อน
-  //    ทิศไหนไม่รู้ → turn 0 หมุนตามเข็ม · turn 1 คือกลับหัวจาก turn 0
-  //    (ตัวเรียกลอง turn 1 เมื่อที่อยู่จาก turn 0 ตรวจกับทะเบียนราชการไม่ผ่าน)
-  const shrink = (file: File, turn: 0 | 1 = 0) =>
+  // ⚠️ ย่อรูป + หมุนตามองศาที่สั่ง — ตัวเรียก (readCard) เป็นคนไล่บันไดมุมหมุน
+  //    บัตรตะแคงทำ AI อ่านบรรทัดที่อยู่ (ตัวเล็ก) เพี้ยนแบบดูเหมือนสำเร็จทุกครั้ง
+  //    (บทเรียน 26 ส.ค. 2569 — เจอทั้งรูปแนวตั้งและรูปแนวนอนที่บัตรตะแคงข้างใน)
+  const shrink = (file: File, deg = 0) =>
     new Promise<string>((ok, no) => {
       const img = new window.Image();
       const url = URL.createObjectURL(file);
@@ -223,8 +219,6 @@ export default function PermitView() {
         const scale = Math.min(1, 1400 / Math.max(img.width, img.height));
         const w = Math.round(img.width * scale) || 1;
         const h = Math.round(img.height * scale) || 1;
-        // รูปแนวตั้ง = บัตรตะแคง ต้องหมุน 90° · รูปแนวนอนหมุนแค่ 180° ตอน turn 1
-        const deg = (img.height > img.width ? 90 : 0) + turn * 180;
         const c = document.createElement("canvas");
         const swap = deg % 180 !== 0;
         c.width = swap ? h : w;
@@ -247,12 +241,12 @@ export default function PermitView() {
    *    ตัวเรียกใช้ error เป็นสัญญาณว่าให้ถอยไปใช้ตัวอ่านในเครื่อง
    *    คืนค่าว่าง = ลูกค้าเห็นฟอร์มเปล่าโดยไม่มีใครรู้ว่าตัวอ่านล่ม
    */
-  const readByAi = async (file: File, turn: 0 | 1 = 0) => {
-    const image = await shrink(file, turn);
+  const readByAi = async (file: File, deg = 0) => {
+    const image = await shrink(file, deg);
     const r = await fetch("/api/read-id", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ image, turn }),
+      body: JSON.stringify({ image, turn: deg }),
     });
     const out = await r.json().catch(() => null);
     if (!r.ok) throw new Error((out && out.error) || "ตัวอ่านตอบ " + r.status);
@@ -316,43 +310,51 @@ export default function PermitView() {
   const readCard = useCallback(async (file: File) => {
     setBusy("กำลังอ่านบัตร…");
     try {
-      let got: { name?: string; idNumber?: string; birth?: string; unsure: string[] };
-      let a: Record<string, string>;
-      try {
-        ({ got, a } = await readByAi(file));
-        // ⚠️ ตรวจ "ที่อยู่หาเจอในทะเบียนราชการไหม" ก่อนเชื่อ — บทเรียน 26 ส.ค. 2569
-        //    บัตรตะแคงกลับหัว AI ยังตอบที่อยู่มาครบทุกช่องแบบสะกดมั่ว+เลื่อนช่อง
-        //    ดูเหมือนอ่านสำเร็จทุกประการ เกณฑ์เดียวที่ฟ้องได้คือรหัสไปรษณีย์หาไม่เจอ
-        //    → ลองหมุนรูปอีกด้านแล้วอ่านซ้ำหนึ่งครั้ง เอาด้านที่ที่อยู่ตรวจผ่าน
-        //    (เสียเครดิตเพิ่มหนึ่งครั้งเฉพาะตอนด้านแรกเพี้ยน — ถูกกว่าลูกค้าได้ใบผิด)
-        const ok1 = !!fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "").postcode;
-        if (!ok1) {
+      let got: { name?: string; idNumber?: string; birth?: string; unsure: string[] } | undefined;
+      let a: Record<string, string> | undefined;
+
+      // ⚠️ บันไดหมุนรูป — บทเรียน 26 ส.ค. 2569 (เจอกับรูปจริงของเจ้าของร้าน)
+      //    บัตรตะแคงมาได้สองแบบ: รูปแนวตั้ง (บัตรตะแคงแน่นอน เพราะบัตรเป็นแนวนอนเสมอ)
+      //    และ "รูปแนวนอนที่บัตรตะแคงอยู่ข้างใน" — แบบหลังเคยหลุดเพราะกติกาเดิม
+      //    ดูแค่สัดส่วนรูปแล้วสรุปว่าไม่ต้องหมุน ทั้งที่บัตรนอนขวางอยู่ข้างใน
+      //    เกณฑ์ตัดสินของทุกมุม: ที่อยู่ต้องหารหัสไปรษณีย์เจอในทะเบียนราชการ
+      //    ผ่านเมื่อไหร่หยุดทันที — มุมแรกผ่านก็จ่ายเครดิตเท่าเดิม
+      const dims = await new Promise<{ w: number; h: number }>((ok, no) => {
+        const img = new window.Image();
+        const u = URL.createObjectURL(file);
+        img.onload = () => { URL.revokeObjectURL(u); ok({ w: img.width, h: img.height }); };
+        img.onerror = () => { URL.revokeObjectURL(u); no(new Error("เปิดรูปไม่ได้")); };
+        img.src = u;
+      });
+      const ladder = dims.h > dims.w ? [90, 270] : [0, 90, 270, 180];
+
+      let aiError: Error | null = null;
+      for (const deg of ladder) {
+        try {
+          const r = await readByAi(file, deg);
+          const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
+          if (!got) ({ got, a } = r);                    // เก็บผลแรกไว้ก่อน เผื่อไม่มีมุมไหนผ่าน
+          if (f.postcode) { ({ got, a } = r); break; }   // ที่อยู่ผ่านทะเบียน = มุมนี้ถูก จบ
           setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
-          try {
-            const r2 = await readByAi(file, 1);
-            const ok2 = !!fixThaiAddress(r2.a.tambon || "", r2.a.amphoe || "", r2.a.province || "").postcode;
-            if (ok2) ({ got, a } = r2);
-          } catch { /* อีกด้านอ่านไม่ได้ ใช้ผลด้านแรกตามเดิม */ }
+        } catch (e) {
+          const msg = String((e as Error).message || "");
+          // ⚠️ "ถ่ายถี่เกินไป" ห้ามลองมุมต่อ — ยิ่งลองยิ่งโดนตัวกัน
+          if (msg.includes("ถี่เกินไป")) { setBusy(msg); return; }
+          aiError = e as Error;                          // เบลอ/ไม่ใช่บัตร → ลองมุมถัดไป
         }
-      } catch (e) {
-        // ⚠️ "ถ่ายถี่เกินไป" ไม่ใช่อาการที่ของพัง — บอกลูกค้าตรง ๆ
-        const msg = String((e as Error).message || "");
-        if (msg.includes("ถี่เกินไป")) {
+      }
+
+      if (!got || !a) {
+        const msg = String(aiError?.message || "");
+        // อ่านครบทุกมุมแล้วยังไม่ได้ เพราะรูปเบลอ/ไม่ใช่บัตร — บอกตรง ๆ ให้ถ่ายใหม่
+        // (tesseract ช่วยไม่ได้กับรูปแบบนี้ อ่านแย่กว่า AI อีก)
+        if (msg.includes("ไม่ใช่บัตรประชาชน") || msg.includes("เบลอหรือมืด")) {
           setBusy(msg);
           return;
         }
-        // "ไม่ใช่บัตรประชาชน" อาจเพราะบัตรกลับหัวจนดูไม่ออก — ลองอีกด้านก่อนยอมแพ้
-        if (msg.includes("ไม่ใช่บัตรประชาชน") || msg.includes("เบลอหรือมืด")) {
-          try {
-            ({ got, a } = await readByAi(file, 1));
-          } catch {
-            setBusy(msg);
-            return;
-          }
-        } else {
-          setBusy("ตัวอ่านหลักใช้ไม่ได้ กำลังลองตัวอ่านในเครื่องแทน… (ใช้เวลาสักครู่)");
-          ({ got, a } = await readLocal(file));
-        }
+        // AI ล่มจริง (เครดิตหมด/เน็ต/คีย์) — ถอยไปตัวอ่านในเครื่อง
+        setBusy("ตัวอ่านหลักใช้ไม่ได้ กำลังลองตัวอ่านในเครื่องแทน… (ใช้เวลาสักครู่)");
+        ({ got, a } = await readLocal(file));
       }
       // ⚠️ ช่องที่อ่านไม่ออกต้อง "ล้างทิ้ง" ไม่ใช่เก็บค่าเก่าไว้
       //    ของเดิมเขียน got.birth ? ... : p.birth — พอรอบนี้อ่านวันเกิดไม่ออก
