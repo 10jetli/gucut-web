@@ -383,13 +383,23 @@ export default function PermitView() {
       const scoreOf = (r: { got: { name?: string; birth?: string }; a: Record<string, string> }) =>
         (r.got.name ? 1 : 0) + (r.got.birth ? 1 : 0) + (r.a.houseNo ? 1 : 0) +
         (r.a.moo ? 1 : 0) + (r.a.tambon ? 1 : 0) + (r.a.province ? 1 : 0);
+      // "ชื่อเต็มรูปแบบไทย" (คำนำหน้า + ชื่อ + สกุล) รอดตาข่ายเทียบสองรอบได้เฉพาะ
+      // ตอนบัตรตั้งตรงจริง — มุมตะแคง/กลับหัวได้อย่างมากชื่อครึ่งเดียว
+      // ⚠️ ห้ามใช้คะแนนรวมตัดสินมุม — มุมกลับหัวเคยชนะเพราะเดา "บ้านเลขที่ 28"
+      //    จากวันเกิด 28 เม.ย. แบบตรงกันสองรอบ (ความเพี้ยนเชิงระบบ ไม่ใช่การสุ่ม)
+      const fullThaiName = (n?: string) => /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(n || "");
       for (const deg of ladder) {
         try {
           const r = await readByAi(file, deg);
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
+          if (f.postcode) { ({ got, a } = r); bestDeg = deg; break; }
+          if (fullThaiName(r.got.name)) {
+            // บัตรตั้งตรงแน่แล้ว มุมอื่นไม่ต้องลอง — ที่อยู่ไปเก็บที่ด่านซูมต่อ
+            ({ got, a } = r); bestDeg = deg;
+            break;
+          }
           const sc = scoreOf(r);
           if (sc > bestScore) { ({ got, a } = r); bestDeg = deg; bestScore = sc; }
-          if (f.postcode) { ({ got, a } = r); bestDeg = deg; break; }
           setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
         } catch (e) {
           const msg = String((e as Error).message || "");
@@ -430,11 +440,13 @@ export default function PermitView() {
           const z = await readAddrZone(file, bestDeg);
           const fz = fixThaiAddress(z.tambon || "", z.amphoe || "", z.province || "");
           if (fz.postcode) {
+            // ⚠️ ค่าจากครอปซูมชนะค่าจากเต็มใบ — ครอปเห็นบรรทัดที่อยู่ชัดกว่าเสมอ
+            //    (เต็มใบเคยเดาบ้านเลขที่จากวันเกิดแบบผ่านตาข่ายมาแล้ว)
             a = {
               ...a,
               tambon: z.tambon || "", amphoe: z.amphoe || "", province: z.province || "",
-              houseNo: a.houseNo || z.houseNo || "", moo: a.moo || z.moo || "",
-              soi: a.soi || z.soi || "", road: a.road || z.road || "",
+              houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
+              soi: z.soi || a.soi || "", road: z.road || a.road || "",
             };
           }
         } catch { /* ซูมอ่านไม่ได้ก็ปล่อยว่างตามกติกาเดิม */ }
