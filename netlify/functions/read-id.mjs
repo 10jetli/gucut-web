@@ -172,6 +172,9 @@ export default async function handler(req) {
 
   const b64 = String(body?.image || "").replace(/^data:image\/\w+;base64,/, "");
   if (!b64) return json({ error: "ไม่มีรูป" }, 400);
+  // ⚠️ log ได้แค่นี้ — ขนาดรูปกับรอบหมุน ห้าม log เนื้อหาบัตรเด็ดขาด (กติกา PDPA)
+  //    มีไว้ไล่ปัญหา "อ่านเพี้ยนซ้ำ ๆ" จาก log ฟังก์ชันโดยไม่ต้องเดา
+  const turn = Number(body.turn) || 0;
   const bytes = b64.length * 0.75;
   if (bytes > MAX_BYTES) return json({ error: "รูปใหญ่เกินไป" }, 413);
   // ⚠️ ตีกลับก่อนถึง AI — ไม่งั้นมันแต่งบัตรขึ้นมาทั้งใบจากรูปเปล่า (ดูหมายเหตุที่ MIN_BYTES)
@@ -241,7 +244,10 @@ export default async function handler(req) {
     if (!m) return json({ error: "อ่านผลไม่ได้" }, 502);
 
     const data = JSON.parse(m[0]);
-    if (data.notIdCard) return json({ error: "รูปนี้ไม่ใช่บัตรประชาชน ลองถ่ายใหม่" }, 422);
+    if (data.notIdCard) {
+      console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
+      return json({ error: "รูปนี้ไม่ใช่บัตรประชาชน ลองถ่ายใหม่" }, 422);
+    }
 
     // ⚠️ คืนเฉพาะช่องที่รู้จัก ไม่ส่งอะไรที่ AI แถมมาเองกลับไปหน้าเว็บ
     const pick = (k) => (typeof data[k] === "string" ? data[k].trim() : "");
@@ -255,6 +261,7 @@ export default async function handler(req) {
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
     }
 
+    console.log(`read-id turn=${turn} bytes=${bytes} out=ok addr=${data.tambon && data.province ? "full" : "partial"}`);
     return json({
       name: pick("name"),
       idNumber: id,

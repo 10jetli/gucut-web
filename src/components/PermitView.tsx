@@ -252,7 +252,7 @@ export default function PermitView() {
     const r = await fetch("/api/read-id", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ image }),
+      body: JSON.stringify({ image, turn }),
     });
     const out = await r.json().catch(() => null);
     if (!r.ok) throw new Error((out && out.error) || "ตัวอ่านตอบ " + r.status);
@@ -367,6 +367,10 @@ export default function PermitView() {
       //    ทั้งสองอย่างไม่มีอะไรฟ้อง ลูกค้าพิมพ์ออกมายื่นได้ทั้งที่ที่อยู่ผิด
       //    fixThaiAddress แก้ให้เท่าที่มั่นใจ และบอกกลับมาว่าแก้ช่องไหนบ้าง
       const fix = fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "");
+      // ⚠️ ที่อยู่ที่ตรวจกับทะเบียนราชการไม่ผ่าน = "ว่างดีกว่าผิด" — บทเรียน 26 ส.ค. 2569
+      //    เดิมเอาค่ามั่ว (มกตาบาร/ทนอนเคน/ครงธวร) ขึ้นช่องเหมือนอ่านสำเร็จ
+      //    ลูกค้าไม่มีทางรู้ว่าผิดจนกว่าจะเพ่งอ่าน — เว้นว่างแล้วบอกให้กรอกเองชัด ๆ
+      const addrBad = !fix.postcode && !!(a.tambon || a.amphoe || a.province);
 
       setD((p) => ({
         ...p,
@@ -378,9 +382,9 @@ export default function PermitView() {
         moo: a.moo || "",
         soi: a.soi || "",
         road: a.road || "",
-        tambon: fix.tambon,
-        amphoe: fix.amphoe,
-        province: fix.province,
+        tambon: addrBad ? "" : fix.tambon,
+        amphoe: addrBad ? "" : fix.amphoe,
+        province: addrBad ? "" : fix.province,
         // รหัสไปรษณีย์มาจากที่อยู่ที่ตรวจแล้วเสมอ ไม่ใช่ค้างของจังหวัดเดิม
         postcode: fix.postcode,
       }));
@@ -393,7 +397,7 @@ export default function PermitView() {
         !got.name && "ชื่อ",
         !got.idNumber && "เลขบัตร",
         !got.birth && "วันเกิด",
-        !fix.province && "ที่อยู่",
+        (addrBad || !fix.province) && "ตำบล/อำเภอ/จังหวัด",
       ].filter(Boolean) as string[];
       // ⚠️ ถ้าระบบแก้ที่อยู่ให้ ต้องบอกลูกค้าตรง ๆ ห้ามแก้เงียบ ๆ
       //    เขาเป็นคนเซ็นรับรองที่อยู่นี้ต่อนายทะเบียน ต้องรู้ว่าอะไรถูกแก้
