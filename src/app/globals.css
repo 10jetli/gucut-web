@@ -159,9 +159,19 @@ body {
 
 @media print {
   /* ⚠️ ซ่อนทุกอย่างที่ไม่ใช่เอกสาร — ลูกค้าต้องได้กระดาษที่ยื่นได้เลย
-     ไม่ใช่หน้าเว็บที่มีปุ่มกับเมนูติดไปด้วย */
-  body > *:not(.lz-print-root) { display: none !important; }
+     ไม่ใช่หน้าเว็บที่มีปุ่มกับเมนูติดไปด้วย
+
+     ⚠️ ต้องซ่อนด้วย visibility ห้ามใช้ display:none กับบรรพบุรุษ
+        เอกสารซ้อนอยู่ในกล่องของ Shell (body > div > เอกสาร) ไม่ใช่ลูกตรงของ body
+        กติกาเดิม `body > *:not(.lz-print-root)` จึงซ่อนกล่อง Shell ทั้งใบ
+        แล้วเอกสารข้างในกู้กลับมาไม่ได้ — ลูกค้ากดพิมพ์ได้ "หน้าเปล่า" ทั้งที่หน้าจอปกติ
+        (เจ้าของร้านเจอเอง 26 ส.ค. 2569 · ทำซ้ำได้ด้วย headless chrome)
+        visibility ต่างจาก display ตรงที่ลูกหลานประกาศ visible กลับมาได้ */
+  body, body * { visibility: hidden; }
   .lz-print-root, .lz-print-root * { visibility: visible; }
+  /* กล่องของ Shell ต้องไม่บีบความกว้างเอกสารและไม่ดันความสูงเกินหน้ากระดาษ */
+  body > div { max-width: none !important; min-height: 0 !important; padding: 0 !important; }
+  .lz-print-root { display: block !important; }
   .lz-print-only { display: block !important; }
   .lz-noprint { display: none !important; }
   .lz-page {
