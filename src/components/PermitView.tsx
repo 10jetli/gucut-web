@@ -376,12 +376,19 @@ export default function PermitView() {
 
       let aiError: Error | null = null;
       let bestDeg = 0;
+      let bestScore = -1;
+      // มุมที่บัตรตั้งตรงคือมุมที่อ่านได้ "ครบช่องที่สุด" — ให้คะแนนความครบแล้วเก็บตัวที่ดีสุด
+      // ⚠️ ห้ามใช้แค่ "มีชื่อไหม" — มุมตะแคงก็อ่านชื่อออกมาบางส่วนได้ (เจอจริง: มุม 0°
+      //    ได้ "นาย บุญประกอบ" ครึ่งเดียว แล้วมุมนั้นแย่งตำแหน่งมุมจริงไป)
+      const scoreOf = (r: { got: { name?: string; birth?: string }; a: Record<string, string> }) =>
+        (r.got.name ? 1 : 0) + (r.got.birth ? 1 : 0) + (r.a.houseNo ? 1 : 0) +
+        (r.a.moo ? 1 : 0) + (r.a.tambon ? 1 : 0) + (r.a.province ? 1 : 0);
       for (const deg of ladder) {
         try {
           const r = await readByAi(file, deg);
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          // มุมที่ "อ่านชื่อออก" คือมุมที่บัตรตั้งตรง — จำไว้ใช้ครอปโซนที่อยู่ต่อ
-          if (!got || (r.got.name && !got.name)) { ({ got, a } = r); bestDeg = deg; }
+          const sc = scoreOf(r);
+          if (sc > bestScore) { ({ got, a } = r); bestDeg = deg; bestScore = sc; }
           if (f.postcode) { ({ got, a } = r); bestDeg = deg; break; }
           setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
         } catch (e) {
