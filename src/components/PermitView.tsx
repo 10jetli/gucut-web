@@ -1192,6 +1192,23 @@ export default function PermitView() {
                 <li key={doc.label} className="rounded-sm bg-white p-2.5 text-[13px] text-ink">
                   {doc.label} <b className="text-safety">{doc.qty}</b>
                   <span className="mt-0.5 block text-[11.5px] text-ink-300">{doc.note}</span>
+                  {/* ⚠️ ลิงก์ตัวอย่างแบบฟอร์ม — เจ้าของร้านสั่งให้มี (26 ส.ค. 2569)
+                      คลินิกทั่วไปไม่รู้ว่าใบรับรองแพทย์เรื่องนี้ต้องรับรองอะไรบ้าง
+                      ลูกค้าไปมือเปล่าแล้วได้ใบทั่วไปมา สำนักงานตีกลับ เสียทั้งค่าตรวจและเสียเที่ยว
+                      ⚠️ ต้องมี download ระบุชื่อไทย ไม่งั้นลูกค้าได้ไฟล์ชื่อ med-cert-lz1.pdf
+                         ซึ่งหาไม่เจอในเครื่องตัวเอง
+                      ⚠️ ต้องมี rel="noopener" คู่กับ target="_blank" เสมอ */}
+                  {"sample" in doc && doc.sample && (
+                    <a
+                      href={doc.sample.url}
+                      download={doc.sample.filename}
+                      target="_blank"
+                      rel="noopener"
+                      className="mt-1.5 inline-block rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
+                    >
+                      📄 โหลดตัวอย่างแบบฟอร์ม (PDF)
+                    </a>
+                  )}
                 </li>
               ))}
             </ul>
