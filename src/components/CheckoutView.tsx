@@ -64,6 +64,30 @@ const DAY = 24 * 60 * 60 * 1000;
 const thaiDate = (d: Date) =>
   d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
 
+// ---------------------------------------------------------------------------
+// ใบจ่ายเงิน Beam ที่ยังค้างอยู่ — ต้องรอดข้ามการโหลดหน้าใหม่เสมอ
+//
+// ⚠️ บทเรียนจากลูกค้าจริง 3 ราย (26 ส.ค. 2569): "สแกนแล้วหลุด"
+//    ลูกค้าใช้มือถือเครื่องเดียว ต้องสลับไปแอปธนาคารเพื่อสแกน/เปิดรูป QR
+//    เบราว์เซอร์มือถือฆ่าแท็บที่อยู่เบื้องหลังเป็นเรื่องปกติ พอกลับมา
+//    หน้าโหลดใหม่ state ใน React หายหมด = หน้า QR หายทั้งที่ QR ยังไม่หมดอายุ
+//    ลูกค้าเข้าใจว่าระบบพัง แล้วเลิกซื้อ — เก็บลง localStorage แล้วกู้คืนตอนเปิดหน้า
+// ---------------------------------------------------------------------------
+type PendingBeam = { orderId: string; token: string; qr: string; expiry: string | null; total: number };
+const PENDING_KEY = "gucut-beam-pending";
+const savePending = (p: PendingBeam) => {
+  try { localStorage.setItem(PENDING_KEY, JSON.stringify(p)); } catch { /* โหมดส่วนตัว */ }
+};
+const clearPending = () => {
+  try { localStorage.removeItem(PENDING_KEY); } catch { /* โหมดส่วนตัว */ }
+};
+const readPending = (): PendingBeam | null => {
+  try {
+    const j = JSON.parse(localStorage.getItem(PENDING_KEY) || "") as PendingBeam;
+    return j && j.orderId && j.token ? j : null;
+  } catch { return null; }
+};
+
 export default function CheckoutView() {
   const [step, setStep] = useState<Step>("order");
   const [items, setItems] = useState<CartItem[]>([]);
@@ -83,7 +107,7 @@ export default function CheckoutView() {
   const [beamMethod, setBeamMethod] = useState("QR_PROMPT_PAY");
   const [pay, setPay] = useState<Pay>(COD_ON ? "cod" : "promptpay");
   // จ่ายผ่าน Beam — QR จากธนาคารจริง ระบบยืนยันเงินเข้าเอง ไม่ต้องแนบสลิป
-  const [beam, setBeam] = useState<{ qr: string; token: string; expiry: string | null } | null>(null);
+  const [beam, setBeam] = useState<{ qr: string; token: string; expiry: string | null; total?: number } | null>(null);
   const [beamLeft, setBeamLeft] = useState(0);
   const [qr, setQr] = useState("");
   const [slip, setSlip] = useState<{ name: string; data: string } | null>(null);
@@ -278,11 +302,14 @@ export default function CheckoutView() {
         //    ต้องจำเลขออเดอร์ไว้ก่อนพาออกไป ไม่งั้นตอนเด้งกลับมาไม่รู้ว่าเป็นออเดอร์ไหน
         //    (เซิร์ฟเวอร์รู้อยู่แล้วจาก referenceId แต่หน้าเว็บต้องรู้ด้วยเพื่อโชว์ผล)
         if (j.redirectUrl) {
-          try { localStorage.setItem("gucut-beam-pending", String(j.orderId)); } catch { /* โหมดส่วนตัว */ }
+          savePending({ orderId: j.orderId, token: j.checkToken || "", qr: "", expiry: j.expiry || null, total });
           window.location.href = j.redirectUrl;
           return;
         }
-        setBeam({ qr: j.qrBase64 || "", token: j.checkToken || "", expiry: j.expiry || null });
+        // เก็บใบจ่ายเงินลงเครื่องก่อนโชว์ — ลูกค้าสลับไปแอปธนาคารแล้วแท็บถูกฆ่า
+        // กลับมาต้องเจอหน้า QR เดิม ไม่ใช่หน้าเช็คเอาต์เปล่า (ดูหมายเหตุที่ PendingBeam)
+        savePending({ orderId: j.orderId, token: j.checkToken || "", qr: j.qrBase64 || "", expiry: j.expiry || null, total });
+        setBeam({ qr: j.qrBase64 || "", token: j.checkToken || "", expiry: j.expiry || null, total });
         setStep("beam");
         return;
       }
@@ -326,6 +353,7 @@ export default function CheckoutView() {
         if (!alive || !j?.paid) return;
 
         // เงินเข้าแล้ว — ตอนนี้ถึงจะถือว่าซื้อสำเร็จ
+        clearPending();
         track("Purchase", {
           items: items.map((i) => ({ id: i.handle, title: i.title, price: i.price, qty: i.qty })),
           value: total,
@@ -340,56 +368,115 @@ export default function CheckoutView() {
     const poll = setInterval(tick, 3000);
     void tick();
 
-    const clock = setInterval(() => {
+    // กลับมาจากแอปธนาคาร (แท็บยังรอด) — เช็คทันที ไม่ต้องรอรอบ 3 วิ
+    const onVis = () => { if (document.visibilityState === "visible") void tick(); };
+    document.addEventListener("visibilitychange", onVis);
+
+    const tickClock = () => {
       const ms = beam.expiry ? new Date(beam.expiry).getTime() - Date.now() : 0;
       setBeamLeft(Math.max(0, Math.floor(ms / 1000)));
-    }, 1000);
+      // QR ตายแล้ว — ลบใบค้างทิ้ง จะได้ไม่กู้หน้า QR ที่หมดอายุกลับมาอีก
+      if (ms <= 0 && beam.expiry) clearPending();
+    };
+    tickClock();                       // เรียกทันที ไม่งั้นวินาทีแรก beamLeft ยังเป็น 0
+    const clock = setInterval(tickClock, 1000);
 
-    return () => { alive = false; clearInterval(poll); clearInterval(clock); };
+    return () => {
+      alive = false;
+      clearInterval(poll);
+      clearInterval(clock);
+      document.removeEventListener("visibilitychange", onVis);
+    };
   }, [step, beam, orderId, items, total, buyNow]);
+
+  // ---------------------------------------------------------------------------
+  // กู้หน้า QR คืนหลังหน้าโหลดใหม่ — หัวใจของการแก้ "สแกนแล้วหลุด"
+  //
+  // ทำใน effect หลัง hydrate ไม่ใช่ lazy initializer — หน้า HTML ถูก build
+  // ล่วงหน้าเป็น step "order" ถ้า initializer อ่าน localStorage ตั้งแต่แรก
+  // ฝั่งเซิร์ฟเวอร์กับเบราว์เซอร์จะเห็นคนละหน้า แล้ว React hydrate เพี้ยน
+  // ---------------------------------------------------------------------------
+  useEffect(() => {
+    const p = readPending();
+    if (!p) return;
+    const expired = p.expiry ? new Date(p.expiry).getTime() - Date.now() < 3000 : false;
+    if (!expired) {
+      setOrderId(p.orderId);
+      setBeam({ qr: p.qr, token: p.token, expiry: p.expiry, total: p.total });
+      setStep("beam");
+      return;
+    }
+    // QR หมดอายุระหว่างที่ลูกค้าไม่อยู่ — เช็คทิ้งท้ายเผื่อจ่ายทันวินาทีสุดท้าย
+    // (เงินฝั่งเซิร์ฟเวอร์ครบอยู่แล้วผ่าน webhook/ตัวกวาด นี่แค่ให้หน้าจอบอกผลถูก)
+    clearPending();
+    fetch(`/api/orders?id=${encodeURIComponent(p.orderId)}&t=${encodeURIComponent(p.token)}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (j?.paid) { setOrderId(p.orderId); setStep("done"); }
+      })
+      .catch(() => { /* เช็คไม่ได้ก็ปล่อยลูกค้าเข้าหน้าเช็คเอาต์ปกติ ตะกร้ายังอยู่ครบ */ });
+  }, []);
 
   // -------------------------------------------------------------- รอจ่ายเงิน
   if (step === "beam") {
     const mm = String(Math.floor(beamLeft / 60)).padStart(2, "0");
     const ss = String(beamLeft % 60).padStart(2, "0");
-    const dead = beam?.expiry ? beamLeft <= 0 : false;
+    // เทียบเวลาจริง ไม่ใช้ beamLeft — วินาทีแรกหลังเข้าหน้า beamLeft ยังเป็น 0
+    // จะกลายเป็นโชว์ "QR หมดอายุแล้ว" แวบหนึ่งทั้งที่ QR เพิ่งเกิด
+    const dead = beam?.expiry ? new Date(beam.expiry).getTime() - Date.now() <= 0 : false;
     return (
       <main className="pb-10">
-        <Head title="สแกนจ่ายเงิน" onBack={() => setStep("order")} />
+        <Head title="สแกนจ่ายเงิน" onBack={() => { clearPending(); setStep("order"); }} />
         <div className="space-y-2 p-3">
           <div className="rounded-lg bg-white p-4 text-center">
-            {beam?.qr && !dead ? (
+            {dead ? (
+              <div className="rounded-lg bg-amber-50 p-4 text-left">
+                <p className="text-[15px] font-semibold text-amber-900">QR หมดอายุแล้ว</p>
+                <p className="mt-1.5 text-[13px] leading-relaxed text-amber-800">
+                  กดย้อนกลับแล้วสั่งใหม่อีกครั้งได้เลย ยังไม่มีการตัดเงินใด ๆ
+                  ของในตะกร้ายังอยู่ครบ
+                </p>
+              </div>
+            ) : beam?.qr ? (
               <>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img src={beam.qr} alt="QR พร้อมเพย์" className="mx-auto h-64 w-64" />
-                <Price value={total} className="mt-2 block font-heading text-2xl font-bold text-safety" />
-                <p className="mt-1 text-[13px] text-steel-300">
-                  สแกนด้วยแอปธนาคารใดก็ได้ · ยอดใส่มาให้แล้ว
-                </p>
+                <Price value={beam.total ?? total} className="mt-2 block font-heading text-2xl font-bold text-safety" />
                 {beam.expiry && (
                   <p className="mt-2 text-[13px] font-semibold text-[#1a1a1a]">
                     QR หมดอายุใน {mm}:{ss}
                   </p>
                 )}
+                {/* ลูกค้าส่วนใหญ่เปิดจากมือถือเครื่องเดียว สแกนจอตัวเองไม่ได้
+                    ต้องบันทึกรูปแล้วให้แอปธนาคารอ่านจากอัลบั้มแทน */}
+                <a
+                  href={beam.qr}
+                  download={`GUCUT-QR-${orderId}.png`}
+                  className="mt-3 inline-block rounded-lg border border-safety px-5 py-2 font-heading text-sm font-bold text-safety"
+                >
+                  ⬇ บันทึกรูป QR
+                </a>
               </>
             ) : (
-              <div className="rounded-lg bg-amber-50 p-4 text-left">
-                <p className="text-[15px] font-semibold text-amber-900">QR หมดอายุแล้ว</p>
-                <p className="mt-1.5 text-[13px] leading-relaxed text-amber-800">
-                  กดย้อนกลับแล้วสั่งใหม่อีกครั้งได้เลย ยังไม่มีการตัดเงินใด ๆ
-                </p>
-              </div>
+              <p className="py-6 text-[14px] text-steel-300">กำลังตรวจสอบการชำระเงิน…</p>
             )}
           </div>
 
-          <div className="rounded-lg bg-white px-3 py-3 text-[13px] leading-relaxed text-steel-300">
-            <p className="font-semibold text-[#1a1a1a]">ไม่ต้องแนบสลิป</p>
-            <p className="mt-1">
-              ระบบตรวจเงินเข้าให้อัตโนมัติ พอจ่ายเสร็จหน้านี้จะเปลี่ยนเป็นสั่งซื้อสำเร็จเอง
-              ภายในไม่กี่วินาที — อย่าเพิ่งปิดหน้านี้
-            </p>
-            <p className="mt-2 text-[12px]">เลขคำสั่งซื้อ {orderId}</p>
-          </div>
+          {!dead && beam?.qr && (
+            <div className="rounded-lg bg-white px-3 py-3 text-[13px] leading-relaxed text-steel-300">
+              <p className="font-semibold text-[#1a1a1a]">วิธีจ่ายด้วยมือถือเครื่องนี้</p>
+              <ol className="mt-1 list-decimal space-y-1 pl-5">
+                <li>กด &ldquo;บันทึกรูป QR&rdquo; (หรือแตะที่รูปค้างไว้แล้วบันทึก)</li>
+                <li>เปิดแอปธนาคาร กดสแกน แล้วเลือกรูป QR จากอัลบั้ม</li>
+                <li>จ่ายเสร็จกลับมาที่หน้านี้ — จะขึ้น &ldquo;ได้รับออเดอร์แล้ว&rdquo; เอง</li>
+              </ol>
+              <p className="mt-2">
+                สลับแอปหรือหน้าจอดับได้ ไม่หลุด — กลับเข้าเว็บมาหน้านี้ยังอยู่ ·
+                ไม่ต้องแนบสลิป ระบบตรวจเงินเข้าให้อัตโนมัติ
+              </p>
+              <p className="mt-2 text-[12px]">เลขคำสั่งซื้อ {orderId}</p>
+            </div>
+          )}
           {error && <p className="text-center text-[13px] text-safety">{error}</p>}
         </div>
       </main>
