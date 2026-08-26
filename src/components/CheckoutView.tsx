@@ -78,7 +78,8 @@ export default function CheckoutView() {
   // ⚠️ รายชื่อช่องทางมาจากเซิร์ฟเวอร์เสมอ ห้ามเขียนซ้ำในไฟล์นี้
   //    เขียนสองที่ = วันหนึ่งหน้าเว็บโชว์ช่องที่เซิร์ฟเวอร์ไม่รับ
   //    แล้วลูกค้าเลือกไปจนสุดทางถึงเจอว่าใช้ไม่ได้
-  const [beamMethods, setBeamMethods] = useState<{ id: string; label: string; note: string }[]>([]);
+  const [beamMethods, setBeamMethods] = useState<BeamMethod[]>([]);
+  const [bankOpen, setBankOpen] = useState(false);
   const [beamMethod, setBeamMethod] = useState("QR_PROMPT_PAY");
   const [pay, setPay] = useState<Pay>(COD_ON ? "cod" : "promptpay");
   // จ่ายผ่าน Beam — QR จากธนาคารจริง ระบบยืนยันเงินเข้าเอง ไม่ต้องแนบสลิป
@@ -654,47 +655,64 @@ export default function CheckoutView() {
         {/* ⚠️ ลำดับสำคัญ — ทางที่สะดวกที่สุดต้องอยู่บนสุดและถูกเลือกไว้ให้เลย
             จ่ายผ่าน Beam ระบบตรวจเงินเข้าเอง ลูกค้าไม่ต้องแนบสลิป
             และร้านไม่ต้องมานั่งเปิดดูสลิปทีละใบ */}
-        {pays?.beam && (
-          <>
-            <PayOption
-              on={pay === "beam"}
-              onClick={() => setPay("beam")}
-              badge="QR"
-              title="จ่ายออนไลน์"
-              note="ระบบตรวจเงินเข้าให้อัตโนมัติ ไม่ต้องแนบสลิป"
-            />
-            {/* ⚠️ รายชื่อช่องทางย่อยมาจากเซิร์ฟเวอร์ (PAY_METHODS ใน beam.mjs)
-                   ห้ามเขียนรายชื่อซ้ำในไฟล์นี้
-                ⚠️ ขึ้นเฉพาะตอนเลือก "จ่ายออนไลน์" ไว้ ไม่งั้นเอา 12 ช่องมาขวางคนที่จะจ่ายปลายทาง
-                ⚠️ "Beam รับได้" กับ "เปิดใช้กับร้านเรา" เป็นคนละเรื่อง
-                   ช่องที่ร้านยังไม่ได้เปิด Beam จะตีกลับตอนกดสั่ง
-                   จึงต้องมีข้อความบอกให้เลือกทางอื่น ไม่ใช่ปล่อยให้ลูกค้างง */}
-            {pay === "beam" && beamMethods.length > 1 && (
-              <div className="mt-2 grid grid-cols-2 gap-1.5 px-3 pb-3">
-                {beamMethods.map((m) => (
-                  <button
-                    key={m.id}
-                    type="button"
-                    onClick={() => setBeamMethod(m.id)}
-                    className={
-                      "rounded-sm border px-2.5 py-2 text-left text-[12.5px] leading-tight " +
-                      (beamMethod === m.id
-                        ? "border-safety bg-safety-tint font-semibold text-ink"
-                        : "border-steel-600 bg-white text-ink-700")
-                    }
-                  >
-                    {m.label}
-                    {m.note && (
-                      <span className="mt-0.5 block text-[10.5px] font-normal text-ink-300">
-                        {m.note}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            )}
-          </>
-        )}
+        {/* ⚠️ ไม่มีแถวแม่ "จ่ายออนไลน์" คร่อมไว้แล้ว — เอาออกเพราะขึ้นติ๊กถูกสองอันพร้อมกัน
+               (แถวแม่หนึ่ง ช่องทางที่เลือกอีกหนึ่ง) ลูกค้าไม่รู้ว่าอันไหนคือสิ่งที่ตัวเองเลือก
+               แอปที่เจ้าของร้านยกมาเป็นตัวอย่าง (Shopee/Lazada/TikTok) ก็ไม่มีแถวแม่
+               ⇒ ทุกช่องทางเป็นแถวเท่ากันหมด กดแถวไหนก็เลือกช่องนั้นเลย
+            ⚠️ กดแถวช่องทางต้องตั้ง pay = "beam" ด้วย ไม่ใช่ตั้งแค่ beamMethod
+               ตั้งอย่างเดียวแล้วลูกค้าจะกดสั่งไปโดยที่ระบบยังคิดว่าเขาเลือกจ่ายปลายทาง */}
+        {pays?.beam && beamMethods.filter((m) => !m.group).map((m) => (
+          <BeamRow
+            key={m.id} m={m}
+            on={pay === "beam" && beamMethod === m.id}
+            onClick={() => { setPay("beam"); setBeamMethod(m.id); }}
+          />
+        ))}
+
+        {/* กลุ่มแอปธนาคาร — ยุบเป็นแถวเดียวแบบที่ Lazada/TikTok ทำ
+            ⚠️ ถ้าลูกค้าเลือกธนาคารไว้แล้ว ต้องกางค้างไว้และโชว์ชื่อที่เลือก
+               ไม่งั้นเขาเลื่อนกลับมาเห็นแถวปิดอยู่ นึกว่าที่เลือกไว้หายไป */}
+        {pays?.beam && beamMethods.some((m) => m.group === "bank") && (() => {
+          const banks = beamMethods.filter((m) => m.group === "bank");
+          const picked = pay === "beam" ? banks.find((m) => m.id === beamMethod) : undefined;
+          const open = bankOpen || !!picked;
+          return (
+            <>
+              <button
+                type="button"
+                onClick={() => setBankOpen(!open)}
+                className="flex w-full items-center gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left"
+              >
+                <Mark mark="฿" color="#3f6ad8" />
+                <span className="min-w-0 flex-1">
+                  <span className={"block text-[13px] " + (picked ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>
+                    โมบายแบงก์กิ้ง
+                  </span>
+                  <span className="mt-0.5 block text-[11px] leading-snug text-steel-300">
+                    {picked ? picked.label : "จ่ายผ่านแอปธนาคารของคุณ"}
+                  </span>
+                </span>
+                <span aria-hidden className={"shrink-0 text-[15px] text-steel-300 transition-transform " + (open ? "rotate-90" : "")}>›</span>
+              </button>
+              {open && banks.map((m) => (
+                <BeamRow
+                  key={m.id} m={m} inset
+                  on={pay === "beam" && beamMethod === m.id}
+                  onClick={() => { setPay("beam"); setBeamMethod(m.id); }}
+                />
+              ))}
+            </>
+          );
+        })()}
+
+        {pays?.beam && beamMethods.filter((m) => m.group === "intl").map((m) => (
+          <BeamRow
+            key={m.id} m={m}
+            on={pay === "beam" && beamMethod === m.id}
+            onClick={() => { setPay("beam"); setBeamMethod(m.id); }}
+          />
+        ))}
+
         <PayOption
           on={COD_ON && pay === "cod"}
           onClick={() => setPay("cod")}
@@ -1007,6 +1025,59 @@ function BottomBar({
         </button>
       </div>
     </div>
+  );
+}
+
+/** ตราสัญลักษณ์แทนโลโก้ — อักษรย่อบนพื้นสีประจำแบรนด์
+    ⚠️ ไม่ใช้ไฟล์โลโก้จริงโดยตั้งใจ เอาโลโก้คนอื่นมาแปะเองมีเรื่องเครื่องหมายการค้า
+       และร้านไม่มีสิทธิ์ในไฟล์นั้น (ร้านนี้ระวังเรื่องนี้เป็นพิเศษอยู่แล้ว) */
+function Mark({ mark, color }: { mark: string; color: string }) {
+  return (
+    <span
+      aria-hidden
+      style={{ backgroundColor: color }}
+      className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-[10px] font-bold leading-none text-white"
+    >
+      {mark}
+    </span>
+  );
+}
+
+interface BeamMethod {
+  id: string; label: string; note: string;
+  mark?: string; color?: string; group?: string;
+}
+
+/** แถวช่องทางย่อยของ Beam — เต็มความกว้าง วงกลมเลือกอยู่ขวา แบบเดียวกับ Shopee/Lazada */
+function BeamRow({
+  m, on, onClick, inset,
+}: { m: BeamMethod; on: boolean; onClick: () => void; inset?: boolean }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={
+        "flex w-full items-center gap-2.5 border-b border-steel-800 py-2.5 pr-3 text-left last:border-0 " +
+        (inset ? "bg-steel-900 pl-8" : "pl-3")
+      }
+    >
+      <Mark mark={m.mark || "฿"} color={m.color || "#6b6b6b"} />
+      <span className="min-w-0 flex-1">
+        <span className={"block text-[13px] " + (on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>
+          {m.label}
+        </span>
+        {m.note && (
+          <span className="mt-0.5 block text-[11px] leading-snug text-steel-300">{m.note}</span>
+        )}
+      </span>
+      <span className={"flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full " + (on ? "bg-safety" : "border-2 border-steel-600")}>
+        {on && (
+          <svg viewBox="0 0 24 24" className="h-3 w-3 fill-none stroke-white stroke-[3.5]">
+            <path d="M5 12.5l5 5 9-10" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        )}
+      </span>
+    </button>
   );
 }
 

@@ -66,19 +66,29 @@ async function call(path, init = {}) {
  *    และเลขบัตรลูกค้าจะวิ่งผ่านเครื่องเรา ซึ่งไม่ควรแตะตั้งแต่แรก
  *    อยากรับบัตรต้องใช้หน้าจ่ายเงินที่ Beam โฮสต์เอง (Payment Link) — คนละงานกัน
  */
+/**
+ * ⚠️ mark/color มีไว้วาด "ตราสัญลักษณ์แทนโลโก้" บนหน้าจ่ายเงิน
+ *    ใช้อักษรย่อบนพื้นสีประจำแบรนด์ ไม่ใช่ไฟล์โลโก้จริง — ตั้งใจ
+ *    เอาโลโก้ของคนอื่นมาแปะเองมีเรื่องเครื่องหมายการค้า และร้านไม่มีสิทธิ์ในไฟล์นั้น
+ *    (ร้านนี้ระวังเรื่องเครื่องหมายการค้าเป็นพิเศษอยู่แล้ว ดู licenses.ts)
+ *
+ * ⚠️ group ใช้จัดกลุ่มแอปธนาคาร ๕ ตัวให้อยู่ใต้หัวข้อเดียว
+ *    เรียงเรียบ ๑๒ แถวรวดคือกำแพงตัวเลือกที่ลูกค้าเลื่อนผ่าน
+ *    จัดกลุ่มแล้วเหลือ ๘ แถว เท่ากับที่ Shopee/Lazada/TikTok ทำ
+ */
 export const PAY_METHODS = [
-  { id: "QR_PROMPT_PAY",     label: "QR พร้อมเพย์",     note: "สแกนด้วยแอปธนาคารใดก็ได้" },
-  { id: "TRUE_MONEY",        label: "TrueMoney Wallet",  note: "" },
-  { id: "SHOPEE_PAY",        label: "ShopeePay",         note: "" },
-  { id: "LINE_PAY",          label: "Rabbit LINE Pay",   note: "" },
-  { id: "KPLUS",             label: "K PLUS",            note: "กสิกรไทย" },
-  { id: "SCB_EASY",          label: "SCB EASY",          note: "ไทยพาณิชย์" },
-  { id: "KRUNGSRI_APP",      label: "Krungsri App",      note: "กรุงศรี" },
-  { id: "BANGKOK_BANK_APP",  label: "Bangkok Bank",      note: "กรุงเทพ" },
-  { id: "MAKE",              label: "MAKE by KBank",     note: "" },
-  { id: "SPAY_LATER",        label: "SPayLater",         note: "ผ่อนกับ Shopee" },
-  { id: "ALIPAY",            label: "Alipay",            note: "สำหรับลูกค้าต่างชาติ" },
-  { id: "WECHAT_PAY",        label: "WeChat Pay",        note: "สำหรับลูกค้าต่างชาติ" },
+  { id: "QR_PROMPT_PAY",    label: "QR พร้อมเพย์",    note: "สแกนด้วยแอปธนาคารใดก็ได้ · ไม่ต้องแนบสลิป", mark: "QR",  color: "#1a3a8f" },
+  { id: "TRUE_MONEY",       label: "TrueMoney Wallet", note: "จ่ายจากวอลเล็ตทรูมันนี่",                  mark: "TM",  color: "#f5820b" },
+  { id: "SHOPEE_PAY",       label: "ShopeePay",        note: "จ่ายจากวอลเล็ตช้อปปี้",                    mark: "S",   color: "#ee4d2d" },
+  { id: "LINE_PAY",         label: "Rabbit LINE Pay",  note: "จ่ายผ่านแอปไลน์",                          mark: "LP",  color: "#06c755" },
+  { id: "SPAY_LATER",       label: "SPayLater",        note: "ผ่อนจ่ายกับช้อปปี้",                        mark: "SPL", color: "#ee4d2d" },
+  { id: "KPLUS",            label: "K PLUS",           note: "กสิกรไทย",     mark: "K",   color: "#138f2d", group: "bank" },
+  { id: "SCB_EASY",         label: "SCB EASY",         note: "ไทยพาณิชย์",   mark: "SCB", color: "#4e2e7f", group: "bank" },
+  { id: "KRUNGSRI_APP",     label: "Krungsri",         note: "กรุงศรีอยุธยา", mark: "KS",  color: "#8b6f2e", group: "bank" },
+  { id: "BANGKOK_BANK_APP", label: "Bangkok Bank",     note: "กรุงเทพ",      mark: "BBL", color: "#1e4b9c", group: "bank" },
+  { id: "MAKE",             label: "MAKE by KBank",    note: "กสิกรไทย",     mark: "M",   color: "#138f2d", group: "bank" },
+  { id: "ALIPAY",           label: "Alipay",           note: "สำหรับลูกค้าต่างชาติ", mark: "A",  color: "#1677ff", group: "intl" },
+  { id: "WECHAT_PAY",       label: "WeChat Pay",       note: "สำหรับลูกค้าต่างชาติ", mark: "WC", color: "#07c160", group: "intl" },
 ];
 
 const METHOD_IDS = new Set(PAY_METHODS.map((m) => m.id));
