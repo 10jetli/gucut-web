@@ -451,13 +451,20 @@ export default function PermitView() {
         try {
           setBusy("กำลังซูมอ่านบรรทัดที่อยู่…");
           const z = await readAddrZone(file, bestDeg);
-          const fz = fixThaiAddress(z.tambon || "", z.amphoe || "", z.province || "");
+          // ⚠️ ค่าจากซูมชนะเต็มใบเฉพาะช่องที่ซูม "อ่านออกจริง" — ช่องที่ซูมว่าง
+          //    ห้ามไปทับค่าดีจากเต็มใบ (บทเรียน 27 ส.ค. 2569: ซูมสองรอบเห็นตำบล
+          //    ไม่ตรงกันเลยว่าง แล้วค่าว่างไปทับตำบลที่เต็มใบอ่านถูก — ลูกค้าเห็น
+          //    ช่องตำบลหายทั้งที่รหัสไปรษณีย์ขึ้นเขียวจากรหัสหลักของอำเภอ)
+          //    รวมค่าก่อน (ซูม > เต็มใบ ต่อช่อง) แล้วค่อยตรวจทะเบียนทั้งชุด
+          const mg = {
+            tambon: z.tambon || a.tambon || "",
+            amphoe: z.amphoe || a.amphoe || "",
+            province: z.province || a.province || "",
+          };
+          const fz = fixThaiAddress(mg.tambon, mg.amphoe, mg.province);
           if (fz.postcode) {
-            // ⚠️ ค่าจากครอปซูมชนะค่าจากเต็มใบ — ครอปเห็นบรรทัดที่อยู่ชัดกว่าเสมอ
-            //    (เต็มใบเคยเดาบ้านเลขที่จากวันเกิดแบบผ่านตาข่ายมาแล้ว)
             a = {
-              ...a,
-              tambon: z.tambon || "", amphoe: z.amphoe || "", province: z.province || "",
+              ...a, ...mg,
               houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
             };
           }
@@ -750,6 +757,21 @@ export default function PermitView() {
   // ⚠️ ชื่อเขียวแค่ "รูปแบบครบ" (คำนำหน้า+ชื่อ+สกุล) — ตัวสะกดตรวจแทนไม่ได้
   //    เคยเพี้ยน บุญประกอบ→มูลประกอบ แบบผ่านทุกด่าน ข้อความสรุปจึงยังเตือนเสมอ
   // ---------------------------------------------------------------------------
+  // อ่านอายุจากวันเกิดที่เป็นได้ทั้ง ISO และป้ายไทย "28 เมษายน 2527"
+  // (ageFromBirth เดิมรับแต่ ISO — ช่องวันเกิดบนจอเป็นป้ายไทยเสมอ เลยไม่เคยเขียว)
+  const thaiBirthAge = (v: string): number | null => {
+    const direct = ageFromBirth(v);
+    if (direct !== null) return direct;
+    const months = ["มกราคม","กุมภาพันธ์","มีนาคม","เมษายน","พฤษภาคม","มิถุนายน",
+      "กรกฎาคม","สิงหาคม","กันยายน","ตุลาคม","พฤศจิกายน","ธันวาคม"];
+    const m = /^(\d{1,2})\s+(\S+)\s+(\d{4})$/.exec(v.trim());
+    if (!m) return null;
+    const mi = months.findIndex((x) => x === m[2] || x.startsWith(m[2].replace(/\.$/, "")));
+    if (mi < 0) return null;
+    const year = Number(m[3]) - (Number(m[3]) > 2200 ? 543 : 0);
+    return ageFromBirth(`${year}-${String(mi + 1).padStart(2, "0")}-${m[1].padStart(2, "0")}`);
+  };
+
   const addrOk = !!findPostcode(d.province, d.amphoe, d.tambon);
   const fieldOk = (k: keyof Lz1Data): boolean => {
     const v = String(d[k] ?? "").trim();
@@ -759,9 +781,9 @@ export default function PermitView() {
       // ⚠️ ชื่อห้ามเขียวจากแค่รูปแบบครบ — ต้องผ่านการยืนยัน (ซูมตรงกับเต็มใบ
       //    หรือลูกค้าพิมพ์เอง) เคยขึ้นเขียวทั้งที่นามสกุลเพี้ยน
       case "name": return nameOk && /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(v);
-      case "birth": return ageFromBirth(v) !== null;
+      case "birth": return thaiBirthAge(v) !== null;
       case "age": {
-        const fromBirth = ageFromBirth(d.birth);
+        const fromBirth = thaiBirthAge(d.birth);
         return fromBirth !== null && String(fromBirth) === v;
       }
       case "houseNo": return /^\d+(\/\d+)?$/.test(v);
