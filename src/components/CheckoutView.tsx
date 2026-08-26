@@ -717,7 +717,7 @@ export default function CheckoutView() {
           on={COD_ON && pay === "cod"}
           onClick={() => setPay("cod")}
           disabled={!COD_ON}
-          badge="COD"
+          icon={<CashIcon dim={!COD_ON} />}
           title="เก็บเงินปลายทาง"
           note={COD_ON ? "จ่ายเงินสดตอนรับของที่บ้าน ร้านจะโทรยืนยันก่อนส่ง" : COD_OFF_NOTE}
         />
@@ -727,7 +727,16 @@ export default function CheckoutView() {
           <PayOption
             on={pay === "promptpay"}
             onClick={() => setPay("promptpay")}
-            badge="QR"
+            // ⚠️ ใช้โลโก้ตัวเดียวกับแถวจ่ายอัตโนมัติ ให้เข้าชุดกัน
+            //    แถวนี้ขึ้นเฉพาะตอน Beam ใช้ไม่ได้ ซึ่งเป็นตอนที่ลูกค้าสับสนอยู่แล้ว
+            icon={
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src="https://video.gucut.com/i/pay/promptpay.png"
+                alt="" aria-hidden width={32} height={32}
+                className="h-8 w-8 shrink-0 rounded-lg object-contain"
+              />
+            }
             title="QR พร้อมเพย์ (แนบสลิป)"
             note="สแกนจ่ายด้วยแอปธนาคาร แล้วแนบสลิป — ร้านจัดส่งทันทีที่ตรวจสลิปเสร็จ"
           />
@@ -1031,6 +1040,31 @@ function BottomBar({
 /** ตราสัญลักษณ์แทนโลโก้ — อักษรย่อบนพื้นสีประจำแบรนด์
     ⚠️ ไม่ใช้ไฟล์โลโก้จริงโดยตั้งใจ เอาโลโก้คนอื่นมาแปะเองมีเรื่องเครื่องหมายการค้า
        และร้านไม่มีสิทธิ์ในไฟล์นั้น (ร้านนี้ระวังเรื่องนี้เป็นพิเศษอยู่แล้ว) */
+/** ไอคอนเงินสด — ใช้กับ "เก็บเงินปลายทาง"
+ *
+ * ⚠️ วาดเอง ไม่ใช่โลโก้ของใคร — COD ไม่ใช่แบรนด์ ไม่มีโลโก้ทางการ
+ *    ตัวอักษร "COD" ในกรอบดูเป็นป้ายกำกับ ไม่เข้าชุดกับแถวอื่นที่เป็นโลโก้จริง
+ * ⚠️ ต้องรับสีจากข้างนอก เพราะตอน COD ปิดอยู่ทั้งแถวถูกหรี่
+ *    ไอคอนสีสดค้างอยู่ในแถวสีจาง = ดูเหมือนกดได้ทั้งที่กดไม่ได้
+ */
+function CashIcon({ dim }: { dim?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={
+        "flex h-8 w-8 shrink-0 items-center justify-center rounded-lg " +
+        (dim ? "bg-steel-600" : "bg-[#1f9254]")
+      }
+    >
+      <svg viewBox="0 0 24 24" className="h-[18px] w-[18px] fill-none stroke-white stroke-[1.9]">
+        <rect x="2.5" y="6.5" width="19" height="11" rx="2" strokeLinejoin="round" />
+        <circle cx="12" cy="12" r="2.6" />
+        <path d="M6 10v4M18 10v4" strokeLinecap="round" />
+      </svg>
+    </span>
+  );
+}
+
 function Mark({ mark, color }: { mark: string; color: string }) {
   return (
     <span
@@ -1104,24 +1138,31 @@ function BeamRow({
 }
 
 function PayOption({
-  on, onClick, badge, title, note, disabled,
-}: { on: boolean; onClick: () => void; badge: string; title: string; note: string; disabled?: boolean }) {
+  on, onClick, badge, icon, title, note, disabled,
+}: {
+  on: boolean; onClick: () => void; title: string; note: string;
+  badge?: string; icon?: React.ReactNode; disabled?: boolean;
+}) {
   return (
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       aria-disabled={disabled}
       className={
-        "flex w-full items-start gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left last:border-0 " +
+        "flex w-full items-center gap-2.5 border-b border-steel-800 px-3 py-2.5 text-left last:border-0 " +
         (disabled ? "cursor-not-allowed opacity-45" : "")
       }
     >
-      <span className={
-        "mt-0.5 shrink-0 rounded-sm border px-1 py-px text-[9px] font-bold leading-tight " +
-        (disabled ? "border-steel-500 text-steel-400" : "border-safety text-safety")
-      }>
-        {badge}
-      </span>
+      {/* ⚠️ ป้ายตัวอักษรเป็นทางสำรอง แถวที่มีไอคอนให้ใช้ไอคอนแทน
+             ไม่งั้นแถวหนึ่งเป็นโลโก้ อีกแถวเป็นป้ายตัวหนังสือ ดูไม่เข้าชุดกัน */}
+      {icon ?? (
+        <span className={
+          "mt-0.5 shrink-0 rounded-sm border px-1 py-px text-[9px] font-bold leading-tight " +
+          (disabled ? "border-steel-500 text-steel-400" : "border-safety text-safety")
+        }>
+          {badge}
+        </span>
+      )}
       <span className="min-w-0 flex-1">
         <span className={"block text-[13px] " + (disabled ? "text-steel-400" : on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>{title}</span>
         <span className="mt-0.5 block text-[11px] leading-snug text-steel-300">{note}</span>
