@@ -53,33 +53,95 @@ async function call(path, init = {}) {
 }
 
 /**
- * สร้างรายการรับเงินด้วย QR พร้อมเพย์
+/**
+ * ช่องทางที่ Beam รับได้ (OnlinePaymentMethodType)
+ *
+ * ⚠️ "รับได้" กับ "เปิดใช้กับร้านเรา" เป็นคนละเรื่อง
+ *    แต่ละร้านเปิดไม่เท่ากันตามสัญญาที่ทำกับ Beam
+ *    ช่องไหนยังไม่เปิด Beam จะตีกลับตอนสร้างรายการ — หน้าเว็บต้องบอกลูกค้าให้เลือกทางอื่น
+ *
+ * ⚠️ ไม่ใส่ CARD / CARD_INSTALLMENTS / CARD_TOKEN โดยตั้งใจ
+ *    Beam รับบัตรผ่าน API ด้วยการส่ง "เลขบัตรเต็ม" มาที่เซิร์ฟเวอร์เรา
+ *    ทำแบบนั้น = ร้านเข้าข่ายต้องทำตามมาตรฐาน PCI DSS ซึ่งเป็นภาระคนละระดับ
+ *    และเลขบัตรลูกค้าจะวิ่งผ่านเครื่องเรา ซึ่งไม่ควรแตะตั้งแต่แรก
+ *    อยากรับบัตรต้องใช้หน้าจ่ายเงินที่ Beam โฮสต์เอง (Payment Link) — คนละงานกัน
+ */
+export const PAY_METHODS = [
+  { id: "QR_PROMPT_PAY",     label: "QR พร้อมเพย์",     note: "สแกนด้วยแอปธนาคารใดก็ได้" },
+  { id: "TRUE_MONEY",        label: "TrueMoney Wallet",  note: "" },
+  { id: "SHOPEE_PAY",        label: "ShopeePay",         note: "" },
+  { id: "LINE_PAY",          label: "Rabbit LINE Pay",   note: "" },
+  { id: "KPLUS",             label: "K PLUS",            note: "กสิกรไทย" },
+  { id: "SCB_EASY",          label: "SCB EASY",          note: "ไทยพาณิชย์" },
+  { id: "KRUNGSRI_APP",      label: "Krungsri App",      note: "กรุงศรี" },
+  { id: "BANGKOK_BANK_APP",  label: "Bangkok Bank",      note: "กรุงเทพ" },
+  { id: "MAKE",              label: "MAKE by KBank",     note: "" },
+  { id: "SPAY_LATER",        label: "SPayLater",         note: "ผ่อนกับ Shopee" },
+  { id: "ALIPAY",            label: "Alipay",            note: "สำหรับลูกค้าต่างชาติ" },
+  { id: "WECHAT_PAY",        label: "WeChat Pay",        note: "สำหรับลูกค้าต่างชาติ" },
+];
+
+const METHOD_IDS = new Set(PAY_METHODS.map((m) => m.id));
+
+/**
+ * แปลงชื่อชนิดเป็นชื่อ object ย่อยที่ Beam ต้องการ
+ * QR_PROMPT_PAY → qrPromptPay · TRUE_MONEY → trueMoney
+ */
+const subKey = (type) =>
+  type.toLowerCase().replace(/_([a-z])/g, (_, c) => c.toUpperCase());
+
+/**
+ * ดึงชื่อ field ที่ Beam บอกว่าขาดออกมาจากข้อความ error
+ * เช่น "inputs are failing validation: qrPromptPay is a required field"
+ */
+const missingField = (msg) =>
+  /([A-Za-z][A-Za-z0-9]*) is a required field/.exec(String(msg || ""))?.[1] || "";
+
+/**
+ * สร้างรายการรับเงิน
  *
  * ⚠️ Beam คิดยอดเป็น "สตางค์" ไม่ใช่บาท — ส่ง 100 บาทต้องส่ง 10000
  *    ส่งเป็นบาทตรง ๆ = เก็บเงินลูกค้าน้อยกว่าจริงร้อยเท่า
  * ⚠️ referenceId ต้องเป็นเลขออเดอร์ของเรา จะได้จับคู่กลับได้ตอน Beam แจ้งผล
+ *
+ * ⚠️ Beam ต้องการ object ย่อย "ชื่อเดียวกับชนิดการจ่าย" ด้วย ไม่ใช่แค่ paymentMethodType
+ *    ใส่แค่ paymentMethodType จะโดนตีกลับว่า "qrPromptPay is a required field"
+ *    เราเดาชื่อจากชนิด (QR_PROMPT_PAY → qrPromptPay) ซึ่งตรงกับทุกตัวที่รู้
+ *    แต่ถ้าเดาผิด จะอ่านชื่อจริงจากข้อความ error แล้วยิงใหม่อีกครั้งเดียว
+ *    ⇒ เพิ่มช่องทางใหม่ได้โดยไม่ต้องรู้ชื่อ field ล่วงหน้า และไม่พังถ้า Beam ตั้งชื่อไม่ตามแบบ
  */
-export async function createQrCharge({ orderId, baht, returnUrl, paymentMethod }) {
+export async function createQrCharge({ orderId, baht, returnUrl, method, paymentMethod }) {
   const satang = Math.round(Number(baht) * 100);
   if (!(satang > 0)) throw new Error("ยอดเงินไม่ถูกต้อง");
 
-  const res = await call("/api/v1/charges", {
-    method: "POST",
-    body: JSON.stringify({
-      amount: satang,
-      currency: "THB",
-      referenceId: String(orderId),
-      returnUrl,
-      // ⚠️ Beam ต้องการ object ย่อยชื่อเดียวกับชนิดการจ่ายด้วย ไม่ใช่แค่ paymentMethodType
-      //    ใส่แค่ paymentMethodType อย่างเดียวจะโดนตีกลับว่า
-      //    "inputs are failing validation: qrPromptPay is a required field"
-      paymentMethod: paymentMethod || {
-        paymentMethodType: "QR_PROMPT_PAY",
-        qrPromptPay: {},
-      },
-      deviceType: "WEB",
-    }),
-  });
+  const type = METHOD_IDS.has(method) ? method : "QR_PROMPT_PAY";
+
+  const send = (pm) =>
+    call("/api/v1/charges", {
+      method: "POST",
+      body: JSON.stringify({
+        amount: satang,
+        currency: "THB",
+        referenceId: String(orderId),
+        returnUrl,
+        paymentMethod: pm,
+        deviceType: "WEB",
+      }),
+    });
+
+  let res;
+  if (paymentMethod) {
+    res = await send(paymentMethod);
+  } else {
+    try {
+      res = await send({ paymentMethodType: type, [subKey(type)]: {} });
+    } catch (e) {
+      const need = missingField(e?.message);
+      // ยิงใหม่ครั้งเดียวด้วยชื่อที่ Beam บอกมาเอง — ถ้ายังไม่ได้ก็ปล่อยให้ error ขึ้นไป
+      if (!need || need === subKey(type)) throw e;
+      res = await send({ paymentMethodType: type, [need]: {} });
+    }
+  }
 
   const img = res?.encodedImage?.imageBase64Encoded;
   return {

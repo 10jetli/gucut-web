@@ -191,6 +191,9 @@ export default async function handler(req, context) {
           orderId: id,
           baht: total,
           returnUrl: `${SITE_URL}/account/orders/`,
+          // ⚠️ ชนิดมาจากลูกค้า แต่ createQrCharge กรองด้วยรายชื่อที่รู้จักอีกชั้น
+          //    ส่งชนิดมั่วมาก็ตกไปเป็น QR พร้อมเพย์ ไม่ใช่ล้มทั้งออเดอร์
+          method: clean(body?.beamMethod, 32),
         });
       } catch (e) {
         return json({ error: `ขอ QR ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` }, 502);
@@ -205,6 +208,9 @@ export default async function handler(req, context) {
         ok: true, orderId: id, pay: "beam",
         checkToken: order.checkToken,
         qrBase64: charge.qrBase64,
+        // ⚠️ วอลเล็ตกับแอปธนาคารไม่คืน QR แต่คืนลิงก์ให้พาลูกค้าไปจ่ายที่แอปนั้น
+        //    ไม่ส่งตัวนี้กลับ = ลูกค้าเลือก TrueMoney แล้วเจอหน้าว่างเปล่า
+        redirectUrl: charge.redirectUrl || "",
         expiry: charge.expiry,
         total,
       });

@@ -75,6 +75,11 @@ export default function CheckoutView() {
   // ⚠️ ห้ามเดาว่าจ่ายทางไหนได้ ต้องถามเซิร์ฟเวอร์
   //    เคยเขียนตายตัวว่าจ่ายปลายทางได้ทั้งที่ปิดอยู่ ลูกค้ากรอกครบแล้วมาเจอว่าสั่งไม่ได้
   const [pays, setPays] = useState<{ beam: boolean; cod: boolean } | null>(null);
+  // ⚠️ รายชื่อช่องทางมาจากเซิร์ฟเวอร์เสมอ ห้ามเขียนซ้ำในไฟล์นี้
+  //    เขียนสองที่ = วันหนึ่งหน้าเว็บโชว์ช่องที่เซิร์ฟเวอร์ไม่รับ
+  //    แล้วลูกค้าเลือกไปจนสุดทางถึงเจอว่าใช้ไม่ได้
+  const [beamMethods, setBeamMethods] = useState<{ id: string; label: string; note: string }[]>([]);
+  const [beamMethod, setBeamMethod] = useState("QR_PROMPT_PAY");
   const [pay, setPay] = useState<Pay>(COD_ON ? "cod" : "promptpay");
   // จ่ายผ่าน Beam — QR จากธนาคารจริง ระบบยืนยันเงินเข้าเอง ไม่ต้องแนบสลิป
   const [beam, setBeam] = useState<{ qr: string; token: string; expiry: string | null } | null>(null);
@@ -92,6 +97,8 @@ export default function CheckoutView() {
       .then((r) => r.json())
       .then((j) => {
         if (!alive) return;
+        // ⚠️ Array.isArray ก่อนเสมอ — ตอน deploy ใหม่ หน้าเก่ากับ API ใหม่อยู่ด้วยกันชั่วครู่
+        setBeamMethods(Array.isArray(j?.beamMethods) ? j.beamMethods : []);
         const o = { beam: !!j?.beam, cod: !!j?.cod };
         setPays(o);
         setPay(o.beam ? "beam" : o.cod ? "cod" : "promptpay");
@@ -247,7 +254,8 @@ export default function CheckoutView() {
         body: JSON.stringify({
           customer: { ...addr, note },
           items: items.map((i) => ({ title: i.title, variant: i.variant, price: i.price, qty: i.qty, sku: i.sku ?? "" })),
-          payment: pay,                                   // "cod" | "promptpay"
+          payment: pay,                                   // "beam" | "cod" | "promptpay"
+          beamMethod,                                     // ช่องทางย่อยของ Beam ที่ลูกค้าเลือก
           couponCode: coupon?.code ?? null,
           discount,
           usePoints: pointsToUse,
@@ -265,6 +273,14 @@ export default function CheckoutView() {
       //    ห้ามล้างตะกร้าและห้ามยิงยอดขายเข้าโฆษณา จนกว่าเงินจะเข้าจริง
       //    (ล้างตะกร้าตอนนี้ = ลูกค้าที่ไม่จ่ายจะเสียของในตะกร้าไปฟรี ๆ)
       if (j.pay === "beam") {
+        // ⚠️ วอลเล็ตกับแอปธนาคารไม่ได้คืน QR มา แต่คืนลิงก์ให้พาลูกค้าไปจ่ายที่แอปนั้น
+        //    ต้องจำเลขออเดอร์ไว้ก่อนพาออกไป ไม่งั้นตอนเด้งกลับมาไม่รู้ว่าเป็นออเดอร์ไหน
+        //    (เซิร์ฟเวอร์รู้อยู่แล้วจาก referenceId แต่หน้าเว็บต้องรู้ด้วยเพื่อโชว์ผล)
+        if (j.redirectUrl) {
+          try { localStorage.setItem("gucut-beam-pending", String(j.orderId)); } catch { /* โหมดส่วนตัว */ }
+          window.location.href = j.redirectUrl;
+          return;
+        }
         setBeam({ qr: j.qrBase64 || "", token: j.checkToken || "", expiry: j.expiry || null });
         setStep("beam");
         return;
@@ -639,13 +655,45 @@ export default function CheckoutView() {
             จ่ายผ่าน Beam ระบบตรวจเงินเข้าเอง ลูกค้าไม่ต้องแนบสลิป
             และร้านไม่ต้องมานั่งเปิดดูสลิปทีละใบ */}
         {pays?.beam && (
-          <PayOption
-            on={pay === "beam"}
-            onClick={() => setPay("beam")}
-            badge="QR"
-            title="QR พร้อมเพย์"
-            note="สแกนจ่ายด้วยแอปธนาคารใดก็ได้ · ระบบตรวจเงินเข้าให้อัตโนมัติ ไม่ต้องแนบสลิป"
-          />
+          <>
+            <PayOption
+              on={pay === "beam"}
+              onClick={() => setPay("beam")}
+              badge="QR"
+              title="จ่ายออนไลน์"
+              note="ระบบตรวจเงินเข้าให้อัตโนมัติ ไม่ต้องแนบสลิป"
+            />
+            {/* ⚠️ รายชื่อช่องทางย่อยมาจากเซิร์ฟเวอร์ (PAY_METHODS ใน beam.mjs)
+                   ห้ามเขียนรายชื่อซ้ำในไฟล์นี้
+                ⚠️ ขึ้นเฉพาะตอนเลือก "จ่ายออนไลน์" ไว้ ไม่งั้นเอา 12 ช่องมาขวางคนที่จะจ่ายปลายทาง
+                ⚠️ "Beam รับได้" กับ "เปิดใช้กับร้านเรา" เป็นคนละเรื่อง
+                   ช่องที่ร้านยังไม่ได้เปิด Beam จะตีกลับตอนกดสั่ง
+                   จึงต้องมีข้อความบอกให้เลือกทางอื่น ไม่ใช่ปล่อยให้ลูกค้างง */}
+            {pay === "beam" && beamMethods.length > 1 && (
+              <div className="mt-2 grid grid-cols-2 gap-1.5 px-3 pb-3">
+                {beamMethods.map((m) => (
+                  <button
+                    key={m.id}
+                    type="button"
+                    onClick={() => setBeamMethod(m.id)}
+                    className={
+                      "rounded-sm border px-2.5 py-2 text-left text-[12.5px] leading-tight " +
+                      (beamMethod === m.id
+                        ? "border-safety bg-safety-tint font-semibold text-ink"
+                        : "border-steel-600 bg-white text-ink-700")
+                    }
+                  >
+                    {m.label}
+                    {m.note && (
+                      <span className="mt-0.5 block text-[10.5px] font-normal text-ink-300">
+                        {m.note}
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+          </>
         )}
         <PayOption
           on={COD_ON && pay === "cod"}
