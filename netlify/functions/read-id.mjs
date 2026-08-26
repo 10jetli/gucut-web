@@ -222,11 +222,33 @@ export default async function handler(req) {
       signal: AbortSignal.timeout(25000),
     });
 
-    let r = await send(paths[0]);
-    if (r.status === 404 && paths[1]) r = await send(paths[1]);
+    // -----------------------------------------------------------------------
+    // ⚠️ อ่าน "สองรอบพร้อมกัน" แล้วเชื่อเฉพาะช่องที่สองรอบตอบตรงกัน
+    //
+    //    บทเรียน 26 ส.ค. 2569 ค่ำ: รูปบัตรเบลอ AI เดาออกมาเป็น "คนละคนที่ดูสมจริง"
+    //    ชื่อคล้ายของจริง (อติ บุญปราโมช) · ที่อยู่เป็นอำเภอจริงในจังหวัดอื่น
+    //    จนด่านตรวจทะเบียนราชการผ่านฉลุย — เลขบัตรรอดเพราะมี checksum ค้ำ
+    //    ช่องอื่นไม่มีอะไรค้ำเลย
+    //
+    //    การเดาจากรูปเบลอเป็นการสุ่ม สองรอบอิสระจะเดาไม่ตรงกัน
+    //    ช่องที่ตรงกันสองรอบ = อ่านจริงเกือบแน่นอน · ไม่ตรงกัน = เว้นว่างให้กรอกเอง
+    //    แลกกับเครดิต 2 เท่าต่อการสแกน — เจ้าของร้านสั่งไว้เองว่ายอมจ่ายเพื่อความแม่น
+    // -----------------------------------------------------------------------
+    const readOnce = async () => {
+      let r = await send(paths[0]);
+      if (r.status === 404 && paths[1]) r = await send(paths[1]);
+      const out = await r.json().catch(() => null);
+      if (!r.ok) return { httpFail: r.status, out };
+      const text = (out?.content || []).map((c) => c.text || "").join("").trim();
+      const m = /\{[\s\S]*\}/.exec(text);
+      if (!m) return { parseFail: true };
+      try { return { data: JSON.parse(m[0]) }; } catch { return { parseFail: true }; }
+    };
 
-    const out = await r.json().catch(() => null);
-    if (!r.ok) {
+    const [r1, r2] = await Promise.all([readOnce(), readOnce()]);
+    const fail = [r1, r2].find((x) => x.httpFail);
+    if (fail && !r1.data && !r2.data) {
+      const r = { status: fail.httpFail }; const out = fail.out;
       // ⚠️ ต้องแยก "เครดิตหมด / ยิงเร็วเกินโควตาต่อนาที" ออกจาก "ของพัง"
       //    ถ้าเหมารวมเป็น 502 หมด หน้าเว็บจะถอยไปใช้ตัวอ่านในเครื่องเงียบ ๆ
       //    แล้วเจ้าของร้านจะไม่มีวันรู้ว่าเครดิตหมดไปตั้งแต่เมื่อไหร่
@@ -242,44 +264,38 @@ export default async function handler(req) {
       // ตัวถามชื่อตัวแปรถูกถอดออกแล้ว รู้ชื่อจริงแล้ว (NETLIFY_AI_GATEWAY_URL)
       return json({ error: why, via: gwKey && gwBase ? "gateway" : "own-key", host }, 502);
     }
+    if (!r1.data || !r2.data) return json({ error: "อ่านผลไม่ได้ ลองใหม่อีกครั้ง" }, 502);
 
-    const text = (out?.content || []).map((c) => c.text || "").join("").trim();
-    const m = /\{[\s\S]*\}/.exec(text);
-    if (!m) return json({ error: "อ่านผลไม่ได้" }, 502);
-
-    const data = JSON.parse(m[0]);
-    if (data.notIdCard) {
+    const d1 = r1.data, d2 = r2.data;
+    if (d1.notIdCard || d2.notIdCard) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
       // ⚠️ สาเหตุที่พบบ่อยจริงคือ "รูปเบลอ/มืด" ไม่ใช่รูปผิดประเภท (เจอจริง 26 ส.ค. 2569
       //    บัตรจริงถ่ายกลางคืนแสงน้อย AI ปฏิเสธถูกต้องแล้ว แต่ข้อความเดิมทำลูกค้างง)
       return json({ error: "อ่านบัตรจากรูปนี้ไม่ได้ — รูปอาจเบลอหรือมืดเกินไป ลองถ่ายใหม่ในที่สว่าง ถือมือนิ่ง ๆ ให้บัตรชัดเต็มกรอบ" }, 422);
     }
 
-    // ⚠️ คืนเฉพาะช่องที่รู้จัก ไม่ส่งอะไรที่ AI แถมมาเองกลับไปหน้าเว็บ
-    const pick = (k) => (typeof data[k] === "string" ? data[k].trim() : "");
+    // ⚠️ คืนเฉพาะช่องที่ "สองรอบตอบตรงกัน" — ไม่ตรงกัน = เว้นว่างให้ลูกค้ากรอกเอง
+    const norm = (d, k) => (typeof d[k] === "string" ? d[k].replace(/\s+/g, " ").trim() : "");
+    const agree = (k) => {
+      const a = norm(d1, k), b = norm(d2, k);
+      return a === b ? a : "";
+    };
 
-    // ⚠️ ด่านสุดท้าย — เลขบัตรที่ไม่ผ่านหลักตรวจ ห้ามส่งกลับไปเด็ดขาด
-    //    ถ้าเลขไม่ผ่าน แปลว่าอย่างน้อยอ่านผิด และอย่างแย่คือแต่งขึ้นมาทั้งใบ
-    //    กรณีหลังชื่อกับที่อยู่ก็ปลอมด้วย จึงต้องทิ้งทั้งชุด ไม่ใช่ล้างเฉพาะช่องเลข
-    //    ลูกค้าถ่ายใหม่เสียเวลาสิบวินาที แต่ถือใบที่ข้อมูลปลอมไปยื่นคือเรื่องใหญ่กว่ามาก
-    const id = pick("idNumber").replace(/\D/g, "").slice(0, 13);
-    if (!validThaiId(id)) {
+    // ⚠️ ด่านสุดท้าย — เลขบัตรต้อง "ตรงกันสองรอบ" และผ่านหลักตรวจ
+    //    ไม่ผ่านข้อใดข้อหนึ่ง = ทิ้งทั้งชุด (เหตุผลเดิม: ถ้าเลขยังมั่ว ช่องอื่นก็เชื่อไม่ได้)
+    const id = norm(d1, "idNumber").replace(/\D/g, "").slice(0, 13);
+    const idB = norm(d2, "idNumber").replace(/\D/g, "").slice(0, 13);
+    if (id !== idB || !validThaiId(id)) {
+      console.log(`read-id turn=${turn} bytes=${bytes} out=id-mismatch`);
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
     }
 
-    console.log(`read-id turn=${turn} bytes=${bytes} out=ok addr=${data.tambon && data.province ? "full" : "partial"}`);
-    return json({
-      name: pick("name"),
-      idNumber: id,
-      birth: pick("birth"),
-      houseNo: pick("houseNo"),
-      moo: pick("moo"),
-      soi: pick("soi"),
-      road: pick("road"),
-      tambon: pick("tambon"),
-      amphoe: pick("amphoe"),
-      province: pick("province"),
-    });
+    const FIELDS = ["name", "birth", "houseNo", "moo", "soi", "road", "tambon", "amphoe", "province"];
+    const outData = { idNumber: id };
+    let agreed = 0;
+    for (const k of FIELDS) { outData[k] = agree(k); if (outData[k]) agreed++; }
+    console.log(`read-id turn=${turn} bytes=${bytes} out=ok agree=${agreed}/9 addr=${outData.tambon && outData.province ? "full" : "partial"}`);
+    return json(outData);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 502);
   }
