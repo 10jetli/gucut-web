@@ -122,7 +122,10 @@ export const BAR_SIZES = [12, 16, 18, 20, 22, 24, 25, 28, 30, 33, 36, 42, 48] as
  *    (ต่างจากไฟล์สแกนที่เคยลองเมื่อ 25 ส.ค. แล้วไม่สำเร็จ)
  */
 export const LZ1_FORM = {
-  url: "https://video.gucut.com/doc/lz1-form.pdf",
+  // ⚠️ ชื่อไฟล์มี -v2 โดยตั้งใจ — ฟอร์มตัวอัปเดต (มีช่องยี่ห้อ/รุ่น · 26 ส.ค. 2569)
+  //    อัปทับชื่อเดิมไม่ได้เพราะ Cache Rule ของ video.gucut.com จำไว้ที่ขอบ 30 วัน
+  //    เปลี่ยนฟอร์มอีกครั้ง = ตั้งชื่อใหม่ (-v3) เสมอ อย่าอัปทับ
+  url: "https://video.gucut.com/doc/lz1-form-v2.pdf",
   filename: "แบบฟอร์ม-ลซ1.pdf",
   pages: 8,
 } as const;

@@ -453,7 +453,7 @@ export default function PermitView() {
           houseNo: d.houseNo, moo: d.moo, soi: d.soi, road: d.road,
           tambon: d.tambon, amphoe: d.amphoe, province: d.province,
           postcode: d.postcode, phone: d.phone, email: d.email,
-          saws: d.saws.map((s) => ({ engine: s.engine, hp: s.hp, bar: s.bar, qty: s.qty })),
+          saws: d.saws.map((s) => ({ engine: s.engine, brand: s.brand, model: s.model, hp: s.hp, bar: s.bar, qty: s.qty })),
           docs: { idCopy: d.docs.idCopy, house: d.docs.house },
         },
         await formRes.arrayBuffer(),
