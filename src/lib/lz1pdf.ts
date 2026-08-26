@@ -129,12 +129,15 @@ export async function buildLz1Pdf(
   digits.split("").forEach((g, i) => fit(p1, th(g), idX[i] - 5, idX[i] + 5, 620, 9.5));
   fit(p1, d.nationality, 461, 478, 620, 8.5);
   fit(p1, d.ethnicity, 520, 540, 620, 8.5);
-  fit(p1, d.birth, 66, 144, 602, 9);
+  // ⚠️ เลขทุกตัวบนแบบราชการต้องเป็นเลขไทย — เจ้าของร้านสั่ง 26 ส.ค. 2569
+  //    ("ต้องเป็นเลขไทยเท่านั้น" หลังเห็น 28 เมษายน 2527 · 219 · 5.3 บนใบจริง)
+  //    ยกเว้นรหัสรุ่นสินค้า (F038) ที่เป็นชื่อทางการค้า ไม่ใช่จำนวน
+  fit(p1, th(d.birth), 66, 144, 602, 9);
   fit(p1, th(d.age), 167, 184, 602, 9);
-  fit(p1, d.houseNo, 297, 328, 602, 9);
-  fit(p1, d.moo, 354, 373, 602, 9);
-  fit(p1, d.soi, 427, 488, 602, 9);
-  fit(p1, d.road, 68, 168, 581, 9);
+  fit(p1, th(d.houseNo), 297, 328, 602, 9);
+  fit(p1, th(d.moo), 354, 373, 602, 9);
+  fit(p1, th(d.soi), 427, 488, 602, 9);
+  fit(p1, th(d.road), 68, 168, 581, 9);
   fit(p1, d.tambon, 234, 348, 581, 9);
   fit(p1, d.amphoe, 414, 540, 581, 9);
   fit(p1, d.province, 80, 153, 563, 9);
@@ -156,11 +159,11 @@ export async function buildLz1Pdf(
     // ช่องใหม่ของฟอร์มนี้ — เหตุผลที่เจ้าของร้านให้เปลี่ยนฟอร์ม
     fit(p2, [s.brand, s.model].filter(Boolean).join(" "), 400, 543, yT, 8.5);
     if (i === 0) {
-      fit(p2, s.hp, 130, 170, yD, 9);
+      fit(p2, th(s.hp), 130, 170, yD, 9);
       fit(p2, th(s.bar), 310, 339, yD, 9);
       fit(p2, th(s.qty), 408, 450, yD, 9);
     } else {
-      fit(p2, s.hp, 130, 166, yD, 9);
+      fit(p2, th(s.hp), 130, 166, yD, 9);
       fit(p2, th(s.bar), 305, 333, yD, 9);
       fit(p2, th(s.qty), 400, 418, yD, 9);
     }
