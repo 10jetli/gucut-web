@@ -66,25 +66,27 @@ function validThaiId(id) {
 //      ห้ามย้ายไป R2 เด็ดขาด — ถังที่มีเปิดสาธารณะ (กติกาเดียวกับใบ ลซ.๒)
 //   2. เก็บ 7 วันแล้วลบอัตโนมัติ — มีไว้ไล่ปัญหาการอ่าน ไม่ใช่คลังเอกสาร
 //   3. หน้าเว็บบอกลูกค้าตรง ๆ ก่อนกดถ่ายว่าเก็บ 7 วัน (แก้ประกาศแล้ว)
-//   4. ห้าม await — ลูกค้าไม่ควรรอการเก็บภาพ เก็บพลาดบ้างยอมได้
+//   4. ตัวเขียนรูปต้อง await — Netlify แช่แข็งฟังก์ชันทันทีหลังตอบ
+//      promise ที่ปล่อยลอยตายกลางทาง รูปไม่ถูกเก็บเลยสักใบ (เจอจริงตอนยิงทดสอบ)
+//      ช้าเพิ่มหลักสิบ ms ยอมได้ · ส่วนงานเก็บกวาดของเก่าฝาก waitUntil ถ้ามี
 // ---------------------------------------------------------------------------
-function keepScan(b64, turn, zone, outcome, context) {
+async function keepScan(b64, turn, zone, outcome, context) {
   try {
     const store = getStore({ name: "gucut-idscan", consistency: "strong" });
     const day = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
     const key = `img/${day}/${Date.now()}-t${turn}${zone === "address" ? "z" : ""}-${outcome}`;
-    const job = store.set(key, Buffer.from(b64, "base64"))
-      .then(async () => {
-        const cutoff = new Date(Date.now() + 7 * 3600 * 1000 - 7 * 24 * 3600 * 1000)
-          .toISOString().slice(0, 10);
-        const { blobs } = await store.list({ prefix: "img/" });
-        for (const b of blobs) {
-          const d = b.key.split("/")[1];
-          if (d && d < cutoff) await store.delete(b.key).catch(() => {});
-        }
-      })
-      .catch(() => {});
-    if (context?.waitUntil) context.waitUntil(job);
+    await store.set(key, Buffer.from(b64, "base64"));
+    const cleanup = (async () => {
+      const cutoff = new Date(Date.now() + 7 * 3600 * 1000 - 7 * 24 * 3600 * 1000)
+        .toISOString().slice(0, 10);
+      const { blobs } = await store.list({ prefix: "img/" });
+      for (const b of blobs) {
+        const d = b.key.split("/")[1];
+        if (d && d < cutoff) await store.delete(b.key).catch(() => {});
+      }
+    })().catch(() => {});
+    if (context?.waitUntil) context.waitUntil(cleanup);
+    else await cleanup;
   } catch { /* เก็บไม่ได้ต้องไม่กระทบลูกค้า */ }
 }
 
@@ -347,7 +349,7 @@ export default async function handler(req, context) {
     const d1 = r1.data, d2 = r2.data;
     if (d1.notIdCard || d2.notIdCard) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
-      keepScan(b64, turn, zone, "notIdCard", context);
+      await keepScan(b64, turn, zone, "notIdCard", context);
       // ⚠️ สาเหตุที่พบบ่อยจริงคือ "รูปเบลอ/มืด" ไม่ใช่รูปผิดประเภท (เจอจริง 26 ส.ค. 2569
       //    บัตรจริงถ่ายกลางคืนแสงน้อย AI ปฏิเสธถูกต้องแล้ว แต่ข้อความเดิมทำลูกค้างง)
       return json({ error: "อ่านบัตรจากรูปนี้ไม่ได้ — รูปอาจเบลอหรือมืดเกินไป ลองถ่ายใหม่ในที่สว่าง ถือมือนิ่ง ๆ ให้บัตรชัดเต็มกรอบ" }, 422);
@@ -366,7 +368,7 @@ export default async function handler(req, context) {
       let ag = 0;
       for (const k of AF) { o[k] = agree(k); if (o[k]) ag++; }
       console.log(`read-id turn=${turn} bytes=${bytes} out=ok-zone agree=${ag}/8`);
-      keepScan(b64, turn, zone, `zone-agree${ag}`, context);
+      await keepScan(b64, turn, zone, `zone-agree${ag}`, context);
       return json(o);
     }
 
@@ -376,7 +378,7 @@ export default async function handler(req, context) {
     const idB = norm(d2, "idNumber").replace(/\D/g, "").slice(0, 13);
     if (id !== idB || !validThaiId(id)) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=id-mismatch`);
-      keepScan(b64, turn, zone, "id-mismatch", context);
+      await keepScan(b64, turn, zone, "id-mismatch", context);
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
     }
 
@@ -385,7 +387,7 @@ export default async function handler(req, context) {
     let agreed = 0;
     for (const k of FIELDS) { outData[k] = agree(k); if (outData[k]) agreed++; }
     console.log(`read-id turn=${turn} bytes=${bytes} out=ok agree=${agreed}/9 addr=${outData.tambon && outData.province ? "full" : "partial"}`);
-    keepScan(b64, turn, zone, `ok-agree${agreed}`, context);
+    await keepScan(b64, turn, zone, `ok-agree${agreed}`, context);
     return json(outData);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 502);
