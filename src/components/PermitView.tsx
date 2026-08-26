@@ -1291,11 +1291,20 @@ export default function PermitView() {
           );
           if (!stage) return permitForm;
           return (
-            <details className="group mt-5 overflow-hidden rounded-xl bg-white ring-1 ring-black/5">
-              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3.5 text-[13.5px] font-semibold text-ink">
+            // ⚠️ กล่องนี้ต้อง "ไม่เด่น" ตามที่เจ้าของร้านสั่ง (26 ส.ค. 2569)
+            //    "มันผ่านมาแล้วอยากให้เป็นสีเทาอ่อน ๆ จะได้ไม่เด่น"
+            //    เป็นขั้นที่ลูกค้าทำเสร็จไปแล้ว เก็บไว้เผื่อต้องพิมพ์ซ้ำเท่านั้น
+            //    ⇒ ไม่มีพื้นขาว ไม่มีเงา ใช้เส้นขอบจาง ๆ บนพื้นหน้าเว็บ
+            //      ตัวหนังสือใช้สีรอง ไม่ใช่สีเข้ม
+            //    ⚠️ ห้ามทำให้เด่นกว่าปุ่มของขั้นปัจจุบันที่อยู่ถัดลงไป
+            //       สองอันแย่งความสนใจกัน = ลูกค้ากดผิดอันแล้วงงว่าทำไมไม่คืบหน้า
+            //    ⚠️ พอกางออกมาแล้วต้องอ่านง่ายตามปกติ (พื้นขาว)
+            //       จางตอนพับไว้เพื่อไม่ให้เด่น ไม่ใช่จางตอนใช้งานจริง
+            <details className="group mt-5 overflow-hidden rounded-xl border border-steel-700 open:border-transparent open:bg-white open:ring-1 open:ring-black/5">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3 text-[12.5px] font-semibold text-ink-300 group-open:text-ink">
                 <span>
                   แก้ข้อมูลหรือพิมพ์แบบ ลซ.๑ ใหม่
-                  <span className="mt-0.5 block text-[11.5px] font-normal text-ink-300">
+                  <span className="mt-0.5 block text-[11px] font-normal text-ink-300">
                     ข้อมูลที่กรอกไว้ยังอยู่ครบ — กดถ้ากระดาษหายหรือต้องแก้
                   </span>
                 </span>
