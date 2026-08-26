@@ -36,7 +36,7 @@ import {
 } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { SHOP } from "@/lib/shop";
-import { PROVINCES, findPostcode, fixThaiAddress } from "@/lib/postcode";
+import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
 import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
 
@@ -798,6 +798,13 @@ export default function PermitView() {
 
   const field = (k: keyof Lz1Data, label: string, extra?: { wide?: boolean; type?: string }) => {
     const ok = fieldOk(k);
+    // ช่องที่อยู่มีรายการจากทะเบียนราชการให้จิ้มเลือก — พิมพ์เองสะกดพลาดได้
+    // (จังหวัดถูก → อำเภอเด้งเฉพาะของจังหวัดนั้น → ตำบลเด้งเฉพาะของอำเภอนั้น)
+    const options =
+      k === "province" ? PROVINCES :
+      k === "amphoe" ? amphoesOf(d.province) :
+      k === "tambon" ? tambonsOf(d.province, d.amphoe) : null;
+    const listId = options && options.length ? `dl-${String(k)}` : undefined;
     return (
       <label className={extra?.wide ? "col-span-2" : ""}>
         <span className="mb-1 block text-[12px] text-ink-300">
@@ -807,6 +814,7 @@ export default function PermitView() {
         <input
           type={extra?.type || "text"}
           value={String(d[k] ?? "")}
+          list={listId}
           onChange={(e) => { if (k === "name") setNameOk(true); set(k, e.target.value); }}
           className={
             "w-full rounded-sm border px-3 py-2 text-[14px] outline-none focus:border-safety " +
@@ -815,6 +823,11 @@ export default function PermitView() {
               : unsure.includes(k as string) ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
           }
         />
+        {listId && (
+          <datalist id={listId}>
+            {options.map((o) => <option key={o} value={o} />)}
+          </datalist>
+        )}
       </label>
     );
   };

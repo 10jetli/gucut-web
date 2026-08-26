@@ -48,6 +48,14 @@ export function findPostcode(province: string, amphoe: string, tambon: string): 
 /** รายชื่อจังหวัดทั้ง 77 */
 export const PROVINCES = Object.keys(TREE).sort();
 
+/** รายชื่ออำเภอในจังหวัด — ไว้ทำตัวช่วยเลือกตอนกรอกมือ */
+export const amphoesOf = (province: string): string[] =>
+  Object.keys(TREE[bare(province)] ?? {}).sort();
+
+/** รายชื่อตำบลในอำเภอ — ไว้ทำตัวช่วยเลือกตอนกรอกมือ */
+export const tambonsOf = (province: string, amphoe: string): string[] =>
+  Object.keys(TREE[bare(province)]?.[bare(amphoe)] ?? {}).filter((k) => k !== "").sort();
+
 // ---------------------------------------------------------------------------
 // ตรวจและแก้ที่อยู่ที่อ่านมาจากบัตร
 //
