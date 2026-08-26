@@ -184,6 +184,24 @@ export default async function handler(req, context) {
       return json({ ok: true, item: rec });
     }
 
+    // ---- ลูกค้าขอเริ่มเรื่องใหม่ทั้งหมด
+    //
+    // ⚠️ ลบได้เฉพาะ "เรื่องของตัวเอง" เท่านั้น
+    //    เบอร์มาจาก session ไม่ได้มาจากสิ่งที่ลูกค้าส่งมา จึงยัดเบอร์คนอื่นไม่ได้
+    // ⚠️ ต้องลบรูปที่อัปไว้ด้วย ไม่ใช่ลบแค่ตัวเรื่อง
+    //    เหลือรูปค้างไว้ = ข้อมูลเอกสารราชการของคนที่ขอให้ลบไปแล้วยังอยู่ในระบบ
+    //    และรอบหน้าที่เขาอัปใหม่ รูปเก่าจะปนกับรูปใหม่เพราะคีย์ซ้ำกัน
+    if (body?.reset) {
+      const n = rec.images || 0;
+      await Promise.all(
+        Array.from({ length: Math.max(n, MAX_IMAGES) }, (_, i) =>
+          s.delete(`img/${phone}/${i}`).catch(() => {}),
+        ),
+      );
+      await s.delete(key).catch(() => {});
+      return json({ ok: true, item: blank(phone, me.user.name || "") });
+    }
+
     // ---- ลูกค้ากดบอกว่าทำขั้นนั้นแล้ว
     const stage = clean(body?.stage, 16);
     if (stage) {

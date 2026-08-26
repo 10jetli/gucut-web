@@ -425,6 +425,48 @@ export default function PermitView() {
   }, [me?.phone]);
 
   /**
+   * เริ่มเรื่องใหม่ทั้งหมด — กลับไปขั้น ๑
+   *
+   * ⚠️ ต้องล้าง "ทั้งสองฝั่ง" ล้างฝั่งเดียวไม่พอ
+   *    ฝั่งเซิร์ฟเวอร์เก็บขั้นที่เดินมาถึงกับรูปใบ ลซ.๒
+   *    ฝั่งเครื่องลูกค้าเก็บร่างที่กรอกไว้ · ธงว่าพิมพ์แล้ว · จังหวัดที่เลือก
+   *    ล้างแต่เซิร์ฟเวอร์ = แถบสามใบยังขึ้นว่าพิมพ์แล้ว เพราะธงนั้นอยู่ในเครื่อง
+   *
+   * ⚠️ ต้องถามยืนยันก่อนเสมอ ลบแล้วเอากลับไม่ได้
+   *    ปุ่มนี้อยู่ในกล่องที่พับไว้ซึ่งลูกค้าอาจกดเปิดมาสำรวจเฉย ๆ
+   */
+  const resetCase = useCallback(async () => {
+    if (!window.confirm(
+      "เริ่มเรื่องใหม่ทั้งหมด?\n\n" +
+      "ข้อมูลที่กรอกไว้ ขั้นที่เดินมาถึง และรูปใบ ลซ.๒ ที่ส่งให้ร้านจะถูกลบทั้งหมด\n" +
+      "กดแล้วเอากลับไม่ได้",
+    )) return;
+    setStageBusy(true);
+    try {
+      if (me?.phone) {
+        await fetch("/api/permit-doc", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({ reset: true }),
+        });
+      }
+      try {
+        localStorage.removeItem(KEY);
+        localStorage.removeItem(KEY + "-printed");
+        localStorage.removeItem(KEY + "-useprov");
+      } catch { /* โหมดส่วนตัว */ }
+      // ⚠️ โหลดหน้าใหม่ทั้งหน้า ไม่ใช่แค่ตั้ง state กลับ
+      //    หน้านี้มี state กระจายหลายตัว (ร่าง · รุ่น · บาร์ · จำนวน · ช่องที่ไม่มั่นใจ)
+      //    ตั้งกลับทีละตัวมีโอกาสตกหล่นแล้วเหลือค่าเก่าค้างโดยไม่มีใครรู้
+      window.location.href = "/permit/";
+    } catch {
+      setStageBusy(false);
+      setLz2Msg("เริ่มใหม่ไม่สำเร็จ ลองอีกครั้ง");
+    }
+  }, [me?.phone]);
+
+  /**
    * ส่งรูปใบ ลซ.๒ ให้ร้าน
    *
    * ⚠️ เป็นที่เดียวในหน้านี้ที่ส่งข้อมูลออกจากเครื่องลูกค้าไปเก็บที่ร้าน
@@ -1315,7 +1357,21 @@ export default function PermitView() {
                   ▾
                 </span>
               </summary>
-              <div className="px-4 pb-4">{permitForm}</div>
+              <div className="px-4 pb-4">
+                {permitForm}
+                {/* ⚠️ ปุ่มนี้อยู่ท้ายสุดของกล่องที่พับไว้โดยตั้งใจ
+                       เป็นสิ่งที่ทำลายข้อมูล ต้องหายากกว่าปุ่มอื่นทุกปุ่ม
+                    ⚠️ ใช้ได้จริงกับลูกค้าด้วย ไม่ใช่มีไว้เทสอย่างเดียว
+                       คนที่เลือกรุ่นผิดหรือกดขั้นผิดไปแล้ว ไม่มีทางแก้เลยถ้าไม่มีปุ่มนี้
+                       (ขั้นเดินหน้าอย่างเดียว ถอยเองไม่ได้) */}
+                <button
+                  onClick={() => void resetCase()}
+                  disabled={stageBusy}
+                  className="mt-4 w-full rounded-sm border border-steel-600 py-2.5 text-[12.5px] font-semibold text-ink-300 disabled:opacity-50"
+                >
+                  {stageBusy ? "กำลังเริ่มใหม่…" : "เริ่มเรื่องใหม่ทั้งหมด (ลบข้อมูลที่กรอกไว้)"}
+                </button>
+              </div>
             </details>
           );
         })()}
