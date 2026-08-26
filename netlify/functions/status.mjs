@@ -120,6 +120,30 @@ export default async function handler(req, context) {
       return { note: `เปิดรับอยู่ ${subs.length} เครื่อง` };
     }),
 
+    // ---------- แจ้งเตือนลูกค้าทาง LINE ----------
+    // ⚠️ ตัวนี้ต้องยิงของจริง ไม่ใช่แค่ดูว่ามี token ไหม
+    //    token ที่หมดอายุหรือผูกผิด channel จะดูเหมือนตั้งค่าครบทุกอย่าง
+    //    แล้วระบบตามเตือนจะเงียบไปเฉย ๆ โดยไม่มีใครรู้ว่าลูกค้าไม่เคยได้รับอะไรเลย
+    check("แจ้งเตือนลูกค้าทาง LINE", async () => {
+      if (!env.LINE_MESSAGING_TOKEN) {
+        return {
+          off: true,
+          note: "ยังไม่ได้ตั้ง LINE_MESSAGING_TOKEN — ตามเตือนทาง Web Push และ Telegram แทน",
+        };
+      }
+      const r = await fetch("https://api.line.me/v2/bot/info", {
+        headers: { authorization: `Bearer ${env.LINE_MESSAGING_TOKEN}` },
+        signal: AbortSignal.timeout(8000),
+      });
+      // ⚠️ token ใช้ไม่ได้ = "พัง" ไม่ใช่ "ยังไม่ได้เปิดใช้"
+      //    ต้องโยน error เท่านั้น check() รู้จักแค่ off / warn / โยน error
+      //    คืน { bad: true } จะกลายเป็นเขียวทั้งที่ใช้งานไม่ได้จริง
+      if (r.status === 401) throw new Error("LINE ปฏิเสธ token — หมดอายุหรือคัดลอกมาไม่ครบ");
+      if (!r.ok) throw new Error(`LINE ตอบ ${r.status}`);
+      const info = await r.json().catch(() => null);
+      return { note: `ต่อกับ OA ได้: ${info?.displayName || info?.basicId || "ไม่ทราบชื่อ"}` };
+    }),
+
     // ---------- รับเงิน ----------
     // ⚠️ ทุกข้อความตรงนี้ต้องคิดจาก "ช่องทางที่เปิดอยู่จริงทั้งหมด" ไม่ใช่ดูช่องเดียว
     //    เคยพลาดสองรอบแล้ว: รอบแรกเขียนตายตัวว่า "จ่ายได้แค่ปลายทาง" ทั้งที่ COD ปิดไปแล้ว

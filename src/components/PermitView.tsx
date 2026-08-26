@@ -36,6 +36,7 @@ import {
   officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
+import { SHOP } from "@/lib/shop";
 import { PROVINCES, findPostcode, fixThaiAddress } from "@/lib/postcode";
 import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
@@ -820,6 +821,25 @@ export default function PermitView() {
                 >
                   {stageBusy ? "กำลังบันทึก…" : "ได้ใบ ลซ.๒ มาแล้ว"}
                 </button>
+
+                {/* ⚠️ ช่องโหว่ที่ทำให้ระบบตามเตือนทาง LINE ส่งไม่ถึงแบบเงียบ ๆ
+                       ถึงลูกค้าจะล็อกอินด้วย LINE แล้ว ถ้าเขา "ไม่ได้เพิ่มเพื่อน" กับ OA
+                       LINE จะตอบ 403 แล้วข้อความไม่ถึงเขาเลย โดยไม่มีอะไรฟ้องทั้งสองฝั่ง
+                    ⇒ ต้องชวนเพิ่มเพื่อนตรงนี้ ซึ่งเป็นจังหวะที่เขาเห็นประโยชน์พอดี
+                      (กำลังจะรอใบอีก ๗ วัน และอยากให้มีคนมาเตือน)
+                    ⚠️ ห้ามบังคับ ให้เป็นทางเลือก — คนที่ไม่กดยังได้รับทาง Web Push
+                      และร้านยังเห็นชื่อเขาในรายการค้างทาง Telegram อยู่ดี */}
+                <a
+                  href={SHOP.lineUrl}
+                  target="_blank"
+                  rel="noopener"
+                  className="mt-2 flex items-center justify-center gap-1.5 rounded-sm border border-[#06C755] bg-white py-2.5 text-[13px] font-semibold text-[#06C755]"
+                >
+                  เพิ่มเพื่อน {SHOP.lineOa} ให้ร้านเตือนทางไลน์ได้
+                </a>
+                <p className="mt-1 text-center text-[11px] text-ink-300">
+                  ไม่เพิ่มก็ได้ — ร้านจะติดต่อทางเบอร์โทรแทน
+                </p>
               </div>
             )}
 
