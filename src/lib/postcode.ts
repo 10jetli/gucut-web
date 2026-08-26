@@ -1,30 +1,31 @@
-// หารหัสไปรษณีย์จาก ตำบล/อำเภอ/จังหวัด
+// ตำบล / อำเภอ / จังหวัด และรหัสไปรษณีย์
 //
 // บัตรประชาชนไม่มีรหัสไปรษณีย์ แต่ฟอร์ม ลซ.1 มีช่องให้กรอก
 // เจ้าของร้านสั่ง (25 ส.ค. 2569) ว่าให้เติมให้เลย ลูกค้าจะได้ไม่ต้องหาเอง
 //
 // ---------------------------------------------------------------------------
 // ⚠️ ข้อมูลมาจากชุดข้อมูลสาธารณะ 7,436 ตำบลทั่วประเทศ ไม่ได้เขียนจากความจำ
-//    ที่มา: github.com/thailand-geography-data/thailand-geography-json
-//    ดึงมาเมื่อ 25 ส.ค. 2569 · ตรวจกับบัตรจริง 4 ใบแล้วตรงทุกใบ
+//    สร้างด้วย scripts/gen-postcode.mjs (รันใหม่ได้ตลอด)
 //
-//    เขียนรหัสไปรษณีย์จากความจำคือสิ่งที่ห้ามทำเด็ดขาด — มันดูเหมือนถูก
-//    แต่ผิดเป็นบางตำบลโดยไม่มีอะไรฟ้อง แล้วลูกค้าเอาไปยื่นเป็นคำรับรอง
-//
-// ⚠️ 194 อำเภอมีหลายรหัสในอำเภอเดียว ต้องดูถึงระดับตำบล
-//    อีก 734 อำเภอใช้รหัสเดียวทั้งอำเภอ จึงเก็บย่อเป็นค่าเดียวเพื่อลดขนาดไฟล์
+//    เขียนชื่อตำบลหรือรหัสไปรษณีย์จากความจำคือสิ่งที่ห้ามทำเด็ดขาด —
+//    มันดูเหมือนถูกแต่ผิดเป็นบางตำบลโดยไม่มีอะไรฟ้อง
+//    แล้วลูกค้าเอาไปยื่นเป็นคำรับรองต่อนายทะเบียน
 //
 // ⚠️ ค่าที่ได้เป็น "ค่าที่เดาให้" เสมอ ต้องให้ลูกค้าแก้ได้และเห็นว่ามันถูกเติมมา
-//    ชื่อตำบลที่กล้องอ่านมาอาจสะกดเพี้ยน แล้วได้รหัสของตำบลอื่นที่ชื่อใกล้กัน
+//
+// รูปแบบข้อมูล
+//   { "<จังหวัด>": { "<อำเภอ>": { "": "<รหัสหลัก>", "<ตำบล>": "" | "<รหัสต่าง>" } } }
+//   ค่าว่าง "" แปลว่าตำบลนั้นใช้รหัสหลักของอำเภอ
 // ---------------------------------------------------------------------------
 
 import raw from "@/data/postcode.json";
 
-type Tree = Record<string, Record<string, string | Record<string, string>>>;
+type District = Record<string, string>;              // "" = รหัสหลัก · ที่เหลือคือตำบล
+type Tree = Record<string, Record<string, District>>;
 const TREE = raw as Tree;
 
 /** ตัดคำนำหน้าที่บัตรใช้ออก เช่น "ต.หนองแคน" → "หนองแคน" */
-const bare = (s: string) =>
+export const bare = (s: string) =>
   String(s || "").replace(/^(ต\.|ตำบล|แขวง|อ\.|อำเภอ|เขต|จ\.|จังหวัด)\s*/, "").trim();
 
 /**
@@ -38,9 +39,125 @@ export function findPostcode(province: string, amphoe: string, tambon: string): 
   if (!p) return null;
   const a = p[bare(amphoe)];
   if (!a) return null;
-  if (typeof a === "string") return a;          // ทั้งอำเภอใช้รหัสเดียว
-  return a[bare(tambon)] ?? null;                // ต้องดูถึงตำบล
+  const t = a[bare(tambon)];
+  // ตำบลที่รหัสต่างจากรหัสหลักของอำเภอมีอยู่ 513 ตำบล ต้องใช้ค่าของตำบลนั้น
+  if (t) return t;
+  return a[""] || null;
 }
 
-/** รายชื่อจังหวัดทั้ง 77 — เอาไว้ทำช่องเลือกจังหวัดถ้าต้องการ */
+/** รายชื่อจังหวัดทั้ง 77 */
 export const PROVINCES = Object.keys(TREE).sort();
+
+// ---------------------------------------------------------------------------
+// ตรวจและแก้ที่อยู่ที่อ่านมาจากบัตร
+//
+// ⚠️ ทำไมต้องมี — ตัวอ่านสลับ "ตำบล" กับ "อำเภอ" กันได้ และสะกดผิดได้
+//    เจอของจริง 26 ส.ค. 2569 กับบัตรที่เขียนว่า "ต.กู่กาสิงห์ อ.เกษตรวิสัย จ.ร้อยเอ็ด"
+//    ตัวอ่านให้มา ตำบล=เกษตรวิสัย · อำเภอ=ภูกาสิงห์  (สลับกัน + สะกดผิด)
+//    ทั้งสองอย่างไม่มีอะไรฟ้องเลย ลูกค้าพิมพ์ออกมายื่นได้ทั้งที่ที่อยู่ผิด
+//
+// ⚠️ กติกาการแก้ให้ — เข้มไว้ก่อน เพราะ "แก้ผิด" แย่กว่า "ไม่แก้"
+//    1. แก้ก็ต่อเมื่อค่าที่ได้มา "ไม่มีอยู่จริง" ในข้อมูลราชการเท่านั้น
+//    2. ตัวเลือกที่ใกล้เคียงต้องมี "ตัวเดียว" ถ้ามีหลายตัวให้ปล่อยไว้
+//    3. ทุกช่องที่ถูกแก้ต้องบอกกลับไปให้หน้าจอไฮไลต์ ห้ามแก้เงียบ ๆ
+// ---------------------------------------------------------------------------
+
+/** ระยะห่างของคำแบบ Levenshtein — ใช้เทียบชื่อที่สะกดเพี้ยนไปนิดเดียว */
+function dist(a: string, b: string): number {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (!m || !n) return m || n;
+  let prev = Array.from({ length: n + 1 }, (_, i) => i);
+  for (let i = 1; i <= m; i++) {
+    const cur = [i];
+    for (let j = 1; j <= n; j++) {
+      cur[j] = Math.min(
+        prev[j] + 1,
+        cur[j - 1] + 1,
+        prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+    prev = cur;
+  }
+  return prev[n];
+}
+
+/**
+ * หาชื่อที่ใกล้เคียงที่สุด — คืน null ถ้าไม่มั่นใจ
+ *
+ * ⚠️ ต้องมีตัวเลือกที่ใกล้ที่สุด "ตัวเดียว" ถึงจะยอมแก้
+ *    เสมอกันสองตัว = เดา 50/50 ซึ่งไม่ต่างจากโยนเหรียญ ปล่อยไว้ให้ลูกค้าแก้เองดีกว่า
+ */
+function nearest(name: string, list: string[]): string | null {
+  const q = bare(name);
+  if (q.length < 3) return null;
+  // ยอมเพี้ยนได้ตามความยาวคำ คำสั้นยอมน้อย คำยาวยอมมาก
+  const max = q.length <= 5 ? 1 : q.length <= 9 ? 2 : 3;
+  let best: string | null = null, bestD = Infinity, ties = 0;
+  for (const c of list) {
+    const d = dist(q, c);
+    if (d < bestD) { bestD = d; best = c; ties = 1; }
+    else if (d === bestD) ties++;
+  }
+  return bestD <= max && ties === 1 ? best : null;
+}
+
+export interface FixedAddress {
+  tambon: string;
+  amphoe: string;
+  province: string;
+  postcode: string;
+  /** ชื่อช่องที่ระบบแก้ให้ — หน้าจอต้องไฮไลต์ให้ลูกค้าดูอีกที */
+  changed: string[];
+}
+
+/**
+ * ตรวจที่อยู่กับข้อมูลราชการ แล้วแก้เท่าที่มั่นใจจริง ๆ
+ *
+ * ⚠️ หาจังหวัดไม่เจอ = ไม่แก้อะไรเลย คืนค่าเดิมทั้งชุด
+ *    ไม่มีจังหวัดก็ไม่มีหลักให้ยึด เดาต่อไปคือมั่วล้วน
+ */
+export function fixThaiAddress(
+  tambonIn: string, amphoeIn: string, provinceIn: string,
+): FixedAddress {
+  let tambon = bare(tambonIn), amphoe = bare(amphoeIn), province = bare(provinceIn);
+  const changed: string[] = [];
+
+  // ---- จังหวัด
+  let pNode = TREE[province];
+  if (!pNode && province) {
+    const guess = nearest(province, PROVINCES);
+    if (guess) { province = guess; pNode = TREE[guess]; changed.push("province"); }
+  }
+  if (!pNode) return { tambon, amphoe, province, postcode: "", changed };
+
+  const districts = Object.keys(pNode);
+
+  // ---- สลับตำบลกับอำเภอกันไหม
+  //      เงื่อนไขต้องครบทั้งสองทาง: ที่ให้มาเป็นอำเภอไม่ได้ แต่ที่อยู่ช่องตำบลเป็นอำเภอได้
+  //      ครบทั้งสองทางถึงจะมั่นใจว่าสลับ ไม่ใช่แค่สะกดผิด
+  if (amphoe && tambon && !pNode[amphoe] && pNode[tambon]) {
+    [tambon, amphoe] = [amphoe, tambon];
+    changed.push("tambon", "amphoe");
+  }
+
+  // ---- อำเภอสะกดเพี้ยน
+  if (amphoe && !pNode[amphoe]) {
+    const guess = nearest(amphoe, districts);
+    if (guess) { amphoe = guess; if (!changed.includes("amphoe")) changed.push("amphoe"); }
+  }
+
+  // ---- ตำบลสะกดเพี้ยน (ตรวจได้ทุกอำเภอแล้ว หลังเก็บชื่อตำบลครบ)
+  const aNode = pNode[amphoe];
+  if (aNode && tambon && !(tambon in aNode)) {
+    const tambons = Object.keys(aNode).filter((k) => k !== "");
+    const guess = nearest(tambon, tambons);
+    if (guess) { tambon = guess; if (!changed.includes("tambon")) changed.push("tambon"); }
+  }
+
+  return {
+    tambon, amphoe, province,
+    postcode: findPostcode(province, amphoe, tambon) || "",
+    changed,
+  };
+}

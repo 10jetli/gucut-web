@@ -36,7 +36,7 @@ import {
   officeMapUrl, officeSiteUrl,
 } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
-import { PROVINCES, findPostcode } from "@/lib/postcode";
+import { PROVINCES, findPostcode, fixThaiAddress } from "@/lib/postcode";
 import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
 
@@ -323,6 +323,14 @@ export default function PermitView() {
       //    เจอของจริง 25 ส.ค. 2569: บัตรเขียน 2 พ.ค. 2512 แต่ช่องขึ้น 10 เมษายน 2503
       //    ซึ่งเป็นค่าค้างจากรอบก่อน — อันตรายเพราะเป็นคำรับรองต่อนายทะเบียน
       //    ⇒ สแกนใหม่ = ล้างทุกช่องที่มาจากบัตรก่อนเสมอ ว่างดีกว่าผิด
+      // ⚠️ ตรวจที่อยู่กับข้อมูลราชการก่อนเสมอ อย่าเชื่อที่ตัวอ่านให้มาตรง ๆ
+      //    ตัวอ่านสลับ "ตำบล" กับ "อำเภอ" กันได้ และสะกดผิดได้
+      //    เจอของจริง 26 ส.ค. 2569: บัตรเขียน "ต.กู่กาสิงห์ อ.เกษตรวิสัย จ.ร้อยเอ็ด"
+      //    แต่ได้มา ตำบล=เกษตรวิสัย อำเภอ=ภูกาสิงห์ (สลับกัน + สะกดผิด)
+      //    ทั้งสองอย่างไม่มีอะไรฟ้อง ลูกค้าพิมพ์ออกมายื่นได้ทั้งที่ที่อยู่ผิด
+      //    fixThaiAddress แก้ให้เท่าที่มั่นใจ และบอกกลับมาว่าแก้ช่องไหนบ้าง
+      const fix = fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "");
+
       setD((p) => ({
         ...p,
         name: got.name || "",
@@ -333,11 +341,11 @@ export default function PermitView() {
         moo: a.moo || "",
         soi: a.soi || "",
         road: a.road || "",
-        tambon: a.tambon || "",
-        amphoe: a.amphoe || "",
-        province: a.province || "",
-        // รหัสไปรษณีย์คิดใหม่จากที่อยู่ใหม่เสมอ ไม่งั้นค้างรหัสของจังหวัดเดิม
-        postcode: "",
+        tambon: fix.tambon,
+        amphoe: fix.amphoe,
+        province: fix.province,
+        // รหัสไปรษณีย์มาจากที่อยู่ที่ตรวจแล้วเสมอ ไม่ใช่ค้างของจังหวัดเดิม
+        postcode: fix.postcode,
       }));
       // ที่อยู่อ่านพลาดบ่อยที่สุด ให้ไฮไลต์ทุกช่องที่มาจากบัตรเสมอ
       const addrKeys = Object.keys(a).filter((k) => k !== "houseNo" && k !== "moo");
@@ -348,14 +356,24 @@ export default function PermitView() {
         !got.name && "ชื่อ",
         !got.idNumber && "เลขบัตร",
         !got.birth && "วันเกิด",
-        !a.province && "ที่อยู่",
+        !fix.province && "ที่อยู่",
       ].filter(Boolean) as string[];
+      // ⚠️ ถ้าระบบแก้ที่อยู่ให้ ต้องบอกลูกค้าตรง ๆ ห้ามแก้เงียบ ๆ
+      //    เขาเป็นคนเซ็นรับรองที่อยู่นี้ต่อนายทะเบียน ต้องรู้ว่าอะไรถูกแก้
+      const fixedLabel = fix.changed.length
+        ? " · ระบบแก้ " +
+          fix.changed
+            .map((k) => (k === "tambon" ? "ตำบล" : k === "amphoe" ? "อำเภอ" : "จังหวัด"))
+            .filter((v, i, arr) => arr.indexOf(v) === i)
+            .join("/") +
+          " ให้ตรงกับทะเบียนราชการแล้ว ช่วยตรวจอีกที"
+        : "";
       setBusy(
-        missing.length === 4
+        (missing.length === 4
           ? "อ่านไม่ออกเลย — ลองถ่ายใหม่ให้ชัดขึ้น หรือกรอกเองด้านล่างได้"
           : missing.length
             ? `อ่านไม่ออก: ${missing.join(" · ")} — กรอกช่องนั้นเองด้านล่าง ที่เหลืออ่านให้แล้ว`
-            : "อ่านได้ครบทุกส่วน — ช่วยตรวจอีกทีก่อนพิมพ์",
+            : "อ่านได้ครบทุกส่วน — ช่วยตรวจอีกทีก่อนพิมพ์") + fixedLabel,
       );
     } catch (e) {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");
