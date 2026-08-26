@@ -1321,7 +1321,7 @@ export default function PermitView() {
                       rel="noopener"
                       className="mt-1.5 inline-block rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
                     >
-                      📄 โหลดตัวอย่างแบบฟอร์ม (PDF)
+                      📄 โหลดแบบฟอร์ม (PDF)
                     </a>
                   )}
                 </li>
