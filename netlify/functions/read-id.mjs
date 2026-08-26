@@ -128,6 +128,27 @@ const PROMPT = `ก่อนอื่น ดูก่อนว่ารูปน
 - ถ้ารูปไม่ใช่บัตรประจำตัวประชาชนไทย ให้ตอบ {"notIdCard": true}
 - ตอบ JSON ล้วน ไม่ต้องมีคำอธิบายหรือเครื่องหมาย code fence`;
 
+// โหมดอ่านเฉพาะ "โซนที่อยู่" — หน้าเว็บครอปส่วนล่างซ้ายของบัตรซูมส่งมา
+// เมื่ออ่านเต็มใบแล้วบรรทัดที่อยู่เล็กเกินอ่าน (บทเรียน 26 ส.ค. 2569:
+// เต็มใบอ่านชื่อ/เลขได้หมดแต่ที่อยู่เบลอ พอครอปซูมเฉพาะส่วนก็อ่านออก)
+const PROMPT_ADDR = `รูปนี้คือภาพซูมเฉพาะส่วนล่างของบัตรประจำตัวประชาชนไทย เพื่ออ่านบรรทัดที่อยู่
+
+หาบรรทัดที่ขึ้นต้นด้วย "ที่อยู่" แล้วตอบเป็น JSON เท่านั้น:
+{
+  "houseNo": "บ้านเลขที่ เช่น 82 หรือ 295/1",
+  "moo": "หมู่ที่ เป็นตัวเลข",
+  "soi": "ตรอก/ซอย",
+  "road": "ถนน",
+  "tambon": "ชื่อหลัง ต. หรือ แขวง",
+  "amphoe": "ชื่อหลัง อ. หรือ เขต",
+  "province": "ชื่อหลัง จ. หรือบรรทัดจังหวัด"
+}
+
+กติกา: ช่องไหนอ่านไม่ชัดหรือไม่มี ให้ตอบค่าว่าง "" **ห้ามเดาเด็ดขาด**
+ห้ามเลื่อนช่อง — คำหลัง ต. คือ tambon เท่านั้น หลัง อ. คือ amphoe เท่านั้น
+ถ้าไม่เห็นบรรทัดที่อยู่เลย ตอบ {"notIdCard": true}
+ตอบ JSON ล้วน ไม่มีคำอธิบาย`;
+
 export default async function handler(req) {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
@@ -179,6 +200,7 @@ export default async function handler(req) {
   // ⚠️ log ได้แค่นี้ — ขนาดรูปกับรอบหมุน ห้าม log เนื้อหาบัตรเด็ดขาด (กติกา PDPA)
   //    มีไว้ไล่ปัญหา "อ่านเพี้ยนซ้ำ ๆ" จาก log ฟังก์ชันโดยไม่ต้องเดา
   const turn = Number(body.turn) || 0;
+  const zone = body.zone === "address" ? "address" : "full";
   const bytes = b64.length * 0.75;
   if (bytes > MAX_BYTES) return json({ error: "รูปใหญ่เกินไป" }, 413);
   // ⚠️ ตีกลับก่อนถึง AI — ไม่งั้นมันแต่งบัตรขึ้นมาทั้งใบจากรูปเปล่า (ดูหมายเหตุที่ MIN_BYTES)
@@ -215,7 +237,7 @@ export default async function handler(req) {
           role: "user",
           content: [
             { type: "image", source: { type: "base64", media_type: media, data: b64 } },
-            { type: "text", text: PROMPT },
+            { type: "text", text: zone === "address" ? PROMPT_ADDR : PROMPT },
           ],
         }],
       }),
@@ -280,6 +302,15 @@ export default async function handler(req) {
       const a = norm(d1, k), b = norm(d2, k);
       return a === b ? a : "";
     };
+
+    if (zone === "address") {
+      const AF = ["houseNo", "moo", "soi", "road", "tambon", "amphoe", "province"];
+      const o = {};
+      let ag = 0;
+      for (const k of AF) { o[k] = agree(k); if (o[k]) ag++; }
+      console.log(`read-id turn=${turn} bytes=${bytes} out=ok-zone agree=${ag}/7`);
+      return json(o);
+    }
 
     // ⚠️ ด่านสุดท้าย — เลขบัตรต้อง "ตรงกันสองรอบ" และผ่านหลักตรวจ
     //    ไม่ผ่านข้อใดข้อหนึ่ง = ทิ้งทั้งชุด (เหตุผลเดิม: ถ้าเลขยังมั่ว ช่องอื่นก็เชื่อไม่ได้)

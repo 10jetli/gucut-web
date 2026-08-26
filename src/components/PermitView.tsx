@@ -265,6 +265,52 @@ export default function PermitView() {
     };
   };
 
+  // ครอป "โซนที่อยู่" (ล่างซ้ายของบัตรที่หมุนตั้งแล้ว) ซูมส่งอ่านแยก
+  // ⚠️ ใช้เมื่ออ่านเต็มใบได้ชื่อ/เลขครบแต่บรรทัดที่อยู่เล็กเกิน (บทเรียน 26 ส.ค. 2569
+  //    รูปจริงของเจ้าของร้าน: เต็มใบอ่านที่อยู่ไม่ออก พอครอปซูมก็อ่านชัด)
+  const shrinkAddr = (file: File, deg = 0) =>
+    new Promise<string>((ok, no) => {
+      const img = new window.Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const w = img.width, h = img.height;
+        const swap = deg % 180 !== 0;
+        const rw = swap ? h : w, rh = swap ? w : h;
+        const full = document.createElement("canvas");
+        full.width = rw; full.height = rh;
+        const fc = full.getContext("2d");
+        if (!fc) { no(new Error("ครอปรูปไม่ได้")); return; }
+        fc.translate(rw / 2, rh / 2);
+        fc.rotate((deg * Math.PI) / 180);
+        fc.drawImage(img, -w / 2, -h / 2, w, h);
+        // โซนที่อยู่ของบัตร ≈ ซ้ายล่าง (กว้าง 68% · สูงช่วง 50-95%)
+        const cy = Math.round(rh * 0.50), cw = Math.round(rw * 0.68), ch = Math.round(rh * 0.45);
+        const c = document.createElement("canvas");
+        const scale = Math.min(2.5, 1400 / cw);
+        c.width = Math.round(cw * scale) || 1;
+        c.height = Math.round(ch * scale) || 1;
+        const ctx = c.getContext("2d");
+        if (!ctx) { no(new Error("ครอปรูปไม่ได้")); return; }
+        ctx.drawImage(full, 0, cy, cw, ch, 0, 0, c.width, c.height);
+        ok(c.toDataURL("image/jpeg", 0.88));
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); no(new Error("เปิดรูปไม่ได้")); };
+      img.src = url;
+    });
+
+  const readAddrZone = async (file: File, deg = 0) => {
+    const image = await shrinkAddr(file, deg);
+    const r = await fetch("/api/read-id", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ image, turn: deg + 500, zone: "address" }),
+    });
+    const out = await r.json().catch(() => null);
+    if (!r.ok) throw new Error((out && out.error) || "ตัวอ่านตอบ " + r.status);
+    return (out || {}) as Record<string, string>;
+  };
+
   /**
    * ทางสำรอง — อ่านในเครื่องด้วย tesseract
    *
@@ -329,12 +375,14 @@ export default function PermitView() {
       const ladder = dims.h > dims.w ? [90, 270] : [0, 90, 270, 180];
 
       let aiError: Error | null = null;
+      let bestDeg = 0;
       for (const deg of ladder) {
         try {
           const r = await readByAi(file, deg);
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          if (!got) ({ got, a } = r);                    // เก็บผลแรกไว้ก่อน เผื่อไม่มีมุมไหนผ่าน
-          if (f.postcode) { ({ got, a } = r); break; }   // ที่อยู่ผ่านทะเบียน = มุมนี้ถูก จบ
+          // มุมที่ "อ่านชื่อออก" คือมุมที่บัตรตั้งตรง — จำไว้ใช้ครอปโซนที่อยู่ต่อ
+          if (!got || (r.got.name && !got.name)) { ({ got, a } = r); bestDeg = deg; }
+          if (f.postcode) { ({ got, a } = r); bestDeg = deg; break; }
           setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
         } catch (e) {
           const msg = String((e as Error).message || "");
@@ -368,6 +416,23 @@ export default function PermitView() {
       //    แต่ได้มา ตำบล=เกษตรวิสัย อำเภอ=ภูกาสิงห์ (สลับกัน + สะกดผิด)
       //    ทั้งสองอย่างไม่มีอะไรฟ้อง ลูกค้าพิมพ์ออกมายื่นได้ทั้งที่ที่อยู่ผิด
       //    fixThaiAddress แก้ให้เท่าที่มั่นใจ และบอกกลับมาว่าแก้ช่องไหนบ้าง
+      // ด่านซูมที่อยู่ — เต็มใบอ่านไม่ออกแต่ครอปซูมมักออก (เสียเครดิตเพิ่มเฉพาะตอนจำเป็น)
+      if (a && !fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "").postcode) {
+        try {
+          setBusy("กำลังซูมอ่านบรรทัดที่อยู่…");
+          const z = await readAddrZone(file, bestDeg);
+          const fz = fixThaiAddress(z.tambon || "", z.amphoe || "", z.province || "");
+          if (fz.postcode) {
+            a = {
+              ...a,
+              tambon: z.tambon || "", amphoe: z.amphoe || "", province: z.province || "",
+              houseNo: a.houseNo || z.houseNo || "", moo: a.moo || z.moo || "",
+              soi: a.soi || z.soi || "", road: a.road || z.road || "",
+            };
+          }
+        } catch { /* ซูมอ่านไม่ได้ก็ปล่อยว่างตามกติกาเดิม */ }
+      }
+
       const fix = fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "");
       // ⚠️ ที่อยู่ที่ตรวจกับทะเบียนราชการไม่ผ่าน = "ว่างดีกว่าผิด" — บทเรียน 26 ส.ค. 2569
       //    เดิมเอาค่ามั่ว (มกตาบาร/ทนอนเคน/ครงธวร) ขึ้นช่องเหมือนอ่านสำเร็จ
