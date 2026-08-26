@@ -923,6 +923,23 @@ export default function PermitView() {
                สองช่องเรียงคู่กันตั้งแต่แรก ใต้หัวข้อคำเดียวว่า "เลือก"
                ⇒ ห้ามซ่อนช่องขนาดบาร์ไว้หลังการเลือกรุ่น (ของเดิมทำแบบนั้น)
                ลูกค้าเห็นทีเดียวว่าต้องตอบแค่สองเรื่องก่อนจะเริ่มถ่ายบัตร */}
+        {/* ==================================== ส่วนกรอกและพิมพ์แบบ ลซ.๑
+            ⚠️ เจ้าของร้านสั่ง (26 ส.ค. 2569) "ถ้าผ่านขั้นตอน 1 มาแล้วก็ไม่ให้แสดงอีก"
+               คนที่พิมพ์ใบไปแล้วไม่ต้องเห็นช่องเลือกรุ่นกับช่องกรอกอีก
+               หน้าที่ของหน้านี้เปลี่ยนจาก "กรอกเอกสาร" เป็น "ดูว่าเรื่องถึงไหนแล้ว"
+
+            ⚠️ พับไว้ ไม่ใช่ลบทิ้ง — ต้องกลับมาพิมพ์ซ้ำได้เสมอ
+               กระดาษหาย · เจ้าหน้าที่ตีกลับให้แก้ · พิมพ์ไม่ติด
+               ลบทิ้งจริงเมื่อไหร่ ลูกค้าจะไม่มีทางได้ใบใหม่เลยนอกจากโทรหาร้าน
+               ค่าที่กรอกไว้ยังอยู่ครบในเครื่องเขา กางออกมาก็พิมพ์ซ้ำได้ทันที
+
+            ⚠️ ใช้ IIFE ครอบเพื่อให้ตัวฟอร์ม "เขียนอยู่ที่เดียว" แต่วางได้สองแบบ
+               ห้ามคัดลอกฟอร์มไปวางสองชุดเด็ดขาด ส่วนนี้ถูกแก้บ่อยมาก
+               (วันเดียวแก้ ๘ รอบ) สองชุดเมื่อไหร่ = วันหนึ่งจะแก้ชุดเดียว
+               แล้วอีกชุดค้างของเก่าไว้เงียบ ๆ โดยไม่มีอะไรฟ้อง */}
+        {(() => {
+          const permitForm = (
+            <>
         <h2 className="mt-5 text-[15px] font-bold text-ink">๑. เลือก</h2>
         <div className="mt-2 grid grid-cols-2 gap-2">
           <label>
@@ -1401,6 +1418,29 @@ export default function PermitView() {
             </ul>
           </>
         )}
+            </>
+          );
+          if (!stage) return permitForm;
+          return (
+            <details className="group mt-5 overflow-hidden rounded-xl bg-white ring-1 ring-black/5">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2 px-4 py-3.5 text-[13.5px] font-semibold text-ink">
+                <span>
+                  แก้ข้อมูลหรือพิมพ์แบบ ลซ.๑ ใหม่
+                  <span className="mt-0.5 block text-[11.5px] font-normal text-ink-300">
+                    ข้อมูลที่กรอกไว้ยังอยู่ครบ — กดถ้ากระดาษหายหรือต้องแก้
+                  </span>
+                </span>
+                <span
+                  aria-hidden
+                  className="shrink-0 text-[11px] font-normal text-ink-300 transition-transform group-open:rotate-180"
+                >
+                  ▾
+                </span>
+              </summary>
+              <div className="px-4 pb-4">{permitForm}</div>
+            </details>
+          );
+        })()}
         </>
         )}
       </main>
