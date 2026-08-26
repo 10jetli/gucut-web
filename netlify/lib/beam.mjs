@@ -67,28 +67,37 @@ async function call(path, init = {}) {
  *    อยากรับบัตรต้องใช้หน้าจ่ายเงินที่ Beam โฮสต์เอง (Payment Link) — คนละงานกัน
  */
 /**
- * ⚠️ mark/color มีไว้วาด "ตราสัญลักษณ์แทนโลโก้" บนหน้าจ่ายเงิน
- *    ใช้อักษรย่อบนพื้นสีประจำแบรนด์ ไม่ใช่ไฟล์โลโก้จริง — ตั้งใจ
- *    เอาโลโก้ของคนอื่นมาแปะเองมีเรื่องเครื่องหมายการค้า และร้านไม่มีสิทธิ์ในไฟล์นั้น
- *    (ร้านนี้ระวังเรื่องเครื่องหมายการค้าเป็นพิเศษอยู่แล้ว ดู licenses.ts)
+ * ⚠️ icon คือโลโก้จริง — ใช้ "ชุดเดียวกับที่ Beam ใช้บนหน้าจ่ายเงินของเขาเอง"
+ *    ดึงมาจาก pay.beamcheckout.com แล้วเก็บที่ R2 ของร้าน (video.gucut.com/i/pay/)
+ *    ⚠️ ห้ามลิงก์ตรงไปที่ไฟล์บนเซิร์ฟเวอร์ Beam
+ *       ชื่อไฟล์เขามี hash ต่อท้าย เขา deploy ใหม่เมื่อไหร่ลิงก์ตายทันที
+ *       และเป็นการดึงแบนด์วิดท์ของคนอื่นมาใช้ฟรี
+ *    ⚠️ ทำไมใช้ชุดของ Beam ไม่ใช่ไปหาโลโก้เอง — เป็นชุดที่ผู้ให้บริการชำระเงิน
+ *       ของร้านใช้แสดงช่องทางอยู่แล้ว ตรงรุ่นตรงสี และเป็นการใช้เพื่อ
+ *       "บอกว่ารับชำระทางไหนได้" ซึ่งเป็นวัตถุประสงค์ปกติของโลโก้ช่องทางชำระเงิน
+ *
+ * ⚠️ mark/color เป็นตัวสำรองเมื่อไม่มีโลโก้ ห้ามลบทิ้ง
+ *    Krungsri ใช้ตัวสำรองอยู่จริง เพราะไฟล์ที่ Beam มีเป็นโลโก้ "Krungsri Credit Cards"
+ *    ซึ่งไม่ตรงกับช่องทาง "แอปโมบายแบงก์กิ้ง" — เอามาใช้จะทำให้ลูกค้าเข้าใจผิด
  *
  * ⚠️ group ใช้จัดกลุ่มแอปธนาคาร ๕ ตัวให้อยู่ใต้หัวข้อเดียว
  *    เรียงเรียบ ๑๒ แถวรวดคือกำแพงตัวเลือกที่ลูกค้าเลื่อนผ่าน
  *    จัดกลุ่มแล้วเหลือ ๘ แถว เท่ากับที่ Shopee/Lazada/TikTok ทำ
  */
+const ICON = "https://video.gucut.com/i/pay";
 export const PAY_METHODS = [
-  { id: "QR_PROMPT_PAY",    label: "QR พร้อมเพย์",    note: "สแกนด้วยแอปธนาคารใดก็ได้ · ไม่ต้องแนบสลิป", mark: "QR",  color: "#1a3a8f" },
-  { id: "TRUE_MONEY",       label: "TrueMoney Wallet", note: "จ่ายจากวอลเล็ตทรูมันนี่",                  mark: "TM",  color: "#f5820b" },
-  { id: "SHOPEE_PAY",       label: "ShopeePay",        note: "จ่ายจากวอลเล็ตช้อปปี้",                    mark: "S",   color: "#ee4d2d" },
-  { id: "LINE_PAY",         label: "Rabbit LINE Pay",  note: "จ่ายผ่านแอปไลน์",                          mark: "LP",  color: "#06c755" },
-  { id: "SPAY_LATER",       label: "SPayLater",        note: "ผ่อนจ่ายกับช้อปปี้",                        mark: "SPL", color: "#ee4d2d" },
-  { id: "KPLUS",            label: "K PLUS",           note: "กสิกรไทย",     mark: "K",   color: "#138f2d", group: "bank" },
-  { id: "SCB_EASY",         label: "SCB EASY",         note: "ไทยพาณิชย์",   mark: "SCB", color: "#4e2e7f", group: "bank" },
+  { id: "QR_PROMPT_PAY",    label: "QR พร้อมเพย์",    note: "สแกนด้วยแอปธนาคารใดก็ได้ · ไม่ต้องแนบสลิป", mark: "QR",  color: "#1a3a8f", icon: `${ICON}/promptpay.png` },
+  { id: "TRUE_MONEY",       label: "TrueMoney Wallet", note: "จ่ายจากวอลเล็ตทรูมันนี่",                  mark: "TM",  color: "#f5820b", icon: `${ICON}/truemoney.png` },
+  { id: "SHOPEE_PAY",       label: "ShopeePay",        note: "จ่ายจากวอลเล็ตช้อปปี้",                    mark: "S",   color: "#ee4d2d", icon: `${ICON}/shopeepay.png` },
+  { id: "LINE_PAY",         label: "Rabbit LINE Pay",  note: "จ่ายผ่านแอปไลน์",                          mark: "LP",  color: "#06c755", icon: `${ICON}/linepay.png` },
+  { id: "SPAY_LATER",       label: "SPayLater",        note: "ผ่อนจ่ายกับช้อปปี้",                        mark: "SPL", color: "#ee4d2d", icon: `${ICON}/spaylater.png` },
+  { id: "KPLUS",            label: "K PLUS",           note: "กสิกรไทย",     mark: "K",   color: "#138f2d", group: "bank", icon: `${ICON}/kplus.png` },
+  { id: "SCB_EASY",         label: "SCB EASY",         note: "ไทยพาณิชย์",   mark: "SCB", color: "#4e2e7f", group: "bank", icon: `${ICON}/scb.png` },
   { id: "KRUNGSRI_APP",     label: "Krungsri",         note: "กรุงศรีอยุธยา", mark: "KS",  color: "#8b6f2e", group: "bank" },
-  { id: "BANGKOK_BANK_APP", label: "Bangkok Bank",     note: "กรุงเทพ",      mark: "BBL", color: "#1e4b9c", group: "bank" },
-  { id: "MAKE",             label: "MAKE by KBank",    note: "กสิกรไทย",     mark: "M",   color: "#138f2d", group: "bank" },
-  { id: "ALIPAY",           label: "Alipay",           note: "สำหรับลูกค้าต่างชาติ", mark: "A",  color: "#1677ff", group: "intl" },
-  { id: "WECHAT_PAY",       label: "WeChat Pay",       note: "สำหรับลูกค้าต่างชาติ", mark: "WC", color: "#07c160", group: "intl" },
+  { id: "BANGKOK_BANK_APP", label: "Bangkok Bank",     note: "กรุงเทพ",      mark: "BBL", color: "#1e4b9c", group: "bank", icon: `${ICON}/bbl.png` },
+  { id: "MAKE",             label: "MAKE by KBank",    note: "กสิกรไทย",     mark: "M",   color: "#138f2d", group: "bank", icon: `${ICON}/make.png` },
+  { id: "ALIPAY",           label: "Alipay",           note: "สำหรับลูกค้าต่างชาติ", mark: "A",  color: "#1677ff", group: "intl", icon: `${ICON}/alipay.png` },
+  { id: "WECHAT_PAY",       label: "WeChat Pay",       note: "สำหรับลูกค้าต่างชาติ", mark: "WC", color: "#07c160", group: "intl", icon: `${ICON}/wechat.png` },
 ];
 
 const METHOD_IDS = new Set(PAY_METHODS.map((m) => m.id));

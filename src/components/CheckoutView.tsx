@@ -1045,7 +1045,7 @@ function Mark({ mark, color }: { mark: string; color: string }) {
 
 interface BeamMethod {
   id: string; label: string; note: string;
-  mark?: string; color?: string; group?: string;
+  icon?: string; mark?: string; color?: string; group?: string;
 }
 
 /** แถวช่องทางย่อยของ Beam — เต็มความกว้าง วงกลมเลือกอยู่ขวา แบบเดียวกับ Shopee/Lazada */
@@ -1061,7 +1061,29 @@ function BeamRow({
         (inset ? "bg-steel-900 pl-8" : "pl-3")
       }
     >
-      <Mark mark={m.mark || "฿"} color={m.color || "#6b6b6b"} />
+      {/* ⚠️ โลโก้จริงมาจาก R2 ของร้าน ไม่ใช่ลิงก์ตรงไปเซิร์ฟเวอร์ Beam
+             ชื่อไฟล์เขามี hash ต่อท้าย เขา deploy ใหม่เมื่อไหร่ลิงก์ตายทันที
+          ⚠️ ต้องมีตัวสำรองเป็นอักษรย่อเสมอ ไม่ใช่ทุกช่องทางมีโลโก้
+             (Krungsri ไม่มี เพราะไฟล์ที่มีเป็นโลโก้บัตรเครดิต ไม่ใช่แอปธนาคาร)
+          eslint-disable-next-line @next/next/no-img-element --
+             next/image ไม่ช่วยอะไรกับไอคอน 32px ที่ย่อมาแล้วและแคชถาวร
+             แถมทำให้ต้องผ่าน loader เพิ่มอีกชั้นโดยไม่จำเป็น */}
+      {m.icon ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={m.icon}
+          alt=""
+          aria-hidden
+          width={32}
+          height={32}
+          // ⚠️ ห้ามใส่ loading="lazy" — ไอคอนในกลุ่มธนาคารที่ยังไม่กาง
+          //    จะเริ่มโหลดตอนกดกางพอดี ลูกค้าเห็นช่องว่างแวบหนึ่งทุกครั้ง (เห็นตอนลองจริง)
+          //    ไฟล์ละ ~4KB รวม 11 ใบยังไม่ถึง 50KB โหลดพร้อมหน้าไปเลยคุ้มกว่า
+          className="h-8 w-8 shrink-0 rounded-lg object-contain"
+        />
+      ) : (
+        <Mark mark={m.mark || "฿"} color={m.color || "#6b6b6b"} />
+      )}
       <span className="min-w-0 flex-1">
         <span className={"block text-[13px] " + (on ? "font-semibold text-[#1a1a1a]" : "text-[#1a1a1a]")}>
           {m.label}
