@@ -452,7 +452,6 @@ export default function PermitView() {
               ...a,
               tambon: z.tambon || "", amphoe: z.amphoe || "", province: z.province || "",
               houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
-              soi: z.soi || a.soi || "", road: z.road || a.road || "",
             };
           }
         } catch { /* ซูมอ่านไม่ได้ก็ปล่อยว่างตามกติกาเดิม */ }
@@ -472,8 +471,8 @@ export default function PermitView() {
         age: got.birth ? String(ageFromBirth(got.birth) ?? "") : "",
         houseNo: a.houseNo || "",
         moo: a.moo || "",
-        soi: a.soi || "",
-        road: a.road || "",
+        soi: "",   // ช่องถูกเอาออกจากจอ — ห้ามเติมค่าที่ลูกค้ามองไม่เห็น
+        road: "",
         tambon: addrBad ? "" : fix.tambon,
         amphoe: addrBad ? "" : fix.amphoe,
         province: addrBad ? "" : fix.province,
@@ -710,25 +709,74 @@ export default function PermitView() {
     // ⚠️ qty กับ barQty ต้องอยู่ในรายการนี้ด้วย ไม่งั้นร้านได้จำนวนเก่าติดไปกับใบ ลซ.๒
   }, [me?.phone, modelName, bar, qty, barQty, useProvince]);
 
+  // เบอร์โทรดึงจากบัญชีที่ล็อกอินให้เอง — เจ้าของร้านสั่ง 27 ส.ค. 2569
+  // (หน้านี้บังคับล็อกอินอยู่แล้ว และบัญชีผูกกับเบอร์เป็นหลัก)
+  // เติมเฉพาะตอนช่องยังว่าง — ลูกค้าพิมพ์เองแล้วห้ามทับ
+  useEffect(() => {
+    const ph = String(me?.phone || "").replace(/\D/g, "");
+    if (ph && /^0\d{8,9}$/.test(ph)) {
+      setD((p) => (p.phone ? p : { ...p, phone: ph }));
+    }
+  }, [me?.phone]);
+
   const idOk = validThaiId(d.idNumber);
   // ⚠️ ไม่มี d.qualified ในเงื่อนไขแล้ว — ช่องติ๊กถูกเอาออกตามคำสั่งเจ้าของร้าน
   //    ถ้ายังเช็คอยู่ ปุ่มพิมพ์จะเป็นสีเทาตลอดกาลโดยไม่มีอะไรบนจอบอกว่าทำไม
   const canPrint = Boolean(d.name && idOk && d.province && picked);
 
-  const field = (k: keyof Lz1Data, label: string, extra?: { wide?: boolean; type?: string }) => (
-    <label className={extra?.wide ? "col-span-2" : ""}>
-      <span className="mb-1 block text-[12px] text-ink-300">{label}</span>
-      <input
-        type={extra?.type || "text"}
-        value={String(d[k] ?? "")}
-        onChange={(e) => set(k, e.target.value)}
-        className={
-          "w-full rounded-sm border px-3 py-2 text-[14px] outline-none focus:border-safety " +
-          (unsure.includes(k as string) ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
-        }
-      />
-    </label>
-  );
+  // ---------------------------------------------------------------------------
+  // ตรวจสดทุกช่อง — ช่องที่ตรวจผ่านขึ้น "สีเขียว" ให้เห็นว่าเชื่อได้
+  // (เจ้าของร้านสั่ง 27 ส.ค. 2569 "ตรวจทุกช่องให้เป็นสีเขียว")
+  //   เขียว = ตรวจผ่านจริง: เลขบัตรผ่าน checksum · ตำบล/อำเภอ/จังหวัด/รหัสตรง
+  //   ทะเบียนราชการ · อายุสอดคล้องวันเกิด · เบอร์/รูปแบบถูกต้อง
+  //   เหลือง = ระบบไม่มั่นใจ ช่วยดู · ปกติ = ยังไม่มีข้อมูลหรือตรวจแทนไม่ได้
+  // ⚠️ ชื่อเขียวแค่ "รูปแบบครบ" (คำนำหน้า+ชื่อ+สกุล) — ตัวสะกดตรวจแทนไม่ได้
+  //    เคยเพี้ยน บุญประกอบ→มูลประกอบ แบบผ่านทุกด่าน ข้อความสรุปจึงยังเตือนเสมอ
+  // ---------------------------------------------------------------------------
+  const addrOk = !!findPostcode(d.province, d.amphoe, d.tambon);
+  const fieldOk = (k: keyof Lz1Data): boolean => {
+    const v = String(d[k] ?? "").trim();
+    if (!v) return false;
+    switch (k) {
+      case "idNumber": return idOk;
+      case "name": return /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(v);
+      case "birth": return ageFromBirth(v) !== null;
+      case "age": {
+        const fromBirth = ageFromBirth(d.birth);
+        return fromBirth !== null && String(fromBirth) === v;
+      }
+      case "houseNo": return /^\d+(\/\d+)?$/.test(v);
+      case "moo": return /^\d{1,2}$/.test(v);
+      case "tambon": case "amphoe": case "province": return addrOk;
+      case "postcode": return addrOk && findPostcode(d.province, d.amphoe, d.tambon) === v;
+      case "phone": return /^0\d{8,9}$/.test(v.replace(/\D/g, ""));
+      case "email": return /.+@.+\..+/.test(v);
+      default: return false;   // ตรอก/ซอย · ถนน — ไม่มีอะไรให้ตรวจ ไม่ระบายสี
+    }
+  };
+
+  const field = (k: keyof Lz1Data, label: string, extra?: { wide?: boolean; type?: string }) => {
+    const ok = fieldOk(k);
+    return (
+      <label className={extra?.wide ? "col-span-2" : ""}>
+        <span className="mb-1 block text-[12px] text-ink-300">
+          {label}
+          {ok && <span className="ml-1 text-[#1f7a3d]">✓</span>}
+        </span>
+        <input
+          type={extra?.type || "text"}
+          value={String(d[k] ?? "")}
+          onChange={(e) => set(k, e.target.value)}
+          className={
+            "w-full rounded-sm border px-3 py-2 text-[14px] outline-none focus:border-safety " +
+            (ok
+              ? "border-[#2e9e5b] bg-[#f2fbf5]"
+              : unsure.includes(k as string) ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
+          }
+        />
+      </label>
+    );
+  };
 
   return (
     <>
@@ -1236,7 +1284,7 @@ export default function PermitView() {
             {/* ------------------------------------------ 3. ตรวจ/กรอก */}
             <h2 className="mt-6 text-[15px] font-bold text-ink">๓. ตรวจข้อมูลให้ถูกต้อง</h2>
             <p className="mt-1 text-[12.5px] text-ink-300">
-              ช่องพื้นเหลืองคือช่องที่ระบบไม่มั่นใจ ช่วยดูให้แน่ใจอีกที
+              ช่องเขียว ✓ = ตรวจผ่านแล้ว · ช่องเหลือง = ระบบไม่มั่นใจ ช่วยดูให้แน่ใจอีกที
             </p>
             <div className="mt-2 grid grid-cols-2 gap-2.5">
               {field("name", "ชื่อ-นามสกุล (มีคำนำหน้า)", { wide: true })}
@@ -1264,8 +1312,10 @@ export default function PermitView() {
               {field("age", "อายุ (ปี)")}
               {field("houseNo", "บ้านเลขที่")}
               {field("moo", "หมู่ที่")}
-              {field("soi", "ตรอก/ซอย")}
-              {field("road", "ถนน")}
+              {/* ⚠️ ช่อง ตรอก/ซอย กับ ถนน ถูกเอาออกตามคำสั่งเจ้าของร้าน (27 ส.ค. 2569)
+                  ลูกค้าร้านส่วนใหญ่อยู่ต่างจังหวัดไม่มีสองช่องนี้ — บน PDF ปล่อยเป็น
+                  จุดไข่ปลาว่างให้เขียนมือ และห้ามเอาค่าที่สแกนได้ยัดลง PDF
+                  โดยที่ลูกค้าไม่เห็นบนจอ (ค่าอ่านผิดจะหลุดไปทั้งที่ไม่มีใครตรวจ) */}
               {field("tambon", "ตำบล/แขวง")}
               {field("amphoe", "อำเภอ/เขต")}
               {field("province", "จังหวัด")}
