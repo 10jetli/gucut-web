@@ -111,6 +111,77 @@ export interface FixedAddress {
   changed: string[];
 }
 
+// ---------------------------------------------------------------------------
+// แผนสำรอง: จังหวัดใช้ไม่ได้ ให้ยึด "อำเภอ" เป็นสมอแทน
+//
+// ⚠️ ทำไมต้องมี — เจอของจริง 26 ส.ค. 2569 กับบัตรเจ้าของร้านเอง
+//    บัตรเขียน "ต.หนองแคน อ.ดงหลวง จ.มุกดาหาร" (ถ่ายแนวนอน)
+//    AI ตอบมา ตำบล=ทุ่งคลอง(แต่งขึ้นเอง ไม่มีบนบัตร) · อำเภอ=หนองแคน · จังหวัด=คงหลวง
+//    คือเลื่อนค่าจริงไปคนละช่อง แล้วช่องจังหวัดได้อำเภอที่สะกดเพี้ยน
+//    ทางหลักยอมแพ้ทันทีเพราะ "คงหลวง" ไม่ใช่จังหวัด → ลูกค้าได้ที่อยู่มั่วทั้งชุด
+//    ทั้งที่ทั้งประเทศมี อ.ดงหลวง ที่สะกดใกล้ "คงหลวง" อยู่แห่งเดียว
+//    และในนั้นมี ต.หนองแคน พอดี — ข้อมูลพอสืบกลับได้ ไม่ควรยอมแพ้
+//
+// วิธี: เอาค่าทั้งสามช่องมาลองเป็น "ชื่ออำเภอ" ทีละตัว (เทียบตรงก่อน เพี้ยนทีหลัง)
+//      เจออำเภอที่ไหน เอาค่าที่เหลือลองเป็นตำบลในอำเภอนั้น
+//      ได้คำตอบครบชุด "หนึ่งเดียว" เท่านั้นถึงยอมใช้ — กำกวมเมื่อไหร่ถอย
+// ⚠️ ถ้าจังหวัดที่ให้มามีอยู่จริง ห้ามย้ายไปจังหวัดอื่น (สมอจังหวัดแน่นกว่า)
+// ---------------------------------------------------------------------------
+function rescueByAmphoe(
+  values: string[], provinceIn: string,
+): { tambon: string; amphoe: string; province: string; postcode: string } | null {
+  // ผู้สมัครแต่ละชุดมี "คะแนนความเพี้ยน" = ระยะสะกดของอำเภอ + ของตำบล รวมกัน
+  // ⚠️ ตัดสินด้วยคะแนน ไม่ใช่ "ต้องเจอชุดเดียว" — ชื่อไทยสะกดใกล้กันเยอะ
+  //    เคสจริง: คงหลวง เพี้ยนใกล้ทั้ง ดงหลวง(1) และ ภูหลวง(2) เจอสองชุดเสมอ
+  //    แต่ชุดที่ตำบลตรงเป๊ะ (หนองแคน@ดงหลวง เพี้ยนรวม 1) ชนะชุดขยะ
+  //    (หนองคัน@ภูหลวง เพี้ยนรวม 3) ขาดลอย — ต้องชนะขาดเท่านั้นถึงยอมใช้
+  const triples = new Map<string, { t: string; a: string; p: string; score: number }>();
+
+  for (const v of values) {
+    if (!v || v.length < 3) continue;
+    // อำเภอชื่อ (หรือใกล้เคียง) v มีอยู่จังหวัดไหนบ้าง
+    for (const exact of [true, false]) {
+      const hits: { p: string; a: string; d: number }[] = [];
+      for (const p of PROVINCES) {
+        if (exact) {
+          if (TREE[p][v]) hits.push({ p, a: v, d: 0 });
+        } else {
+          const g = nearest(v, Object.keys(TREE[p]));
+          if (g) hits.push({ p, a: g, d: dist(v, g) });
+        }
+      }
+      for (const h of hits) {
+        const aNode = TREE[h.p][h.a];
+        const rest = values.filter((x) => x && x !== v);
+        // ตำบลจากค่าที่เหลือ — เทียบตรงก่อน แล้วค่อยยอมสะกดเพี้ยน
+        let t = rest.find((x) => x !== "" && x in aNode) || null;
+        let td = 0;
+        if (!t) {
+          const tambons = Object.keys(aNode).filter((k) => k !== "");
+          for (const x of rest) {
+            const g = nearest(x, tambons);
+            if (g) { t = g; td = dist(x, g); break; }
+          }
+        }
+        if (!t) continue;
+        const key = `${t}|${h.a}|${h.p}`;
+        const score = h.d + td;
+        const old = triples.get(key);
+        if (!old || score < old.score) triples.set(key, { t, a: h.a, p: h.p, score });
+      }
+      if (hits.length) break;     // เทียบตรงเจอแล้ว ไม่ต้องลดมาตรฐานไปรอบเพี้ยน
+    }
+  }
+
+  const list = [...triples.values()].sort((x, y) => x.score - y.score);
+  if (!list.length) return null;
+  // ต้องชนะขาด: เพี้ยนน้อยกว่าอันดับสองจริง ๆ — เสมอกัน = เดา 50/50 ไม่เอา
+  if (list.length > 1 && list[0].score >= list[1].score) return null;
+  const r = list[0];
+  if (TREE[provinceIn] && r.p !== provinceIn) return null;
+  return { tambon: r.t, amphoe: r.a, province: r.p, postcode: findPostcode(r.p, r.a, r.t) || "" };
+}
+
 /**
  * ตรวจที่อยู่กับข้อมูลราชการ แล้วแก้เท่าที่มั่นใจจริง ๆ
  *
@@ -122,6 +193,19 @@ export function fixThaiAddress(
 ): FixedAddress {
   let tambon = bare(tambonIn), amphoe = bare(amphoeIn), province = bare(provinceIn);
   const changed: string[] = [];
+  // ค่าตั้งต้นตามที่อ่านมาจากบัตร — ใช้เทียบว่าแผนสำรองแก้ช่องไหนบ้าง
+  // (เทียบกับตัวแปร let ไม่ได้ เพราะทางหลักอาจแก้มันไปก่อนถึงแผนสำรอง)
+  const t0 = tambon, a0 = amphoe, p0 = province;
+
+  // ผลจากแผนสำรอง — ช่องไหนต่างจากที่ให้มาคือช่องที่ถูกแก้ ต้องบอกให้ครบ
+  const rescued = (r: { tambon: string; amphoe: string; province: string; postcode: string }): FixedAddress => ({
+    ...r,
+    changed: [
+      r.tambon !== t0 && "tambon",
+      r.amphoe !== a0 && "amphoe",
+      r.province !== p0 && "province",
+    ].filter(Boolean) as string[],
+  });
 
   // ---- จังหวัด
   let pNode = TREE[province];
@@ -129,7 +213,10 @@ export function fixThaiAddress(
     const guess = nearest(province, PROVINCES);
     if (guess) { province = guess; pNode = TREE[guess]; changed.push("province"); }
   }
-  if (!pNode) return { tambon, amphoe, province, postcode: "", changed };
+  if (!pNode) {
+    const r = rescueByAmphoe([tambon, amphoe, province], province);
+    return r ? rescued(r) : { tambon, amphoe, province, postcode: "", changed };
+  }
 
   const districts = Object.keys(pNode);
 
@@ -155,9 +242,12 @@ export function fixThaiAddress(
     if (guess) { tambon = guess; if (!changed.includes("tambon")) changed.push("tambon"); }
   }
 
-  return {
-    tambon, amphoe, province,
-    postcode: findPostcode(province, amphoe, tambon) || "",
-    changed,
-  };
+  const postcode = findPostcode(province, amphoe, tambon) || "";
+  // จังหวัดถูกแต่หาอำเภอ/ตำบลไม่เจอเลย — ลองแผนสำรองก่อนยอมแพ้
+  // (rescueByAmphoe ไม่ยอมย้ายจังหวัดอยู่แล้วเมื่อจังหวัดที่ให้มามีจริง)
+  if (!postcode) {
+    const r = rescueByAmphoe([tambon, amphoe, province], province);
+    if (r) return rescued(r);
+  }
+  return { tambon, amphoe, province, postcode, changed };
 }
