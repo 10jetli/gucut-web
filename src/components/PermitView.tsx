@@ -90,6 +90,69 @@ function TruckArrow() {
   );
 }
 
+/** คัดลอกข้อความแบบมีบันไดสำรอง — iPhone/เบราว์เซอร์ในแอป (LINE ฯลฯ) ชอบปฏิเสธ clipboard API
+ *  ⚠️ ขั้น execCommand ต้องรัน "ทันที" ในจังหวะกด ห้ามอยู่หลัง await — iOS จะถือว่าหมดสิทธิ์
+ *  จึงลองวิธีเก่าก่อนแบบ sync แล้วค่อยถอยไป clipboard API */
+function copyText(txt: string): Promise<boolean> {
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = txt;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.left = "-9999px";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.setSelectionRange(0, txt.length);
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    if (ok) return Promise.resolve(true);
+  } catch { /* ตกไปขั้นถัดไป */ }
+  try {
+    const w = navigator.clipboard?.writeText?.(txt);
+    if (w) return w.then(() => true, () => false);
+  } catch { /* ตกไปขั้นสุดท้าย */ }
+  return Promise.resolve(false);
+}
+
+/** ปุ่มคัดลอกที่บอกผลตรงตัวปุ่มเอง — เดิมส่งผลไปโชว์ที่ส่วนสแกนบัตรซึ่งอยู่คนละจอ
+ *  ลูกค้ากดแล้วเหมือนไม่มีอะไรเกิดขึ้น (เจอจริง 27 ส.ค. 2569 "กดคัดลอกไม่ได้")
+ *  คัดลอกไม่ได้จริง ๆ = กางข้อความให้แตะค้างคัดลอกเอง ไม่มีทางตัน */
+function CopyBtn({ text, label, className }: { text: () => string; label: string; className: string }) {
+  const [st, setSt] = useState<"idle" | "done" | "fail">("idle");
+  const [showText, setShowText] = useState("");
+  return (
+    <>
+      <button
+        type="button"
+        className={className}
+        onClick={() => {
+          const t = text();
+          void copyText(t).then((ok) => {
+            setSt(ok ? "done" : "fail");
+            if (ok) { setShowText(""); setTimeout(() => setSt("idle"), 3000); }
+            else setShowText(t);
+          });
+        }}
+      >
+        {st === "done" ? "คัดลอกแล้ว ✓" : label}
+      </button>
+      {st === "fail" && showText && (
+        <div className="col-span-2 rounded-sm bg-white p-2">
+          <p className="text-[11.5px] text-ink-300">
+            เครื่องนี้ไม่ให้คัดลอกอัตโนมัติ — แตะค้างที่ข้อความด้านล่าง แล้วเลือก &ldquo;คัดลอก&rdquo;
+          </p>
+          <textarea
+            readOnly
+            value={showText}
+            onFocus={(e) => e.currentTarget.select()}
+            className="mt-1 h-16 w-full rounded-sm border border-steel-600 p-1.5 text-[11px] text-ink-700"
+          />
+        </div>
+      )}
+    </>
+  );
+}
+
 export default function PermitView() {
   const [d, setD] = useState<Lz1Data>(blank);
   const [modelName, setModelName] = useState("");
@@ -1687,17 +1750,11 @@ export default function PermitView() {
                   >
                     ส่งไปไลน์
                   </a>
-                  <button
-                    onClick={() => {
-                      const link = makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty });
-                      void navigator.clipboard.writeText(link)
-                        .then(() => setBusy("คัดลอกลิงก์แล้ว — เอาไปวางที่ไหนก็ได้"))
-                        .catch(() => setBusy("คัดลอกไม่ได้ ลองใช้ปุ่มส่งไปไลน์แทน"));
-                    }}
+                  <CopyBtn
+                    text={() => makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty })}
+                    label="คัดลอกลิงก์"
                     className="rounded-sm border border-steel-600 bg-white py-3 text-[14px] font-semibold text-ink"
-                  >
-                    คัดลอกลิงก์
-                  </button>
+                  />
                 </div>
                 {/* ⚠️ ต้องบอกตรง ๆ ก่อนลูกค้ากด ไม่ใช่ซ่อนไว้ในนโยบาย */}
                 <p className="rounded-sm bg-[#fffbe6] p-2.5 text-[11.5px] leading-relaxed text-ink-700">
@@ -1786,17 +1843,11 @@ export default function PermitView() {
                 {DOC_MAILING.address}
               </p>
               <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
-              <button
-                onClick={() => {
-                  const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
-                  void navigator.clipboard.writeText(txt)
-                    .then(() => setBusy("คัดลอกที่อยู่แล้ว"))
-                    .catch(() => setBusy("คัดลอกไม่ได้ ลองจดเองนะคะ"));
-                }}
+              <CopyBtn
+                text={() => `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`}
+                label="คัดลอกที่อยู่สำหรับจ่าหน้าซอง"
                 className="mt-2 w-full rounded-sm border border-steel-600 py-2 text-[13px] font-semibold text-ink"
-              >
-                คัดลอกที่อยู่สำหรับจ่าหน้าซอง
-              </button>
+              />
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
                 ส่งมาทั้ง ๒ ตอน — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
                 แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์และเอกสารประกอบ
@@ -2044,17 +2095,11 @@ export default function PermitView() {
                 </p>
                 <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
               </div>
-              <button
-                onClick={() => {
-                  const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
-                  void navigator.clipboard.writeText(txt)
-                    .then(() => setLz2Msg("คัดลอกที่อยู่แล้ว"))
-                    .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะคะ"));
-                }}
+              <CopyBtn
+                text={() => `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`}
+                label="คัดลอกที่อยู่สำหรับจ่าหน้าซอง"
                 className="mt-2 w-full rounded-sm border border-[#1f7a3d] bg-white py-2.5 text-[13.5px] font-semibold text-[#1f7a3d]"
-              >
-                คัดลอกที่อยู่สำหรับจ่าหน้าซอง
-              </button>
+              />
               {/* ⚠️ ต้องบอกว่าส่งทั้ง ๒ ตอน ลูกค้าส่งมาตอนเดียวบ่อยมาก
                   แล้วร้านไม่มีตอนกลางเก็บเป็นหลักฐานการจำหน่าย */}
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-700">
