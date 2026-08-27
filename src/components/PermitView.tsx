@@ -32,8 +32,7 @@ import {
 import {
   BAR_SIZES, CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
   DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, STAGE_AT_STEP, stageDone,
-  officeMapUrl, officeSiteUrl,
-} from "@/lib/permit";
+  officeMapUrl, officeSiteUrl, officePhone } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { SHOP } from "@/lib/shop";
 import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
@@ -1876,6 +1875,15 @@ export default function PermitView() {
               const site = officeSiteUrl(pv);
               return (
                 <div className="mt-2 space-y-2">
+                  {/* เบอร์โทรมาก่อนทุกอย่าง — เจ้าของร้านสั่ง "ลูกค้าไม่มานั่งหาเบอร์หรอก" */}
+                  {officePhone(pv) && (
+                    <a
+                      href={`tel:${officePhone(pv)!.replace(/-/g, "")}`}
+                      className="block w-full rounded-sm bg-[#1f7a3d] py-3 text-center text-[15px] font-bold text-white"
+                    >
+                      📞 โทร ทสจ.{pv} · {officePhone(pv)}
+                    </a>
+                  )}
                   {site && (
                     <a
                       href={site}
@@ -1883,7 +1891,7 @@ export default function PermitView() {
                       rel="noopener noreferrer"
                       className="block w-full rounded-sm bg-ink py-3 text-center text-[14px] font-semibold text-white"
                     >
-                      🏛️ เว็บทางการ ทสจ.{pv} — มีแผนที่ ที่อยู่ และเบอร์โทร
+                      🏛️ เว็บทางการ ทสจ.{pv} — มีแผนที่ ที่อยู่ และเวลาทำการ
                     </a>
                   )}
                   <a
