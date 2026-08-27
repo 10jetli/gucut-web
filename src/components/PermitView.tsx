@@ -451,7 +451,10 @@ export default function PermitView() {
       //    fixThaiAddress แก้ให้เท่าที่มั่นใจ และบอกกลับมาว่าแก้ช่องไหนบ้าง
       // ด่านซูมที่อยู่ — เต็มใบอ่านไม่ออกแต่ครอปซูมมักออก (เสียเครดิตเพิ่มเฉพาะตอนจำเป็น)
       const pre = a ? fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "") : null;
-      if (a && pre && !(pre.postcode && pre.tambon)) {
+      // เรียกด่านซูมเมื่อ "ที่อยู่ยังไม่ครบ" หรือ "ชื่อยังอ่านไม่ได้" — ด่านซูม
+      // ครอบบรรทัดชื่อด้วยและอ่านชื่อเก่งกว่าเต็มใบ (บัตรใบที่สอง 27 ส.ค. 2569:
+      // ที่อยู่ครบตั้งแต่เต็มใบ ด่านซูมเลยไม่ถูกเรียก ชื่อ ศศิมาภรณ์ ค้างว่าง)
+      if (a && pre && (!(pre.postcode && pre.tambon) || !got?.name)) {
         try {
           setBusy("กำลังซูมอ่านบรรทัดที่อยู่…");
           const z = await readAddrZone(file, bestDeg);
