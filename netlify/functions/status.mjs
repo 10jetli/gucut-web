@@ -152,11 +152,17 @@ export default async function handler(req, context) {
     // — ไม่รื้อ เผื่อวันหน้าอยากเปิดกลับ · payWaysBesidesPromptPay ยังใช้กับช่อง COD อยู่
 
     // ---------- โค้ดส่วนลด ----------
+    // ⚠️ แหล่งจริงของโค้ดคือ Blobs (ร้านสร้างจาก /admin/coupons/) — env เป็นแค่ของเก่า
+    //    เดิมตัวตรวจดูแค่ env เลยขึ้น "ยังไม่เปิดใช้" ตลอดกาลแม้ร้านตั้งโค้ดแล้ว
+    //    (เจ้าของร้านเจอเอง 28 ส.ค. 2569) — ตัวตรวจต้องดูที่เดียวกับที่ลูกค้าใช้จริง
     check("โค้ดส่วนลด", async () => {
-      if (!env.COUPON_CODES) return { off: true, note: "ยังไม่ได้ตั้งโค้ดไว้" };
-      const list = JSON.parse(env.COUPON_CODES);
-      if (!Array.isArray(list)) throw new Error("รูปแบบ COUPON_CODES ไม่ถูกต้อง");
-      return { note: `มี ${list.length} โค้ด` };
+      const { allCoupons, couponStore } = await import("../lib/coupons.mjs");
+      const list = await allCoupons(couponStore());
+      if (!list.length) return { off: true, note: "ยังไม่มีโค้ด — สร้างได้ที่หลังร้าน → โค้ดส่วนลด" };
+      const now = Date.now();
+      const live = list.filter((c) => !c.until || Date.parse(c.until) >= now);
+      if (!live.length) return { warn: true, note: `มี ${list.length} โค้ดแต่หมดอายุทั้งหมด` };
+      return { note: `ใช้ได้ ${live.length} โค้ด` };
     }),
 
     // ---------- เข้าสู่ระบบด้วยโซเชียล ----------
