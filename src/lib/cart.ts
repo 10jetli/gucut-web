@@ -28,6 +28,29 @@ export function getCart(): CartItem[] {
 function save(items: CartItem[]) {
   localStorage.setItem(KEY, JSON.stringify(items));
   window.dispatchEvent(new Event("cart-updated"));
+  syncForReminder(items);
+}
+
+// ส่งสำเนาตะกร้าย่อ ๆ ให้ร้าน — ใช้กับระบบทวงตะกร้า (แจ้งเฉพาะลูกค้าที่ล็อกอิน)
+// หน่วง 2 วิ: กดบวกรัว ๆ 5 ครั้ง = ส่งครั้งเดียว · พลาดก็เงียบ ไม่กระทบการซื้อ
+let syncTimer: ReturnType<typeof setTimeout> | undefined;
+function syncForReminder(items: CartItem[]) {
+  try {
+    clearTimeout(syncTimer);
+    syncTimer = setTimeout(() => {
+      const body = JSON.stringify({
+        items: items.map((i) => ({ t: i.title, q: i.qty, p: i.price })),
+        total: items.reduce((sum, i) => sum + i.price * i.qty, 0),
+      });
+      void fetch("/api/cart-sync", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body,
+        keepalive: true,
+        credentials: "include",
+      }).catch(() => { /* ไม่ล็อกอิน/เน็ตสะดุด — ช่างมัน */ });
+    }, 2000);
+  } catch { /* ห้ามให้ตัวทวงทำตะกร้าพัง */ }
 }
 
 export function addToCart(item: Omit<CartItem, "qty">, qty = 1) {

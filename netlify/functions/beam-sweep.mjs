@@ -15,11 +15,19 @@ export default async function handler() {
     // พ่วงกวาดสถานะส่งของจาก ZORT + แจ้ง LINE ลูกค้า (27 ส.ค. 2569)
     // ร้านใส่เลขพัสดุใน ZORT → ภายในครึ่งชั่วโมงลูกค้าได้ LINE + เว็บอัปเดตเอง
     let ship = {};
+    let remind = {};
     try {
       const store = getStore({ name: "gucut-orders", consistency: "strong" });
       ship = await syncShippingAll(store);
-    } catch { /* กวาดส่งของพลาดไม่ควรล้มตัวกวาด Beam */ }
-    return new Response(JSON.stringify({ ok: true, ...r, ship }), {
+      // ทวงตะกร้า + ทวงยอดค้างจ่าย ไปหาลูกค้า (เจ้าของร้านสั่ง 28 ส.ค. 2569
+      // "ต้องมีระบบแจ้งเตือน ในตะกร้า กับ ชำระเงิน — แจ้งลูกค้า ไม่ใช่ผม")
+      const { remindPendingPayments, remindStaleCarts } = await import("../lib/remind.mjs");
+      remind = {
+        pay: await remindPendingPayments(store).catch(() => -1),
+        cart: await remindStaleCarts(store).catch(() => -1),
+      };
+    } catch { /* กวาดส่งของ/ทวงพลาดไม่ควรล้มตัวกวาด Beam */ }
+    return new Response(JSON.stringify({ ok: true, ...r, ship, remind }), {
       headers: { "content-type": "application/json" },
     });
   } catch (e) {
