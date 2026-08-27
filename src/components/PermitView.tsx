@@ -1100,6 +1100,43 @@ export default function PermitView() {
     );
   };
 
+  // ใบแปะหน้าซองส่งใบ ลซ.๒ กลับร้าน — A5 บนครึ่งบนของ A4 (ดูเหตุผลใน envelope-pdf.ts)
+  const [envBusy, setEnvBusy] = useState(false);
+  const printEnvelope = useCallback(async () => {
+    setEnvBusy(true);
+    try {
+      const [fontRes, mod] = await Promise.all([
+        fetch("/doc/Sarabun-Regular.ttf"),
+        import("@/lib/envelope-pdf"),
+      ]);
+      if (!fontRes.ok) throw new Error("โหลดฟอนต์ไม่สำเร็จ");
+      const addr = [
+        d.houseNo && `${d.houseNo}`, d.moo && `หมู่ ${d.moo}`,
+        d.tambon && `ต.${d.tambon}`, d.amphoe && `อ.${d.amphoe}`,
+        d.province && `จ.${d.province}`, d.postcode,
+      ].filter(Boolean).join(" ");
+      const bytes = await mod.buildEnvelopePdf(
+        {
+          senderName: d.name, senderAddress: addr, senderPhone: d.phone,
+          shopName: DOC_MAILING.name, shopAddress: DOC_MAILING.address, shopPhone: DOC_MAILING.phone,
+        },
+        await fontRes.arrayBuffer(),
+      );
+      const blob = new Blob([bytes as BlobPart], { type: "application/pdf" });
+      const url = URL.createObjectURL(blob);
+      const aEl = document.createElement("a");
+      aEl.href = url;
+      aEl.target = "_blank";
+      aEl.rel = "noopener";
+      aEl.download = "ใบแปะหน้าซอง-ส่ง-ลซ2.pdf";
+      document.body.appendChild(aEl);
+      aEl.click();
+      aEl.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch { /* พลาดก็ยังคัดลอกที่อยู่ไปเขียนมือได้ ปุ่มอยู่ติดกัน */ }
+    finally { setEnvBusy(false); }
+  }, [d]);
+
   // ขอลิงก์สั้นของข้อมูลชุดปัจจุบัน — สร้างครั้งเดียวต่อข้อมูลหนึ่งชุด
   // สร้างไม่สำเร็จได้ลิงก์ยาวแทน (จัดการใน makeShortLink) ลูกค้าไม่มีวันติดตัน
   const getShareLink = useCallback(async () => {
@@ -2174,6 +2211,15 @@ export default function PermitView() {
                 </p>
                 <p className="mt-0.5 text-[13px] text-ink-700">โทร {DOC_MAILING.phone}</p>
               </div>
+              {/* ใบแปะหน้าซอง A5 — เจ้าของร้านสั่ง "ให้ลูกค้ากดปริ้นใบแปะหน้าซอง" (27 ส.ค. 2569)
+                  ซอง C4 ใหญ่กว่า A4 นิดเดียว → ใบแปะครึ่งบนของ A4 ตัดแล้วแปะพอดี */}
+              <button
+                onClick={() => void printEnvelope()}
+                disabled={envBusy}
+                className="mt-2 w-full rounded-sm bg-[#1f7a3d] py-2.5 text-[13.5px] font-semibold text-white disabled:opacity-60"
+              >
+                {envBusy ? "กำลังสร้างใบแปะ…" : "🖨️ พิมพ์ใบแปะหน้าซอง (มีที่อยู่ครบ ตัดแปะได้เลย)"}
+              </button>
               <CopyBtn
                 text={() => `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`}
                 label="คัดลอกที่อยู่สำหรับจ่าหน้าซอง"
