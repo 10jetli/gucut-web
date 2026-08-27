@@ -177,13 +177,16 @@ export async function sendPurchase(order, meta = {}) {
     //
     // ⚠️ นี่เป็นหลักฐานเดียวที่บอกได้ว่า "ต่อถูกพิกเซลจริง"
     //    เช็คว่าโทเคนยังมีชีวิตอยู่ไม่พอ — โทเคนดีแต่ผูกผิดพิกเซลก็ผ่านด่านนั้นได้
-    // ⚠️ ห้าม await และห้ามให้พังลามมาล้มการยิงจริง — เป็นแค่บันทึกช่วยจำ
-    void recordCapi({
+    // ⚠️ ต้อง await — sendPurchase ทั้งก้อนวิ่งอยู่ใน later()/waitUntil อยู่แล้ว
+    //    ไม่ถ่วงลูกค้า แต่ถ้าปล่อยลอย Netlify ฆ่าทิ้ง = หน้าสถานะไม่เคยเห็นผลจริง
+    //    (เดิมเขียน void — ตัวตรวจ check-floating จับได้ 28 ส.ค. 2569)
+    //    พังห้ามลามไปล้มการยิงจริง จึงครอบ catch ไว้
+    await recordCapi({
       at: Date.now(),
       ok: !!out.meta?.ok,
       orderId: String(order?.id ?? ""),
       error: out.meta?.ok ? "" : String(out.meta?.body ?? "").slice(0, 200),
-    });
+    }).catch(() => {});
   }
 
   if (cfg.tiktok.on && cfg.tiktok.pixelId && cfg.tiktok.token) {

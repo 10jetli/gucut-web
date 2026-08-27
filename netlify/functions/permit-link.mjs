@@ -81,6 +81,7 @@ export default async function handler(req, context) {
     // ⚠️ ต้อง await — Netlify แช่แข็งฟังก์ชันหลังตอบ promise ลอยตายกลางทาง (บทเรียน keepScan)
     await s.setJSON(`sl/${code}`, { payload, at: Date.now() });
     const sw = sweep(s);
+    // ไม่มี waitUntil ก็ยอมให้รอบนี้กวาดไม่จบ — POST หน้าถัดไปกวาดต่อเอง (ปล่อยลอย-ตั้งใจ)
     if (context?.waitUntil) context.waitUntil(sw); else sw.catch(() => {});
     return json({ code });
   }

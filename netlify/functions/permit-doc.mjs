@@ -111,6 +111,14 @@ function advance(rec, stage) {
 }
 
 export default async function handler(req, context) {
+  // แจ้งเตือนต้องรอดข้ามการแช่แข็งของ Netlify — ฝาก waitUntil ถ้ามี ไม่มีก็ await
+  // (ช้าขึ้นไม่กี่ร้อย ms แลกกับแจ้งเตือนไม่หายเงียบ — เดิมใช้ void แล้วตายกลางทาง
+  //  ตัวตรวจ check-floating จับได้ 28 ส.ค. 2569)
+  const park = async (p) => {
+    const j = Promise.resolve(p).catch(() => {});
+    if (context?.waitUntil) context.waitUntil(j);
+    else await j;
+  };
   const s = store();
   const url = new URL(req.url);
 
@@ -167,19 +175,18 @@ export default async function handler(req, context) {
       advance(rec, "lz2");
       await s.setJSON(key, rec);
 
-      // ⚠️ ห้าม await ตัวแจ้งเตือน ลูกค้ายืนรอหน้าจออยู่
-      void tell(
+      await park(tell(
         `📄 <b>ลูกค้าส่งใบ ลซ.๒ เข้ามา</b>\n` +
         `${rec.name || "-"} · ${phone}\n` +
         (rec.saw ? `เลื่อย: ${rec.saw}\n` : "") +
         (rec.province ? `ยื่นที่: ${rec.province}\n` : "") +
         `รูป ${rec.images} ใบ — เปิดดูที่หลังร้าน → ขอทะเบียนเลื่อยยนต์`,
-      );
-      void pushToAdmins({
+      ));
+      await park(pushToAdmins({
         title: "ลูกค้าส่งใบ ลซ.๒",
         body: `${rec.name || ""} · ${phone}`,
         url: "/admin/permits/",
-      }).catch(() => {});
+      }));
 
       return json({ ok: true, item: rec });
     }
@@ -211,21 +218,21 @@ export default async function handler(req, context) {
       advance(rec, stage);
       await s.setJSON(key, rec);
       if (stage === "submitted") {
-        void tell(`📮 <b>ลูกค้ายื่นเรื่องที่สำนักงานแล้ว</b>\n${rec.name || "-"} · ${phone}`);
+        await park(tell(`📮 <b>ลูกค้ายื่นเรื่องที่สำนักงานแล้ว</b>\n${rec.name || "-"} · ${phone}`));
       }
       // ⚠️ ขั้นนี้ร้านต้องรู้ทันที — ลูกค้าถือใบ ลซ.๒ อยู่ในมือแล้ว
       //    เป็นสัญญาณให้ร้านเตรียมเครื่องและแจ้งยอด ไม่ต้องรอซองมาถึง
       if (stage === "gotlz2") {
-        void tell(
+        await park(tell(
           `📨 <b>ลูกค้าได้ใบ ลซ.๒ มาแล้ว กำลังจะส่งมาที่ร้าน</b>\n` +
           `${rec.name || "-"} · ${phone}` +
           (rec.saw ? `\nเลื่อย: ${rec.saw}` : ""),
-        );
-        void pushToAdmins({
+        ));
+        await park(pushToAdmins({
           title: "ลูกค้าได้ใบ ลซ.๒ แล้ว",
           body: `${rec.name || ""} · ${phone}`,
           url: "/admin/permits/",
-        }).catch(() => {});
+        }));
       }
       return json({ ok: true, item: rec });
     }
