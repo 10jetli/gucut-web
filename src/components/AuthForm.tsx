@@ -20,10 +20,12 @@ const okPhone = (v: string) => /^0\d{8,9}$/.test(v);
 const LINE_ON = process.env.NEXT_PUBLIC_LINE_LOGIN === "1";
 const FACEBOOK_ON = process.env.NEXT_PUBLIC_FACEBOOK_LOGIN === "1";
 const GOOGLE_ON = process.env.NEXT_PUBLIC_GOOGLE_LOGIN === "1";
+// LINE อยู่บนสุด + ป้าย "แนะนำ" (เจ้าของร้านสั่ง 27 ส.ค. 2569)
+// เพราะล็อกอิน LINE แล้วได้แจ้งเตือนสถานะออเดอร์ทาง LINE อัตโนมัติ — ทางอื่นไม่ได้
 const SOCIAL = [
-  { id: "facebook", label: "Facebook", Icon: FacebookIcon, on: FACEBOOK_ON },
-  { id: "google", label: "Google", Icon: GoogleIcon, on: GOOGLE_ON },
-  { id: "line", label: "LINE", Icon: LineIcon, on: LINE_ON },
+  { id: "line", label: "LINE", Icon: LineIcon, on: LINE_ON, rec: true },
+  { id: "facebook", label: "Facebook", Icon: FacebookIcon, on: FACEBOOK_ON, rec: false },
+  { id: "google", label: "Google", Icon: GoogleIcon, on: GOOGLE_ON, rec: false },
 ] as const;
 
 export default function AuthForm({ mode }: { mode: "login" | "register" }) {
@@ -281,7 +283,7 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
             </div>
 
             <div className="mt-5 space-y-3">
-              {SOCIAL.map(({ id, label, Icon, on }) => (
+              {SOCIAL.map(({ id, label, Icon, on, rec }) => (
                 <button
                   key={id}
                   type="button"
@@ -295,6 +297,11 @@ export default function AuthForm({ mode }: { mode: "login" | "register" }) {
                     <Icon />
                   </span>
                   ดำเนินการต่อด้วย {label}
+                  {rec && (
+                    <span className="absolute right-3 rounded-full bg-green-600/10 px-2 py-0.5 text-[11px] font-semibold text-green-700">
+                      แนะนำ
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
