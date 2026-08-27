@@ -422,7 +422,15 @@ export default function PermitView() {
         // ⚠️ "ครบ" ต้องมีตำบลจริงด้วย — รหัสไปรษณีย์หาได้จากรหัสหลักของอำเภอทั้งที่ตำบลว่าง
         for (const { deg, r } of oks) {
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          if (f.postcode && f.tambon) { ({ got, a } = r); bestDeg = deg; break outer; }
+          if (f.postcode && f.tambon) {
+            ({ got, a } = r); bestDeg = deg;
+            // ภาพชัดจนอ่านที่อยู่ครบทุกช่องรวมตำบลจากเต็มใบ = คุณภาพสูงพอ
+            // ชื่อที่ผ่านการอ่านสองรอบตรงกันในภาพระดับนี้ให้ขึ้นเขียวได้
+            // (เคสรูปเบลอแบบ บุญ→มูล ไม่มีทางเข้าเงื่อนไขนี้ — ที่อยู่ไม่ครบ
+            //  จากเต็มใบ ต้องพึ่งด่านซูม ชื่อจึงยังเหลืองรอซูมยืนยันตามเดิม)
+            if (fullThaiName(r.got.name)) setNameOk(true);
+            break outer;
+          }
         }
         // บัตรตั้งตรงแน่ (ชื่อเต็มรอดตาข่ายสองรอบ) — ที่อยู่ไปเก็บที่ด่านซูมต่อ
         for (const { deg, r } of oks) {
