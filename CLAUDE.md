@@ -410,6 +410,14 @@ node scripts/gen-img-vectors.mjs     # ใช้เวลา ~4 นาที
 > เว็บนี้ยืนด้วยตัวเองครบแล้ว (สินค้า/รูป/รีวิวอยู่ในโปรเจกต์ · สต็อกจาก ZORT · สมาชิกเก็บที่ Netlify Blobs · เก็บเงินด้วย QR PromptPay)
 
 1. **เข้าสู่ระบบด้วย LINE / Facebook / Google — เขียนเสร็จแล้ว**
+   ✅ **LINE ย้ายมา provider "ZORT" แล้ว (27 ส.ค. 2569)** — channel "GUCUT Web" id `2011283340`
+   อยู่ provider เดียวกับ Messaging API ของ @gucut1 → userId ตรงกัน เว็บส่งแจ้งเตือน LINE หาลูกค้าได้
+   - `LINE_MESSAGING_TOKEN` ที่ Netlify = token ยาวของ @gucut1 **ตัวเดียวกับที่ ZORT ใช้**
+     ⚠️ **ห้ามกด Reissue ใน LINE Developers เด็ดขาด** — token เก่าตายทันที แชท ZORT พังทั้งระบบ
+   - ⚠️ **ห้ามแตะ webhook ของ @gucut1** (`api-social.zortout.com`) — แชท ZORT Social Commerce ใช้อยู่
+   - channel LINE Login เก่าใน provider "gucut" ไม่ใช้แล้วแต่**ยังไม่ลบ** — ลูกค้าที่เคยผูก LINE ไว้
+     จะได้ userId ใหม่ตอนล็อกอินครั้งแรก ระบบมองเป็นคนใหม่ → ให้กรอกเบอร์ที่ /account/link/ อีกครั้งเดียว
+     ออเดอร์เก่าตามมาครบเพราะบัญชีผูกกับเบอร์โทร
    ทางเดินกลางอยู่ที่ `netlify/lib/oauth.mjs` · แต่ละเจ้าเป็นไฟล์บาง ๆ ใน `netlify/functions/oauth-*.mjs`
    รอแค่ใส่คีย์ที่ Netlify แล้วเปิดทีละเจ้าด้วย env (ดู `.env.example`)
    ลูกค้าใหม่กดปุ่ม → กรอกเบอร์ครั้งเดียวที่ `/account/link/` → ครั้งต่อไปกดปุ่มเดียวเข้าเลย
