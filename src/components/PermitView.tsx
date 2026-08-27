@@ -403,7 +403,10 @@ export default function PermitView() {
         try {
           const r = await readByAi(file, deg);
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          if (f.postcode) { ({ got, a } = r); bestDeg = deg; break; }
+          // ⚠️ "ครบ" ต้องมีตำบลจริงด้วย — รหัสไปรษณีย์หาได้จากรหัสหลักของอำเภอ
+          //    ทั้งที่ตำบลว่าง (เจอจริง 27 ส.ค. 2569 รอบ 07:16: บันไดหยุดที่มุม 0°
+          //    เพราะได้ อำเภอ+จังหวัด+รหัส แล้วข้ามด่านซูมซึ่งเป็นตัวอ่านตำบลเก่งสุด)
+          if (f.postcode && f.tambon) { ({ got, a } = r); bestDeg = deg; break; }
           if (fullThaiName(r.got.name)) {
             // บัตรตั้งตรงแน่แล้ว มุมอื่นไม่ต้องลอง — ที่อยู่ไปเก็บที่ด่านซูมต่อ
             ({ got, a } = r); bestDeg = deg;
@@ -447,7 +450,8 @@ export default function PermitView() {
       //    ทั้งสองอย่างไม่มีอะไรฟ้อง ลูกค้าพิมพ์ออกมายื่นได้ทั้งที่ที่อยู่ผิด
       //    fixThaiAddress แก้ให้เท่าที่มั่นใจ และบอกกลับมาว่าแก้ช่องไหนบ้าง
       // ด่านซูมที่อยู่ — เต็มใบอ่านไม่ออกแต่ครอปซูมมักออก (เสียเครดิตเพิ่มเฉพาะตอนจำเป็น)
-      if (a && !fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "").postcode) {
+      const pre = a ? fixThaiAddress(a.tambon || "", a.amphoe || "", a.province || "") : null;
+      if (a && pre && !(pre.postcode && pre.tambon)) {
         try {
           setBusy("กำลังซูมอ่านบรรทัดที่อยู่…");
           const z = await readAddrZone(file, bestDeg);
@@ -462,7 +466,7 @@ export default function PermitView() {
             province: z.province || a.province || "",
           };
           const fz = fixThaiAddress(mg.tambon, mg.amphoe, mg.province);
-          if (fz.postcode) {
+          if (fz.postcode && fz.tambon) {
             a = {
               ...a, ...mg,
               houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
@@ -789,7 +793,8 @@ export default function PermitView() {
       case "houseNo": return /^\d+(\/\d+)?$/.test(v);
       case "moo": return /^\d{1,2}$/.test(v);
       case "tambon": case "amphoe": case "province": return addrOk;
-      case "postcode": return addrOk && findPostcode(d.province, d.amphoe, d.tambon) === v;
+      case "postcode":
+        return !!d.tambon && addrOk && findPostcode(d.province, d.amphoe, d.tambon) === v;
       case "phone": return /^0\d{8,9}$/.test(v.replace(/\D/g, ""));
       case "email": return /.+@.+\..+/.test(v);
       default: return false;   // ตรอก/ซอย · ถนน — ไม่มีอะไรให้ตรวจ ไม่ระบายสี
