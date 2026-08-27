@@ -4,13 +4,16 @@
 // เจ้าของร้านจึงไม่ต้องตั้งค่าอะไรเลยสักอย่าง
 import { getStore } from "@netlify/blobs";
 import webpush from "web-push";
+import { normPhone } from "./session.mjs";
 
 const KEYS = "vapid-keys";
 const SUBS = "push-subs";
 /** แจ้งเตือนของ "ลูกค้า" แยกคีย์ตามเบอร์ — u/<เบอร์>
  *  ⚠️ ห้ามเก็บรวมกับ push-subs ของแอดมิน
  *     ปนกันเมื่อไหร่ = ลูกค้าได้แจ้งเตือนออเดอร์ของคนอื่น */
-const userKey = (phone) => `u/${phone}`;
+// เบอร์ต้อง normalize ก่อนเสมอ — คนสมัครส่ง "063-143-8888" คนยิงส่ง "0631438888"
+// ถ้า key ไม่ตรงกัน แจ้งเตือนหายเงียบ ๆ โดยไม่มี error ให้เห็น
+const userKey = (phone) => `u/${normPhone(phone) || phone}`;
 
 const store = () => getStore({ name: "gucut-push", consistency: "strong" });
 

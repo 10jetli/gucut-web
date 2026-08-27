@@ -2,6 +2,7 @@
 
 // ประวัติการสั่งซื้อ — /account/orders/
 // ดึงจาก /api/orders?mine=1 (จับคู่ด้วยเบอร์โทรของบัญชีกับเบอร์ผู้รับในออเดอร์)
+import NotifyBell from "@/components/NotifyBell";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -119,6 +120,8 @@ export default function OrdersView() {
               );
             })}
           </div>
+          {/* ลูกค้าที่ล็อกอินแล้ว (ไม่ต้องมี LINE) เปิดรับแจ้งเตือนเด้งเข้าเครื่องได้ที่นี่ */}
+          <div className="px-1"><NotifyBell /></div>
           {err && <p className="px-1 text-[13px] text-safety">{err}</p>}
           {orders.filter(TABS.find((x) => x.key === tab)?.match ?? (() => true)).length === 0 && (
             <p className="px-1 py-10 text-center text-[13px] text-ink-300">ไม่มีรายการในหมวดนี้</p>

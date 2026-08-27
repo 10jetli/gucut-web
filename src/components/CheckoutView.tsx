@@ -1,5 +1,6 @@
 "use client";
 
+import NotifyBell from "@/components/NotifyBell";
 import Image from "next/image";
 import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
@@ -510,6 +511,8 @@ export default function CheckoutView() {
             ? "ร้านจะโทรยืนยันก่อนจัดส่ง จ่ายเงินตอนรับของได้เลย"
             : "ร้านจะตรวจสอบสลิปและจัดส่งให้เร็วที่สุด"}
         </p>
+        {/* รับแจ้งเตือนเด้งเข้าเครื่อง — สำหรับลูกค้าที่ไม่ได้ล็อกอิน LINE ก็ได้รับสถานะ */}
+        <NotifyBell orderId={orderId} />
         <Link href="/" className="mt-3 rounded-lg bg-safety px-6 py-2.5 font-heading text-sm font-bold text-white">
           กลับหน้าแรก
         </Link>

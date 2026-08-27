@@ -1,9 +1,34 @@
-// สมัคร/ยกเลิก การแจ้งเตือนเด้งเข้ามือถือของแอดมิน — /api/push
+// สมัคร/ยกเลิก การแจ้งเตือนเด้งเข้ามือถือ — /api/push
 //   GET                       ขอกุญแจสาธารณะ (ไม่ลับ ใช้ตอนสมัคร)
-//   POST   {subscription}     สมัครเครื่องนี้   (ต้องมี x-admin-key)
-//   DELETE {endpoint}         ยกเลิกเครื่องนี้  (ต้องมี x-admin-key)
-import { vapid, addSub, removeSub, listSubs, pushToAdmins } from "../lib/push.mjs";
+//   POST   {subscription}     สมัครเครื่องแอดมิน   (ต้องมี x-admin-key)
+//   DELETE {endpoint}         ยกเลิกเครื่องแอดมิน  (ต้องมี x-admin-key)
+//
+//   ฝั่ง "ลูกค้า" (27 ส.ค. 2569 — แจ้งสถานะออเดอร์ถึงคนที่ไม่ได้ล็อกอิน LINE)
+//   POST   {customer:1, subscription, orderId?}   สมัครรับแจ้งเตือนของเบอร์ตัวเอง
+//   DELETE {customer:1, endpoint, orderId?}       ยกเลิก
+//   พิสูจน์ว่าเป็นเจ้าของเบอร์ด้วยทางใดทางหนึ่ง:
+//   - orderId ของออเดอร์ตัวเอง (เลขสุ่มยาว รู้ได้เฉพาะคนที่เพิ่งสั่ง) → ใช้เบอร์ผู้รับในออเดอร์
+//   - หรือ cookie ล็อกอิน → ใช้เบอร์ของบัญชี
+//   ⚠️ ห้ามรับเบอร์ตรง ๆ จาก body เด็ดขาด — ใครก็สมัครแทนเบอร์คนอื่นแล้วดักแจ้งเตือนได้
+import { getStore } from "@netlify/blobs";
+import { vapid, addSub, removeSub, listSubs, pushToAdmins, addUserSub, removeUserSub } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { currentUser, store as usersStore } from "../lib/session.mjs";
+
+// หาเบอร์ของคนที่ขอสมัคร — คืน "" ถ้าพิสูจน์ไม่ได้
+async function customerPhone(req, body) {
+  if (body?.orderId) {
+    const o = await getStore({ name: "gucut-orders", consistency: "strong" })
+      .get(`o/${String(body.orderId)}`, { type: "json" })
+      .catch(() => null);
+    if (o?.customer?.phone) return o.customer.phone;
+  }
+  try {
+    const me = await currentUser(req, usersStore());
+    if (me?.user?.phone) return me.user.phone;
+  } catch { /* ไม่ได้ล็อกอิน */ }
+  return "";
+}
 
 export default async function handler(req, context) {
   // ขอกุญแจสาธารณะไม่ต้องใช้รหัส ตรวจก่อนเข้าด่านจะได้ไม่โดนนับครั้งที่ผิดฟรี ๆ
@@ -12,13 +37,31 @@ export default async function handler(req, context) {
     return json({ key: k.publicKey });
   }
 
+  let body;
+  try { body = await req.json(); } catch { body = {}; }
+
+  // ---------- ฝั่งลูกค้า — ไม่ใช้รหัสหลังร้าน ----------
+  if (body?.customer) {
+    const phone = await customerPhone(req, body);
+    if (!phone) return json({ error: "ยังไม่รู้ว่าเป็นออเดอร์/บัญชีของใคร" }, 401);
+    if (req.method === "POST") {
+      if (!body?.subscription?.endpoint) return json({ error: "no subscription" }, 400);
+      const n = await addUserSub(phone, body.subscription);
+      return json({ ok: true, devices: n });
+    }
+    if (req.method === "DELETE") {
+      if (body?.endpoint) await removeUserSub(phone, body.endpoint);
+      return json({ ok: true });
+    }
+    return json({ error: "method not allowed" }, 405);
+  }
+
+  // ---------- ฝั่งแอดมิน ----------
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   if (req.method === "POST") {
-    let body;
-    try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
     if (body?.test) {
       const n = await pushToAdmins({
         title: "ทดสอบการแจ้งเตือน",
@@ -33,8 +76,6 @@ export default async function handler(req, context) {
   }
 
   if (req.method === "DELETE") {
-    let body;
-    try { body = await req.json(); } catch { body = {}; }
     if (body?.endpoint) await removeSub(body.endpoint);
     return json({ ok: true });
   }

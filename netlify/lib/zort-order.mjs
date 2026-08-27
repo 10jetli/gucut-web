@@ -62,6 +62,14 @@ export async function syncShippingAll(store) {
       o.notified = o.notified || {};
       if (!o.notified.shipped) {
         o.notified.shipped = true;
+        // เด้งเข้าเครื่องลูกค้า (Web Push) ก่อน — ไม่ต้องล็อกอิน LINE ก็ได้รับ
+        const { pushToUser } = await import("./push.mjs");
+        await pushToUser(o.customer?.phone, {
+          title: "GUCUT — จัดส่งแล้ว 🚚",
+          body: `ออเดอร์ #${o.id} · ${o.tracking.channel || "ขนส่ง"} เลขพัสดุ ${o.tracking.no}`,
+          url: "/account/orders/?tab=receive",
+          tag: `order-${o.id}`,
+        }).catch(() => {});
         const { lineToCustomer } = await import("./notify-customer.mjs");
         await lineToCustomer(
           o.customer?.phone,

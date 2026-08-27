@@ -14,7 +14,7 @@
 //    ตัวกันอยู่ที่ order.done — ใครมาทีหลังเห็นธงนี้แล้วออกไปเลย
 import { markUsed } from "./coupons.mjs";
 import { addPoints } from "./points.mjs";
-import { pushToAdmins } from "./push.mjs";
+import { pushToAdmins, pushToUser } from "./push.mjs";
 import { sendPurchase } from "./marketing.mjs";
 import { SITE_URL } from "./site.mjs";
 
@@ -88,6 +88,16 @@ export async function finalizeOrder({
         ),
       )
       .catch(() => {}),
+  );
+
+  // เด้งเข้าเครื่องลูกค้า (Web Push) — คู่ขนานกับ LINE สำหรับคนที่กดรับแจ้งเตือนไว้
+  later(
+    pushToUser(c.phone, {
+      title: order.paidAt ? "GUCUT — ได้รับชำระเงินแล้ว ✅" : "GUCUT — ได้รับออเดอร์แล้ว",
+      body: `ออเดอร์ #${order.id} ยอด ฿${order.total.toLocaleString("th-TH")} ร้านกำลังเตรียมจัดส่ง 📦`,
+      url: "/account/orders/?tab=ship",
+      tag: `order-${order.id}`,
+    }).catch(() => {}),
   );
 
   later(
