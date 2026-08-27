@@ -126,6 +126,8 @@ export default function PermitView() {
   // (เจ้าของร้านสั่ง 27 ส.ค. 2569: ตรวจผิดห้ามขึ้นเขียว ให้เหลืองแล้วตรวจใหม่ —
   //  นามสกุลเคยเพี้ยน บุญ→มูล ทั้งที่ช่องขึ้นเขียวเพราะเช็คแค่รูปแบบ)
   const [nameOk, setNameOk] = useState(false);
+  // กำลังอ่านบัตรอยู่ไหม — คุมการ์ดสถานะสวย ๆ กับการล็อกปุ่มกันกดซ้ำ
+  const [reading, setReading] = useState(false);
   const [busy, setBusy] = useState("");
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
@@ -360,7 +362,8 @@ export default function PermitView() {
   }, []);
 
   const readCard = useCallback(async (file: File) => {
-    setBusy("กำลังอ่านบัตร…");
+    setReading(true);
+    setBusy("กำลังอ่านรอบแรก…");
     setNameOk(false);
     try {
       let got: { name?: string; idNumber?: string; birth?: string; unsure: string[] } | undefined;
@@ -564,6 +567,8 @@ export default function PermitView() {
       );
     } catch (e) {
       setBusy("อ่านบัตรไม่สำเร็จ — กรอกเองด้านล่างได้เลย (" + (e as Error).message + ")");
+    } finally {
+      setReading(false);
     }
   }, [readLocal]);
 
@@ -1331,7 +1336,11 @@ export default function PermitView() {
             <button
               onClick={() => fileRef.current?.click()}
               aria-label="ถ่ายบัตรประชาชน"
-              className="mt-2 block w-full rounded-sm border-2 border-safety bg-white p-3 text-left"
+              disabled={reading}
+              className={
+                "mt-2 block w-full rounded-sm border-2 border-safety bg-white p-3 text-left" +
+                (reading ? " pointer-events-none opacity-40" : "")
+              }
             >
               <span className="flex items-center gap-3">
                 {/* รูปคนบนบัตร */}
@@ -1356,9 +1365,23 @@ export default function PermitView() {
             <p className="mt-1.5 text-center text-[12px] text-ink-300">
               ↓ เข้าแบบฟอร์ม ลซ.๑ ให้อัตโนมัติ
             </p>
-            {busy && (
+            {/* การ์ดสถานะตอนอ่านบัตร — เจ้าของร้านสั่ง (27 ส.ค. 2569)
+                "UI ต้องสวย ๆ และทำให้คนที่กำลังรอรู้ว่าต้องรอ อย่าเพิ่งกดอะไร" */}
+            {reading ? (
+              <div className="mt-3 rounded-lg border-2 border-safety/40 bg-white p-4 text-center shadow-sm">
+                <span
+                  aria-hidden
+                  className="mx-auto mb-2.5 block h-9 w-9 animate-spin rounded-full border-4 border-steel-600 border-t-safety"
+                />
+                <p className="font-heading text-[15px] font-bold text-ink">กำลังอ่านบัตร…</p>
+                <p className="mt-0.5 text-[12.5px] text-steel-300">{busy}</p>
+                <p className="mt-2 rounded-sm bg-[#fffbe6] px-2 py-1.5 text-[12.5px] font-semibold text-[#8a6d00]">
+                  ใช้เวลาราว 10–20 วินาที — รอสักครู่ อย่าเพิ่งกดอะไรนะครับ
+                </p>
+              </div>
+            ) : busy ? (
               <p className="mt-2 rounded-sm bg-steel-900 p-2.5 text-[12.5px] text-ink-700">{busy}</p>
-            )}
+            ) : null}
 
             {/* ------------------------------------------ 3. ตรวจ/กรอก */}
             <h2 className="mt-6 text-[15px] font-bold text-ink">๓. ตรวจข้อมูลให้ถูกต้อง</h2>
