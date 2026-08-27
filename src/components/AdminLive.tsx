@@ -13,7 +13,15 @@ import { adminFetch, requireKey } from "@/lib/admin";
 
 interface Channel { ch: string; n: number; label: string; kind: string }
 
+interface Members {
+  total: number;
+  new7: number;
+  via: { line: number; facebook: number; google: number; password: number };
+  recent: { created: number; name: string }[];
+}
+
 interface Stats {
+  members?: Members | null;
   channelsToday: Channel[];
   channelsWeek: Channel[];
   countries: { cc: string; n: number }[];
@@ -79,6 +87,7 @@ export default function AdminLive() {
       const j = await r.json();
       // เซิร์ฟเวอร์รุ่นเก่ายังไม่ส่ง countries มา — เติมค่าว่างกันหน้าพัง
       setS({
+        members: j?.members ?? null,
         online: Number(j?.online) || 0,
         onlineWindowMin: Number(j?.onlineWindowMin) || 5,
         pages: Array.isArray(j?.pages) ? j.pages : [],
@@ -143,6 +152,41 @@ export default function AdminLive() {
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#d63200]" />
             รีเฟรชเองทุก 15 วินาที
           </label>
+        </section>
+
+        {/* สมาชิก — เจ้าของร้านสั่ง "ทำระบบว่าตอนนี้ลูกค้าสมัครล็อกอินไปกี่คนแล้ว" */}
+        <section className="mb-3 rounded-sm bg-white p-4">
+          <div className="flex items-baseline justify-between">
+            <p className="text-[14px] font-bold text-ink">สมาชิกสมัครแล้ว</p>
+            {s?.members && s.members.new7 > 0 && (
+              <span className="rounded-full bg-[#1f9254]/10 px-2 py-0.5 text-[11.5px] font-semibold text-[#1f9254]">
+                +{s.members.new7} ใน 7 วัน
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-center text-[36px] font-extrabold leading-none text-ink">
+            {s?.members ? s.members.total.toLocaleString("th-TH") : "—"}
+            <span className="ml-1 text-[14px] font-normal text-ink-300">คน</span>
+          </p>
+          {s?.members && (
+            <>
+              <p className="mt-2 text-center text-[12px] text-ink-300">
+                LINE {s.members.via.line} · Facebook {s.members.via.facebook} · Google {s.members.via.google} · เบอร์+รหัส {s.members.via.password}
+              </p>
+              {s.members.recent.length > 0 && (
+                <div className="mt-2 border-t border-steel-700 pt-2">
+                  {s.members.recent.map((r, i) => (
+                    <p key={i} className="flex justify-between text-[12px] text-ink-700">
+                      <span className="truncate">{r.name || "(ไม่ใส่ชื่อ)"}</span>
+                      <span className="shrink-0 text-ink-300">
+                        {r.created ? new Date(r.created).toLocaleDateString("th-TH", { day: "numeric", month: "short" }) : ""}
+                      </span>
+                    </p>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
         </section>
 
         <section className="mb-3 rounded-sm bg-white p-4">

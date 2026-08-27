@@ -132,7 +132,33 @@ export async function stats() {
       .sort((a, b) => b[1] - a[1])
       .map(([ch, n]) => ({ ch, n, label: channelLabel(ch), kind: channelKind(ch) }));
 
+  // สมาชิก — เจ้าของร้านสั่ง "ทำระบบว่าตอนนี้ลูกค้าสมัครล็อกอินไปกี่คนแล้ว" (27 ส.ค. 2569)
+  // นับจาก store gucut-users คีย์ u/<เบอร์> · อ่านตัวบันทึกเพื่อดูวันสมัครกับช่องทาง
+  // ⚠️ อ่านมากสุด 400 บัญชี — วันไหนสมาชิกทะลุนั้นให้เปลี่ยนเป็นเก็บตัวนับแยก
+  //    (จำนวนรวมยังถูกเสมอเพราะนับจากรายชื่อคีย์ ไม่ใช่จากที่อ่านได้)
+  let members = null;
+  try {
+    const us = getStore({ name: "gucut-users", consistency: "strong" });
+    const { blobs } = await us.list({ prefix: "u/" });
+    const week = now - 7 * 24 * 3600 * 1000;
+    let new7 = 0;
+    const via = { line: 0, facebook: 0, google: 0, password: 0 };
+    const recent = [];
+    await Promise.all(blobs.slice(0, 400).map(async (b) => {
+      const u = await us.get(b.key, { type: "json" }).catch(() => null);
+      if (!u) return;
+      if ((u.created || 0) >= week) new7++;
+      const social = Object.keys(u.social || {});
+      if (social.length === 0) via.password++;
+      for (const k of social) if (via[k] !== undefined) via[k]++;
+      recent.push({ created: u.created || 0, name: String(u.name || "").slice(0, 30) });
+    }));
+    recent.sort((a, b) => b.created - a.created);
+    members = { total: blobs.length, new7, via, recent: recent.slice(0, 5) };
+  } catch { /* นับสมาชิกพลาดต้องไม่ล้มสถิติที่เหลือ */ }
+
   return {
+    members,
     channelsToday: rows(chToday),
     channelsWeek: rows(chWeek),
     countries: [...byCountry.entries()].sort((a, b) => b[1] - a[1]).map(([cc, n]) => ({ cc, n })),
