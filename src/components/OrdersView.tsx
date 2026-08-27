@@ -5,7 +5,8 @@
 import NotifyBell from "@/components/NotifyBell";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
+import { SHIP_MIN_DAYS, SHIP_MAX_DAYS } from "@/lib/shipping";
 import Price from "@/components/Price";
 
 type Status = "pending" | "new" | "confirmed" | "shipped" | "done" | "cancelled";
@@ -45,6 +46,100 @@ const STATUS: Record<Status, { t: string; cls: string }> = {
 
 const when = (ms: number) =>
   new Date(ms).toLocaleString("th-TH", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+
+// ---------- แถบขั้นตอนแบบ Shopee (เจ้าของร้านสั่ง "อยากได้แบบนี้" 27 ส.ค. 2569) ----------
+// แผนที่รถวิ่งแบบ SPX ทำไม่ได้ — Flash ไม่เปิดตำแหน่งคนขับ/ไทม์ไลน์ให้ระบบภายนอก
+// (ยิงทดสอบแล้วโดนบล็อกทุกทาง) จึงให้ครบที่สุดเท่าที่ข้อมูลฝั่งเรามี:
+// ขั้นตอน + นัดวันได้รับ + ไทม์ไลน์ + ปุ่มไปดูเส้นทางละเอียดบนหน้า Flash
+const DAY = 24 * 60 * 60 * 1000;
+const thShort = (d: Date) => d.toLocaleDateString("th-TH", { day: "numeric", month: "short" });
+
+const STEPS = [
+  { t: "ชำระเงิน", icon: "🧾" },
+  { t: "เตรียมของ", icon: "📦" },
+  { t: "กำลังขนส่ง", icon: "🚚" },
+  { t: "ได้รับแล้ว", icon: "🏠" },
+] as const;
+const STEP_OF: Record<Status, number> = { pending: 0, new: 1, confirmed: 1, shipped: 2, done: 3, cancelled: -1 };
+
+function Stepper({ idx }: { idx: number }) {
+  return (
+    <div className="mt-2.5 flex items-start">
+      {STEPS.map((sp, i) => (
+        <Fragment key={sp.t}>
+          {i > 0 && (
+            <span className={"mt-3.5 h-[2px] flex-1 rounded " + (i <= idx ? "bg-[#1f9254]" : "bg-steel-700")} />
+          )}
+          <span className="flex w-[64px] shrink-0 flex-col items-center gap-1">
+            <span
+              className={
+                "grid h-7 w-7 place-items-center rounded-full text-[14px] " +
+                (i <= idx ? "bg-[#1f9254]/12" : "bg-steel-900 opacity-45 grayscale")
+              }
+            >
+              {sp.icon}
+            </span>
+            <span className={"text-center text-[10px] leading-tight " + (i <= idx ? "font-semibold text-[#1f9254]" : "text-steel-300")}>
+              {sp.t}
+            </span>
+          </span>
+        </Fragment>
+      ))}
+    </div>
+  );
+}
+
+/** นัดวันได้รับ นับจากวันที่ขนส่งรับพัสดุ — วันที่เพี้ยนก็ไม่พัง แค่ไม่โชว์ */
+function etaLine(o: MyOrder): string {
+  if (o.status === "done") return "ได้รับสินค้าแล้ว ขอบคุณที่อุดหนุนนะคะ 🧡";
+  if (o.status !== "shipped") return "";
+  const t = Date.parse(o.tracking?.at || "");
+  if (!Number.isFinite(t)) return "";
+  return `จะได้รับสินค้าภายใน ${thShort(new Date(t + SHIP_MIN_DAYS * DAY))} – ${thShort(new Date(t + SHIP_MAX_DAYS * DAY))}`;
+}
+
+/** แผงติดตามพัสดุใต้การ์ดออเดอร์ที่ส่งแล้ว */
+function TrackPanel({ o }: { o: MyOrder }) {
+  const [copied, setCopied] = useState(false);
+  const no = o.tracking?.no || "";
+  const shipAt = Date.parse(o.tracking?.at || "");
+  return (
+    <div className="mt-1.5 rounded-lg bg-[#1f9254]/[0.06] p-2.5">
+      <div className="flex items-center justify-between gap-2">
+        <span className="min-w-0 truncate text-[12.5px] text-[#1a1a1a]">
+          {o.tracking?.channel || "ขนส่ง"} · <b className="font-mono">{no}</b>
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            navigator.clipboard?.writeText(no).then(() => {
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1500);
+            }).catch(() => {});
+          }}
+          className="shrink-0 rounded border border-steel-700 bg-white px-2 py-0.5 text-[11px] text-ink-700 active:bg-steel-900"
+        >
+          {copied ? "คัดลอกแล้ว ✓" : "คัดลอก"}
+        </button>
+      </div>
+      {/* ไทม์ไลน์จากข้อมูลฝั่งเรา — เส้นทางละเอียดรายจุดดูต่อได้ที่หน้า Flash */}
+      <ul className="mt-2 space-y-1.5 border-l-2 border-[#1f9254]/30 pl-3">
+        <li className="text-[12px] font-semibold text-[#1f9254]">
+          🚚 ขนส่งรับพัสดุแล้ว กำลังนำส่ง{Number.isFinite(shipAt) ? ` · ${when(shipAt)}` : ""}
+        </li>
+        <li className="text-[12px] text-steel-300">🛒 สั่งซื้อสำเร็จ · {when(o.at)}</li>
+      </ul>
+      <a
+        href={`https://www.flashexpress.com/fle/tracking?se=${encodeURIComponent(no)}`}
+        target="_blank"
+        rel="noreferrer"
+        className="mt-2 block rounded-md bg-[#1f9254] py-2 text-center text-[12.5px] font-semibold text-white active:opacity-80"
+      >
+        ดูเส้นทางพัสดุละเอียด ›
+      </a>
+    </div>
+  );
+}
 
 export default function OrdersView() {
   const router = useRouter();
@@ -146,19 +241,11 @@ export default function OrdersView() {
                     </p>
                   ))}
                 </div>
-                {o.tracking?.no && (
-                  <a
-                    href={`https://www.flashexpress.com/fle/tracking?se=${encodeURIComponent(o.tracking.no)}`}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="mt-1.5 flex items-center justify-between rounded-lg bg-[#7c3aed]/10 px-2.5 py-2"
-                  >
-                    <span className="text-[12.5px] text-[#7c3aed]">
-                      📦 {o.tracking.channel || "ขนส่ง"} · <b>{o.tracking.no}</b>
-                    </span>
-                    <span className="text-[12px] font-semibold text-[#7c3aed]">ติดตามพัสดุ ›</span>
-                  </a>
+                {etaLine(o) && (
+                  <p className="mt-1.5 text-[13px] font-bold text-[#1f9254]">{etaLine(o)}</p>
                 )}
+                {o.status !== "cancelled" && <Stepper idx={STEP_OF[o.status] ?? 1} />}
+                {o.tracking?.no && <TrackPanel o={o} />}
                 <div className="mt-1.5 flex items-center justify-between border-t border-steel-800 pt-1.5">
                   <span className="text-[12px] text-steel-300">{o.paymentLabel}</span>
                   <span className="text-[13px] text-[#1a1a1a]">

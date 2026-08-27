@@ -37,3 +37,11 @@ export function shippingFor(amount: number): number {
   for (const t of SHIPPING_TIERS) if (a <= t.upTo) return t.fee;
   return SHIPPING_TIERS[SHIPPING_TIERS.length - 1].fee;
 }
+
+// ---------------------------------------------------------------------------
+// ช่วงเวลาส่งถึงโดยประมาณ + ขนส่งที่ใช้ — ที่เดียว ใช้ทั้งหน้าเช็คเอาต์และหน้าติดตามพัสดุ
+// (เดิมอยู่หัวไฟล์ CheckoutView.tsx — ย้ายมา 27 ส.ค. 2569 ตอนทำหน้าติดตามแบบ Shopee)
+export const SHIP_MIN_DAYS = 2;
+export const SHIP_MAX_DAYS = 4;
+export const SHIP_NAME = "ส่งธรรมดาในประเทศ";
+export const CARRIER = "Flash Express";   // ว่าง = ไม่โชว์ชื่อขนส่ง

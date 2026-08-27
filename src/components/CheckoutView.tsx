@@ -10,7 +10,7 @@ import { clearBuyNow, getBuyNow, getCart, setBuyNowQty, updateQty, type CartItem
 import Price from "@/components/Price";
 import { promptPayPayload } from "@/lib/promptpay";
 import { SHOP } from "@/lib/shop";
-import { shippingFor } from "@/lib/shipping";
+import { shippingFor, SHIP_MIN_DAYS, SHIP_MAX_DAYS, SHIP_NAME, CARRIER } from "@/lib/shipping";
 import { track } from "@/lib/track";
 import { cachedUser, fetchMe, saveProfile, type User } from "@/lib/account";
 
@@ -56,10 +56,7 @@ const COD_ON = process.env.NEXT_PUBLIC_COD === "1";
 const COD_OFF_NOTE = PROMPTPAY_ID
   ? "ยังไม่เปิดให้ใช้ตอนนี้ — สั่งด้วย QR พร้อมเพย์ได้เลย"
   : "ยังไม่เปิดให้ใช้ตอนนี้ — กดยืนยันคำสั่งซื้อไว้ก่อนได้ ทีมงานจะติดต่อกลับ";
-const SHIP_MIN_DAYS = 2;       // ช่วงเวลาส่งถึงโดยประมาณ
-const SHIP_MAX_DAYS = 4;
-const SHIP_NAME = "ส่งธรรมดาในประเทศ";
-const CARRIER = "Flash Express";   // ชื่อบริษัทขนส่ง · ว่าง = ไม่โชว์
+// ค่าวันส่งถึง/ชื่อขนส่ง ย้ายไป src/lib/shipping.ts (ใช้ร่วมกับหน้าติดตามพัสดุ)
 
 const DAY = 24 * 60 * 60 * 1000;
 const thaiDate = (d: Date) =>
