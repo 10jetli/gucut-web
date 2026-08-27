@@ -24,6 +24,25 @@ export default function AccountHome() {
     fetchMe().then((u) => { setUser(u); setReady(true); });
   }, []);
 
+  // ตัวเลขแจ้งเตือนบนไอคอน 4 หมวดแบบ Shopee — เจ้าของร้านสั่ง 27 ส.ค. 2569
+  // นับจากออเดอร์ของบัญชีนี้ (ฝั่ง API ซิงก์สถานะกับ ZORT ให้แล้ว)
+  const [counts, setCounts] = useState({ pay: 0, ship: 0, receive: 0, done: 0 });
+  useEffect(() => {
+    if (!user) return;
+    fetch("/api/orders?mine=1")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        const list: { status: string }[] = d?.orders || [];
+        setCounts({
+          pay: list.filter((o) => o.status === "pending").length,
+          ship: list.filter((o) => o.status === "new" || o.status === "confirmed").length,
+          receive: list.filter((o) => o.status === "shipped").length,
+          done: list.filter((o) => o.status === "done").length,
+        });
+      })
+      .catch(() => { /* นับไม่ได้ก็ไม่โชว์ป้าย */ });
+  }, [user]);
+
   function openAddr() {
     setForm(user?.addr || { ...EMPTY, name: user?.name || "", phone: user?.phone || "" });
     setMsg("");
@@ -106,15 +125,22 @@ export default function AccountHome() {
           </Link>
           <div className="grid grid-cols-4 py-3.5">
             {[
-              { t: "ที่ต้องชำระ", d: "M7 4h10l1 16H6L7 4zM9.5 8h5" },
-              { t: "ที่ต้องจัดส่ง", d: "M3 7h11v8H3zM14 10h4l3 3v2h-7zM7 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" },
-              { t: "ที่ต้องได้รับ", d: "M4 8l8-4 8 4v8l-8 4-8-4V8zM4 8l8 4 8-4M12 12v8" },
-              { t: "ให้คะแนน", d: "M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8L12 4z" },
+              { t: "ที่ต้องชำระ", tab: "pay", n: counts.pay, d: "M7 4h10l1 16H6L7 4zM9.5 8h5" },
+              { t: "ที่ต้องจัดส่ง", tab: "ship", n: counts.ship, d: "M3 7h11v8H3zM14 10h4l3 3v2h-7zM7 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM17.5 18a1.5 1.5 0 100-3 1.5 1.5 0 000 3z" },
+              { t: "ที่ต้องได้รับ", tab: "receive", n: counts.receive, d: "M4 8l8-4 8 4v8l-8 4-8-4V8zM4 8l8 4 8-4M12 12v8" },
+              { t: "ให้คะแนน", tab: "done", n: counts.done, d: "M12 4l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4L4.2 9.7l5.4-.8L12 4z" },
             ].map((x) => (
-              <Link key={x.t} href="/account/orders/" className="flex flex-col items-center gap-1.5">
-                <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-ink-700 stroke-[1.4]">
-                  <path d={x.d} strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <Link key={x.t} href={`/account/orders/?tab=${x.tab}`} className="flex flex-col items-center gap-1.5">
+                <span className="relative">
+                  <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-ink-700 stroke-[1.4]">
+                    <path d={x.d} strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                  {x.n > 0 && (
+                    <span className="absolute -right-2.5 -top-2 flex h-[17px] min-w-[17px] items-center justify-center rounded-full bg-safety px-1 text-[10px] font-bold leading-none text-white">
+                      {x.n > 99 ? "99+" : x.n}
+                    </span>
+                  )}
+                </span>
                 <span className="text-[11px] text-ink-700">{x.t}</span>
               </Link>
             ))}

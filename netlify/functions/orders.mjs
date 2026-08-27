@@ -260,16 +260,51 @@ export default async function handler(req, context) {
     const myPhone = normPhone(me.user.phone);
 
     const { blobs } = await store.list({ prefix: "o/" });
-    const mine = [];
+    const raw = [];
     for (const b of blobs) {
       const o = await store.get(b.key, { type: "json" }).catch(() => null);
       if (!o || normPhone(o.customer?.phone) !== myPhone) continue;
-      mine.push({
-        id: o.id, at: o.at, status: o.status,
-        items: o.items, paymentLabel: o.paymentLabel,
-        discount: o.discount, shipping: o.shipping, codFee: o.codFee, total: o.total,
-      });
+      raw.push(o);
     }
+
+    // -----------------------------------------------------------------------
+    // ซิงก์สถานะจาก ZORT — เจ้าของร้านสั่ง "สถานะก็ไปดึงเอาที่ ZORT" (27 ส.ค. 2569)
+    // ร้านทำงานจริงใน ZORT (แพ็ค/ส่ง/ใส่เลขพัสดุ) ไม่ได้มากดในหลังร้านเว็บ
+    //   · ZORT มี trackingno = ส่งแล้ว → สถานะเว็บขยับเป็น shipped + เก็บเลขพัสดุ
+    //   · ZORT ยกเลิก (Voided) → cancelled
+    //   · เดินหน้าอย่างเดียว ห้ามถอยสถานะ — ZORT อ่านพลาดชั่วคราวต้องไม่ทำลูกค้าตกใจ
+    //   · ถามซ้ำไม่เกินทุก 10 นาทีต่อใบ (จดเวลาใน o.zortSyncAt) กันถล่ม ZORT
+    // -----------------------------------------------------------------------
+    const SYNC_MS = 10 * 60 * 1000;
+    const need = raw.filter(
+      (o) => ["new", "confirmed", "shipped"].includes(o.status) &&
+        (!o.tracking || !o.tracking.no) &&
+        (!o.zortSyncAt || Date.now() - o.zortSyncAt > SYNC_MS),
+    );
+    if (need.length) {
+      const { zortGetOrder } = await import("../lib/zort-order.mjs");
+      await Promise.all(need.slice(0, 6).map(async (o) => {
+        const z = await zortGetOrder(o.id);
+        o.zortSyncAt = Date.now();
+        if (z) {
+          if (z.trackingno) {
+            o.tracking = { no: z.trackingno, channel: z.shippingchannel || "", at: z.shippingdate || "" };
+            if (o.status === "new" || o.status === "confirmed") o.status = "shipped";
+          }
+          if (String(z.status).toLowerCase() === "voided" && o.status !== "cancelled") {
+            o.status = "cancelled";
+          }
+        }
+        await store.setJSON(`o/${o.id}`, o).catch(() => {});
+      }));
+    }
+
+    const mine = raw.map((o) => ({
+      id: o.id, at: o.at, status: o.status,
+      items: o.items, paymentLabel: o.paymentLabel,
+      discount: o.discount, shipping: o.shipping, codFee: o.codFee, total: o.total,
+      tracking: o.tracking || null,
+    }));
     mine.sort((a, b) => b.at - a.at);
     return json({ orders: mine });
   }
