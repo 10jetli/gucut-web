@@ -9,6 +9,7 @@ import { SHELL_W } from "@/lib/layout";
 import PwaSetup from "@/components/PwaSetup";
 import PixelSetup from "@/components/PixelSetup";
 import LiveBeacon from "@/components/LiveBeacon";
+import PwaInstallNudge from "@/components/PwaInstallNudge";
 
 export default function Shell({ children }: { children: React.ReactNode }) {
   const path = usePathname() || "";
@@ -33,6 +34,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {!admin && <PixelSetup />}
       {/* นับผู้เข้าชม — หน้าร้านเท่านั้น ไม่นับตัวเองตอนเข้าหลังร้าน */}
       {!admin && <LiveBeacon />}
+      {/* ชวนติดตั้งแอป วันละไม่เกินหนึ่งครั้ง — ไม่ขึ้นในหลังร้าน */}
+      {!admin && <PwaInstallNudge />}
       <div className={`mx-auto min-h-screen ${SHELL_W}` + (admin ? "" : " pb-20")}>
         {children}
         {!bare && <SiteFooter />}
