@@ -1376,7 +1376,7 @@ export default function PermitView() {
                 <p className="font-heading text-[15px] font-bold text-ink">กำลังอ่านบัตร…</p>
                 <p className="mt-0.5 text-[12.5px] text-steel-300">{busy}</p>
                 <p className="mt-2 rounded-sm bg-[#fffbe6] px-2 py-1.5 text-[12.5px] font-semibold text-[#8a6d00]">
-                  ใช้เวลาราว 10–20 วินาที — รอสักครู่ อย่าเพิ่งกดอะไรนะครับ
+                  ใช้เวลาราว 10–20 วินาที — รอสักครู่ อย่าเพิ่งกดอะไรนะคะ
                 </p>
               </div>
             ) : busy ? (
@@ -1594,7 +1594,7 @@ export default function PermitView() {
                   const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
                   void navigator.clipboard.writeText(txt)
                     .then(() => setBusy("คัดลอกที่อยู่แล้ว"))
-                    .catch(() => setBusy("คัดลอกไม่ได้ ลองจดเองนะครับ"));
+                    .catch(() => setBusy("คัดลอกไม่ได้ ลองจดเองนะคะ"));
                 }}
                 className="mt-2 w-full rounded-sm border border-steel-600 py-2 text-[13px] font-semibold text-ink"
               >
@@ -1852,7 +1852,7 @@ export default function PermitView() {
                   const txt = `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`;
                   void navigator.clipboard.writeText(txt)
                     .then(() => setLz2Msg("คัดลอกที่อยู่แล้ว"))
-                    .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะครับ"));
+                    .catch(() => setLz2Msg("คัดลอกไม่ได้ ลองจดเองนะคะ"));
                 }}
                 className="mt-2 w-full rounded-sm border border-[#1f7a3d] bg-white py-2.5 text-[13.5px] font-semibold text-[#1f7a3d]"
               >
