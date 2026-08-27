@@ -73,6 +73,34 @@ function validThaiId(id) {
 //      promise ที่ปล่อยลอยตายกลางทาง รูปไม่ถูกเก็บเลยสักใบ (เจอจริงตอนยิงทดสอบ)
 //      ช้าเพิ่มหลักสิบ ms ยอมได้ · ส่วนงานเก็บกวาดของเก่าฝาก waitUntil ถ้ามี
 // ---------------------------------------------------------------------------
+// เด้ง Telegram บอกร้านว่า "มีคนมาสแกนบัตร" — เจ้าของร้านสั่ง 27 ส.ค. 2569
+// ⚠️ ห้ามใส่ข้อมูลบนบัตรลงข้อความเด็ดขาด (กติกาเดิม: เนื้อหาบัตรห้ามเข้า Telegram)
+//    บอกได้แค่ "มีคนสแกน + ผลอ่านเป็นยังไง" เท่านั้น
+// ⚠️ สแกนหนึ่งครั้งเว็บยิงหลายคำขอ (หมุนหลายมุม + ซูมที่อยู่) — กันเด้งรัวด้วย
+//    หนึ่งข้อความต่อ IP ต่อ 10 นาที (คีย์ tg/ ในถังเดียวกัน ลบรวมกับของเก่า)
+async function notifyScan(ip, outcome, context) {
+  const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  try {
+    const store = getStore({ name: "gucut-idscan", consistency: "strong" });
+    const bucket = `tg/${ip}/${Math.floor(Date.now() / 600000)}`;
+    if (await store.get(bucket).catch(() => null)) return;   // เด้งไปแล้วในช่วงนี้
+    await store.set(bucket, "1");
+    const ok = outcome.startsWith("ok");
+    const send = fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text: `🪪 มีลูกค้าสแกนบัตรที่หน้าขอทะเบียนเลื่อยยนต์${ok ? " — อ่านสำเร็จ ✅" : " — รอบแรกอ่านไม่ออก ระบบกำลังลองมุมอื่น"}
+กำลังเดินเรื่องขอ ลซ.1 อยู่ อีกสักครู่น่าจะมีการจองเครื่องเข้ามา`,
+      }),
+      signal: AbortSignal.timeout(4000),
+    }).catch(() => {});
+    if (context?.waitUntil) context.waitUntil(send); else await send;
+  } catch { /* แจ้งไม่ได้ต้องไม่กระทบการอ่านบัตร */ }
+}
+
 async function keepScan(b64, turn, zone, outcome, context) {
   try {
     const store = getStore({ name: "gucut-idscan", consistency: "strong" });
@@ -86,6 +114,13 @@ async function keepScan(b64, turn, zone, outcome, context) {
       for (const b of blobs) {
         const d = b.key.split("/")[1];
         if (d && d < cutoff) await store.delete(b.key).catch(() => {});
+      }
+      // ตัวกันเด้งรัวของ Telegram (tg/) หมดอายุใน 10 นาที — กวาดทิ้งที่เกิน 2 ช่วง
+      const tg = await store.list({ prefix: "tg/" });
+      const nowBucket = Math.floor(Date.now() / 600000);
+      for (const b of tg.blobs) {
+        const bk = Number(b.key.split("/").pop());
+        if (!Number.isFinite(bk) || bk < nowBucket - 2) await store.delete(b.key).catch(() => {});
       }
     })().catch(() => {});
     if (context?.waitUntil) context.waitUntil(cleanup);
@@ -362,6 +397,7 @@ export default async function handler(req, context) {
     if (datas.filter((d) => d.notIdCard).length >= 2) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
       await keepScan(b64, turn, zone, "notIdCard", context);
+      await notifyScan(ip, "notIdCard", context);
       // ⚠️ สาเหตุที่พบบ่อยจริงคือ "รูปเบลอ/มืด" ไม่ใช่รูปผิดประเภท (เจอจริง 26 ส.ค. 2569
       //    บัตรจริงถ่ายกลางคืนแสงน้อย AI ปฏิเสธถูกต้องแล้ว แต่ข้อความเดิมทำลูกค้างง)
       return json({ error: "อ่านบัตรจากรูปนี้ไม่ได้ — รูปอาจเบลอหรือมืดเกินไป ลองถ่ายใหม่ในที่สว่าง ถือมือนิ่ง ๆ ให้บัตรชัดเต็มกรอบ" }, 422);
@@ -388,6 +424,7 @@ export default async function handler(req, context) {
       for (const k of AF) { o[k] = agree(k); if (o[k]) ag++; }
       console.log(`read-id turn=${turn} bytes=${bytes} out=ok-zone agree=${ag}/8`);
       await keepScan(b64, turn, zone, `zone-agree${ag}`, context);
+      await notifyScan(ip, "ok-zone", context);
       return json(o);
     }
 
@@ -402,6 +439,7 @@ export default async function handler(req, context) {
     if (!validThaiId(id)) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=id-mismatch`);
       await keepScan(b64, turn, zone, "id-mismatch", context);
+      await notifyScan(ip, "id-mismatch", context);
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
     }
 
@@ -411,6 +449,7 @@ export default async function handler(req, context) {
     for (const k of FIELDS) { outData[k] = agree(k); if (outData[k]) agreed++; }
     console.log(`read-id turn=${turn} bytes=${bytes} out=ok agree=${agreed}/9 addr=${outData.tambon && outData.province ? "full" : "partial"}`);
     await keepScan(b64, turn, zone, `ok-agree${agreed}`, context);
+    await notifyScan(ip, "ok", context);
     return json(outData);
   } catch (e) {
     return json({ error: String(e?.message || e) }, 502);
