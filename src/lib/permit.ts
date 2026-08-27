@@ -216,8 +216,11 @@ export const officePhone = (province: string): string | null =>
 /**
  * แผนที่ — ใช้เป็นทางถอยกลับเมื่อไม่มีเว็บทางการ และเป็นทางลัดสำหรับคนที่อยากได้เส้นทางเลย
  */
+// เจ้าของร้านสั่ง 27 ส.ค. 2569: "กดแล้วให้ google พาไปทันที ไม่ต้องมากดเริ่ม"
+// → ใช้ dir_action=navigate ของ Google Maps เด้งเข้าโหมดนำทางเลย
+//   (เครื่องที่ไม่มีแอปแผนที่จะได้หน้าเส้นทางบนเว็บแทน ซึ่งใกล้เคียงสุดแล้ว)
 export const officeMapUrl = (province: string) =>
-  "https://www.google.com/maps/search/" +
+  "https://www.google.com/maps/dir/?api=1&travelmode=driving&dir_action=navigate&destination=" +
   encodeURIComponent(`สำนักงานทรัพยากรธรรมชาติและสิ่งแวดล้อมจังหวัด${province}`);
 
 /** ชื่อเต็มของหน่วยงานที่รับคำขอ */

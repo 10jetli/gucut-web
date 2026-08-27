@@ -1884,16 +1884,8 @@ export default function PermitView() {
                       📞 โทร ทสจ.{pv} · {officePhone(pv)}
                     </a>
                   )}
-                  {site && (
-                    <a
-                      href={site}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="block w-full rounded-sm bg-ink py-3 text-center text-[14px] font-semibold text-white"
-                    >
-                      🏛️ เว็บทางการ ทสจ.{pv} — มีแผนที่ ที่อยู่ และเวลาทำการ
-                    </a>
-                  )}
+                  {/* ปุ่มเว็บทางการ ทสจ. ถูกเอาออกตามคำสั่งเจ้าของร้าน 27 ส.ค. 2569
+                      ("เอาออก") — เหลือปุ่มโทรกับแผนที่พอ · officeSiteUrl ยังอยู่เผื่อใช้ที่อื่น */}
                   <a
                     href={officeMapUrl(pv)}
                     target="_blank"
