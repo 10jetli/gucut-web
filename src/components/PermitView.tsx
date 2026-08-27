@@ -383,7 +383,9 @@ export default function PermitView() {
       //    เรียงตามโอกาส: รูปแนวตั้งบัตรมักตะแคง (90/270 ก่อน) · รูปแนวนอนมักตั้งตรง (0 ก่อน)
       //    เจอมุมที่ใช่เมื่อไหร่หยุดทันที มุมท้าย ๆ แทบไม่เคยถูกยิงจริง
       //    ส่วนเอียงเล็กน้อย (±30°) AI อ่านได้เองไม่ต้องหมุนช่วย
-      const ladder = dims.h > dims.w ? [90, 270, 180, 0] : [0, 90, 270, 180];
+      // คู่แรกต้องครอบสองเคสที่พบบ่อยสุดเสมอ: บัตรตะแคง (90) + บัตรตั้งตรง (0)
+      // — รูปแนวตั้งที่บัตร "ตั้งตรง" มีจริง (ภาพหน้าจอ/สแกน) เจอมาแล้ว 27 ส.ค. 2569
+      const ladder = dims.h > dims.w ? [90, 0, 270, 180] : [0, 90, 270, 180];
 
       let aiError: Error | null = null;
       let bestDeg = 0;
@@ -399,28 +401,38 @@ export default function PermitView() {
       // ⚠️ ห้ามใช้คะแนนรวมตัดสินมุม — มุมกลับหัวเคยชนะเพราะเดา "บ้านเลขที่ 28"
       //    จากวันเกิด 28 เม.ย. แบบตรงกันสองรอบ (ความเพี้ยนเชิงระบบ ไม่ใช่การสุ่ม)
       const fullThaiName = (n?: string) => /^(นาย|นาง|นางสาว|น\.ส\.)\s+\S+\s+\S+/.test(n || "");
-      for (const deg of ladder) {
-        try {
-          const r = await readByAi(file, deg);
-          const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          // ⚠️ "ครบ" ต้องมีตำบลจริงด้วย — รหัสไปรษณีย์หาได้จากรหัสหลักของอำเภอ
-          //    ทั้งที่ตำบลว่าง (เจอจริง 27 ส.ค. 2569 รอบ 07:16: บันไดหยุดที่มุม 0°
-          //    เพราะได้ อำเภอ+จังหวัด+รหัส แล้วข้ามด่านซูมซึ่งเป็นตัวอ่านตำบลเก่งสุด)
-          if (f.postcode && f.tambon) { ({ got, a } = r); bestDeg = deg; break; }
-          if (fullThaiName(r.got.name)) {
-            // บัตรตั้งตรงแน่แล้ว มุมอื่นไม่ต้องลอง — ที่อยู่ไปเก็บที่ด่านซูมต่อ
-            ({ got, a } = r); bestDeg = deg;
-            break;
+      // ⚠️ ยิงทีละ "คู่มุม" ขนานกัน — เจ้าของร้านบอก "ถูกแต่ใช้เวลาช้าไป" (27 ส.ค. 2569)
+      //    แบบเดิมไล่ทีละมุม เจอเคสมุมถูกอยู่ท้ายบันไดต้องรอ ~20 วิ
+      //    คู่แรกครอบสองเคสที่พบบ่อยสุด (บัตรตะแคง + บัตรตั้งตรง) จบใน ~6-7 วิ
+      //    คู่หลังยิงเฉพาะตอนคู่แรกไม่ได้ผล — เครดิตเท่าเดิมสำหรับรูปปกติ
+      const pairs = [[ladder[0], ladder[1]], [ladder[2], ladder[3]]];
+      outer: for (const pair of pairs) {
+        const settled = await Promise.allSettled(
+          pair.map((deg) => readByAi(file, deg).then((r) => ({ deg, r }))),
+        );
+        // เก็บ error ไว้ก่อน — "ถี่เกินไป" ต้องหยุดทันที
+        for (const st of settled) {
+          if (st.status === "rejected") {
+            const msg = String((st.reason as Error)?.message || "");
+            if (msg.includes("ถี่เกินไป")) { setBusy(msg); return; }
+            aiError = st.reason as Error;
           }
+        }
+        const oks = settled.flatMap((st) => (st.status === "fulfilled" ? [st.value] : []));
+        // ⚠️ "ครบ" ต้องมีตำบลจริงด้วย — รหัสไปรษณีย์หาได้จากรหัสหลักของอำเภอทั้งที่ตำบลว่าง
+        for (const { deg, r } of oks) {
+          const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
+          if (f.postcode && f.tambon) { ({ got, a } = r); bestDeg = deg; break outer; }
+        }
+        // บัตรตั้งตรงแน่ (ชื่อเต็มรอดตาข่ายสองรอบ) — ที่อยู่ไปเก็บที่ด่านซูมต่อ
+        for (const { deg, r } of oks) {
+          if (fullThaiName(r.got.name)) { ({ got, a } = r); bestDeg = deg; break outer; }
+        }
+        for (const { deg, r } of oks) {
           const sc = scoreOf(r);
           if (sc > bestScore) { ({ got, a } = r); bestDeg = deg; bestScore = sc; }
-          setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
-        } catch (e) {
-          const msg = String((e as Error).message || "");
-          // ⚠️ "ถ่ายถี่เกินไป" ห้ามลองมุมต่อ — ยิ่งลองยิ่งโดนตัวกัน
-          if (msg.includes("ถี่เกินไป")) { setBusy(msg); return; }
-          aiError = e as Error;                          // เบลอ/ไม่ใช่บัตร → ลองมุมถัดไป
         }
+        setBusy("ที่อยู่อ่านไม่ชัด กำลังลองอ่านอีกมุม…");
       }
 
       if (!got || !a) {
