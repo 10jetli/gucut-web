@@ -852,6 +852,12 @@ export default function PermitView() {
    * ⚠️ สร้างพลาดต้องมีทางไปต่อเสมอ — ปุ่มโหลดฟอร์มเปล่าไปเขียนมืออยู่ในรายการเอกสาร
    */
   const printOfficialForm = useCallback(async () => {
+    // เบราว์เซอร์ในแอป LINE โหลดไฟล์ blob ไม่ได้ (กดแล้วเงียบ ไม่มี error ให้จับ)
+    // → เด้งออกไปเบราว์เซอร์จริงด้วยพารามิเตอร์ของ LINE เอง แล้วให้กดปุ่มนี้ซ้ำที่นั่น
+    if (/\bLine\//i.test(navigator.userAgent) && !window.location.search.includes("openExternalBrowser")) {
+      window.location.href = `${window.location.origin}/permit/?openExternalBrowser=1${window.location.hash}`;
+      return;
+    }
     setGenBusy(true);
     setGenError("");
     try {
@@ -1813,13 +1819,9 @@ export default function PermitView() {
                     onClick={() => {
                       // เปิดหลัง await ต้องใช้ลิงก์ blob แล้วสั่งกด (กติกาเดียวกับตัวเปิด PDF)
                       void getShareLink().then((link) => {
-                        const aEl = document.createElement("a");
-                        aEl.href = lineShareUrl(link);
-                        aEl.target = "_blank";
-                        aEl.rel = "noopener noreferrer";
-                        document.body.appendChild(aEl);
-                        aEl.click();
-                        aEl.remove();
+                        // ลิงก์เด้งข้ามแอป — ใช้การนำทางตรง ๆ ชัวร์กว่า anchor สังเคราะห์
+                        // (ถูกถามว่า "เปิดแอปภายนอกไหม" คือพฤติกรรมปกติของ iOS)
+                        window.location.href = lineShareUrl(link);
                       });
                     }}
                     className="rounded-sm bg-[#06C755] py-3 text-center text-[14px] font-semibold text-white"

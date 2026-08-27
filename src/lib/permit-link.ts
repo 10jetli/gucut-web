@@ -40,7 +40,10 @@ function unpack<T>(s: string): T | null {
 /** สร้างลิงก์เต็มที่พกข้อมูลไปด้วย (แบบยาว — ทางถอยเวลาเซิร์ฟเวอร์ไม่ว่าง) */
 export function makeShareLink(data: unknown, origin?: string): string {
   const base = origin || (typeof window !== "undefined" ? window.location.origin : "");
-  return `${base}/permit/#d=${pack(data)}`;
+  // ?openExternalBrowser=1 — ลิงก์นี้ถูกส่งทางไลน์เป็นหลัก เบราว์เซอร์ในแอป LINE
+  // โหลดไฟล์ PDF ไม่ได้ (กดแล้วเงียบ — เจอจริง 27 ส.ค. 2569) พารามิเตอร์นี้เป็นของ LINE เอง
+  // สั่งให้เปิดลิงก์ใน Safari/Chrome แทน · เบราว์เซอร์อื่นไม่รู้จักก็แค่เมิน ไม่มีผลอะไร
+  return `${base}/permit/?openExternalBrowser=1#d=${pack(data)}`;
 }
 
 /** ลิงก์สั้น — ฝากข้อมูลกับร้านชั่วคราว 7 วัน (เจ้าของร้านสั่ง "ย่อลิ้ง" 27 ส.ค. 2569)
@@ -53,7 +56,7 @@ export async function makeShortLink(data: unknown): Promise<string> {
       body: JSON.stringify({ payload: data }),
     });
     const j = await r.json().catch(() => null);
-    if (r.ok && j?.code) return `${window.location.origin}/permit/#p=${j.code}`;
+    if (r.ok && j?.code) return `${window.location.origin}/permit/?openExternalBrowser=1#p=${j.code}`;
   } catch { /* ตกไปใช้ลิงก์ยาว */ }
   return makeShareLink(data);
 }
