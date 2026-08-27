@@ -425,7 +425,7 @@ export default function PermitView() {
         // ⚠️ "ครบ" ต้องมีตำบลจริงด้วย — รหัสไปรษณีย์หาได้จากรหัสหลักของอำเภอทั้งที่ตำบลว่าง
         for (const { deg, r } of oks) {
           const f = fixThaiAddress(r.a.tambon || "", r.a.amphoe || "", r.a.province || "");
-          if (f.postcode && f.tambon) {
+          if (f.postcode && f.tambon && tambonsOf(f.province, f.amphoe).includes(f.tambon)) {
             ({ got, a } = r); bestDeg = deg;
             // ภาพชัดจนอ่านที่อยู่ครบทุกช่องรวมตำบลจากเต็มใบ = คุณภาพสูงพอ
             // ชื่อที่ผ่านการอ่านสองรอบตรงกันในภาพระดับนี้ให้ขึ้นเขียวได้
@@ -481,7 +481,8 @@ export default function PermitView() {
       // — บ้านเลขที่/หมู่อยู่บนบรรทัดเดียวกับตำบล (เคสจริง 27 ส.ค. 2569:
       // บ้านเลขที่ 96 สองรอบอ่านไม่ตรงกันถูกตัดว่าง แต่ด่านซูมไม่ถูกเรียก
       // เพราะเงื่อนไขเดิมดูแค่ที่อยู่ครบ+มีชื่อ)
-      if (a && pre && (!(pre.postcode && pre.tambon) || !got?.name || !a.houseNo || !a.moo)) {
+      if (a && pre && (!(pre.postcode && pre.tambon &&
+        tambonsOf(pre.province, pre.amphoe).includes(pre.tambon)) || !got?.name || !a.houseNo || !a.moo)) {
         try {
           setBusy("กำลังซูมอ่านบรรทัดที่อยู่…");
           const z = await readAddrZone(file, bestDeg);
@@ -497,8 +498,10 @@ export default function PermitView() {
           };
           const fz = fixThaiAddress(mg.tambon, mg.amphoe, mg.province);
           if (fz.postcode && fz.tambon) {
+            // ⚠️ เก็บค่าที่ "ตรวจแก้แล้ว" (fz) ไม่ใช่ค่าดิบ (mg) — สะกดเพี้ยนต้องถูกแก้ทันที
             a = {
-              ...a, ...mg,
+              ...a,
+              tambon: fz.tambon, amphoe: fz.amphoe, province: fz.province,
               houseNo: z.houseNo || a.houseNo || "", moo: z.moo || a.moo || "",
             };
           }
@@ -826,9 +829,14 @@ export default function PermitView() {
       }
       case "houseNo": return /^\d+(\/\d+)?$/.test(v);
       case "moo": return /^\d{1,2}$/.test(v);
-      case "tambon": case "amphoe": case "province": return addrOk;
+      // ⚠️ ตำบลต้อง "มีอยู่จริงแบบตรงตัว" ในทะเบียน — findPostcode ยอมถอยไปใช้
+      //    รหัสหลักของอำเภอเมื่อหาตำบลไม่เจอ เคยทำตำบลสะกดผิด (ค่ายมกลวาน)
+      //    ขึ้นเขียวพร้อมรหัสผิด (43000 แทน 43100 ของ ค่ายบกหวาน) — 27 ส.ค. 2569
+      case "amphoe": case "province": return addrOk;
+      case "tambon": return tambonsOf(d.province, d.amphoe).includes(v);
       case "postcode":
-        return !!d.tambon && addrOk && findPostcode(d.province, d.amphoe, d.tambon) === v;
+        return tambonsOf(d.province, d.amphoe).includes(d.tambon) &&
+          findPostcode(d.province, d.amphoe, d.tambon) === v;
       case "phone": return /^0\d{8,9}$/.test(v.replace(/\D/g, ""));
       case "email": return /.+@.+\..+/.test(v);
       default: return false;   // ตรอก/ซอย · ถนน — ไม่มีอะไรให้ตรวจ ไม่ระบายสี
