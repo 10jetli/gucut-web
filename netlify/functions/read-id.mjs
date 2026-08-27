@@ -324,9 +324,17 @@ export default async function handler(req, context) {
       try { return { data: JSON.parse(m[0]) }; } catch { return { parseFail: true }; }
     };
 
-    const [r1, r2] = await Promise.all([readOnce(), readOnce()]);
-    const fail = [r1, r2].find((x) => x.httpFail);
-    if (fail && !r1.data && !r2.data) {
+    // ⚠️ อ่าน "สามรอบ" เอาเสียงข้างมาก 2 ใน 3 — เจ้าของร้านสั่ง "ทำระบบกันเหนียว"
+    //    (27 ส.ค. 2569 หลังบ้านเลขที่หายเพราะสองรอบอ่านไม่ตรงกันแล้วถูกตัดว่าง)
+    //    ช่องจะว่างก็ต่อเมื่อทั้งสามรอบตอบไม่ตรงกันเลย ซึ่งเกิดยากกว่ามาก
+    //    ความปลอดภัยเท่าเดิม: สองเสียงตรงกันยังเป็นหลักฐานแข็ง ค่าที่เดามั่ว
+    //    แบบสุ่มไม่มีทางตรงกันสองรอบ · ยิงขนานเวลารอเท่าเดิม · เครดิต ~4.5/คำขอ
+    const reads = await Promise.all([readOnce(), readOnce(), readOnce()]);
+    const datas = reads.filter((x) => x.data).map((x) => x.data);
+    const r1 = datas[0] ? { data: datas[0] } : reads[0];
+    const r2 = datas[1] ? { data: datas[1] } : reads[1];
+    const fail = reads.find((x) => x.httpFail);
+    if (fail && datas.length < 2) {
       const r = { status: fail.httpFail }; const out = fail.out;
       // ⚠️ ต้องแยก "เครดิตหมด / ยิงเร็วเกินโควตาต่อนาที" ออกจาก "ของพัง"
       //    ถ้าเหมารวมเป็น 502 หมด หน้าเว็บจะถอยไปใช้ตัวอ่านในเครื่องเงียบ ๆ
@@ -343,10 +351,11 @@ export default async function handler(req, context) {
       // ตัวถามชื่อตัวแปรถูกถอดออกแล้ว รู้ชื่อจริงแล้ว (NETLIFY_AI_GATEWAY_URL)
       return json({ error: why, via: gwKey && gwBase ? "gateway" : "own-key", host }, 502);
     }
-    if (!r1.data || !r2.data) return json({ error: "อ่านผลไม่ได้ ลองใหม่อีกครั้ง" }, 502);
+    if (datas.length < 2) return json({ error: "อ่านผลไม่ได้ ลองใหม่อีกครั้ง" }, 502);
 
     const d1 = r1.data, d2 = r2.data;
-    if (d1.notIdCard || d2.notIdCard) {
+    // ไม่ใช่บัตร = ต้องมีอย่างน้อย 2 ใน 3 เห็นตรงกัน — เสียงเดียวไม่พอตัดสิน
+    if (datas.filter((d) => d.notIdCard).length >= 2) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=notIdCard`);
       await keepScan(b64, turn, zone, "notIdCard", context);
       // ⚠️ สาเหตุที่พบบ่อยจริงคือ "รูปเบลอ/มืด" ไม่ใช่รูปผิดประเภท (เจอจริง 26 ส.ค. 2569
@@ -354,11 +363,18 @@ export default async function handler(req, context) {
       return json({ error: "อ่านบัตรจากรูปนี้ไม่ได้ — รูปอาจเบลอหรือมืดเกินไป ลองถ่ายใหม่ในที่สว่าง ถือมือนิ่ง ๆ ให้บัตรชัดเต็มกรอบ" }, 422);
     }
 
-    // ⚠️ คืนเฉพาะช่องที่ "สองรอบตอบตรงกัน" — ไม่ตรงกัน = เว้นว่างให้ลูกค้ากรอกเอง
+    // ⚠️ คืนเฉพาะช่องที่ "เสียงข้างมากตอบตรงกัน" (≥2 เสียง) — ไม่มีเสียงข้างมาก = ว่าง
     const norm = (d, k) => (typeof d[k] === "string" ? d[k].replace(/\s+/g, " ").trim() : "");
+    const voters = datas.filter((d) => !d.notIdCard);
     const agree = (k) => {
-      const a = norm(d1, k), b = norm(d2, k);
-      return a === b ? a : "";
+      const count = new Map();
+      for (const d of voters) {
+        const v = norm(d, k);
+        if (!v) continue;
+        count.set(v, (count.get(v) || 0) + 1);
+      }
+      for (const [v, n] of count) if (n >= 2) return v;
+      return "";
     };
 
     if (zone === "address") {
@@ -373,9 +389,13 @@ export default async function handler(req, context) {
 
     // ⚠️ ด่านสุดท้าย — เลขบัตรต้อง "ตรงกันสองรอบ" และผ่านหลักตรวจ
     //    ไม่ผ่านข้อใดข้อหนึ่ง = ทิ้งทั้งชุด (เหตุผลเดิม: ถ้าเลขยังมั่ว ช่องอื่นก็เชื่อไม่ได้)
-    const id = norm(d1, "idNumber").replace(/\D/g, "").slice(0, 13);
-    const idB = norm(d2, "idNumber").replace(/\D/g, "").slice(0, 13);
-    if (id !== idB || !validThaiId(id)) {
+    const idVotes = new Map();
+    for (const d of voters) {
+      const v = norm(d, "idNumber").replace(/\D/g, "").slice(0, 13);
+      if (v) idVotes.set(v, (idVotes.get(v) || 0) + 1);
+    }
+    const id = [...idVotes.entries()].find(([, n]) => n >= 2)?.[0] || "";
+    if (!validThaiId(id)) {
       console.log(`read-id turn=${turn} bytes=${bytes} out=id-mismatch`);
       await keepScan(b64, turn, zone, "id-mismatch", context);
       return json({ error: "อ่านเลขบัตรไม่ชัด ลองถ่ายใหม่ให้เห็นเลขครบทั้ง ๑๓ หลัก" }, 422);
