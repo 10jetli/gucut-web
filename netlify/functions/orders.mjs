@@ -290,6 +290,16 @@ export default async function handler(req, context) {
           if (z.trackingno) {
             o.tracking = { no: z.trackingno, channel: z.shippingchannel || "", at: z.shippingdate || "" };
             if (o.status === "new" || o.status === "confirmed") o.status = "shipped";
+            o.notified = o.notified || {};
+            if (!o.notified.shipped) {
+              o.notified.shipped = true;
+              const { lineToCustomer } = await import("../lib/notify-customer.mjs");
+              await lineToCustomer(
+                o.customer?.phone,
+                `GUCUT: ออเดอร์ #${o.id} จัดส่งแล้วนะคะ 🚚\n${o.tracking.channel || "ขนส่ง"} เลขพัสดุ ${o.tracking.no}\nติดตามพัสดุ: https://www.flashexpress.com/fle/tracking?se=${o.tracking.no}`,
+                "https://gucut.com/account/orders/?tab=receive",
+              ).catch(() => {});
+            }
           }
           if (String(z.status).toLowerCase() === "voided" && o.status !== "cancelled") {
             o.status = "cancelled";

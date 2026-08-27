@@ -75,6 +75,21 @@ export async function finalizeOrder({
     );
   }
 
+  // แจ้ง LINE หาลูกค้า (ถ้าล็อกอินด้วย LINE + เพิ่มเพื่อน @gucut1) — 27 ส.ค. 2569
+  later(
+    import("./notify-customer.mjs")
+      .then(({ lineToCustomer }) =>
+        lineToCustomer(
+          c.phone,
+          order.paidAt
+            ? `GUCUT: ได้รับชำระเงินออเดอร์ #${order.id} ยอด ฿${order.total.toLocaleString("th-TH")} แล้วนะคะ ร้านกำลังเตรียมจัดส่ง 📦`
+            : `GUCUT: ได้รับออเดอร์ #${order.id} ยอด ฿${order.total.toLocaleString("th-TH")} แล้วนะคะ ร้านกำลังเตรียมจัดส่ง 📦`,
+          `${SITE_URL}/account/orders/`,
+        ),
+      )
+      .catch(() => {}),
+  );
+
   later(
     pushToAdmins({
       title: `🛒 ออเดอร์ใหม่ ฿${order.total.toLocaleString("th-TH")}`,

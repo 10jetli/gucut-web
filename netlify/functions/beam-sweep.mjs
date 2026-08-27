@@ -5,12 +5,21 @@
 //
 // ตัวทำงานจริง + เหตุผลที่ต้องมี อยู่ที่ netlify/lib/beam-sweep.mjs
 
+import { getStore } from "@netlify/blobs";
 import { sweepBeamOrders } from "../lib/beam-sweep.mjs";
+import { syncShippingAll } from "../lib/zort-order.mjs";
 
 export default async function handler() {
   try {
     const r = await sweepBeamOrders();
-    return new Response(JSON.stringify({ ok: true, ...r }), {
+    // พ่วงกวาดสถานะส่งของจาก ZORT + แจ้ง LINE ลูกค้า (27 ส.ค. 2569)
+    // ร้านใส่เลขพัสดุใน ZORT → ภายในครึ่งชั่วโมงลูกค้าได้ LINE + เว็บอัปเดตเอง
+    let ship = {};
+    try {
+      const store = getStore({ name: "gucut-orders", consistency: "strong" });
+      ship = await syncShippingAll(store);
+    } catch { /* กวาดส่งของพลาดไม่ควรล้มตัวกวาด Beam */ }
+    return new Response(JSON.stringify({ ok: true, ...r, ship }), {
       headers: { "content-type": "application/json" },
     });
   } catch (e) {

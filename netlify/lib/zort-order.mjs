@@ -33,3 +33,47 @@ export async function zortGetOrder(number) {
     return null;
   }
 }
+
+/**
+ * กวาดออเดอร์ที่จ่ายแล้วแต่ยังไม่ส่ง ไปถาม ZORT — ส่งแล้วขยับสถานะ + แจ้ง LINE ลูกค้า
+ * เรียกจากงานตามเวลาเดียวกับตัวกวาด Beam (ทุกครึ่งชั่วโมง) และไม่พึ่งลูกค้าเปิดหน้า
+ *
+ * ⚠️ แจ้งครั้งเดียวต่อใบ (ธง o.notified.shipped) — ห้ามสแปมลูกค้า
+ * ⚠️ เดินหน้าอย่างเดียว ห้ามถอยสถานะ · จำกัด 14 วันล่าสุด + 10 ใบ/รอบ
+ */
+export async function syncShippingAll(store) {
+  const { blobs } = await store.list({ prefix: "o/" });
+  const cutoff = Date.now() - 14 * 24 * 3600 * 1000;
+  let checked = 0, shipped = 0;
+  for (const b of blobs) {
+    if (checked >= 10) break;
+    const o = await store.get(b.key, { type: "json" }).catch(() => null);
+    if (!o || (o.at || 0) < cutoff) continue;
+    if (!["new", "confirmed"].includes(o.status)) continue;
+    checked++;
+    const z = await zortGetOrder(o.id);
+    if (!z) continue;
+    let changed = false;
+    if (z.trackingno) {
+      o.tracking = { no: z.trackingno, channel: z.shippingchannel || "", at: z.shippingdate || "" };
+      o.status = "shipped";
+      changed = true;
+      shipped++;
+      o.notified = o.notified || {};
+      if (!o.notified.shipped) {
+        o.notified.shipped = true;
+        const { lineToCustomer } = await import("./notify-customer.mjs");
+        await lineToCustomer(
+          o.customer?.phone,
+          `GUCUT: ออเดอร์ #${o.id} จัดส่งแล้วนะคะ 🚚\n${o.tracking.channel || "ขนส่ง"} เลขพัสดุ ${o.tracking.no}\nติดตามพัสดุ: https://www.flashexpress.com/fle/tracking?se=${o.tracking.no}`,
+          "https://gucut.com/account/orders/?tab=receive",
+        ).catch(() => {});
+      }
+    } else if (String(z.status).toLowerCase() === "voided" && o.status !== "cancelled") {
+      o.status = "cancelled";
+      changed = true;
+    }
+    if (changed) await store.setJSON(`o/${o.id}`, o).catch(() => {});
+  }
+  return { checked, shipped };
+}
