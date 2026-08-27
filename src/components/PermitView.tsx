@@ -128,6 +128,14 @@ export default function PermitView() {
   const [nameOk, setNameOk] = useState(false);
   // กำลังอ่านบัตรอยู่ไหม — คุมการ์ดสถานะสวย ๆ กับการล็อกปุ่มกันกดซ้ำ
   const [reading, setReading] = useState(false);
+  // กล้องสดถ่ายบัตร — เจ้าของร้านเลือกทางนี้ (27 ส.ค. 2569) หลังพบว่ารูปจากอัลบั้ม
+  // คุณภาพต่ำคือต้นเหตุการอ่านพลาดเกือบทั้งหมด (แบบเดียวกับที่แอปธนาคารบังคับกรอบ)
+  const camVideo = useRef<HTMLVideoElement | null>(null);
+  const camStream = useRef<MediaStream | null>(null);
+  const camTimer = useRef<number>(0);
+  const camStreak = useRef(0);
+  const [camOpen, setCamOpen] = useState(false);
+  const [camMsg, setCamMsg] = useState<{ ok: boolean; text: string }>({ ok: false, text: "กำลังเปิดกล้อง…" });
   const [busy, setBusy] = useState("");
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
@@ -580,6 +588,119 @@ export default function PermitView() {
       setReading(false);
     }
   }, [readLocal]);
+
+  // ---------------------------------------------------------------------------
+  // กล้องสด + กรอบบัตร + วัดความชัด — "คุมคุณภาพรูปตั้งแต่ต้นทาง"
+  // กรอบ: กว้าง 88% กึ่งกลางแนวนอน · กึ่งกลางแนวตั้งที่ 45% · อัตราส่วนบัตร 1.586
+  // ⚠️ ตัวเลขกรอบใน CSS กับใน capture ต้องมาจากชุดเดียวกันเสมอ ไม่งั้นภาพที่ครอป
+  //    ไม่ตรงกับที่ลูกค้าเห็นในกรอบ
+  // ⚠️ ต้องหยุด track กล้องทุกเส้นทางออก (ปิด/ถ่ายเสร็จ/unmount) — ไม่หยุด =
+  //    ไฟกล้องค้าง กินแบตลูกค้า และเปิดใหม่ไม่ติดบนบางเครื่อง
+  // ---------------------------------------------------------------------------
+  const CARD_RATIO = 1.586;
+  const FRAME_W = 0.88, FRAME_CY = 0.45;
+
+  const closeCam = useCallback(() => {
+    if (camTimer.current) { clearInterval(camTimer.current); camTimer.current = 0; }
+    camStream.current?.getTracks().forEach((t) => t.stop());
+    camStream.current = null;
+    setCamOpen(false);
+  }, []);
+  useEffect(() => closeCam, [closeCam]);   // ปิดกล้องตอนออกจากหน้า
+
+  // พิกัดกรอบบัตรบนภาพวิดีโอจริง (ชดเชย object-cover)
+  const frameRect = (v: HTMLVideoElement) => {
+    const vw = v.videoWidth, vh = v.videoHeight;
+    const cw = v.clientWidth, ch = v.clientHeight;
+    const scale = Math.max(cw / vw, ch / vh);
+    const offX = (vw * scale - cw) / 2, offY = (vh * scale - ch) / 2;
+    const fw = cw * FRAME_W, fh = fw / CARD_RATIO;
+    const fx = (cw - fw) / 2, fy = ch * FRAME_CY - fh / 2;
+    return { sx: (fx + offX) / scale, sy: (fy + offY) / scale, sw: fw / scale, sh: fh / scale };
+  };
+
+  // ความชัด = ความแปรปรวนของ Laplacian บนภาพย่อ 240px — เบลอได้ค่าต่ำ ชัดได้ค่าสูง
+  const measureFrame = (v: HTMLVideoElement) => {
+    const { sx, sy, sw, sh } = frameRect(v);
+    const w = 240, h = Math.max(1, Math.round((sh / sw) * 240));
+    const c = document.createElement("canvas");
+    c.width = w; c.height = h;
+    const ctx = c.getContext("2d", { willReadFrequently: true });
+    if (!ctx || sw <= 0) return null;
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, w, h);
+    const px = ctx.getImageData(0, 0, w, h).data;
+    const g = new Float32Array(w * h);
+    let bright = 0;
+    for (let i = 0; i < w * h; i++) {
+      const v0 = 0.299 * px[i * 4] + 0.587 * px[i * 4 + 1] + 0.114 * px[i * 4 + 2];
+      g[i] = v0; bright += v0;
+    }
+    bright /= w * h;
+    let sum = 0, sum2 = 0, n = 0;
+    for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
+      const i = y * w + x;
+      const lap = 4 * g[i] - g[i - 1] - g[i + 1] - g[i - w] - g[i + w];
+      sum += lap; sum2 += lap * lap; n++;
+    }
+    const mean = sum / n;
+    return { sharp: sum2 / n - mean * mean, bright };
+  };
+
+  const captureFromCam = useCallback(() => {
+    const v = camVideo.current;
+    if (!v || !v.videoWidth) return;
+    const { sx, sy, sw, sh } = frameRect(v);
+    const c = document.createElement("canvas");
+    c.width = Math.round(sw); c.height = Math.round(sh);
+    const ctx = c.getContext("2d");
+    if (!ctx) return;
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, c.width, c.height);
+    c.toBlob((b) => {
+      closeCam();
+      if (b) void readCard(new File([b], "card.jpg", { type: "image/jpeg" }));
+    }, "image/jpeg", 0.92);
+  }, [closeCam, readCard]);
+
+  const openCam = useCallback(async () => {
+    // เครื่องที่ไม่มีกล้อง/ไม่รองรับ → อัลบั้มตามเดิม ห้ามค้างเฉย ๆ
+    if (!navigator.mediaDevices?.getUserMedia) { fileRef.current?.click(); return; }
+    setCamOpen(true);
+    camStreak.current = 0;
+    setCamMsg({ ok: false, text: "กำลังเปิดกล้อง…" });
+    try {
+      const st = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "environment", width: { ideal: 1920 }, height: { ideal: 1080 } },
+        audio: false,
+      });
+      camStream.current = st;
+      const v = camVideo.current;
+      if (!v) { closeCam(); return; }
+      v.srcObject = st;
+      await v.play().catch(() => { /* iOS ต้องรอ interaction — ปุ่มกดมาแล้ว โอเค */ });
+      camTimer.current = window.setInterval(() => {
+        const vv = camVideo.current;
+        if (!vv || !vv.videoWidth) return;
+        const m = measureFrame(vv);
+        if (!m) return;
+        // เกณฑ์จากการทดลอง: ชัดพอ ≥ 70 · สว่างพอ 35-235 — ปรับได้สองบรรทัดนี้
+        if (m.bright < 35) { camStreak.current = 0; setCamMsg({ ok: false, text: "มืดไป — เปิดไฟหรือหาที่สว่างกว่านี้" }); }
+        else if (m.sharp < 70) { camStreak.current = 0; setCamMsg({ ok: false, text: "ยังไม่ชัด — วางบัตรให้เต็มกรอบ ถือนิ่ง ๆ" }); }
+        else {
+          camStreak.current += 1;
+          setCamMsg({ ok: true, text: camStreak.current >= 2 ? "ชัดแล้ว กำลังถ่าย…" : "ชัดแล้ว ถือนิ่ง ๆ…" });
+          // ชัดติดกัน ~1.4 วิ ค่อยถ่าย — กันเฟรมชัดหลอกตอนกวาดกล้องผ่าน
+          if (camStreak.current >= 4) {
+            clearInterval(camTimer.current); camTimer.current = 0;
+            captureFromCam();
+          }
+        }
+      }, 350);
+    } catch {
+      closeCam();
+      setBusy("เปิดกล้องไม่ได้ — เลือกรูปจากอัลบั้มแทนได้เลย");
+      fileRef.current?.click();
+    }
+  }, [captureFromCam, closeCam]);
 
   // ถามเซิร์ฟเวอร์ว่าตอนนี้เป็นใคร แล้วดึงเรื่องของคนนั้นมา
   useEffect(() => {
@@ -1348,7 +1469,7 @@ export default function PermitView() {
                    โดยไม่ต้องอ่านตัวหนังสือ (คนที่มาหน้านี้บางส่วนอ่านหนังสือไม่คล่อง)
                 ⚠️ ทั้งกรอบคือปุ่ม ไม่ใช่แค่ข้อความข้างใน — นิ้วโป้งบนมือถือกดโดนง่ายกว่ามาก */}
             <button
-              onClick={() => fileRef.current?.click()}
+              onClick={() => void openCam()}
               aria-label="ถ่ายบัตรประชาชน"
               disabled={reading}
               className={
@@ -1377,8 +1498,63 @@ export default function PermitView() {
             {/* ⚠️ ลูกศรนี้อยู่ในภาพร่าง — บอกว่าแสกนแล้วข้อมูลไหลเข้าแบบ ลซ.๑ ให้เอง
                 เป็นเหตุผลเดียวที่ลูกค้ายอมถ่ายบัตร ต้องเห็นก่อนกด ไม่ใช่หลังกด */}
             <p className="mt-1.5 text-center text-[12px] text-ink-300">
-              ↓ เข้าแบบฟอร์ม ลซ.๑ ให้อัตโนมัติ
+              ↓ เข้าแบบฟอร์ม ลซ.๑ ให้อัตโนมัติ ·{" "}
+              <button type="button" onClick={() => fileRef.current?.click()} className="underline">
+                เลือกรูปจากอัลบั้ม
+              </button>
             </p>
+
+            {/* ---------------- กล้องสดถ่ายบัตร — คุมคุณภาพรูปตั้งแต่ต้นทาง ---------------- */}
+            {camOpen && (
+              <div className="fixed inset-0 z-50 bg-black">
+                {/* eslint-disable-next-line jsx-a11y/media-has-caption */}
+                <video ref={camVideo} autoPlay playsInline muted className="h-full w-full object-cover" />
+                {/* กรอบบัตร — ตัวเลขต้องตรงกับ FRAME_W/FRAME_CY ใน capture เสมอ */}
+                <div
+                  aria-hidden
+                  className={
+                    "pointer-events-none absolute rounded-xl border-[3px] " +
+                    (camMsg.ok ? "border-[#39d353]" : "border-white/90")
+                  }
+                  style={{
+                    left: "6%", width: "88%", top: "45%",
+                    aspectRatio: "1.586", transform: "translateY(-50%)",
+                    boxShadow: "0 0 0 9999px rgba(0,0,0,0.55)",
+                  }}
+                />
+                <p className="pointer-events-none absolute inset-x-0 top-[12%] text-center text-[15px] font-bold text-white">
+                  วางบัตรประชาชนให้เต็มกรอบ
+                </p>
+                <p
+                  className={
+                    "pointer-events-none absolute inset-x-4 top-[72%] rounded-lg py-2 text-center text-[14px] font-semibold " +
+                    (camMsg.ok ? "bg-[#0e5c2b]/85 text-white" : "bg-black/60 text-white")
+                  }
+                >
+                  {camMsg.text}
+                </p>
+                <div className="absolute inset-x-0 bottom-6 flex items-center justify-center gap-6">
+                  <button
+                    onClick={() => { closeCam(); fileRef.current?.click(); }}
+                    className="rounded-lg bg-white/15 px-4 py-2.5 text-[13px] font-semibold text-white"
+                  >
+                    อัลบั้ม
+                  </button>
+                  {/* ปุ่มชัตเตอร์เอง — บางเครื่องวัดความชัดไม่ผ่านทั้งที่ตาเห็นว่าชัด ต้องมีทางออก */}
+                  <button
+                    onClick={captureFromCam}
+                    aria-label="ถ่ายรูป"
+                    className="h-16 w-16 rounded-full border-4 border-white bg-white/25"
+                  />
+                  <button
+                    onClick={closeCam}
+                    className="rounded-lg bg-white/15 px-4 py-2.5 text-[13px] font-semibold text-white"
+                  >
+                    ปิด
+                  </button>
+                </div>
+              </div>
+            )}
             {/* การ์ดสถานะตอนอ่านบัตร — เจ้าของร้านสั่ง (27 ส.ค. 2569)
                 "UI ต้องสวย ๆ และทำให้คนที่กำลังรอรู้ว่าต้องรอ อย่าเพิ่งกดอะไร" */}
             {reading ? (
