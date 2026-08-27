@@ -7,6 +7,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Fragment, useEffect, useState } from "react";
 import { SHIP_MIN_DAYS, SHIP_MAX_DAYS } from "@/lib/shipping";
+import TrackMap from "@/components/TrackMap";
+
+// จังหวัดต้นทางพัสดุ — จังหวัดเดียวกับที่อยู่รับเอกสารบนหน้า /permit/ (เปิดเผยระดับจังหวัดได้)
+const ORIGIN_PROVINCE = "หนองคาย";
 import Price from "@/components/Price";
 
 type Status = "pending" | "new" | "confirmed" | "shipped" | "done" | "cancelled";
@@ -23,6 +27,8 @@ interface MyOrder {
   total: number;
   /** เลขพัสดุจาก ZORT — มีเมื่อร้านส่งของแล้ว */
   tracking?: { no: string; channel: string; at: string } | null;
+  /** จังหวัดปลายทาง — ใช้วาดแผนที่เส้นทาง */
+  province?: string;
 }
 
 // แท็บกรองแบบ Shopee — คีย์ตรงกับ ?tab= ที่หน้าบัญชีส่งมา
@@ -103,8 +109,19 @@ function TrackPanel({ o }: { o: MyOrder }) {
   const [copied, setCopied] = useState(false);
   const no = o.tracking?.no || "";
   const shipAt = Date.parse(o.tracking?.at || "");
+  // สัดส่วนเวลาที่ผ่านไปของช่วงส่ง (จุดกึ่งกลาง 2-4 วัน = 3 วัน) — ใช้เดินรถบนแผนที่
+  const spanMs = ((SHIP_MIN_DAYS + SHIP_MAX_DAYS) / 2) * DAY;
+  const prog = Number.isFinite(shipAt) ? (Date.now() - shipAt) / spanMs : 0.3;
   return (
     <div className="mt-1.5 rounded-lg bg-[#1f9254]/[0.06] p-2.5">
+      {o.province && (
+        <TrackMap
+          fromProvince={ORIGIN_PROVINCE}
+          toProvince={o.province}
+          progress={prog}
+          done={o.status === "done"}
+        />
+      )}
       <div className="flex items-center justify-between gap-2">
         <span className="min-w-0 truncate text-[12.5px] text-[#1a1a1a]">
           {o.tracking?.channel || "ขนส่ง"} · <b className="font-mono">{no}</b>

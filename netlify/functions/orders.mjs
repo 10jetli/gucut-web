@@ -314,6 +314,9 @@ export default async function handler(req, context) {
       items: o.items, paymentLabel: o.paymentLabel,
       discount: o.discount, shipping: o.shipping, codFee: o.codFee, total: o.total,
       tracking: o.tracking || null,
+      // จังหวัดปลายทาง — ใช้วาดแผนที่เส้นทางพัสดุ (ข้อมูลของลูกค้าเอง ไม่รั่วถึงคนอื่น
+      // เพราะ mine=1 กรองด้วยเบอร์ของ session อยู่แล้ว) · ไม่ส่งที่อยู่เต็ม
+      province: o.customer?.province || "",
     }));
     mine.sort((a, b) => b.at - a.at);
     return json({ orders: mine });
