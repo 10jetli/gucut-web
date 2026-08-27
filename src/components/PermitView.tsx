@@ -1274,10 +1274,24 @@ export default function PermitView() {
             {/* รางสามจุด — เส้นเชื่อมวาดด้วย before ของช่องที่ ๒ และ ๓
                 จึงลากจากจุดก่อนหน้ามาถึงจุดตัวเองพอดีทุกความกว้างจอ
                 (วิธีวางเส้นเป็น flex-1 คั่นกลางจะทำให้จุดแรกไม่อยู่กลางช่อง) */}
+            {/* รางเดินตาม stage จริง (เจ้าของร้านสั่ง 27 ส.ค. 2569
+                "ถึงตรงนี้สถานะตรงนี้จะเพิ่ม และมีสัญลักษณ์รูปกระดาษ 2 ใบ ส่งมาร้านค้า")
+                เดิมรางดูแค่ printed — ลูกค้าส่งใบ ลซ.๒ แล้วจุดที่ ๒ ยังจางอยู่ ดูเหมือนไม่คืบ */}
             <ol className="mt-4 flex">
               {PERMIT_STEPS.map((st, i) => {
-                const done = printed && i === 0;
-                const active = printed ? i === 1 : i === 0;
+                const ORDER = ["", "printed", "submitted", "gotlz2", "lz2", "got", "shipped", "done"];
+                const sIdx = Math.max(0, ORDER.indexOf(stage));
+                // จุด ๑ (ลซ.๑): เสร็จเมื่อพิมพ์แล้ว · จุด ๒ (ลซ.๒): เสร็จเมื่อได้ใบมาแล้ว
+                // จุด ๓ (ลซ.๓): เสร็จเมื่อจบเรื่อง
+                const done =
+                  (i === 0 && (printed || sIdx >= 1)) ||
+                  (i === 1 && sIdx >= 3) ||
+                  (i === 2 && stage === "done");
+                const active = !done && (
+                  (i === 0 && sIdx === 0 && !printed) ||
+                  (i === 1 && (sIdx === 1 || sIdx === 2 || (printed && sIdx === 0))) ||
+                  (i === 2 && sIdx >= 4)
+                );
                 return (
                   <li
                     key={st.code}
@@ -1288,10 +1302,20 @@ export default function PermitView() {
                         : "")
                     }
                   >
-                    {/* รถวิ่งบนเส้นช่วงแรก — ขึ้นหลังปริ้นแล้วเท่านั้น */}
-                    {i === 1 && printed && (
+                    {/* รถวิ่งบนเส้นช่วงแรก — ขึ้นหลังปริ้นแล้ว หายเมื่อได้ใบ ลซ.๒ (ถึงที่แล้ว) */}
+                    {i === 1 && printed && !(["gotlz2", "lz2", "got", "shipped", "done"].includes(stage)) && (
                       <span className="absolute left-0 top-[13px] z-10 -translate-x-1/2 -translate-y-1/2 bg-white px-1">
                         <TruckArrow />
+                      </span>
+                    )}
+                    {/* กระดาษ ๒ ใบเดินทางมาร้าน — ขึ้นตอนลูกค้าส่งใบ ลซ.๒ แล้ว จนร้านส่งเครื่อง */}
+                    {i === 2 && ["lz2", "got"].includes(stage) && (
+                      <span
+                        className="absolute left-0 top-[13px] z-10 -translate-x-1/2 -translate-y-1/2 bg-white px-1 text-[13px] leading-none"
+                        title="ใบ ลซ.๒ ทั้ง ๒ ใบกำลังเดินทางมาที่ร้าน"
+                        aria-label="ส่งใบ ลซ.๒ มาที่ร้านแล้ว"
+                      >
+                        📄📄
                       </span>
                     )}
                     <span
