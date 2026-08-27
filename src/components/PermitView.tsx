@@ -34,7 +34,7 @@ import {
   DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, STAGE_AT_STEP, stageDone,
   officeMapUrl, officeSiteUrl, officePhone } from "@/lib/permit";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
-import { SHOP } from "@/lib/shop";
+import { BRAND, SHOP } from "@/lib/shop";
 import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
 import { lineShareUrl, makeShortLink, readAnyShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
@@ -1308,14 +1308,20 @@ export default function PermitView() {
                         <TruckArrow />
                       </span>
                     )}
-                    {/* กระดาษ ๒ ใบเดินทางมาร้าน — ขึ้นตอนลูกค้าส่งใบ ลซ.๒ แล้ว จนร้านส่งเครื่อง */}
+                    {/* กระดาษ ๒ ใบเดินทางมาร้าน — ขึ้นตอนลูกค้าส่งใบ ลซ.๒ แล้ว จนร้านส่งเครื่อง
+                        เจ้าของร้านสั่ง "ให้ logo gucut อยู่บนใบ 2 ใบนี้" — โลโก้แบบเดียวกับ
+                        หน้าเข้าสู่ระบบ (GU สีแบรนด์ + ที่เหลือสีเข้ม) อ่านชื่อจาก BRAND ตามกติการ้านต้นแบบ */}
                     {i === 2 && ["lz2", "got"].includes(stage) && (
                       <span
-                        className="absolute left-0 top-[13px] z-10 -translate-x-1/2 -translate-y-1/2 bg-white px-1 text-[13px] leading-none"
+                        className="absolute left-0 top-[13px] z-10 flex -translate-x-1/2 -translate-y-1/2 flex-col items-center bg-white px-1 leading-none"
                         title="ใบ ลซ.๒ ทั้ง ๒ ใบกำลังเดินทางมาที่ร้าน"
                         aria-label="ส่งใบ ลซ.๒ มาที่ร้านแล้ว"
                       >
-                        📄📄
+                        <span className="font-heading text-[8px] font-extrabold italic tracking-tight">
+                          <span className="text-safety">{BRAND.name.slice(0, 2)}</span>
+                          <span className="text-ink">{BRAND.name.slice(2)}</span>
+                        </span>
+                        <span className="mt-0.5 text-[13px]">📄📄</span>
                       </span>
                     )}
                     <span
