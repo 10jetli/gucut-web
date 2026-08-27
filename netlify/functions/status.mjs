@@ -150,7 +150,7 @@ export default async function handler(req, context) {
     //    รอบสองแก้ให้ดู COD ประกอบ แต่ลืม Beam ซึ่งเปิดรับเงินอยู่จริง
     //    ผลคือหน้าจอขึ้นสีแดงว่า "ลูกค้าจ่ายเงินไม่ได้เลย" ทั้งที่จ่ายได้ตามปกติ
     //    เตือนผิดอันตรายพอ ๆ กับไม่เตือน — คนอ่านจะเลิกเชื่อหน้านี้ทั้งหน้า
-    check("รับเงินด้วย QR พร้อมเพย์", async () => {
+    check("QR พร้อมเพย์แบบโอนเอง (แนบสลิป)", async () => {
       if (env.NEXT_PUBLIC_PROMPTPAY_ID) return {};
       const others = payWaysBesidesPromptPay();
       return others.length
