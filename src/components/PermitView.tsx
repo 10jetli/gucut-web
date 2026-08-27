@@ -221,6 +221,8 @@ export default function PermitView() {
   const [camMsg, setCamMsg] = useState<{ ok: boolean; text: string }>({ ok: false, text: "กำลังเปิดกล้อง…" });
   const [busy, setBusy] = useState("");
   const [fromShare, setFromShare] = useState(false);
+  // เปิดจากลิงก์ใบแปะหน้าซอง (พกแค่ชื่อ-ที่อยู่-เบอร์ ไม่มีเลขบัตร)
+  const [envShare, setEnvShare] = useState<{ senderName: string; senderAddress: string; senderPhone: string } | null>(null);
   // ลิงก์สั้นที่สร้างไปแล้วของข้อมูลชุดปัจจุบัน — กดซ้ำไม่ยิงเซิร์ฟเวอร์ซ้ำ
   const shortLinkRef = useRef<{ key: string; link: string } | null>(null);
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
@@ -251,10 +253,16 @@ export default function PermitView() {
       //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
       // ลิงก์สั้น (#p=) ต้องไปแลกข้อมูลจากเซิร์ฟเวอร์ จึงเป็น async
       // ลิงก์ยาวแบบเก่า (#d=) ก็ผ่านทางเดียวกัน — เปิดได้ตลอดไป
-      void readAnyShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }>()
+      void readAnyShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }
+        | { env: 1; senderName: string; senderAddress: string; senderPhone: string }>()
         .then((res) => {
           if (!res) return;
           if (res.error) { setBusy(res.error); return; }
+          if (res.data && "env" in res.data) {
+            // ลิงก์ใบแปะหน้าซอง — คนเปิดคือร้านถ่ายเอกสาร ขึ้นการ์ดพิมพ์ใบแปะบนสุด
+            setEnvShare(res.data);
+            return;
+          }
           const shared = res.data;
           if (!shared?.d) return;
           setD({ ...blank(), ...shared.d, qualified: true });
@@ -1102,7 +1110,22 @@ export default function PermitView() {
 
   // ใบแปะหน้าซองส่งใบ ลซ.๒ กลับร้าน — A5 บนครึ่งบนของ A4 (ดูเหตุผลใน envelope-pdf.ts)
   const [envBusy, setEnvBusy] = useState(false);
-  const printEnvelope = useCallback(async () => {
+  const senderInfo = useCallback(() => ({
+    senderName: d.name,
+    senderAddress: [
+      d.houseNo && `${d.houseNo}`, d.moo && `หมู่ ${d.moo}`,
+      d.tambon && `ต.${d.tambon}`, d.amphoe && `อ.${d.amphoe}`,
+      d.province && `จ.${d.province}`, d.postcode,
+    ].filter(Boolean).join(" "),
+    senderPhone: d.phone,
+  }), [d]);
+
+  const printEnvelope = useCallback(async (sender?: { senderName: string; senderAddress: string; senderPhone: string }) => {
+    // เบราว์เซอร์ในแอป LINE โหลดไฟล์ blob ไม่ได้ — เด้งออกเบราว์เซอร์จริงก่อน (ท่าเดียวกับ ลซ.1)
+    if (/\bLine\//i.test(navigator.userAgent) && !window.location.search.includes("openExternalBrowser")) {
+      window.location.href = `${window.location.origin}/permit/?openExternalBrowser=1${window.location.hash}`;
+      return;
+    }
     setEnvBusy(true);
     try {
       const [fontRes, mod] = await Promise.all([
@@ -1110,14 +1133,10 @@ export default function PermitView() {
         import("@/lib/envelope-pdf"),
       ]);
       if (!fontRes.ok) throw new Error("โหลดฟอนต์ไม่สำเร็จ");
-      const addr = [
-        d.houseNo && `${d.houseNo}`, d.moo && `หมู่ ${d.moo}`,
-        d.tambon && `ต.${d.tambon}`, d.amphoe && `อ.${d.amphoe}`,
-        d.province && `จ.${d.province}`, d.postcode,
-      ].filter(Boolean).join(" ");
+      const from = sender || senderInfo();
       const bytes = await mod.buildEnvelopePdf(
         {
-          senderName: d.name, senderAddress: addr, senderPhone: d.phone,
+          ...from,
           shopName: DOC_MAILING.name, shopAddress: DOC_MAILING.address, shopPhone: DOC_MAILING.phone,
         },
         await fontRes.arrayBuffer(),
@@ -1135,7 +1154,7 @@ export default function PermitView() {
       setTimeout(() => URL.revokeObjectURL(url), 60_000);
     } catch { /* พลาดก็ยังคัดลอกที่อยู่ไปเขียนมือได้ ปุ่มอยู่ติดกัน */ }
     finally { setEnvBusy(false); }
-  }, [d]);
+  }, [senderInfo]);
 
   // ขอลิงก์สั้นของข้อมูลชุดปัจจุบัน — สร้างครั้งเดียวต่อข้อมูลหนึ่งชุด
   // สร้างไม่สำเร็จได้ลิงก์ยาวแทน (จัดการใน makeShortLink) ลูกค้าไม่มีวันติดตัน
@@ -1154,6 +1173,23 @@ export default function PermitView() {
         {/* โหมดเปิดจากลิงก์แชร์ — คนเปิดคือร้านถ่ายเอกสาร ต้องได้ PDF ในกดเดียว
             ไม่ดาวน์โหลดเองอัตโนมัติ: เบราว์เซอร์ส่วนใหญ่บล็อกการโหลดที่ไม่ได้มาจากการกด
             และไฟล์มีเลขบัตรคนอื่น ควรให้คนเปิดกดเองหนึ่งครั้ง (เจ้าของร้านสั่ง 27 ส.ค. 2569) */}
+        {/* เปิดจากลิงก์ใบแปะหน้าซอง — ร้านถ่ายเอกสารกดปุ่มเดียวได้ PDF ใบแปะ */}
+        {envShare && (
+          <section className="mb-1 rounded-xl bg-ink p-4 text-white">
+            <p className="text-[13px] text-white/70">เอกสารพร้อมพิมพ์</p>
+            <p className="mt-0.5 text-[16px] font-bold">ใบแปะหน้าซองของ {envShare.senderName || "ลูกค้า"}</p>
+            <button
+              onClick={() => void printEnvelope(envShare)}
+              disabled={envBusy}
+              className="mt-3 w-full rounded-lg bg-white py-3.5 text-[15px] font-bold text-safety disabled:opacity-60"
+            >
+              {envBusy ? "กำลังสร้างเอกสาร…" : "📄 ดาวน์โหลด PDF แล้วพิมพ์ได้เลย"}
+            </button>
+            <p className="mt-2 text-[11.5px] leading-relaxed text-white/70">
+              กระดาษ A4 หนึ่งแผ่น — ตัดครึ่งตามเส้นประ แล้วติดครึ่งบนลงหน้าซอง
+            </p>
+          </section>
+        )}
         {fromShare && canPrint && (
           <section className="mb-1 rounded-xl bg-ink p-4 text-white">
             <p className="text-[13px] text-white/70">เอกสารพร้อมพิมพ์</p>
@@ -2219,6 +2255,24 @@ export default function PermitView() {
                 className="mt-2 w-full rounded-sm bg-[#1f7a3d] py-2.5 text-[13.5px] font-semibold text-white disabled:opacity-60"
               >
                 {envBusy ? "กำลังสร้างใบแปะ…" : "🖨️ พิมพ์ใบแปะหน้าซอง (มีที่อยู่ครบ ตัดแปะได้เลย)"}
+              </button>
+              {/* ลูกค้าเป็นชาวบ้านไม่เก่งเทคโนโลยี (เจ้าของร้านย้ำ 27 ส.ค. 2569)
+                  → ต้องมีบรรทัดชี้ทางว่ากดปุ่มไหน ห้ามปล่อยให้เดาเอง */}
+              <p className="mt-2 text-[12px] leading-relaxed text-ink-700">
+                มีเครื่องพิมพ์ที่บ้าน กดปุ่มบน · <b>ไม่มีเครื่องพิมพ์ กดปุ่มเขียวข้างล่าง</b>
+                {" "}แล้วเอามือถือไปที่ร้านถ่ายเอกสาร ให้เขากดลิงก์พิมพ์ให้
+              </p>
+              {/* ไม่มีเครื่องพิมพ์ → ส่งลิงก์ให้ร้านถ่ายเอกสารพิมพ์แทน (ท่าเดียวกับ ลซ.1)
+                  ลิงก์พกแค่ชื่อ-ที่อยู่-เบอร์ผู้ส่ง — ไม่มีเลขบัตรติดไปด้วย */}
+              <button
+                onClick={() => {
+                  void makeShortLink({ env: 1, ...senderInfo() }).then((link) => {
+                    window.location.href = lineShareUrl(link, "ใบแปะหน้าซองส่งเอกสาร");
+                  });
+                }}
+                className="mt-2 w-full rounded-sm bg-[#06C755] py-2.5 text-[13.5px] font-semibold text-white"
+              >
+                ส่งใบแปะไปไลน์ (ให้ร้านถ่ายเอกสารช่วยพิมพ์)
               </button>
               <CopyBtn
                 text={() => `${DOC_MAILING.name}\n${DOC_MAILING.address}\nโทร ${DOC_MAILING.phone}`}

@@ -93,5 +93,5 @@ export async function readAnyShareLink<T>(): Promise<{ data?: T; error?: string 
  * ⚠️ ใช้ปลายทางแชร์ของไลน์ที่เปิดได้ทั้งในแอปและบนเว็บ
  *    ไม่ใช้ line://  เพราะเครื่องที่ไม่มีแอปจะขึ้นหน้าเปล่า
  */
-export const lineShareUrl = (link: string) =>
-  `https://line.me/R/share?text=${encodeURIComponent(`แบบ ลซ.1 ที่กรอกไว้ กดเปิดแล้วพิมพ์ได้เลย\n${link}`)}`;
+export const lineShareUrl = (link: string, label = "แบบ ลซ.1 ที่กรอกไว้") =>
+  `https://line.me/R/share?text=${encodeURIComponent(`${label} กดเปิดแล้วพิมพ์ได้เลย\n${link}`)}`;
