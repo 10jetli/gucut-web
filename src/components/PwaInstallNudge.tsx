@@ -55,8 +55,9 @@ export default function PwaInstallNudge() {
   if (!show || (!ios && !bip)) return null;
 
   return (
+    // เจ้าของร้านสั่ง "ให้โผล่ด้านบน" (28 ส.ค. 2569) — ลอยใต้ขอบบนจอ เคารพติ่งกล้อง
     <div className="fixed inset-x-2 z-40 rounded-xl bg-ink p-3 text-white shadow-lg"
-         style={{ bottom: "calc(64px + env(safe-area-inset-bottom))" }}>
+         style={{ top: "calc(8px + env(safe-area-inset-top))" }}>
       <div className="flex items-start gap-2.5">
         <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-white font-heading text-[18px] font-extrabold italic text-safety">G</span>
         <div className="min-w-0 flex-1">
