@@ -30,7 +30,7 @@ const safe = (v, max = 80) => String(v ?? "").replace(/[^\w\-./]/g, "").slice(0,
  * บันทึกว่ามีคนเปิดหน้านี้ — เรียกจากหน้าเว็บทุกครั้งที่เปลี่ยนหน้า
  * @param cc รหัสประเทศ 2 ตัว จาก Netlify (context.geo) — ไม่ต้องพึ่งบริการภายนอก
  */
-export async function ping(vid, path, cc, src, selfHost) {
+export async function ping(vid, path, cc, src, selfHost, pwa, install) {
   const s = store();
   const id = safe(vid, 40);
   if (!id) return;
@@ -45,6 +45,11 @@ export async function ping(vid, path, cc, src, selfHost) {
     s.setJSON(`v/${day}/${id}`, { p }),
     s.setJSON(`c/${day}/${country}/${id}`, { p }),
   ];
+  // PWA — เจ้าของร้านอยากรู้ว่ามีคนโหลดแอปกี่คน (27 ส.ค. 2569)
+  // "เปิดจากแอปที่ติดตั้ง" นับหนึ่งคนหนึ่งคีย์ต่อวัน (กติกาเดียวกับ v/)
+  // "กดติดตั้งใหม่" (pwi/) มาจาก event appinstalled — Android เท่านั้น iPhone ไม่มี event นี้
+  if (pwa) jobs.push(s.setJSON(`pw/${day}/${id}`, { p }));
+  if (install) jobs.push(s.setJSON(`pwi/${day}/${id}`, { p }));
 
   // ⚠️ ช่องทางถูกส่งมาแค่ "ครั้งแรกของการเข้าเว็บรอบนั้น" เท่านั้น
   //    หน้าถัด ๆ ไปเป็นการเดินภายในเว็บเราเอง ต้นทางจะกลายเป็น gucut.com ซึ่งไม่มีความหมาย
@@ -157,8 +162,31 @@ export async function stats() {
     members = { total: blobs.length, new7, via, recent: recent.slice(0, 5) };
   } catch { /* นับสมาชิกพลาดต้องไม่ล้มสถิติที่เหลือ */ }
 
+  // PWA: เปิดจากแอปวันนี้ + 7 วัน (ตัดคนซ้ำข้ามวัน) · ยอดกดติดตั้ง 7 วัน (Android)
+  let pwa = null;
+  try {
+    const week = [];
+    for (let i = 0; i < 7; i++) week.push(dayOf(now - i * 86400000));
+    const pw = await s.list({ prefix: "pw/" });
+    const uniqToday = new Set(), uniqWeek = new Set();
+    for (const b of pw.blobs) {
+      const [, d, id] = b.key.split("/");
+      if (!d || !id) continue;
+      if (d === week[0]) uniqToday.add(id);
+      if (week.includes(d)) uniqWeek.add(id);
+    }
+    const pwi = await s.list({ prefix: "pwi/" });
+    let installs7 = 0;
+    for (const b of pwi.blobs) {
+      const d = b.key.split("/")[1];
+      if (week.includes(d)) installs7++;
+    }
+    pwa = { today: uniqToday.size, week: uniqWeek.size, installs7 };
+  } catch { /* นับ PWA พลาดต้องไม่ล้มสถิติที่เหลือ */ }
+
   return {
     members,
+    pwa,
     channelsToday: rows(chToday),
     channelsWeek: rows(chWeek),
     countries: [...byCountry.entries()].sort((a, b) => b[1] - a[1]).map(([cc, n]) => ({ cc, n })),
@@ -184,7 +212,7 @@ export async function sweep() {
   );
   // สถิติรายวันเก่ากว่า KEEP_DAYS (ทั้งรายคนและรายประเทศ)
   const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
-  for (const prefix of ["v/", "c/", "s/"]) {
+  for (const prefix of ["v/", "c/", "s/", "pw/", "pwi/"]) {
     const { blobs } = await s.list({ prefix });
     await Promise.allSettled(
       blobs

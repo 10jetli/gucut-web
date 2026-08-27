@@ -14,7 +14,18 @@ export default function PwaSetup() {
         /* เบราว์เซอร์ไม่รองรับหรือปิดไว้ — เว็บยังใช้งานได้ปกติ ไม่ต้องทำอะไร */
       });
     }, 1500);
-    return () => clearTimeout(t);
+    // นับ "กดติดตั้งแอป" — เบราว์เซอร์ยิง appinstalled ตอนติดตั้งสำเร็จ (Android/คอม
+    // เท่านั้น iPhone ไม่มี event นี้ — ฝั่ง iPhone วัดจากการเปิดใช้จริงใน LiveBeacon แทน)
+    const onInstalled = () => {
+      try {
+        const vid = sessionStorage.getItem("gu_vid") || "";
+        const body = JSON.stringify({ vid: vid || `pwa-${Date.now().toString(36)}`, path: "/", install: 1 });
+        if (navigator.sendBeacon) navigator.sendBeacon("/api/live", new Blob([body], { type: "application/json" }));
+        else void fetch("/api/live", { method: "POST", body, keepalive: true });
+      } catch { /* นับพลาดไม่เป็นไร */ }
+    };
+    window.addEventListener("appinstalled", onInstalled);
+    return () => { clearTimeout(t); window.removeEventListener("appinstalled", onInstalled); };
   }, []);
 
   return null;

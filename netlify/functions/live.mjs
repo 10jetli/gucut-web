@@ -48,7 +48,7 @@ export default async function handler(req, context) {
     // โดเมนของเราเอง ใช้กันไม่ให้นับลิงก์ภายในเว็บตัวเองเป็น "ช่องทางที่มา"
     let selfHost = "";
     try { selfHost = new URL(req.url).hostname.replace(/^www\./, ""); } catch { /* ไม่เป็นไร */ }
-    try { await ping(body?.vid, body?.path, cc, body?.src, selfHost); } catch { /* ไม่เป็นไร */ }
+    try { await ping(body?.vid, body?.path, cc, body?.src, selfHost, body?.pwa === 1, body?.install === 1); } catch { /* ไม่เป็นไร */ }
     return new Response(null, { status: 204 });
   }
 

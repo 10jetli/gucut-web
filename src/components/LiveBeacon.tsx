@@ -67,7 +67,13 @@ export default function LiveBeacon() {
   useEffect(() => {
     const vid = visitorId();
     if (!vid) return;
-    const body = JSON.stringify({ vid, path, src: entrySource() });
+    // เปิดจากไอคอน PWA ที่ติดตั้งไว้ไหม — iPhone ใช้ navigator.standalone
+    let pwa = 0;
+    try {
+      pwa = window.matchMedia?.("(display-mode: standalone)")?.matches ||
+            (navigator as unknown as { standalone?: boolean }).standalone === true ? 1 : 0;
+    } catch { /* ตรวจไม่ได้ = ไม่นับ */ }
+    const body = JSON.stringify({ vid, path, src: entrySource(), pwa });
     // sendBeacon ส่งได้แม้ลูกค้ากำลังปิดหน้า และไม่หน่วงการโหลดหน้าถัดไป
     try {
       if (navigator.sendBeacon) {

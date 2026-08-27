@@ -22,6 +22,7 @@ interface Members {
 
 interface Stats {
   members?: Members | null;
+  pwa?: { today: number; week: number; installs7: number } | null;
   channelsToday: Channel[];
   channelsWeek: Channel[];
   countries: { cc: string; n: number }[];
@@ -88,6 +89,7 @@ export default function AdminLive() {
       // เซิร์ฟเวอร์รุ่นเก่ายังไม่ส่ง countries มา — เติมค่าว่างกันหน้าพัง
       setS({
         members: j?.members ?? null,
+        pwa: j?.pwa ?? null,
         online: Number(j?.online) || 0,
         onlineWindowMin: Number(j?.onlineWindowMin) || 5,
         pages: Array.isArray(j?.pages) ? j.pages : [],
@@ -152,6 +154,37 @@ export default function AdminLive() {
             <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} className="h-4 w-4 accent-[#d63200]" />
             รีเฟรชเองทุก 15 วินาที
           </label>
+        </section>
+
+        {/* PWA — เจ้าของร้านถาม "มีคนโหลด PWA กี่คนแล้ว" (27 ส.ค. 2569)
+            ไม่มีทางรู้ยอดติดตั้งสะสมตรง ๆ (iPhone ไม่บอกตอนติดตั้ง) — ตัวเลขที่ซื่อสัตย์
+            คือ "คนที่เปิดเว็บจากไอคอนแอป" ซึ่งคือคนที่ติดตั้งแล้วและใช้จริง */}
+        <section className="mb-3 rounded-sm bg-white p-4">
+          <p className="text-[14px] font-bold text-ink">เปิดจากแอป (PWA)</p>
+          <div className="mt-2 flex items-end justify-center gap-8 text-center">
+            <div>
+              <p className="text-[28px] font-extrabold leading-none text-ink">
+                {s?.pwa ? s.pwa.today.toLocaleString("th-TH") : "—"}
+              </p>
+              <p className="mt-1 text-[11.5px] text-ink-300">วันนี้</p>
+            </div>
+            <div>
+              <p className="text-[28px] font-extrabold leading-none text-ink">
+                {s?.pwa ? s.pwa.week.toLocaleString("th-TH") : "—"}
+              </p>
+              <p className="mt-1 text-[11.5px] text-ink-300">7 วันล่าสุด</p>
+            </div>
+            <div>
+              <p className="text-[28px] font-extrabold leading-none text-[#1f9254]">
+                {s?.pwa ? `+${s.pwa.installs7.toLocaleString("th-TH")}` : "—"}
+              </p>
+              <p className="mt-1 text-[11.5px] text-ink-300">ติดตั้งใหม่ 7 วัน*</p>
+            </div>
+          </div>
+          <p className="mt-2 text-[11px] leading-relaxed text-ink-300">
+            นับคนที่เปิดเว็บจากไอคอนแอปที่ติดตั้งไว้ (คนติดตั้งแล้วไม่เปิดจะไม่ถูกนับ) ·
+            *ยอดติดตั้งใหม่นับได้เฉพาะ Android/คอม — iPhone ไม่แจ้งตอนติดตั้ง
+          </p>
         </section>
 
         {/* สมาชิก — เจ้าของร้านสั่ง "ทำระบบว่าตอนนี้ลูกค้าสมัครล็อกอินไปกี่คนแล้ว" */}
