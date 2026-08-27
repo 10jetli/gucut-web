@@ -103,7 +103,10 @@ export async function liveStock() {
   try {
     const fresh = await scrape();
     // ⚠️ ได้มาไม่ครบ ห้ามเขียนทับของเก่าที่ครบกว่า — ใช้ครั้งนี้ไปก่อนแล้วรอบหน้าค่อยลองใหม่
-    if (!fresh.partial) s.setJSON(KEY, fresh).catch(() => {});
+    // ⚠️ ต้อง await — Netlify แช่แข็งฟังก์ชันหลังตอบ promise ลอยตายกลางทาง
+    //    แคชไม่เคยถูกเขียนเลย = สต็อก "เก่า 8,213 นาที" บนหน้าสถานะ ทั้งที่กวาดสำเร็จทุกรอบ
+    //    แล้วก็เลยกวาดใหม่ทุกคำขอฟรี ๆ ด้วย (เจอจริง 28 ส.ค. 2569 — บทเรียนเดียวกับ keepScan)
+    if (!fresh.partial) await s.setJSON(KEY, fresh).catch(() => {});
     return { ...fresh, stale: false };
   } catch {
     // ZORT ล่มหรือช้า — ใช้ของเก่าต่อไปดีกว่าไม่มีอะไรเลย

@@ -212,7 +212,8 @@ export async function sweep() {
   );
   // สถิติรายวันเก่ากว่า KEEP_DAYS (ทั้งรายคนและรายประเทศ)
   const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
-  for (const prefix of ["v/", "c/", "s/", "pw/", "pwi/"]) {
+  // p/ = บันทึกบอต AI รายหน้า — โตไม่หยุด (เคยสะสม 21,751 คีย์จนหน้าสถานะช้า 3 วิ)
+  for (const prefix of ["v/", "c/", "s/", "pw/", "pwi/", "p/"]) {
     const { blobs } = await s.list({ prefix });
     await Promise.allSettled(
       blobs

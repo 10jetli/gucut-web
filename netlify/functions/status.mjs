@@ -223,13 +223,22 @@ export default async function handler(req, context) {
     }),
 
     // ---------- บอต AI เข้ามาจริงไหม ----------
+    // ⚠️ ห้าม list ทั้ง p/ — เคยสะสม 21,751 คีย์แล้วช่องนี้ขึ้น "ช้าผิดปกติ" 3 วิทุกครั้ง
+    //    ดูแค่ 3 วันล่าสุดพอ (บอต Google มาแทบทุกวันอยู่แล้ว) · ของเก่าถูกกวาดตาม 30 วัน
+    //    โดย sweep ของหน้าคนเข้าเว็บ (เพิ่ม p/ เข้ารายการกวาดแล้ว 28 ส.ค. 2569)
     check("ตัวจับบอต AI", async () => {
       const s = getStore({ name: "gucut-live", consistency: "eventual" });
-      const { blobs } = await s.list({ prefix: "p/" });
-      if (!blobs.length) return { warn: true, note: "ยังไม่เคยจับบอตได้เลย — ตัวดักที่ขอบอาจไม่ทำงาน" };
-      const days = new Set(blobs.map((b) => b.key.split("/")[1]).filter(Boolean));
-      const latest = [...days].sort().pop();
-      return { note: `จดไว้ ${blobs.length.toLocaleString("en-US")} รายการ · ล่าสุด ${latest}` };
+      const days = [0, 1, 2].map((i) =>
+        new Date(Date.now() + 7 * 3600 * 1000 - i * 86400000).toISOString().slice(0, 10));
+      let n = 0;
+      let latest = "";
+      for (const d of days) {
+        const { blobs } = await s.list({ prefix: `p/${d}/` });
+        n += blobs.length;
+        if (blobs.length && !latest) latest = d;
+      }
+      if (!n) return { warn: true, note: "3 วันล่าสุดไม่มีบอตเข้าเลย — ตัวดักที่ขอบอาจไม่ทำงาน" };
+      return { note: `3 วันล่าสุดบอตเก็บไป ${n.toLocaleString("en-US")} หน้า · ล่าสุด ${latest}` };
     }),
 
     // ---------- ตัวคุมบอต ----------
