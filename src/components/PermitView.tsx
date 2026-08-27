@@ -200,6 +200,7 @@ export default function PermitView() {
   const [camOpen, setCamOpen] = useState(false);
   const [camMsg, setCamMsg] = useState<{ ok: boolean; text: string }>({ ok: false, text: "กำลังเปิดกล้อง…" });
   const [busy, setBusy] = useState("");
+  const [fromShare, setFromShare] = useState(false);
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
   const [printed, setPrinted] = useState(false);
@@ -233,6 +234,8 @@ export default function PermitView() {
         if (shared.b) setBar(shared.b);
         if (shared.bq) setBarQty(shared.bq);
         if (shared.q) setQty(shared.q);
+        // คนเปิดลิงก์คือ "คนช่วยพิมพ์" (ร้านถ่ายเอกสาร) — ขึ้นการ์ดพิมพ์ทันทีบนสุด
+        setFromShare(true);
       }
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
   }, []);
@@ -1066,6 +1069,29 @@ export default function PermitView() {
   return (
     <>
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-4">
+        {/* โหมดเปิดจากลิงก์แชร์ — คนเปิดคือร้านถ่ายเอกสาร ต้องได้ PDF ในกดเดียว
+            ไม่ดาวน์โหลดเองอัตโนมัติ: เบราว์เซอร์ส่วนใหญ่บล็อกการโหลดที่ไม่ได้มาจากการกด
+            และไฟล์มีเลขบัตรคนอื่น ควรให้คนเปิดกดเองหนึ่งครั้ง (เจ้าของร้านสั่ง 27 ส.ค. 2569) */}
+        {fromShare && canPrint && (
+          <section className="mb-1 rounded-xl bg-ink p-4 text-white">
+            <p className="text-[13px] text-white/70">เอกสารพร้อมพิมพ์</p>
+            <p className="mt-0.5 text-[16px] font-bold">แบบ ลซ.๑ ของ {d.name || "ลูกค้า"}</p>
+            <button
+              onClick={() => void printOfficialForm()}
+              disabled={genBusy}
+              className="mt-3 w-full rounded-lg bg-white py-3.5 text-[15px] font-bold text-safety disabled:opacity-60"
+            >
+              {genBusy ? "กำลังสร้างเอกสาร…" : "📄 ดาวน์โหลด PDF แล้วพิมพ์ได้เลย"}
+            </button>
+            <p className="mt-2 text-[11.5px] leading-relaxed text-white/70">
+              ได้ไฟล์เดียวจบ: แบบ ลซ.๑ กรอกข้อมูลแล้ว ๘ หน้า + ใบให้แพทย์ ๑ หน้า —
+              พิมพ์ขาวดำ A4 ได้เลย
+            </p>
+            {genError && (
+              <p className="mt-2 rounded-sm bg-white/10 p-2 text-[12px] text-white">{genError}</p>
+            )}
+          </section>
+        )}
         {/* ⚠️ ช่องรับไฟล์ต้องอยู่นอก <details> เสมอ
             เนื้อหาใน details ที่ยังไม่กางจะไม่ถูกวาดลงหน้าเลย สั่ง .click() ไม่ติด
             แล้วปุ่มถ่ายรูปในแถบความคืบหน้าจะกดไม่ขึ้นแบบเงียบ ๆ */}
