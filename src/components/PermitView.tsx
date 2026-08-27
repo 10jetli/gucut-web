@@ -1928,7 +1928,7 @@ export default function PermitView() {
                 className="mt-2 w-full rounded-sm border border-steel-600 py-2 text-[13px] font-semibold text-ink"
               />
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-300">
-                ส่งมาทั้ง ๒ ตอน — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
+                ส่งมาทั้ง ๒ ใบ (ตอนกลาง + ตอนปลาย) — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
                 แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์และเอกสารประกอบ
                 <b className="mt-1 block text-ink-700">
                   เฉพาะคนที่ซื้อเลื่อยจากร้านนี้ — ซื้อจากร้านอื่นให้ส่งไปที่ร้านนั้น
@@ -2182,7 +2182,7 @@ export default function PermitView() {
               {/* ⚠️ ต้องบอกว่าส่งทั้ง ๒ ตอน ลูกค้าส่งมาตอนเดียวบ่อยมาก
                   แล้วร้านไม่มีตอนกลางเก็บเป็นหลักฐานการจำหน่าย */}
               <p className="mt-2 text-[11.5px] leading-relaxed text-ink-700">
-                <b>ส่งมาทั้ง ๒ ตอน</b> — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
+                <b>ส่งมาทั้ง ๒ ใบ (ตอนกลาง + ตอนปลาย)</b> — ร้านเก็บตอนกลางไว้เป็นหลักฐานการจำหน่าย
                 แล้วส่งตอนปลายคืนพร้อมเลื่อยยนต์
               </p>
               <p className="mt-1 text-[11.5px] leading-relaxed text-ink-300">
