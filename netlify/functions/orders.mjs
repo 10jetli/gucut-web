@@ -280,6 +280,13 @@ export default async function handler(req, context) {
   if (req.method === "GET") {
     // สั่งกวาดออเดอร์ Beam ค้างจ่ายเดี๋ยวนั้น (ตัวจริงรันเองทุกครึ่งชั่วโมง —
     // ดู netlify/functions/beam-sweep.mjs ซึ่งไม่มี URL ให้เรียกเพราะมี schedule)
+    // ดูข้อมูลดิบจาก ZORT ของออเดอร์หนึ่งใบ — ไว้ไล่ mapping สถานะ (ฝั่งร้านเท่านั้น)
+    if (url.searchParams.get("zort")) {
+      const { zortGetOrder } = await import("../lib/zort-order.mjs");
+      const z = await zortGetOrder(url.searchParams.get("zort"));
+      return json({ zort: z });
+    }
+
     if (url.searchParams.get("sweep") === "1") {
       const { sweepBeamOrders } = await import("../lib/beam-sweep.mjs");
       const r = await sweepBeamOrders().catch((e) => ({ error: String(e?.message || e) }));
