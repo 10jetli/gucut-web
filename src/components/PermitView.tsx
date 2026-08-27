@@ -37,7 +37,7 @@ import {
 import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { SHOP } from "@/lib/shop";
 import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
-import { lineShareUrl, makeShareLink, readShareLink } from "@/lib/permit-link";
+import { lineShareUrl, makeShortLink, readAnyShareLink } from "@/lib/permit-link";
 import SAW_IMG from "@/data/permit-saws.json";
 
 const TH_MONTHS = [
@@ -117,24 +117,45 @@ function copyText(txt: string): Promise<boolean> {
 /** ปุ่มคัดลอกที่บอกผลตรงตัวปุ่มเอง — เดิมส่งผลไปโชว์ที่ส่วนสแกนบัตรซึ่งอยู่คนละจอ
  *  ลูกค้ากดแล้วเหมือนไม่มีอะไรเกิดขึ้น (เจอจริง 27 ส.ค. 2569 "กดคัดลอกไม่ได้")
  *  คัดลอกไม่ได้จริง ๆ = กางข้อความให้แตะค้างคัดลอกเอง ไม่มีทางตัน */
-function CopyBtn({ text, label, className }: { text: () => string; label: string; className: string }) {
-  const [st, setSt] = useState<"idle" | "done" | "fail">("idle");
+function CopyBtn({ text, label, className }: { text: () => string | Promise<string>; label: string; className: string }) {
+  const [st, setSt] = useState<"idle" | "busy" | "done" | "fail">("idle");
   const [showText, setShowText] = useState("");
   return (
     <>
       <button
         type="button"
         className={className}
+        disabled={st === "busy"}
         onClick={() => {
-          const t = text();
-          void copyText(t).then((ok) => {
-            setSt(ok ? "done" : "fail");
-            if (ok) { setShowText(""); setTimeout(() => setSt("idle"), 3000); }
-            else setShowText(t);
-          });
+          const res = text();
+          if (typeof res === "string") {
+            // ได้ข้อความทันที — เดินบันได sync (execCommand ก่อน) ได้เต็มที่
+            void copyText(res).then((ok) => {
+              setSt(ok ? "done" : "fail");
+              if (ok) { setShowText(""); setTimeout(() => setSt("idle"), 3000); }
+              else setShowText(res);
+            });
+            return;
+          }
+          // ต้องรอสร้างลิงก์ก่อน — หลัง await เหลือช่วง "จังหวะกด" สั้น ๆ
+          // clipboard API ยังใช้ได้ (transient activation) จึงลองตัวนั้นก่อน
+          setSt("busy");
+          void res
+            .then(async (t) => {
+              let ok = false;
+              // ⚠️ เครื่องที่ไม่มี clipboard API เลย ต้องไม่นับว่าสำเร็จ (await undefined ไม่ throw)
+              try {
+                if (navigator.clipboard?.writeText) { await navigator.clipboard.writeText(t); ok = true; }
+              } catch { /* ตกบันได */ }
+              if (!ok) ok = await copyText(t);
+              setSt(ok ? "done" : "fail");
+              if (ok) { setShowText(""); setTimeout(() => setSt("idle"), 3000); }
+              else setShowText(t);
+            })
+            .catch(() => setSt("fail"));
         }}
       >
-        {st === "done" ? "คัดลอกแล้ว ✓" : label}
+        {st === "busy" ? "กำลังย่อลิงก์…" : st === "done" ? "คัดลอกแล้ว ✓" : label}
       </button>
       {st === "fail" && showText && (
         <div className="col-span-2 rounded-sm bg-white p-2">
@@ -201,6 +222,8 @@ export default function PermitView() {
   const [camMsg, setCamMsg] = useState<{ ok: boolean; text: string }>({ ok: false, text: "กำลังเปิดกล้อง…" });
   const [busy, setBusy] = useState("");
   const [fromShare, setFromShare] = useState(false);
+  // ลิงก์สั้นที่สร้างไปแล้วของข้อมูลชุดปัจจุบัน — กดซ้ำไม่ยิงเซิร์ฟเวอร์ซ้ำ
+  const shortLinkRef = useRef<{ key: string; link: string } | null>(null);
   // ⚠️ "ปริ้นแล้ว" ต้องจำข้ามการปิดหน้า ลูกค้าปริ้นวันนี้แล้วไปยื่นพรุ่งนี้เป็นเรื่องปกติ
   //    กลับมาเปิดแล้วเห็นแผนภาพย้อนกลับไปขั้นแรก = สับสนว่าตัวเองทำถึงไหนแล้ว
   const [printed, setPrinted] = useState(false);
@@ -227,16 +250,22 @@ export default function PermitView() {
       // ⚠️ ลิงก์ที่ถูกส่งมาต้องชนะค่าที่เก็บไว้ในเครื่อง
       //    คนที่เปิดลิงก์คือคนที่ "ช่วยพิมพ์ให้" ไม่ใช่เจ้าของข้อมูล
       //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
-      const shared = readShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }>();
-      if (shared?.d) {
-        setD({ ...blank(), ...shared.d, qualified: true });
-        if (shared.m) setModelName(shared.m);
-        if (shared.b) setBar(shared.b);
-        if (shared.bq) setBarQty(shared.bq);
-        if (shared.q) setQty(shared.q);
-        // คนเปิดลิงก์คือ "คนช่วยพิมพ์" (ร้านถ่ายเอกสาร) — ขึ้นการ์ดพิมพ์ทันทีบนสุด
-        setFromShare(true);
-      }
+      // ลิงก์สั้น (#p=) ต้องไปแลกข้อมูลจากเซิร์ฟเวอร์ จึงเป็น async
+      // ลิงก์ยาวแบบเก่า (#d=) ก็ผ่านทางเดียวกัน — เปิดได้ตลอดไป
+      void readAnyShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }>()
+        .then((res) => {
+          if (!res) return;
+          if (res.error) { setBusy(res.error); return; }
+          const shared = res.data;
+          if (!shared?.d) return;
+          setD({ ...blank(), ...shared.d, qualified: true });
+          if (shared.m) setModelName(shared.m);
+          if (shared.b) setBar(shared.b);
+          if (shared.bq) setBarQty(shared.bq);
+          if (shared.q) setQty(shared.q);
+          // คนเปิดลิงก์คือ "คนช่วยพิมพ์" (ร้านถ่ายเอกสาร) — ขึ้นการ์ดพิมพ์ทันทีบนสุด
+          setFromShare(true);
+        });
     } catch { /* เปิดไม่ได้ก็เริ่มใหม่ ไม่ต้องรบกวนลูกค้า */ }
   }, []);
 
@@ -1066,6 +1095,17 @@ export default function PermitView() {
     );
   };
 
+  // ขอลิงก์สั้นของข้อมูลชุดปัจจุบัน — สร้างครั้งเดียวต่อข้อมูลหนึ่งชุด
+  // สร้างไม่สำเร็จได้ลิงก์ยาวแทน (จัดการใน makeShortLink) ลูกค้าไม่มีวันติดตัน
+  const getShareLink = useCallback(async () => {
+    const payload = { d, m: modelName, b: bar, q: qty, bq: barQty };
+    const key = JSON.stringify(payload);
+    if (shortLinkRef.current?.key === key) return shortLinkRef.current.link;
+    const link = await makeShortLink(payload);
+    shortLinkRef.current = { key, link };
+    return link;
+  }, [d, modelName, bar, qty, barQty]);
+
   return (
     <>
       <main className="mx-auto max-w-2xl px-4 pb-24 pt-4">
@@ -1768,26 +1808,37 @@ export default function PermitView() {
             {canPrint && (
               <div className="mt-2 space-y-2">
                 <div className="grid grid-cols-2 gap-2">
-                  <a
-                    href={lineShareUrl(makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty }))}
-                    target="_blank"
-                    rel="noopener noreferrer"
+                  <button
+                    type="button"
+                    onClick={() => {
+                      // เปิดหลัง await ต้องใช้ลิงก์ blob แล้วสั่งกด (กติกาเดียวกับตัวเปิด PDF)
+                      void getShareLink().then((link) => {
+                        const aEl = document.createElement("a");
+                        aEl.href = lineShareUrl(link);
+                        aEl.target = "_blank";
+                        aEl.rel = "noopener noreferrer";
+                        document.body.appendChild(aEl);
+                        aEl.click();
+                        aEl.remove();
+                      });
+                    }}
                     className="rounded-sm bg-[#06C755] py-3 text-center text-[14px] font-semibold text-white"
                   >
                     ส่งไปไลน์
-                  </a>
+                  </button>
                   <CopyBtn
-                    text={() => makeShareLink({ d, m: modelName, b: bar, q: qty, bq: barQty })}
+                    text={getShareLink}
                     label="คัดลอกลิงก์"
                     className="rounded-sm border border-steel-600 bg-white py-3 text-[14px] font-semibold text-ink"
                   />
                 </div>
                 {/* ⚠️ ต้องบอกตรง ๆ ก่อนลูกค้ากด ไม่ใช่ซ่อนไว้ในนโยบาย */}
                 <p className="rounded-sm bg-[#fffbe6] p-2.5 text-[11.5px] leading-relaxed text-ink-700">
-                  <b>ลิงก์นี้มีข้อมูลของคุณอยู่ข้างใน</b> รวมถึงเลขบัตรประชาชน —
-                  ส่งให้เฉพาะคนที่จะช่วยพิมพ์ให้เท่านั้น ใครได้ลิงก์ไปก็เปิดดูได้
+                  <b>ใครได้ลิงก์นี้ไปก็เปิดดูข้อมูลของคุณได้</b> รวมถึงเลขบัตรประชาชน —
+                  ส่งให้เฉพาะคนที่จะช่วยพิมพ์ให้เท่านั้น
                   <span className="mt-1 block text-ink-300">
-                    ข้อมูลไม่ได้ถูกเก็บไว้ที่ทางร้าน — มันเดินทางไปกับตัวลิงก์เอง
+                    ข้อมูลถูกฝากไว้กับระบบร้านชั่วคราวเพื่อให้ลิงก์สั้นพอส่งต่อได้
+                    เก็บ ๗ วันแล้วลบอัตโนมัติ · ลิงก์ก็หมดอายุพร้อมกัน
                   </span>
                 </p>
               </div>

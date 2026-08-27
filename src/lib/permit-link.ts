@@ -37,10 +37,25 @@ function unpack<T>(s: string): T | null {
   }
 }
 
-/** สร้างลิงก์เต็มที่พกข้อมูลไปด้วย */
+/** สร้างลิงก์เต็มที่พกข้อมูลไปด้วย (แบบยาว — ทางถอยเวลาเซิร์ฟเวอร์ไม่ว่าง) */
 export function makeShareLink(data: unknown, origin?: string): string {
   const base = origin || (typeof window !== "undefined" ? window.location.origin : "");
   return `${base}/permit/#d=${pack(data)}`;
+}
+
+/** ลิงก์สั้น — ฝากข้อมูลกับร้านชั่วคราว 7 วัน (เจ้าของร้านสั่ง "ย่อลิ้ง" 27 ส.ค. 2569)
+ *  ⚠️ ฝากไม่สำเร็จ = คืนลิงก์ยาวแบบเดิม ห้ามให้ลูกค้าติดตัน */
+export async function makeShortLink(data: unknown): Promise<string> {
+  try {
+    const r = await fetch("/api/permit-link", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ payload: data }),
+    });
+    const j = await r.json().catch(() => null);
+    if (r.ok && j?.code) return `${window.location.origin}/permit/#p=${j.code}`;
+  } catch { /* ตกไปใช้ลิงก์ยาว */ }
+  return makeShareLink(data);
 }
 
 /** อ่านข้อมูลกลับจากลิงก์ — คืน null ถ้าไม่มีหรือเสีย */
@@ -48,6 +63,25 @@ export function readShareLink<T>(): T | null {
   if (typeof window === "undefined") return null;
   const m = /[#&]d=([^&]+)/.exec(window.location.hash);
   return m ? unpack<T>(m[1]) : null;
+}
+
+/** อ่านลิงก์ทุกแบบ — #p= (สั้น ไปแลกข้อมูลจากร้าน) หรือ #d= (ยาว ลิงก์เก่ายังเปิดได้)
+ *  คืน { data } เมื่อได้ข้อมูล · { error } เมื่อลิงก์สั้นหมดอายุ · null เมื่อไม่มีลิงก์ */
+export async function readAnyShareLink<T>(): Promise<{ data?: T; error?: string } | null> {
+  if (typeof window === "undefined") return null;
+  const mp = /[#&]p=([A-Za-z0-9]{4,16})/.exec(window.location.hash);
+  if (mp) {
+    try {
+      const r = await fetch(`/api/permit-link?c=${mp[1]}`);
+      const j = await r.json().catch(() => null);
+      if (r.ok && j?.payload) return { data: j.payload as T };
+      return { error: j?.error || "เปิดลิงก์ไม่สำเร็จ ลองใหม่อีกครั้ง" };
+    } catch {
+      return { error: "เปิดลิงก์ไม่สำเร็จ — เช็คสัญญาณเน็ตแล้วรีเฟรชหน้านี้" };
+    }
+  }
+  const d = readShareLink<T>();
+  return d ? { data: d } : null;
 }
 
 /**
