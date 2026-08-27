@@ -1391,16 +1391,23 @@ export default function PermitView() {
             <div className="mt-2 grid grid-cols-2 gap-2.5">
               {field("name", "ชื่อ-นามสกุล (มีคำนำหน้า)", { wide: true })}
               <label className="col-span-2">
-                <span className="mb-1 block text-[12px] text-ink-300">เลขประจำตัวประชาชน</span>
+                <span className="mb-1 block text-[12px] text-ink-300">
+                  เลขประจำตัวประชาชน
+                  {idOk && <span className="ml-1 text-[#1f7a3d]">✓</span>}
+                </span>
                 <input
                   inputMode="numeric"
                   value={formatThaiId(d.idNumber)}
                   onChange={(e) => set("idNumber", e.target.value.replace(/\D/g, "").slice(0, 13))}
                   className={
                     "w-full rounded-sm border px-3 py-2 text-[16px] tracking-wider outline-none " +
-                    (d.idNumber.length === 13 && !idOk
-                      ? "border-safety bg-safety-tint"
-                      : unsure.includes("idNumber") ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
+                    // ช่องนี้เขียนแยกจาก field() เพราะมีตัวจัดรูปแบบขีดของตัวเอง
+                    // ต้องทาสีเขียวเองให้เหมือนช่องอื่น (เจ้าของร้านทักว่าไม่เขียว 27 ส.ค. 2569)
+                    (idOk
+                      ? "border-[#2e9e5b] bg-[#f2fbf5]"
+                      : d.idNumber.length === 13
+                        ? "border-safety bg-safety-tint"
+                        : unsure.includes("idNumber") ? "border-[#e0a800] bg-[#fffbe6]" : "border-steel-600")
                   }
                 />
                 {/* ⚠️ ผ่านการตรวจ = "รูปแบบถูก" ไม่ใช่ "เลขนี้มีอยู่จริง" ห้ามเขียนเกินกว่านี้ */}
