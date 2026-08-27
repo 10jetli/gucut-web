@@ -31,7 +31,9 @@ export default function PwaInstallNudge() {
       const ua = navigator.userAgent;
       if (/\bLine\/|FBAN|FBAV|Instagram/i.test(ua)) return;  // เบราว์เซอร์ในแอปอื่น
       const today = new Date().toLocaleDateString("sv-SE");  // YYYY-MM-DD
-      if (localStorage.getItem(KEY) === today) return;       // วันนี้โผล่ไปแล้ว
+      // ?nudge=1 = โหมดทดสอบของร้าน — โผล่ทันที ไม่ติดกติกาวันละครั้ง ไม่จดวันที่
+      const test = new URLSearchParams(window.location.search).get("nudge") === "1";
+      if (!test && localStorage.getItem(KEY) === today) return; // วันนี้โผล่ไปแล้ว
 
       const isIos = /iPhone|iPad|iPod/.test(ua);
       setIos(isIos);
@@ -46,8 +48,10 @@ export default function PwaInstallNudge() {
       const t = setTimeout(() => {
         // iPhone โผล่ได้เลย (โชว์วิธีทำ) · เครื่องอื่นโผล่เฉพาะเมื่อติดตั้งได้จริง
         setShow(true);
-        try { localStorage.setItem(KEY, today); } catch { /* โหมดส่วนตัว */ }
-      }, 6000);
+        if (!test) {
+          try { localStorage.setItem(KEY, today); } catch { /* โหมดส่วนตัว */ }
+        }
+      }, test ? 300 : 6000);
       return () => { clearTimeout(t); window.removeEventListener("beforeinstallprompt", onBip); };
     } catch { /* ตรวจไม่ได้ = ไม่โผล่ ดีกว่าพัง */ }
   }, []);
