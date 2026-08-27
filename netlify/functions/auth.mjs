@@ -135,7 +135,29 @@ export default async function handler(req) {
       else {
         const cur = (u.social || {})[p.provider] || (p.provider === "line" ? u.line : null);
         if (cur && cur.id !== p.id) {
-          return json({ error: `เบอร์นี้ผูกกับบัญชี ${p.label} อื่นอยู่แล้ว` }, 409);
+          // ⚠️ ช่วงย้ายบ้าน LINE (27 ส.ค. 2569 ย้าย channel มา provider ZORT)
+          // ลูกค้าเก่าทุกคนได้ userId ใหม่ — id เก่าตายไปพร้อม channel เดิม ล็อกอินซ้ำไม่ได้อีก
+          // จึงยอมให้ "ผูกทับ" เฉพาะ LINE ถึง 1 ธ.ค. 2569 พร้อมตาข่าย:
+          // เก็บ id เก่าไว้ตรวจย้อน + เด้ง Telegram ให้ร้านเห็นทุกครั้ง (จับคนสวมเบอร์ได้)
+          const migrating = p.provider === "line" && Date.now() < Date.parse("2026-12-01T00:00:00+07:00");
+          if (!migrating) {
+            return json({ error: `เบอร์นี้ผูกกับบัญชี ${p.label} อื่นอยู่แล้ว` }, 409);
+          }
+          u.linePrevIds = [...(u.linePrevIds || []), cur.id];
+          await s.delete(`oa/line/${cur.id}`).catch(() => {});
+          if (u.line) delete u.line;
+          const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+          if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+            await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                chat_id: TELEGRAM_CHAT_ID,
+                text: `🔁 ลูกค้าเบอร์ ${phone} ผูก LINE ใหม่แทนบัญชีเดิม (ย้าย channel)\nชื่อใน LINE: ${p.name || "-"}\nถ้าลูกค้าไม่ได้ทำเอง ทักร้านมาเช็คได้`,
+              }),
+              signal: AbortSignal.timeout(3000),
+            }).catch(() => {});
+          }
         }
       }
       u.social = { ...(u.social || {}), [p.provider]: info };
