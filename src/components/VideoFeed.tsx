@@ -500,7 +500,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
             onToast={say}
             // ใบที่ดูอยู่โหลดเต็มที่ · ใบถัดไปรอให้ใบนี้เล่นได้ก่อนค่อยโหลดตาม
             // ไม่งั้นเปิดหน้ามาแย่งเน็ตกันสามคลิป ใบแรกกว่าจะเล่นได้นาน
-            eager={i === active || (i === active + 1 && ready)}
+            eager={i === active || i === active + 1}
             register={register}
             onTap={tap}
             onReady={setReady}
