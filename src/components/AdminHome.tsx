@@ -68,6 +68,18 @@ export default function AdminHome() {
     setKey(k);
   }
 
+  // ⚠️ hook ทุกตัวต้องอยู่เหนือ early return ทั้งหมด — เคยวางไว้ล่างแล้วทั้งหน้า /admin/
+  //    พังเป็น React #310 (จำนวน hook ไม่เท่ากันระหว่าง render) เจอจริง 28 ส.ค. 2569
+  useEffect(() => {
+    if (!key) return;
+    adminFetch("/api/netlify-credits", key)
+      .then((r) => r.json())
+      .then((j) => {
+        if (typeof j?.left === "number") setCredits({ left: j.left, plan: j.plan || 5000 });
+      })
+      .catch(() => { /* ดูไม่ได้ก็ไม่โชว์ ไม่ต้องฟ้อง */ });
+  }, [key]);
+
   if (key === null) return <main className="min-h-[100dvh] bg-steel-900" />;
 
   // ---------- ยังไม่ล็อกอิน ----------
@@ -146,16 +158,6 @@ export default function AdminHome() {
     star: "M12 3l2.6 5.6 6.4.8-4.7 4.3 1.3 6.3L12 17l-5.6 3 1.3-6.3L3 9.4l6.4-.8L12 3z",
     clock: "M12 3a9 9 0 100 18 9 9 0 000-18zm0 4v5l3.5 2",
   };
-
-  useEffect(() => {
-    if (!key) return;
-    adminFetch("/api/netlify-credits", key)
-      .then((r) => r.json())
-      .then((j) => {
-        if (typeof j?.left === "number") setCredits({ left: j.left, plan: j.plan || 5000 });
-      })
-      .catch(() => { /* ดูไม่ได้ก็ไม่โชว์ ไม่ต้องฟ้อง */ });
-  }, [key]);
 
   return (
     <main className="min-h-[100dvh] bg-steel-900">
