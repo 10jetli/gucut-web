@@ -105,6 +105,25 @@ export default async function handler(req, context) {
       .filter((i) => i.title && i.price > 0);
     if (!items.length) return json({ error: "ไม่มีสินค้าในออเดอร์" }, 400);
 
+    // ---------- ราคา ZORT เป็นหลัก (เจ้าของร้านสั่ง 28 ส.ค. 2569 "ให้ไป API ZORT เป็นหลัก") ----------
+    // เดิมเชื่อราคาต่อชิ้นตามที่ตะกร้าส่งมา = ราคาค้าง (หยิบไว้ก่อนร้านแก้ราคา)
+    // หรือราคาปลอม (ยิง POST ตรง) ก็หลุดเข้าออเดอร์ได้
+    // ตอนนี้: ตัวไหนมี SKU และคลัง ZORT รู้จัก → ใช้ราคา ZORT แทนเสมอ
+    // ใช้แคช 30 นาทีตัวเดียวกับฟีด AI — ปกติไม่เพิ่มเวลารอ (นานสุดกรณีแคชหมดอายุพอดี ~6 วิ)
+    // ⚠️ ZORT ล่ม = ใช้ราคาที่ส่งมาไปก่อน — ขายได้สำคัญกว่าตรวจได้
+    let priceAdjusted = false;
+    try {
+      const { liveStock } = await import("../lib/zort-stock.mjs");
+      const live = await liveStock();
+      if (live?.map) {
+        for (const i of items) {
+          const rec = i.sku ? live.map[i.sku] : null;
+          const zp = rec ? money(rec[1]) : 0;
+          if (zp > 0 && zp !== i.price) { i.price = zp; priceAdjusted = true; }
+        }
+      }
+    } catch { /* ตรวจไม่ได้ก็ขายตามราคาที่เห็น */ }
+
     const subtotal = items.reduce((s, i) => s + i.price * i.qty, 0);
     const codFee = money(body.codFee);
     // ส่วนลดรับตามที่แจ้ง แต่ไม่ให้เกินค่าสินค้า — โค้ดถูกตรวจกับ /api/coupon ไปแล้ว
@@ -152,6 +171,8 @@ export default async function handler(req, context) {
       items,
       payment,
       paymentLabel: payment === "cod" ? "เก็บเงินปลายทาง" : "QR พร้อมเพย์",
+      // มีราคาถูกปรับให้ตรงคลัง ZORT — ให้ร้านเห็นใน Telegram ว่าไม่ตรงกับที่ตะกร้าส่งมา
+      priceAdjusted,
       pointDiscount,
       couponCode: clean(body.couponCode, 40) || null,
       discount,

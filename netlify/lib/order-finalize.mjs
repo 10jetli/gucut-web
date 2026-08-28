@@ -55,6 +55,7 @@ export async function finalizeOrder({
     `รวม ฿${order.total.toLocaleString("th-TH")} · ${order.paymentLabel}` +
     (order.paidAt ? " ✅ จ่ายแล้ว" : order.hasSlip ? " (แนบสลิปแล้ว)" : "") + "\n" +
     (order.taxInvoice ? `🧾 ขอใบกำกับภาษี: ${order.taxInvoice.name}\n` : "") +
+    (order.priceAdjusted ? `🏷️ ราคาบางตัวถูกปรับตามคลัง ZORT (ต่างจากที่ตะกร้าส่งมา)\n` : "") +
     `📍 ${c.address} ${c.province} ${c.zip}\n` +
     (c.note ? `📝 ${c.note}\n` : "") +
     (order.zort?.ok
