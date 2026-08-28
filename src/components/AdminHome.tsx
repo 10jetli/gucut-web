@@ -11,6 +11,8 @@ export default function AdminHome() {
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  // เครดิต Netlify คงเหลือ — เจ้าของร้านสั่งให้โชว์บนหัว (28 ส.ค. 2569)
+  const [credits, setCredits] = useState<{ left: number; plan: number } | null>(null);
   const [unread, setUnread] = useState(0);
   const [newOrders, setNewOrders] = useState(0);
   const [newPermits, setNewPermits] = useState(0);
@@ -145,6 +147,16 @@ export default function AdminHome() {
     clock: "M12 3a9 9 0 100 18 9 9 0 000-18zm0 4v5l3.5 2",
   };
 
+  useEffect(() => {
+    if (!key) return;
+    adminFetch("/api/netlify-credits", key)
+      .then((r) => r.json())
+      .then((j) => {
+        if (typeof j?.left === "number") setCredits({ left: j.left, plan: j.plan || 5000 });
+      })
+      .catch(() => { /* ดูไม่ได้ก็ไม่โชว์ ไม่ต้องฟ้อง */ });
+  }, [key]);
+
   return (
     <main className="min-h-[100dvh] bg-steel-900">
       <header className="flex items-center gap-2 bg-ink px-4 py-3.5">
@@ -152,9 +164,22 @@ export default function AdminHome() {
           <span className="text-safety-light">GU</span><span className="text-[#c9cacc]">CUT</span>
         </span>
         <span className="text-[14px] font-semibold text-white">ระบบหลังร้าน</span>
+        {credits && (
+          <span
+            className={
+              "ml-auto rounded-full px-2.5 py-1 text-[11.5px] font-semibold " +
+              (credits.left < credits.plan * 0.2
+                ? "bg-safety-light/20 text-safety-light"
+                : "bg-white/10 text-white/85")
+            }
+            title={`เครดิต Netlify เหลือ ${credits.left.toLocaleString("th-TH")} จาก ${credits.plan.toLocaleString("th-TH")} ต่อเดือน`}
+          >
+            ⚡ {credits.left.toLocaleString("th-TH")} เครดิต
+          </span>
+        )}
         <button
           onClick={() => { clearKey(); setKey(""); }}
-          className="ml-auto rounded-sm border border-white/25 px-2.5 py-1 text-[12px] text-white/80"
+          className={(credits ? "ml-1.5 " : "ml-auto ") + "rounded-sm border border-white/25 px-2.5 py-1 text-[12px] text-white/80"}
         >
           ออกจากระบบ
         </button>
