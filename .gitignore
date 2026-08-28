@@ -9,3 +9,4 @@ public/rv/
 
 # จดว่าย่อรูปใบไหนขึ้น R2 ไปแล้วบ้าง — ของเฉพาะเครื่องที่รันสคริปต์
 .img-r2-done.json
+netlify/lib/audit-data.json

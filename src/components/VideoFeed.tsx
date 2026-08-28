@@ -80,6 +80,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   const [shown, setShown] = useState(() => Math.min(CHUNK, first.length));
   const loading = useRef(false);
   const itemsRef = useRef(first);
+  const hiddenRef = useRef<Set<string>>(new Set());   // คลิปที่ร้านซ่อนไว้ (จาก /api/video-pick)
   const players = useRef(new Map<number, HTMLVideoElement>());
   const [active, setActive] = useState(0);
   const activeRef = useRef(0);          // ให้ตัวฟังจังหวะแตะอ่านได้โดยไม่ต้องรอ render
@@ -209,7 +210,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     loading.current = true;
     fetch("/feed.json")
       .then((r) => r.json())
-      .then((all: FeedItem[]) => { setItems(all); setShown((n) => Math.min(n + CHUNK, all.length)); })
+      .then((raw: FeedItem[]) => {
+        const all = raw.filter((x) => !hiddenRef.current.has(x.v.v));
+        setItems(all); setShown((n) => Math.min(n + CHUNK, all.length));
+      })
       .catch(() => { loading.current = false; });   // เน็ตสะดุด ครั้งหน้าค่อยลองใหม่
   }, [active, shown, items.length, total]);
 
@@ -239,7 +243,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       fetchCounts(),
       // สินค้าที่ร้านผูกกับคลิปเองจากหลังร้าน (ผูกแล้วขึ้นทันที ไม่ต้องรอ deploy)
       fetch("/api/clip-shop").then((r) => r.json()).then((d) => d.map ?? {}).catch(() => ({})),
-    ]).then(([all, cv, shop]) => {
+      // คลิปที่ร้านสั่งซ่อนจากหลังร้าน (เลือกคลิป) — พลาด = ไม่ซ่อนใคร ฟีดต้องไม่พังเพราะตัวกรอง
+      fetch("/api/video-pick").then((r) => r.json()).then((d) => new Set<string>(Array.isArray(d?.hidden) ? d.hidden : [])).catch(() => new Set<string>()),
+    ]).then(([all, cv, shop, hid]) => {
+      hiddenRef.current = hid as Set<string>;
       const c = cv.counts;
       setCounts(c);
       setViews(cv.views);
@@ -248,7 +255,7 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       const withShop = (all as FeedItem[]).map((x) =>
         x.p || !shop[x.v.v] ? x : { ...x, p: shop[x.v.v] },
       );
-      all = withShop;
+      all = withShop.filter((x) => !(hid as Set<string>).has(x.v.v));
       const pool: FeedItem[] = onlySaved
         ? (all as FeedItem[]).filter((x) => savedList.includes(x.v.v))
         : (all as FeedItem[]);
