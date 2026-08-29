@@ -5,7 +5,7 @@ import { BRAND } from "@/lib/shop";
 import Link from "next/link";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
-import { durLabel, prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
+import { prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
 import { isSafariHls, useHls } from "@/lib/useHls";
 import VideoActions from "./VideoActions";
 import VideoComments from "./VideoComments";
@@ -727,40 +727,23 @@ const Slide = memo(function Slide({
 
       {/* ป้ายชื่อคลิป + ลิงก์สินค้า overlay ด้านล่าง — เว้นขวาไว้ให้แถบปุ่ม */}
       <div className="pointer-events-none absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 to-transparent p-4 pr-16 pt-14">
-        <p className="clamp-2 text-sm font-medium drop-shadow">{v.t ?? `คลิปจากหน้าร้าน ${BRAND.name}`}</p>
-        {p ? (
+        {/* ป้ายปักหมุดสินค้าแบบ TikTok — icon ถุงเหลือง + ชื่อสินค้า กดไปหน้าสินค้า
+            โชว์เฉพาะคลิปที่ผูกสินค้าไว้ · คลิปที่ไม่ได้ผูกไม่ต้องมีป้าย (ไม่พาไปไหนมั่ว) */}
+        {p && (
           <Link
             href={`/products/${encodeURIComponent(p.h)}/`}
-            className="pointer-events-auto mt-2 flex items-center gap-2 rounded-lg bg-steel-800/90 p-2 backdrop-blur"
+            className="pointer-events-auto mb-2 flex w-fit max-w-full items-center gap-1.5 rounded-lg bg-black/55 py-1.5 pl-2 pr-3 backdrop-blur active:bg-black/70"
           >
-            <span className="relative h-10 w-10 shrink-0 overflow-hidden rounded bg-white">
-              {p.img && <Image src={p.img} alt="" fill sizes="40px" className="object-contain" />}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span className="clamp-2 block text-xs leading-tight">{p.t}</span>
-              <span className="font-heading text-sm font-bold text-safety">{formatPrice(p.p)}</span>
-            </span>
-            <span className="rounded-md bg-safety px-3 py-1.5 text-xs font-bold text-white">ซื้อเลย</span>
-          </Link>
-        ) : (
-          // คลิปที่ไม่ได้ผูกกับสินค้าไว้ใน Shopify — พาไปหน้าหมวดหมู่แทน
-          <Link
-            href="/categories/"
-            className="pointer-events-auto mt-2 flex items-center justify-center gap-1 rounded-lg border border-white/25 bg-black/40 py-2 text-xs font-medium backdrop-blur"
-          >
-            ดูสินค้าทั้งหมดของร้าน ›
+            <svg viewBox="0 0 24 24" className="h-4 w-4 shrink-0" fill="#f5b400" aria-hidden>
+              <path d="M6 2h12l3 5v1a3 3 0 01-6 0 3 3 0 01-6 0 3 3 0 01-6 0V7l3-5z" opacity=".9" />
+              <path d="M4 9v11a1 1 0 001 1h14a1 1 0 001-1V9" fill="#f5b400" opacity=".55" />
+            </svg>
+            <span className="clamp-1 text-[13px] font-semibold drop-shadow">{p.t}</span>
           </Link>
         )}
+        <p className="clamp-2 text-sm font-medium drop-shadow">{v.t ?? `คลิปจากหน้าร้าน ${BRAND.name}`}</p>
       </div>
 
-      {/* ความยาวคลิป — อยู่ซ้าย ไม่ให้ชนปุ่มเสียงที่ลอยอยู่มุมขวา
-          ⚠️ ห้ามใส่ "ใบที่เท่าไหร่ / ทั้งหมดกี่ใบ" — ไม่ต้องให้คนนอกรู้ว่าร้านมีคลิปกี่ใบ */}
-      <span
-        className="absolute left-3 rounded-full bg-black/50 px-2 py-0.5 text-xs tabular-nums"
-        style={{ top: "calc(env(safe-area-inset-top) + 0.75rem)" }}
-      >
-        {durLabel(v.dur)}
-      </span>
     </section>
   );
 });
