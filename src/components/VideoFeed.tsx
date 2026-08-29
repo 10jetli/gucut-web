@@ -200,8 +200,16 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
     let raf = 0;
     const calc = () => {
       raf = 0;
-      const h = root.clientHeight || 1;
-      const n = Math.round(root.scrollTop / h);
+      // หาใบที่ขอบบนใกล้ตำแหน่งเลื่อนที่สุด (ใช้ offsetTop จริงของแต่ละใบ)
+      // ⚠️ ห้ามกลับไปหารด้วยความสูงจอ (scrollTop / clientHeight) — ช่องดำที่คั่นระหว่างใบ
+      //    ทำให้ระยะเลื่อนจริงเกินความสูงจอ เลขใบเพี้ยนสะสมหลังเลื่อนหลายใบ
+      //    (จับใบผิด → เสียงใบเก่าค้าง ใบใหม่ไม่เล่น) offsetTop รวมช่องดำอยู่แล้วจึงแม่นเสมอ
+      const secs = root.querySelectorAll<HTMLElement>("section[data-i]");
+      let n = activeRef.current, best = Infinity;
+      for (const s of secs) {
+        const d = Math.abs(s.offsetTop - root.scrollTop);
+        if (d < best) { best = d; n = Number(s.dataset.i); }
+      }
       if (n !== activeRef.current && n >= 0) {
         activeRef.current = n;
         userPaused.current = false;      // เปลี่ยนใบแล้ว ถือว่าเริ่มใหม่
