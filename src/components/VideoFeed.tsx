@@ -145,10 +145,12 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   //    สุ่มลำดับใหม่ทันทีตอนเปิดหน้า (ครั้งเดียว) → คลิปแรกไม่ซ้ำใบเดิม
   //    ทำก่อนที่ตัวจัดอันดับ (rankFeed) จะทำงาน ตัวนั้นจะปักใบแรกที่สุ่มได้นี้ไว้ต่อ
   const didShuffle = useRef(false);
+  const [shuffled, setShuffled] = useState(false);
   useEffect(() => {
     if (didShuffle.current) return;
     didShuffle.current = true;
     setItems((cur) => shuffle(cur));
+    setShuffled(true);
   }, []);
 
   const register = useCallback((i: number, el: HTMLVideoElement | null) => {
@@ -466,6 +468,12 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
     if (el.paused) { userPaused.current = false; el.play().catch(() => {}); }
     else { userPaused.current = true; el.pause(); }
   }, []);
+
+  // ยังสุ่มลำดับไม่เสร็จ = แสดงพื้นดำไว้ก่อน (เสี้ยววินาที) แทนที่จะโชว์คลิปเดิม
+  // แล้วให้เห็นมันสลับเป็นคลิปสุ่ม — ตัดจังหวะกระตุกตอนเปิดหน้าออกไป
+  if (!shuffled) {
+    return <main className="h-[calc(100dvh-57px-env(safe-area-inset-bottom))] bg-black" />;
+  }
 
   return (
     <main
