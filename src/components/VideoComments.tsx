@@ -99,13 +99,8 @@ export default function VideoComments({
         {/* กล่องพิมพ์ */}
         <div className="shrink-0 border-t border-steel-700 p-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
           {err && <p role="alert" className="mb-2 text-[12px] font-medium text-safety">{err}</p>}
-          <input
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-            placeholder="ชื่อของคุณ (ไม่ใส่ก็ได้)"
-            maxLength={40}
-            className="mb-2 w-full rounded-sm border border-steel-700 px-3 py-2 text-[13px] outline-none focus:border-safety"
-          />
+          {/* ช่องคอมเมนต์เป็นหลัก อยู่บนสุด — แตะแล้วพิมพ์คอมเมนต์ได้เลย ไม่โดนช่องชื่อก่อน
+              (เดิมช่องชื่ออยู่บน ลูกค้าแตะผิดช่อง พิมพ์คอมเมนต์ไม่ได้) */}
           <div className="flex gap-2">
             <input
               value={text}
@@ -113,6 +108,7 @@ export default function VideoComments({
               onKeyDown={(e) => { if (e.key === "Enter") send(); }}
               placeholder="พิมพ์คอมเมนต์..."
               maxLength={300}
+              autoFocus
               className="min-w-0 flex-1 rounded-full border border-steel-700 px-4 py-2.5 text-[14px] outline-none focus:border-safety"
             />
             <button
@@ -123,6 +119,14 @@ export default function VideoComments({
               {busy ? "..." : "ส่ง"}
             </button>
           </div>
+          {/* ช่องชื่อ = เสริม อยู่ล่าง เล็กและจางกว่า ให้รู้ว่าไม่ใช่ช่องหลัก */}
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="ใส่ชื่อของคุณ (ไม่ใส่ก็ได้)"
+            maxLength={40}
+            className="mt-2 w-full rounded-full border border-steel-700 px-4 py-1.5 text-[12px] text-ink-300 outline-none focus:border-safety"
+          />
         </div>
       </div>
     </div>
