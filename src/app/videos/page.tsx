@@ -2,6 +2,11 @@ import type { Viewport } from "next";
 import { titleSuffix } from "@/lib/shop";
 import VideoFeed from "@/components/VideoFeed";
 import { feedItems, FIRST_PAGE } from "@/lib/feed";
+import { VIDEO_HOST, VIDEO_PREFIX } from "@/lib/videos";
+
+// preload คลิปกี่ใบล่วงหน้าตั้งแต่ตอนอ่าน HTML — คลิปแรกที่ browser สุ่มจะเป็นหนึ่งในนี้
+// จึงถูกโหลดไว้ก่อนเสมอ ไม่ต้องรอ JavaScript = เปิดมาเล่นไว (แต่ยังสุ่ม)
+const WARM = 3;
 
 export const metadata = { title: titleSuffix("วิดีโอรีวิว") };
 
@@ -41,5 +46,23 @@ export default function VideosPage() {
   //    การสุ่มจริงจึงย้ายไปทำฝั่งเบราว์เซอร์ใน VideoFeed แทน — เปิดกี่ครั้งได้คลิปแรกคนละใบ
   const items = feedItems();
 
-  return <VideoFeed first={items.slice(0, FIRST_PAGE)} total={items.length} />;
+  // preload ไฟล์ของคลิป WARM ใบแรกไว้ตั้งแต่ HTML — VideoFeed จะสุ่มคลิปแรกจากในนี้เท่านั้น
+  // จึงเจอ warm cache เสมอ เปิดมาเล่นไวโดยไม่เสียการสุ่ม (ต่างจากปักใบเดียวที่ซ้ำทุกครั้ง)
+  const warm = VIDEO_HOST
+    ? items.slice(0, WARM).flatMap((it) => [
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${it.v.v}/master.m3u8`,
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${it.v.v}/v480/index.m3u8`,
+        `${VIDEO_HOST}${VIDEO_PREFIX}/${it.v.v}/v480/seg000.ts`,
+      ])
+    : [];
+
+  return (
+    <>
+      {VIDEO_HOST && <link rel="preconnect" href={VIDEO_HOST} crossOrigin="anonymous" />}
+      {warm.map((u) => (
+        <link key={u} rel="preload" as="fetch" href={u} crossOrigin="anonymous" />
+      ))}
+      <VideoFeed first={items.slice(0, FIRST_PAGE)} total={items.length} warm={WARM} />
+    </>
+  );
 }

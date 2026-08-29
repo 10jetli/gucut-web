@@ -83,7 +83,7 @@ function rankFeed(list: FeedItem[], counts: VideoCounts, views: VideoViews, seen
   ];
 }
 
-export default function VideoFeed({ first, total }: { first: FeedItem[]; total: number }) {
+export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[]; total: number; warm?: number }) {
   const rootRef = useRef<HTMLElement>(null);
   const [items, setItems] = useState(first);
   const seen = useRef<Set<string>>(new Set());
@@ -149,7 +149,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   useEffect(() => {
     if (didShuffle.current) return;
     didShuffle.current = true;
-    setItems((cur) => shuffle(cur));
+    setItems((cur) => {
+      // คลิปแรกสุ่มเฉพาะจาก warm ใบแรก (ที่หน้าเว็บ preload ไว้) → เจอ cache เล่นไว
+      // ที่เหลือสุ่มทั้งกอง · ถ้าไม่มี warm ก็สุ่มทั้งหมดตามปกติ
+      const head = warm > 0 ? cur.slice(0, Math.min(warm, cur.length)) : [];
+      if (head.length < 2) return shuffle(cur);
+      const pick = Math.floor(Math.random() * head.length);
+      const firstPick = cur[pick];
+      const rest = shuffle(cur.filter((_, i) => i !== pick));
+      return [firstPick, ...rest];
+    });
     setShuffled(true);
   }, []);
 
