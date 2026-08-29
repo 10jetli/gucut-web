@@ -41,6 +41,16 @@ const GROW_AT = 8;   // เหลืออีกกี่ใบถึงจะ�
 // ทุกคลิปมีโอกาสขึ้นหน้าแรก แต่ใบที่คนดู/ชอบ/คอมเมนต์เยอะมีโอกาสสูงกว่า
 // เปิดสิบครั้งได้สิบลำดับ — คนเข้าบ่อยจะไม่เจอคลิปเดิมซ้ำ ๆ จนเบื่อ
 // (ใบที่เคยดูแล้วดันไปท้ายเสมอ ไม่ว่าจะดังแค่ไหน)
+// สลับลำดับแบบ Fisher–Yates — ใช้สุ่มลำดับฟีดตอนเปิดหน้าให้คลิปแรกไม่ซ้ำใบเดิม
+function shuffle<T>(a: T[]): T[] {
+  const r = a.slice();
+  for (let i = r.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [r[i], r[j]] = [r[j], r[i]];
+  }
+  return r;
+}
+
 function rankFeed(list: FeedItem[], counts: VideoCounts, views: VideoViews, seen: Set<string>): FeedItem[] {
   const score = new Map<string, number>();
   for (const it of list) {
@@ -130,6 +140,16 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
   }, []);
 
   itemsRef.current = items;
+
+  // ⚠️ เว็บ build เป็น HTML นิ่ง คลิปแรกที่ฝังมากับหน้าจึงเป็นใบเดิมทุกครั้ง
+  //    สุ่มลำดับใหม่ทันทีตอนเปิดหน้า (ครั้งเดียว) → คลิปแรกไม่ซ้ำใบเดิม
+  //    ทำก่อนที่ตัวจัดอันดับ (rankFeed) จะทำงาน ตัวนั้นจะปักใบแรกที่สุ่มได้นี้ไว้ต่อ
+  const didShuffle = useRef(false);
+  useEffect(() => {
+    if (didShuffle.current) return;
+    didShuffle.current = true;
+    setItems((cur) => shuffle(cur));
+  }, []);
 
   const register = useCallback((i: number, el: HTMLVideoElement | null) => {
     // ต้องตั้งตอนนี้ ไม่งั้นคลิปใบที่เพิ่งโผล่มาจะเปิดเสียงค้างไว้ทั้งที่ทั้งฟีดปิดเสียงอยู่
