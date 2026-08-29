@@ -327,7 +327,15 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
   useEffect(() => {
     if (localStorage.getItem(SOUND_KEY) !== "off") setMute(false, false);
     // จดไว้ว่าลูกค้าแตะจอแล้ว — ตั้งแต่นั้นเบราว์เซอร์ยอมให้เล่นพร้อมเสียงได้
-    const mark = () => { gestured.current = true; };
+    const mark = () => {
+      gestured.current = true;
+      // ใบที่ถูกเงียบชั่วคราว (สิทธิ์เสียงหมดอายุ) — คืนเสียงใน gesture นี้เลย
+      // ลูกค้าแค่แตะ/เริ่มปัดครั้งถัดไป เสียงก็กลับเอง ไม่ต้องกดป้ายอะไร
+      if (!mutedRef.current) {
+        const cur = players.current.get(activeRef.current);
+        if (cur && cur.muted) cur.muted = false;
+      }
+    };
     document.addEventListener("pointerdown", mark, { capture: true });
     return () => document.removeEventListener("pointerdown", mark, true);
   }, [setMute]);
@@ -431,11 +439,17 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
         //    ถ้าลูกค้าแตะจอไปแล้ว (มีสิทธิ์เปิดเสียง) ก็ไม่ต้องปิดเสียง
         //    ปล่อยให้ canplay ข้างล่างสั่งเล่นซ้ำตอนคลิปพร้อม
         if (err?.name !== "NotAllowedError") { again(n); return; }
-        // ⚠️ NotAllowedError = เบราว์เซอร์ห้ามเล่นพร้อมเสียง — ห้ามวน retry แบบเดิม
-        //    เพราะสั่งซ้ำยังไงก็โดนปฏิเสธเหมือนเดิมจนกว่าลูกค้าจะแตะจอใหม่
-        //    (เดิมเช็ค gestured.current แล้ววน retry — iPhone ถือว่าการแตะครั้งเก่า
-        //    "หมดอายุ" ได้ ใบใหม่จึงค้างนิ่งจนต้องสะกิด — อาการที่เจ้าของร้านเจอจริง)
-        //    ทางเดียวที่ได้ผลเสมอ: เล่นแบบเงียบทันที (ภาพเดิน) + ป้ายชวนแตะเปิดเสียง
+        // ⚠️ NotAllowedError = ห้ามเล่นพร้อมเสียง — ห้ามวน retry (โดนปฏิเสธซ้ำทุกครั้ง
+        //    จนกว่าจะมีการแตะใหม่ ภาพจะค้างจนลูกค้าสะกิด — เจอจริง 29 ส.ค. 2569)
+        if (gestured.current) {
+          // เคยแตะแล้ว = สิทธิ์แค่หมดอายุชั่วคราว — เงียบ "เฉพาะใบนี้" ให้ภาพเดินก่อน
+          // ไม่ปิดเสียงทั้งฟีด ไม่เด้งป้าย (เด้งทุกใบ น่ารำคาญ — เจ้าของร้านทัก)
+          // เสียงจะคืนเองทันทีที่นิ้วแตะจอครั้งถัดไป (ดูตัวฟัง pointerdown ด้านล่าง)
+          el.muted = true;
+          el.play().catch(() => { again(n); });
+          return;
+        }
+        // ยังไม่เคยแตะเลย (เพิ่งเปิดหน้า) — เล่นเงียบ + ป้ายชวนแตะเปิดเสียง ครั้งเดียวพอ
         el.muted = true;
         setMute(true, false);
         setAskSound(true);
