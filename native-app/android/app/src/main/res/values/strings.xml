@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">GUCUT</string>
+    <string name="title_activity_main">GUCUT</string>
+    <string name="package_name">com.gucut.app</string>
+    <string name="custom_url_scheme">com.gucut.app</string>
+</resources>
