@@ -233,7 +233,14 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
     window.addEventListener("resize", onScroll);
     calc();                                   // ตั้งค่าเริ่มต้นให้ถูกตั้งแต่เปิดหน้า
 
+    // ⚠️ ตาข่าย: เช็คตำแหน่งตรง ๆ ทุก 350ms โดยไม่พึ่ง rAF/scroll event
+    //    iPhone โหมดประหยัดแบต/จังหวะ momentum อาจ throttle rAF จน calc ไม่ทำงาน
+    //    = เลื่อนแล้วคลิปไม่สลับ เสียงใบเก่าค้าง (อาการที่เจ้าของร้านเจอจริง)
+    //    ตัวนี้อ่าน scrollTop เทียบเบา ๆ ราคาถูกมาก แต่กันเคสพวกนั้นได้หมด
+    const safety = window.setInterval(calc, 350);
+
     return () => {
+      clearInterval(safety);
       root.removeEventListener("scroll", onScroll);
       window.removeEventListener("resize", onScroll);
       if (raf) cancelAnimationFrame(raf);
