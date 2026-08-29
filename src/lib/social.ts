@@ -62,6 +62,22 @@ export function toggleSave(id: string): boolean {
 export const myName = () => (typeof window === "undefined" ? "" : localStorage.getItem(NAME_KEY) || "");
 export const setMyName = (n: string) => localStorage.setItem(NAME_KEY, n);
 
+// ชื่อสุ่มสำหรับคนที่ไม่กรอกชื่อ — แทนคำว่า "ลูกค้า" ที่ซ้ำกันหมด
+// เก็บไว้ในเครื่องครั้งเดียว คนเดิมจึงได้ชื่อเดิมทุกครั้ง (เหมือนมีบัญชี ไม่สุ่มใหม่รัว ๆ)
+const NAME_POOL = [
+  "ช่างไม้", "คนสวน", "ชาวไร่", "นักเลื่อย", "พี่ช่าง", "ลุงช่าง", "มือใหม่หัดตัด",
+  "สายบุกป่า", "คนรักป่า", "เกษตรกร", "ช่างตัดไม้", "คนขยัน", "นักสู้", "เจ้าถิ่น",
+  "คนบ้านสวน", "ช่างเก่ง", "มือโปร", "คนจริง", "นักลุย", "ชาวเขา",
+];
+export function ensureName(): string {
+  if (typeof window === "undefined") return "";
+  const cur = localStorage.getItem(NAME_KEY);
+  if (cur) return cur;
+  const n = `${NAME_POOL[Math.floor(Math.random() * NAME_POOL.length)]}${Math.floor(Math.random() * 9000) + 1000}`;
+  localStorage.setItem(NAME_KEY, n);
+  return n;
+}
+
 // ---------------------------------------------------------------- เซิร์ฟเวอร์
 export type VideoViews = Record<string, number>;
 
@@ -121,10 +137,12 @@ export async function fetchComments(id: string): Promise<VideoComment[]> {
 }
 
 export async function postComment(id: string, text: string, name: string) {
+  // ไม่กรอกชื่อ = ใช้ชื่อสุ่มคงที่ของเครื่องนี้ (แทน "ลูกค้า" ที่ซ้ำกันหมด)
+  const finalName = name.trim() || ensureName();
   const r = await fetch("/api/social", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ action: "comment", id, text, name }),
+    body: JSON.stringify({ action: "comment", id, text, name: finalName }),
   });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.ok) throw new Error(j?.error || "ส่งคอมเมนต์ไม่สำเร็จ ลองใหม่อีกครั้ง");
