@@ -68,7 +68,7 @@ export default function VideoActions({
         <svg
           viewBox="0 0 24 24"
           className={`h-9 w-9 drop-shadow transition-transform ${pop ? "scale-125" : "scale-100"} ${
-            liked ? "fill-[#ff2d55] stroke-[#ff2d55]" : "fill-white/15 stroke-white"
+            liked ? "fill-[#ff2d55] stroke-[#ff2d55]" : "fill-white stroke-white"
           } stroke-[1.7]`}
         >
           <path d="M12 20s-7-4.4-7-9.2A4 4 0 0112 8.4a4 4 0 017-2.6c0 4.8-7 14.2-7 14.2z" strokeLinejoin="round" />
@@ -78,7 +78,7 @@ export default function VideoActions({
 
       {/* คอมเมนต์ */}
       <button onClick={onComment} aria-label="คอมเมนต์" className="flex flex-col items-center gap-1">
-        <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white/15 stroke-white stroke-[1.7] drop-shadow">
+        <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white stroke-white stroke-[1.7] drop-shadow">
           <path d="M21 11.5a8.4 8.4 0 01-9 8.4 9.6 9.6 0 01-2.7-.4L4 21l1.6-4.1A8.1 8.1 0 013 11.5 8.4 8.4 0 0112 3a8.4 8.4 0 019 8.5z" strokeLinejoin="round" />
         </svg>
         <span className="text-[11px] font-medium tabular-nums drop-shadow">{shortCount(comments)}</span>
@@ -88,7 +88,7 @@ export default function VideoActions({
       <button onClick={save} aria-label={saved ? "เอาออกจากที่บันทึก" : "บันทึกคลิป"} className="flex flex-col items-center gap-1">
         <svg
           viewBox="0 0 24 24"
-          className={`h-9 w-9 stroke-[1.7] drop-shadow ${saved ? "fill-[#ffc400] stroke-[#ffc400]" : "fill-white/15 stroke-white"}`}
+          className={`h-9 w-9 stroke-[1.7] drop-shadow ${saved ? "fill-[#ffc400] stroke-[#ffc400]" : "fill-white stroke-white"}`}
         >
           <path d="M6.5 4h11v16l-5.5-4-5.5 4V4z" strokeLinejoin="round" />
         </svg>
@@ -97,7 +97,7 @@ export default function VideoActions({
 
       {/* แชร์ */}
       <button onClick={share} aria-label="แชร์คลิปนี้" className="flex flex-col items-center gap-1">
-        <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white/15 stroke-white stroke-[1.7] drop-shadow">
+        <svg viewBox="0 0 24 24" className="h-9 w-9 fill-white stroke-white stroke-[1.7] drop-shadow">
           <path d="M4 12v7a1 1 0 001 1h14a1 1 0 001-1v-7" strokeLinecap="round" />
           <path d="M12 3.5v11M12 3.5L8.5 7M12 3.5L15.5 7" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
