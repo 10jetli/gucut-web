@@ -580,6 +580,17 @@ const Slide = memo(function Slide({
   const [el, setEl] = useState<HTMLVideoElement | null>(null);
   const src = videoSrc(v);
 
+  // วงหมุนไม่โชว์ทันที — รอ ~450ms ก่อน ถ้าคลิปเล่นได้ก่อนนั้นก็ไม่ต้องเห็นหมุนเลย
+  // เน็ตเร็ว (วัดจริง segment โหลด 0.1 วิ) คลิปมักเล่นภายในเสี้ยววินาที
+  // ระหว่างรอเห็นรูปปกนิ่ง ๆ (เฟรมแรก) แทนวงหมุน = เนียนแบบ TikTok บนเว็บ
+  // ที่เลื่อนถึงเห็นภาพนิ่งแล้วเล่นทันที ไม่ใช่วงหมุนก่อนทุกครั้ง
+  const [showSpin, setShowSpin] = useState(false);
+  useEffect(() => {
+    if (!busy) { setShowSpin(false); return; }
+    const t = setTimeout(() => setShowSpin(true), 450);
+    return () => clearTimeout(t);
+  }, [busy]);
+
   // ⚠️ ref ต้องเป็นฟังก์ชัน "ตัวเดิม" ทุกรอบ
   //    เขียน ref={(node)=>...} ตรง ๆ = สร้างฟังก์ชันใหม่ทุก render
   //    React จะถอด ref (เรียกด้วย null) แล้วใส่ใหม่ทุกครั้งที่ re-render
@@ -651,8 +662,8 @@ const Slide = memo(function Slide({
         <img src={poster} alt="" loading="lazy" className={`h-full w-full ${fit}`} />
       ) : null}
 
-      {/* วงหมุนตอนคลิปยังโหลดไม่ทัน */}
-      {busy && (
+      {/* วงหมุนตอนคลิปโหลดไม่ทันจริง ๆ (โชว์หลังหน่วงเกิน 450ms — ดูรูปปกนิ่งก่อน) */}
+      {showSpin && (
         <span className="pointer-events-none absolute left-1/2 top-1/2 h-8 w-8 -translate-x-1/2 -translate-y-1/2 animate-spin rounded-full border-2 border-white/30 border-t-white" />
       )}
 
