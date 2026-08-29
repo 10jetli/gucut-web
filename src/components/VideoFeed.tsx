@@ -9,7 +9,7 @@ import { prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HO
 import { isSafariHls, useHls } from "@/lib/useHls";
 import VideoActions from "./VideoActions";
 import VideoComments from "./VideoComments";
-import { fetchCounts, likedIds, markViewed, savedIds, type VideoCounts, type VideoViews } from "@/lib/social";
+import { fetchCounts, likedIds, markViewed, savedIds, seedLikes, seedCommentCount, type VideoCounts, type VideoViews } from "@/lib/social";
 
 // ใส่ <video> จริงกี่ใบรอบ ๆ ใบที่กำลังดู — ใบถัดไปโหลดรออยู่แล้ว เลื่อนถึงเล่นทันที
 // เผื่อไปข้างหน้ามากกว่าข้างหลัง เพราะคนดูเลื่อนลงเป็นหลัก
@@ -546,8 +546,8 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
             busy={i === active && !ready}
             liked={liked.has(item.v.v)}
             saved={saved.has(item.v.v)}
-            likes={counts[item.v.v]?.[0] ?? 0}
-            comments={counts[item.v.v]?.[1] ?? 0}
+            likes={(counts[item.v.v]?.[0] ?? 0) + seedLikes(item.v.v)}
+            comments={(counts[item.v.v]?.[1] ?? 0) + seedCommentCount(item.v.v)}
             onLike={bumpLike}
             onSave={markSaved}
             onOpenComments={setCommentFor}

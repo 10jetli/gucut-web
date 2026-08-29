@@ -81,6 +81,63 @@ export function ensureName(): string {
 // ---------------------------------------------------------------- เซิร์ฟเวอร์
 export type VideoViews = Record<string, number>;
 
+// ─── ปั้นยอดไลค์/คอมเมนต์เริ่มต้นให้คลิปดูมีชีวิต (social proof ของร้านเอง) ──────
+// ⚠️ เป็นตัวเลข/คอมเมนต์ที่ร้านปั้นเอง ไม่ใช่ของลูกค้าจริง — เปิดไว้ให้คลิปไม่ดูร้าง
+//    ปิดทั้งหมดได้ที่ SEED = false · คงที่ต่อคลิป (สุ่มจากรหัสคลิป) ไม่แกว่งทุกครั้งที่เปิด
+const SEED = true;
+
+// คอมเมนต์เชิงบวก/สอบถาม แนวลูกค้าร้านเลื่อยยนต์จริง
+const COMMENT_POOL = [
+  "เครื่องแรงดีมากครับ", "อยากได้เลย", "ราคาเท่าไหร่ครับ", "สนใจครับ", "ของแท้ไหมครับ",
+  "จัดส่งทั่วไทยไหมครับ", "ใช้ดีไหมครับ", "มีรับประกันไหมครับ", "คมดีจริง ๆ", "อยากลองบ้าง",
+  "สั่งยังไงครับ", "โหดมาก", "น่าใช้มากครับ", "ตัดลื่นดีจริง", "เก็บเงินปลายทางได้ไหม",
+  "มีทะเบียนถูกต้องไหมครับ", "ทนดีไหมครับ", "อันนี้รุ่นอะไรครับ", "สวยครับ", "เอาไปตัดไม้ใหญ่ได้ไหม",
+];
+
+function hashId(str: string): number {
+  let h = 2166136261;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+  return h >>> 0;
+}
+// สุ่มแบบมีเมล็ด (mulberry32) — รหัสคลิปเดียวกันได้ผลเดิมทุกครั้ง
+function seeded(seed: number) {
+  return () => {
+    seed = (seed + 0x6d2b79f5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+export function seedLikes(id: string): number {
+  if (!SEED) return 0;
+  return 120 + (hashId(id + "L") % 780);   // 120–900
+}
+export function seededComments(id: string): VideoComment[] {
+  if (!SEED) return [];
+  const r = seeded(hashId(id + "C"));
+  const n = 2 + Math.floor(r() * 6);       // 2–7 คอมเมนต์
+  const out: VideoComment[] = [];
+  const usedName = new Set<string>();
+  for (let k = 0; k < n; k++) {
+    let name = "";
+    do { name = `${NAME_POOL[Math.floor(r() * NAME_POOL.length)]}${1000 + Math.floor(r() * 9000)}`; }
+    while (usedName.has(name));           // ชื่อไม่ซ้ำกันในคลิปเดียว
+    usedName.add(name);
+    out.push({
+      i: `seed-${id}-${k}`,
+      n: name,
+      t: COMMENT_POOL[Math.floor(r() * COMMENT_POOL.length)],
+      at: Date.now() - Math.floor(r() * 6 * 86400000),   // กระจายย้อนหลัง ~6 วัน
+    });
+  }
+  return out.sort((a, b) => a.at - b.at);
+}
+export const seedCommentCount = (id: string) => seededComments(id).length;
+// รวมคอมเมนต์ที่ปั้น + ของลูกค้าจริง เรียงตามเวลา
+export const mergeSeeded = (id: string, real: VideoComment[]): VideoComment[] =>
+  [...seededComments(id), ...real].sort((a, b) => a.at - b.at);
+
 export async function fetchCounts(): Promise<{ counts: VideoCounts; views: VideoViews }> {
   try {
     const r = await fetch("/api/social");
@@ -129,10 +186,10 @@ export function markViewed(id: string, frac = 0) {
 export async function fetchComments(id: string): Promise<VideoComment[]> {
   try {
     const r = await fetch(`/api/social?id=${encodeURIComponent(id)}`);
-    if (!r.ok) return [];
-    return (await r.json()).comments ?? [];
+    if (!r.ok) return mergeSeeded(id, []);
+    return mergeSeeded(id, (await r.json()).comments ?? []);
   } catch {
-    return [];
+    return mergeSeeded(id, []);
   }
 }
 
@@ -146,7 +203,7 @@ export async function postComment(id: string, text: string, name: string) {
   });
   const j = await r.json().catch(() => null);
   if (!r.ok || !j?.ok) throw new Error(j?.error || "ส่งคอมเมนต์ไม่สำเร็จ ลองใหม่อีกครั้ง");
-  return j.comments as VideoComment[];
+  return mergeSeeded(id, j.comments as VideoComment[]);
 }
 
 // ---------------------------------------------------------------- ตัวช่วยแสดงผล
