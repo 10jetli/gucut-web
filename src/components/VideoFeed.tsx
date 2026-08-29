@@ -687,7 +687,7 @@ const Slide = memo(function Slide({
   const fit = v.vw / v.vh < 0.85 ? "object-cover" : "object-contain";
 
   return (
-    <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always] mb-[14px]">
+    <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always] mb-[32px]">
       {mode === "video" ? (
         <video
           ref={setNode}
