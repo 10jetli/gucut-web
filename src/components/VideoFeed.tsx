@@ -436,7 +436,19 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
     // เล่นออกแล้ว เลิกไล่ลองใหม่ทันที (ไม่งั้นนาฬิกาที่ตั้งค้างไว้จะไปสั่งซ้ำเปล่า ๆ)
     const started = () => { userPaused.current = false; clearRetries(); };
     el.addEventListener("playing", started);
+
+    // ⚠️ ตัวเฝ้าเผื่อ event ทุกตัว (canplay/loadeddata/canplaythrough) ยิงไป "ก่อน"
+    //    ที่เราจะสั่งเล่น — เกิดบ่อยขึ้นตั้งแต่ preload หนักขึ้น เพราะคลิปพร้อมเร็วมาก
+    //    event เหล่านั้นยิงครั้งเดียวตอนความพร้อมเพิ่ม พอ play() โดนปฏิเสธกลางทางแล้ว
+    //    ไม่มีใครสั่งซ้ำ = คลิปค้างต้องเอามือแตะ · retry แบบ GAPS เดิมเลิกใน 2.5 วิ ไม่พอ
+    //    ตัวเฝ้านี้ตรวจทุก 400ms ว่าใบที่ดูอยู่ยังหยุดทั้งที่พร้อมเล่นไหม ถ้าใช่สั่งเล่นซ้ำ
+    //    วนจนเล่นจริง (เลื่อนหนี = cleanup เคลียร์เอง · ลูกค้ากดหยุดเอง = userPaused กันไว้)
+    const watch = window.setInterval(() => {
+      if (el.paused && !userPaused.current && el.readyState >= 2) tryPlay();
+    }, 400);
+
     return () => {
+      clearInterval(watch);
       clearRetries();
       el.removeEventListener("canplay", kick);
       el.removeEventListener("loadeddata", kick);
