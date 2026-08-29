@@ -498,13 +498,13 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
   // ยังสุ่มลำดับไม่เสร็จ = แสดงพื้นดำไว้ก่อน (เสี้ยววินาที) แทนที่จะโชว์คลิปเดิม
   // แล้วให้เห็นมันสลับเป็นคลิปสุ่ม — ตัดจังหวะกระตุกตอนเปิดหน้าออกไป
   if (!shuffled) {
-    return <main className="h-[calc(100svh-57px-env(safe-area-inset-bottom))] bg-black" />;
+    return <main className="h-[calc(100dvh-57px-env(safe-area-inset-bottom))] bg-black" />;
   }
 
   return (
     <main
       ref={rootRef}
-      className="no-scrollbar h-[calc(100svh-57px-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-auto bg-black"
+      className="no-scrollbar h-[calc(100dvh-57px-env(safe-area-inset-bottom))] snap-y snap-mandatory overflow-y-auto bg-black"
     >
       {/* ต่อกับที่เก็บคลิปไว้ล่วงหน้าตั้งแต่เปิดหน้า — ประหยัดเวลา DNS + TLS
           ก่อนขอไฟล์แรก ซึ่งบนมือถือกินเวลาหลายร้อยมิลลิวินาที */}
@@ -687,7 +687,7 @@ const Slide = memo(function Slide({
   const fit = v.vw / v.vh < 0.85 ? "object-cover" : "object-contain";
 
   return (
-    <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always]">
+    <section data-i={i} className="relative h-full w-full snap-start [scroll-snap-stop:always] mb-[14px]">
       {mode === "video" ? (
         <video
           ref={setNode}
