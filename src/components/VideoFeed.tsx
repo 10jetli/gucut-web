@@ -221,7 +221,10 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       window.removeEventListener("resize", onScroll);
       if (raf) cancelAnimationFrame(raf);
     };
-  }, []);
+    // ⚠️ ต้องผูกใหม่หลัง shuffled = true — ตอน mount ครั้งแรกหน้ายังเป็นพื้นดำ (กันคลิปเดิม
+    //    โผล่ก่อนสุ่ม) rootRef ยังว่าง effect เลย return ทิ้งไม่ผูก listener
+    //    ถ้าไม่ผูกใหม่ = เลื่อนแล้วไม่รู้ว่าถึงใบไหน คลิปไม่สลับ เสียงใบเก่าค้าง
+  }, [shuffled]);
 
   // เลื่อนใกล้หมดชุดที่วางไว้ → เติมอีกชุด
   // ถ้ากล่องที่มีในมือใกล้หมดด้วย ค่อยไปดึงรายการที่เหลือทั้งหมดมาทีเดียว
@@ -432,7 +435,9 @@ export default function VideoFeed({ first, total }: { first: FeedItem[]; total: 
       // ⚠️ ของเดิมลืมถอดตัวนี้ ทุกครั้งที่เลื่อนจะพอกเพิ่มไปเรื่อย ๆ บน <video> ตัวเดิม
       el.removeEventListener("playing", started);
     };
-  }, [active, muted, setMute]);
+    // shuffled อยู่ใน dep เพราะตอน mount ครั้งแรกยังเป็นพื้นดำ (ยังไม่มี <video> ให้เล่น)
+    // effect นี้จึงต้องทำงานอีกรอบหลังสุ่มเสร็จ เพื่อสั่งเล่นคลิปแรกที่สุ่มมา
+  }, [active, muted, setMute, shuffled]);
 
   // แตะตรงไหนก็ได้ในฟีดครั้งแรก = เปิดเสียงให้เลย แบบเดียวกับ TikTok บนเว็บ
   // ใช้ capture แต่ไม่ขวางอะไร ปุ่มซื้อ/ลิงก์ยังกดได้ตามปกติ
