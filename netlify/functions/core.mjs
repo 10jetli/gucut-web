@@ -5,7 +5,7 @@
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 import { adminGate } from "../lib/admin-gate.mjs";
-import { coreQuery, coreReady } from "../lib/coredb.mjs";
+import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 
 export default async function handler(req, context) {
@@ -30,6 +30,9 @@ export default async function handler(req, context) {
       return json({ ready: false, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN ที่ Netlify" });
     }
 
+    if (url.searchParams.get("init")) {
+      return json({ ok: true, init: await coreInit() });
+    }
     if (url.searchParams.get("sync")) {
       const days = Math.min(60, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
       return json({ ok: true, sync: await syncOrders(days) });
