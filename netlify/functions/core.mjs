@@ -10,8 +10,16 @@ import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs"
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
+  // และ "ไม่ส่งรหัสมาเลย" gate จะไม่ deny ให้เอง (wants:false) — API หลังร้านล้วน
+  // แบบตัวนี้ต้องบังคับ ok เท่านั้น (เจอจริงตอนยิงทดสอบ 30 ส.ค. — ไม่มีรหัสได้ 200)
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
+  if (!gate.ok) {
+    return new Response(JSON.stringify({ error: "unauthorized" }), {
+      status: 401,
+      headers: { "content-type": "application/json" },
+    });
+  }
 
   const url = new URL(req.url);
   const json = (obj, status = 200) =>
