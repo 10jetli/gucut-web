@@ -64,6 +64,8 @@ for (const [handle, v] of Object.entries(data)) {
 let merged = 0;
 let skipDup = 0;
 let noProduct = 0;
+// นับแยกรายสินค้า — ใช้ตอนอัปเดตยอด/ดาว (ดูคำเตือนใหญ่ข้างล่าง)
+const addedPer = new Map(); // handle → { n, sum }
 
 for (const r of fresh) {
   const key = `${r.handle}|${r.author || ""}|${(r.text || "").slice(0, 60)}|${r.date || ""}`;
@@ -86,15 +88,26 @@ for (const r of fresh) {
   });
   seen.add(key);
   merged++;
+  const acc = addedPer.get(r.handle) || { n: 0, sum: 0 };
+  acc.n++;
+  acc.sum += r.rating || 0;
+  addedPer.set(r.handle, acc);
 }
 
 if (merged > 0) {
-  // คิดคะแนนเฉลี่ย/จำนวนใหม่เฉพาะสินค้าที่มีรีวิวเพิ่ม
-  for (const v of Object.values(data)) {
-    const items = v.items || [];
-    if (!items.length) continue;
-    v.count = items.length;
-    v.avg = Math.round((items.reduce((s, i) => s + (i.rating || 0), 0) / items.length) * 10) / 10;
+  // ⚠️ ห้ามคิด count/avg ใหม่จาก items.length เด็ดขาด
+  //    `count` คือ "จำนวนรีวิวทั้งหมดที่มาร์เก็ตเพลสบอก" ส่วน `items` เป็นแค่ตัวอย่างที่เก็บมา
+  //    (เช่น count 366 แต่ items มี 188 ใบ) — คิดใหม่จาก items = ยอดรีวิวหายไปครึ่งหนึ่ง
+  //    ทดสอบจริง 31 ส.ค. 2569: รวมรีวิวใหม่ใบเดียว ทำสินค้า 32 ตัวยอดตกทันที (366 → 189)
+  //    ต้องบวกเพิ่มจากของเดิม และเฉลี่ยดาวแบบถ่วงน้ำหนักเท่านั้น
+  for (const [handle, acc] of addedPer) {
+    const v = data[handle];
+    if (!v) continue;
+    const oldCount = Number(v.count) || (v.items || []).length - acc.n;
+    const oldAvg = Number(v.avg) || 0;
+    const newCount = oldCount + acc.n;
+    v.count = newCount;
+    v.avg = newCount ? Math.round(((oldAvg * oldCount + acc.sum) / newCount) * 10) / 10 : oldAvg;
   }
   writeFileSync(FILE, JSON.stringify(data, null, 1));
 }
