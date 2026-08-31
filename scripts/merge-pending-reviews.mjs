@@ -53,6 +53,18 @@ if (!fresh.length) {
 
 const data = JSON.parse(readFileSync(FILE, "utf8"));
 
+/** ยอดรวมทั้งไฟล์ — ใช้เทียบก่อน/หลัง เพื่อกันรีวิวเก่าหาย */
+const tally = (d) => {
+  let count = 0;
+  let items = 0;
+  for (const v of Object.values(d)) {
+    count += Number(v.count) || 0;
+    items += (v.items || []).length;
+  }
+  return { count, items };
+};
+const before = tally(data);
+
 // ลายนิ้วมือของที่มีอยู่แล้ว — กันซ้ำอีกชั้นเผื่อรีวิวเดิมเคยถูกดึงเข้ามาด้วยมือ
 const seen = new Set();
 for (const [handle, v] of Object.entries(data)) {
@@ -109,7 +121,23 @@ if (merged > 0) {
     v.count = newCount;
     v.avg = newCount ? Math.round(((oldAvg * oldCount + acc.sum) / newCount) * 10) / 10 : oldAvg;
   }
+
+  // ── ตาข่ายกันรีวิวเก่าหาย ──
+  // เจ้าของร้านสั่งไว้ชัด "อย่าลบรีวิวเก่า" (31 ส.ค. 2569)
+  // ขั้นตอนนี้มีหน้าที่ "เพิ่ม" อย่างเดียว ยอดรวมจึงต้องไม่มีวันลดลง
+  // ถ้าลดเมื่อไหร่ = มีบั๊ก (เคยเกิดจริง: คิด count ใหม่จาก items แล้วยอด 366 เหลือ 189)
+  // ⚠️ เจอแล้วต้องทิ้งผลรอบนี้ ไม่เขียนไฟล์ — รีวิวใหม่ไม่ขึ้นดีกว่ารีวิวเก่าหาย
+  const after = tally(data);
+  if (after.count < before.count || after.items < before.items) {
+    console.log(
+      `merge-pending-reviews: ⛔ ยกเลิก — ยอดรีวิวจะลดลง ` +
+        `(รวม ${before.count}→${after.count} · ข้อความ ${before.items}→${after.items}) ` +
+        `ใช้ reviews.json เดิมแทน`
+    );
+    process.exit(0);
+  }
   writeFileSync(FILE, JSON.stringify(data, null, 1));
+  console.log(`merge-pending-reviews: ยอดรีวิวรวม ${before.count} → ${after.count}`);
 }
 
 console.log(
