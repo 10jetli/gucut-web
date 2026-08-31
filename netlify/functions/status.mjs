@@ -178,8 +178,20 @@ export default async function handler(req, context) {
     //    ทั้งที่ระบบปกติดี แล้วคนอ่านก็จะเลิกเชื่อหน้านี้ไปเลย
     //    เช็คสองอย่างที่พอ: ฟีดยังตอบไหม (HEAD) และสต็อกที่เก็บไว้สดแค่ไหน
     check("ฟีดสินค้าให้ AI (/products.json)", async () => {
-      const r = await fetch(`${origin}/products.json`, { method: "HEAD", signal: timeout(10000) });
-      if (!r.ok) throw new Error(`ฟีดตอบ ${r.status}`);
+      // ⚠️ ห้ามให้ HEAD ที่ timeout กลายเป็น "ใช้ไม่ได้" (แดง) — เจอของจริง 31 ส.ค. 2569
+      //    /products.json เป็นฟังก์ชัน ไม่ใช่ไฟล์นิ่ง · คำขอแรกหลังแคชหมดอายุ (ทุก 30 นาที)
+      //    ต้องรอกวาดสต็อกจาก ZORT สด ซึ่งวันที่ ZORT ช้าจะเกิน 10 วิได้ง่าย ๆ
+      //    หน้านี้เลยขึ้นแดงทั้งที่ยิงเองตรง ๆ ได้ 200 ใน 0.13 วิ — ตัวตรวจที่ฟ้องผิด
+      //    อันตรายพอกับตัวตรวจที่เขียวทั้งที่ของพัง เพราะคนอ่านจะเลิกเชื่อหน้านี้
+      let feedNote = "";
+      try {
+        const r = await fetch(`${origin}/products.json`, { method: "HEAD", signal: timeout(20000) });
+        if (!r.ok) throw new Error(`ฟีดตอบ ${r.status}`);
+      } catch (e) {
+        const aborted = /abort|timeout/i.test(String(e?.message || e));
+        if (!aborted) throw e;
+        feedNote = " · รอบนี้ฟีดตอบช้า (กำลังกวาดสต็อกใหม่จากคลัง)";
+      }
 
       const s = getStore({ name: "gucut-coupon", consistency: "eventual" });
       const cached = await s.get("zort-stock", { type: "json" }).catch(() => null);
@@ -187,9 +199,31 @@ export default async function handler(req, context) {
 
       const mins = Math.round((Date.now() - cached.at) / 60000);
       const n = Object.keys(cached.map || {}).length;
-      return mins > 90
-        ? { warn: true, note: `สต็อกเก่า ${mins} นาที — ดึงจากคลังไม่สำเร็จมาสักพัก` }
-        : { note: `${n.toLocaleString("en-US")} รหัสสินค้า · สต็อกอัปเดต ${mins} นาทีที่แล้ว` };
+      const base = `${n.toLocaleString("en-US")} รหัสสินค้า · สต็อกอัปเดต ${mins} นาทีที่แล้ว${feedNote}`;
+      if (mins > 90) return { warn: true, note: `สต็อกเก่า ${mins} นาที — ดึงจากคลังไม่สำเร็จมาสักพัก` };
+      return feedNote ? { warn: true, note: base } : { note: base };
+    }),
+
+    // ---------- รับรีวิวใหม่จากมาร์เก็ตเพลส ----------
+    // เจ้าของร้านสั่ง 31 ส.ค. 2569 "ดึงรีวิวใหม่ ๆ แต่ไม่ซ้ำ จาก lazada tiktok shopee ทุกคืน"
+    // ⚠️ ต้องแยก "ท่อพร้อมรับ" ออกจาก "มีรีวิวไหลเข้าจริง" ให้ขาด
+    //    ตั้ง secret แล้วขึ้นเขียวเฉย ๆ = หลอกตา เพราะงานเก็บรีวิวอาจไม่เคยยิงเข้ามาเลย
+    check("รับรีวิวใหม่จากมาร์เก็ตเพลส", async () => {
+      if (!env.REVIEWS_INGEST_SECRET) {
+        return { off: true, note: "ยังไม่ได้ตั้ง REVIEWS_INGEST_SECRET — ท่อยังปิดอยู่" };
+      }
+      const s = getStore({ name: "gucut-reviews", consistency: "eventual" });
+      const meta = await s.get("meta", { type: "json" }).catch(() => null);
+      if (!meta?.at) {
+        return { warn: true, note: "ท่อเปิดแล้ว แต่ยังไม่เคยมีรีวิวส่งเข้ามาสักครั้ง — งานเก็บรีวิวยังไม่ได้ตั้ง" };
+      }
+      const hrs = Math.round((Date.now() - new Date(meta.at).getTime()) / 3600000);
+      const { blobs } = await s.list({ prefix: "r/" }).catch(() => ({ blobs: [] }));
+      const waiting = blobs.length ? ` · รอเข้าเว็บรอบ build ถัดไป ${blobs.length} รีวิว` : "";
+      // งานวิ่งทุกคืน — เงียบเกิน 2 วันแปลว่าน่าจะพัง (session มาร์เก็ตเพลสหมดอายุ ฯลฯ)
+      return hrs > 48
+        ? { warn: true, note: `ไม่มีรีวิวเข้ามา ${Math.round(hrs / 24)} วันแล้ว — ควรเช็คว่างานเก็บรีวิวยังวิ่งอยู่ไหม${waiting}` }
+        : { note: `รับล่าสุด ${hrs < 1 ? "ไม่ถึงชั่วโมง" : `${hrs} ชม.`}ที่แล้ว${waiting}` };
     }),
 
     // ---------- ไฟล์ที่ผู้ช่วย AI อ่าน ----------
