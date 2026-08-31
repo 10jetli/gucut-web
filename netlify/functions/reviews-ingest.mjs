@@ -37,7 +37,18 @@ function clean(r) {
   if (!r || typeof r !== "object") return null;
   const platform = String(r.platform || "").toLowerCase();
   if (!PLATFORMS.has(platform)) return null;
-  const key = String(r.handle || r.sku || "").trim();
+  // ⚠️ ต้องถอดรหัส URL เสมอ — handle ในเว็บเป็นภาษาไทย ("โซ่-kingkong-3623-…")
+  //    แต่ที่หยิบมาจาก /products.json เป็น URL ที่เข้ารหัสไว้ (%E0%B9%82…)
+  //    ไม่ถอด = จับคู่สินค้าไม่ติดสักตัว รีวิวค้างใน Blobs ตลอดกาลแบบเงียบ ๆ
+  //    (เจอตอนยิงทดสอบจริงหลัง deploy 31 ส.ค. 2569 — ถ้าไม่ทดสอบคงไม่มีใครรู้)
+  let key = String(r.handle || r.sku || "").trim();
+  if (key.includes("%")) {
+    try {
+      key = decodeURIComponent(key);
+    } catch {
+      /* handle ที่มี % แต่ไม่ใช่รหัส URL — ใช้ค่าเดิม */
+    }
+  }
   if (!key) return null;
   const rating = Number(r.rating);
   if (!(rating >= 1 && rating <= 5)) return null;
@@ -86,6 +97,18 @@ export default async function handler(req, context) {
     }
     const meta = await store.get("meta", { type: "json" }).catch(() => null);
     return json({ pending: blobs.length, byPlatform, lastIngest: meta?.at ?? null });
+  }
+
+  // ── ลบรีวิวทิ้ง (หลังร้าน) — ใช้ตอนเจอรีวิวเสีย/ของทดสอบ ──
+  //    DELETE /api/reviews-ingest?key=r/<platform>/<id>
+  if (req.method === "DELETE") {
+    const gate = await adminGate(req, context);
+    if (gate.deny) return gate.deny;
+    if (!gate.ok) return json({ error: "unauthorized" }, 401);
+    const key = new URL(req.url).searchParams.get("key") || "";
+    if (!key.startsWith("r/")) return json({ error: "ต้องส่ง key ที่ขึ้นต้นด้วย r/" }, 400);
+    await store.delete(key);
+    return json({ ok: true, deleted: key });
   }
 
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
