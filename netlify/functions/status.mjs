@@ -213,17 +213,41 @@ export default async function handler(req, context) {
         return { off: true, note: "ยังไม่ได้ตั้ง REVIEWS_INGEST_SECRET — ท่อยังปิดอยู่" };
       }
       const s = getStore({ name: "gucut-reviews", consistency: "eventual" });
-      const meta = await s.get("meta", { type: "json" }).catch(() => null);
-      if (!meta?.at) {
-        return { warn: true, note: "ท่อเปิดแล้ว แต่ยังไม่เคยมีรีวิวส่งเข้ามาสักครั้ง — งานเก็บรีวิวยังไม่ได้ตั้ง" };
-      }
-      const hrs = Math.round((Date.now() - new Date(meta.at).getTime()) / 3600000);
+      const [meta, call] = await Promise.all([
+        s.get("meta", { type: "json" }).catch(() => null),
+        s.get("lastcall", { type: "json" }).catch(() => null),
+      ]);
       const { blobs } = await s.list({ prefix: "r/" }).catch(() => ({ blobs: [] }));
       const waiting = blobs.length ? ` · รอเข้าเว็บรอบ build ถัดไป ${blobs.length} รีวิว` : "";
-      // งานวิ่งทุกคืน — เงียบเกิน 2 วันแปลว่าน่าจะพัง (session มาร์เก็ตเพลสหมดอายุ ฯลฯ)
-      return hrs > 48
-        ? { warn: true, note: `ไม่มีรีวิวเข้ามา ${Math.round(hrs / 24)} วันแล้ว — ควรเช็คว่างานเก็บรีวิวยังวิ่งอยู่ไหม${waiting}` }
-        : { note: `รับล่าสุด ${hrs < 1 ? "ไม่ถึงชั่วโมง" : `${hrs} ชม.`}ที่แล้ว${waiting}` };
+      const ago = (t) => {
+        const h = Math.round((Date.now() - new Date(t).getTime()) / 3600000);
+        return h < 1 ? "ไม่ถึงชั่วโมงที่แล้ว" : h > 48 ? `${Math.round(h / 24)} วันที่แล้ว` : `${h} ชม.ที่แล้ว`;
+      };
+
+      // ⚠️ "ไม่มีใครยิงเข้ามา" กับ "ยิงเข้ามาแล้วแต่ไม่มีรีวิวใหม่" ต้องแยกให้ขาด
+      //    ถ้าดูแค่ meta (เวลาที่มีรีวิวเข้าจริง) สองอย่างนี้หน้าตาเหมือนกันหมด
+      //    แล้วตัวเก็บที่พังจะดูเหมือน "คืนนี้ไม่มีรีวิวใหม่" ตลอดกาล
+      if (!call?.at) {
+        return { warn: true, note: "ท่อเปิดแล้ว แต่ยังไม่เคยมีใครยิงเข้ามาเลย — งานเก็บรีวิวยังไม่ได้ตั้ง" };
+      }
+      const callHrs = (Date.now() - new Date(call.at).getTime()) / 3600000;
+      if (callHrs > 48) {
+        return {
+          warn: true,
+          note: `งานเก็บรีวิวไม่ได้ยิงเข้ามา ${ago(call.at)} — ควรเช็คว่ายังวิ่งอยู่ไหม${waiting}`,
+        };
+      }
+      // ยิงมาปกติ แต่ยังไม่เคยได้รีวิวใหม่เลยสักใบ = จับคู่สินค้าไม่ติด หรือกวาดไม่เจอ
+      if (!meta?.at) {
+        return {
+          warn: true,
+          note: `ตัวเก็บยิงเข้ามา ${ago(call.at)} (ส่ง ${call.sent ?? 0} · ผ่าน 0) แต่ยังไม่เคยได้รีวิวใหม่สักใบ`,
+        };
+      }
+      const last = `ตัวเก็บมาล่าสุด ${ago(call.at)} · ส่ง ${call.sent ?? 0} ใหม่ ${call.added ?? 0} ซ้ำ ${call.dup ?? 0}`;
+      return new Date(meta.at).getTime() < Date.now() - 7 * 86400000
+        ? { note: `${last} · รีวิวใหม่ล่าสุด ${ago(meta.at)}${waiting}` }
+        : { note: `${last}${waiting}` };
     }),
 
     // ---------- ไฟล์ที่ผู้ช่วย AI อ่าน ----------

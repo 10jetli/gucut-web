@@ -96,7 +96,16 @@ export default async function handler(req, context) {
       byPlatform[p] = (byPlatform[p] || 0) + 1;
     }
     const meta = await store.get("meta", { type: "json" }).catch(() => null);
-    return json({ pending: blobs.length, byPlatform, lastIngest: meta?.at ?? null });
+    const call = await store.get("lastcall", { type: "json" }).catch(() => null);
+    return json({
+      pending: blobs.length,
+      byPlatform,
+      lastIngest: meta?.at ?? null,
+      // ⚠️ ต้องแยก "ไม่มีใครเรียก" ออกจาก "เรียกแล้วแต่ไม่มีรีวิวใหม่" ให้ได้เสมอ
+      //    สองอย่างนี้หน้าตาเหมือนกันหมดถ้าดูแค่ lastIngest — แล้วตัวเก็บพังแบบเงียบ ๆ ได้
+      lastCall: call?.at ?? null,
+      lastCallResult: call ? { added: call.added, dup: call.dup, bad: call.bad, sent: call.sent } : null,
+    });
   }
 
   // ── ลบรีวิวทิ้ง (หลังร้าน) — ใช้ตอนเจอรีวิวเสีย/ของทดสอบ ──
@@ -154,6 +163,14 @@ export default async function handler(req, context) {
   if (added > 0) {
     await store.setJSON("meta", { at: new Date().toISOString(), lastAdded: added });
   }
+  // จดทุกครั้งที่มีคนเรียกสำเร็จ แม้ไม่ได้รีวิวใหม่สักใบ — ใช้ตอบว่า "ตัวเก็บยังมาไหม"
+  await store.setJSON("lastcall", {
+    at: new Date().toISOString(),
+    sent: list.length,
+    added,
+    dup,
+    bad,
+  });
 
   return json({ ok: true, added, dup, bad, samples });
 }
