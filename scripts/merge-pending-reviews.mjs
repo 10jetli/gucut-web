@@ -53,6 +53,34 @@ if (!fresh.length) {
 
 const data = JSON.parse(readFileSync(FILE, "utf8"));
 
+// ── แปลงรหัสสินค้า (SKU) เป็นชื่อลิงก์สินค้า (handle) ──
+// ⚠️ ตัวเก็บรีวิวจากมาร์เก็ตเพลสหยิบ "รหัสสินค้า" มาได้ง่ายกว่า handle
+//    (Seller Centre โชว์ SKU ไม่ได้โชว์ลิงก์เว็บเรา) จึงส่ง SKU มาในช่อง handle
+//    ไม่แปลง = จับคู่สินค้าไม่ติดสักตัว แล้วรีวิวกองค้างใน Blobs เงียบ ๆ ตลอดไป
+//    (เจอของจริง 31 ส.ค. 2569 รอบแรกที่งานตั้งเวลารันเอง — 53 ใบจับคู่ไม่ติดเลยสักใบ)
+const skuToHandle = new Map();
+try {
+  const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
+  for (const p of Array.isArray(products) ? products : []) {
+    if (!p?.h) continue;
+    const skus = [].concat(p.sku || [], (p.v || []).map((x) => x?.sku).filter(Boolean));
+    for (const s of skus) {
+      const k = String(s || "").trim().toUpperCase();
+      if (k && !skuToHandle.has(k)) skuToHandle.set(k, p.h);
+    }
+  }
+} catch (e) {
+  console.log(`merge-pending-reviews: อ่าน products.json ไม่ได้ (${e?.message || e}) — แปลง SKU ไม่ได้รอบนี้`);
+}
+
+/** คืน handle ที่ใช้ได้จริง — ลองตรง ๆ ก่อน ไม่เจอค่อยลองแปลงจาก SKU */
+function resolveHandle(h) {
+  if (!h) return null;
+  if (data[h]) return h;
+  const viaSku = skuToHandle.get(String(h).trim().toUpperCase());
+  return viaSku && data[viaSku] ? viaSku : null;
+}
+
 /** ยอดรวมทั้งไฟล์ — ใช้เทียบก่อน/หลัง เพื่อกันรีวิวเก่าหาย */
 const tally = (d) => {
   let count = 0;
@@ -79,31 +107,38 @@ let noProduct = 0;
 // นับแยกรายสินค้า — ใช้ตอนอัปเดตยอด/ดาว (ดูคำเตือนใหญ่ข้างล่าง)
 const addedPer = new Map(); // handle → { n, sum }
 
+let viaSku = 0;
 for (const r of fresh) {
-  const key = `${r.handle}|${r.author || ""}|${(r.text || "").slice(0, 60)}|${r.date || ""}`;
+  // สินค้าที่ยังไม่มีในเว็บ (เช่นยังไม่ปลด draft) — เก็บไว้ใน Blobs ต่อ รอบหน้าค่อยเข้า
+  const handle = resolveHandle(r.handle);
+  if (!handle) {
+    noProduct++;
+    continue;
+  }
+  if (handle !== r.handle) viaSku++;
+
+  const key = `${handle}|${r.author || ""}|${(r.text || "").slice(0, 60)}|${r.date || ""}`;
   if (seen.has(key)) {
     skipDup++;
     continue;
   }
-  // สินค้าที่ยังไม่มีในเว็บ (เช่นยังไม่ปลด draft) — เก็บไว้ใน Blobs ต่อ รอบหน้าค่อยเข้า
-  if (!data[r.handle]) {
-    noProduct++;
-    continue;
-  }
-  data[r.handle].items.push({
+  const item = {
     src: r.platform,
     rating: r.rating,
     author: r.author,
     text: r.text,
     images: r.images || [],
     date: r.date,
-  });
+  };
+  // คลิปใต้รีวิว — หน้าเว็บรองรับอยู่แล้ว (ReviewCard + ตัวกรอง "มีคลิป")
+  if (r.video && typeof r.video === "object" && r.video.id) item.video = r.video;
+  data[handle].items.push(item);
   seen.add(key);
   merged++;
-  const acc = addedPer.get(r.handle) || { n: 0, sum: 0 };
+  const acc = addedPer.get(handle) || { n: 0, sum: 0 };
   acc.n++;
   acc.sum += r.rating || 0;
-  addedPer.set(r.handle, acc);
+  addedPer.set(handle, acc);
 }
 
 if (merged > 0) {
@@ -141,5 +176,6 @@ if (merged > 0) {
 }
 
 console.log(
-  `merge-pending-reviews: รวมใหม่ ${merged} · ซ้ำข้าม ${skipDup} · ยังไม่มีสินค้าในเว็บ ${noProduct} (รอรอบหน้า)`
+  `merge-pending-reviews: รวมใหม่ ${merged} · ซ้ำข้าม ${skipDup} · ยังไม่มีสินค้าในเว็บ ${noProduct} (รอรอบหน้า)` +
+    (viaSku ? ` · จับคู่ผ่าน SKU ${viaSku}` : "")
 );
