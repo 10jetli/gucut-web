@@ -13,13 +13,20 @@ export interface Variant {
 // รีวิวจริงจาก Shopee / Lazada / TikTok (ดึงมาจาก metafield mp_reviews บน Shopify)
 export type ReviewSource = "shopee" | "lazada" | "tiktok";
 
-// คลิปรีวิว — โหลดมาเก็บไว้บนเว็บเราเอง (public/rv-video/<id>.mp4 + .jpg)
-// ไม่ลิงก์ไปที่แพลตฟอร์มเดิม เพราะลิงก์เดิมมีลายเซ็นและหมดอายุใน 2-3 ชม.
+// คลิปรีวิว — โหลดมาเก็บไว้ของเราเอง ไม่ลิงก์ไปที่แพลตฟอร์มเดิม
+// เพราะลิงก์เดิมมีลายเซ็นและหมดอายุใน 2-3 ชม. (พอถึงตอน build ก็ตายแล้ว)
+//
+// เก็บได้ 2 ที่ แยกด้วยธง r2:
+//   ไม่มี r2  → ของเก่า อยู่ในโปรเจกต์ public/rv-video/<id>.mp4 + .jpg
+//   r2: true → ของใหม่จาก /api/reviews-ingest อยู่บน R2 ที่ video.gucut.com/rv/<id>.mp4
+//              (ถังเดียวกับคลิปหน้าฟีด · poster บอกว่ามีรูปปกไหม ไม่มีใช้เฟรมแรกแทน)
 export interface ReviewVideo {
   id: string;
   dur: number;          // วินาที
   w: number;
   h: number;
+  r2?: boolean;
+  poster?: boolean;
 }
 
 export interface Review {
@@ -32,8 +39,13 @@ export interface Review {
   video?: ReviewVideo;
 }
 
-export const videoSrc = (v: ReviewVideo) => `/rv-video/${v.id}.mp4`;
-export const videoPoster = (v: ReviewVideo) => `/rv-video/${v.id}.jpg`;
+// ที่อยู่คลิปบน R2 — ถังเดียวกับคลิปหน้าฟีด (ดู src/lib/videos.ts)
+const RV_HOST = "https://video.gucut.com";
+
+export const videoSrc = (v: ReviewVideo) =>
+  v.r2 ? `${RV_HOST}/rv/${v.id}.mp4` : `/rv-video/${v.id}.mp4`;
+export const videoPoster = (v: ReviewVideo) =>
+  v.r2 ? (v.poster ? `${RV_HOST}/rv/${v.id}.jpg` : undefined) : `/rv-video/${v.id}.jpg`;
 export const durLabel = (s: number) =>
   `${Math.floor(s / 60)}:${String(Math.round(s % 60)).padStart(2, "0")}`;
 

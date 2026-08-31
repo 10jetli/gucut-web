@@ -131,6 +131,8 @@ for (const r of fresh) {
     date: r.date,
   };
   // คลิปใต้รีวิว — หน้าเว็บรองรับอยู่แล้ว (ReviewCard + ตัวกรอง "มีคลิป")
+  // ⚠️ เอาเฉพาะคลิปที่เก็บลง R2 สำเร็จแล้วเท่านั้น (มี id) — ตัวที่ยังเป็นลิงก์ต้นทาง
+  //    ลิงก์ตายไปแล้วตอนถึง build จะได้กรอบดำบนหน้าสินค้า
   if (r.video && typeof r.video === "object" && r.video.id) item.video = r.video;
   data[handle].items.push(item);
   seen.add(key);

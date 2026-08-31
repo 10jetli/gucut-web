@@ -15,9 +15,17 @@
 import { getStore } from "@netlify/blobs";
 import { createHash } from "node:crypto";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { r2Ready, r2Put, fetchBinary } from "../lib/r2.mjs";
 
 const STORE = "gucut-reviews";
 const PLATFORMS = new Set(["shopee", "lazada", "tiktok"]);
+
+// คลิปใต้รีวิว — ต้องดึงไฟล์มาเก็บบน R2 ทันที ห้ามเก็บแค่ลิงก์
+// ⚠️ ลิงก์คลิปของมาร์เก็ตเพลสมีลายเซ็นและหมดอายุใน 2-3 ชม. (เขียนไว้ใน src/lib/types.ts แต่เดิม)
+//    เก็บลิงก์ไว้เฉย ๆ = พอถึงตอน build ลิงก์ตายแล้ว ได้กรอบดำบนหน้าสินค้า
+// ⚠️ ทำได้จำกัดต่อคำขอ เพราะ Netlify ให้ฟังก์ชันรอผลได้แค่ 26 วินาที
+//    เกินโควตาจะเก็บรีวิวไว้แต่ไม่มีคลิป แล้วรายงานกลับไปให้ตัวเก็บรู้ (ไม่เงียบ)
+const VIDEO_MAX_PER_CALL = 6;
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), {
@@ -58,6 +66,21 @@ function clean(r) {
   const images = Array.isArray(r.images)
     ? r.images.filter((u) => typeof u === "string" && /^https?:\/\//.test(u)).slice(0, 6)
     : [];
+  // คลิป — รับมาเป็นลิงก์ชั่วคราว เดี๋ยวจะถูกดึงไปเก็บ R2 ทีหลัง
+  let video = null;
+  if (r.video && typeof r.video === "object") {
+    const url = String(r.video.url || "").trim();
+    if (/^https:\/\//.test(url)) {
+      video = {
+        url,
+        poster: /^https:\/\//.test(String(r.video.poster || "")) ? String(r.video.poster) : null,
+        dur: Number(r.video.dur) > 0 ? Math.round(Number(r.video.dur)) : 0,
+        w: Number(r.video.w) > 0 ? Math.round(Number(r.video.w)) : 0,
+        h: Number(r.video.h) > 0 ? Math.round(Number(r.video.h)) : 0,
+      };
+    }
+  }
+
   return {
     platform,
     handle: key,
@@ -67,7 +90,31 @@ function clean(r) {
     images,
     date,
     id: r.id ? String(r.id).slice(0, 80) : null,
+    video,
   };
+}
+
+/**
+ * ดึงคลิปจากลิงก์ชั่วคราวของมาร์เก็ตเพลส มาเก็บบน R2 ถาวร
+ * คืน object ที่พร้อมเก็บลงรีวิว หรือ null ถ้าทำไม่สำเร็จ (รีวิวยังถูกเก็บตามปกติ)
+ */
+async function saveVideo(v, id) {
+  const { buf, type } = await fetchBinary(v.url, 25 * 1024 * 1024, 12000);
+  if (!/^video\//.test(type) && !/\.mp4/i.test(v.url)) throw new Error(`ไม่ใช่ไฟล์วิดีโอ (${type})`);
+  await r2Put(`rv/${id}.mp4`, buf, "video/mp4");
+
+  // รูปปก — ไม่มีก็ไม่เป็นไร ตัวเล่นใช้เฟรมแรกแทนได้
+  let poster = false;
+  if (v.poster) {
+    try {
+      const p = await fetchBinary(v.poster, 3 * 1024 * 1024, 8000);
+      await r2Put(`rv/${id}.jpg`, p.buf, p.type || "image/jpeg");
+      poster = true;
+    } catch {
+      /* รูปปกโหลดไม่ได้ ปล่อยผ่าน */
+    }
+  }
+  return { id, dur: v.dur, w: v.w, h: v.h, r2: true, poster };
 }
 
 export default async function handler(req, context) {
@@ -140,6 +187,9 @@ export default async function handler(req, context) {
   let added = 0;
   let dup = 0;
   let bad = 0;
+  let videoSaved = 0;
+  let videoFailed = 0;
+  let videoSkipped = 0;
   const samples = [];
 
   for (const raw of list) {
@@ -155,9 +205,30 @@ export default async function handler(req, context) {
       dup++;
       continue;
     }
-    await store.setJSON(key, { ...r, ingestedAt: new Date().toISOString() });
+
+    // ── คลิป: ดึงมาเก็บ R2 ตอนนี้เลย ลิงก์ต้นทางอีก 2-3 ชม. จะตาย ──
+    // ⚠️ คลิปพังห้ามทำให้รีวิวหาย — เก็บรีวิวไว้ก่อนเสมอ คลิปเป็นของแถม
+    let video = null;
+    if (r.video) {
+      if (!r2Ready()) {
+        videoSkipped++;
+      } else if (videoSaved + videoFailed >= VIDEO_MAX_PER_CALL) {
+        videoSkipped++;
+      } else {
+        const vid = `${r.platform}-${(r.id || fingerprint(r)).replace(/[^a-zA-Z0-9_-]/g, "")}`;
+        try {
+          video = await saveVideo(r.video, vid);
+          videoSaved++;
+        } catch {
+          videoFailed++;
+        }
+      }
+    }
+
+    const rec = { ...r, video, ingestedAt: new Date().toISOString() };
+    await store.setJSON(key, rec);
     added++;
-    if (samples.length < 3) samples.push(`${r.platform}/${r.handle} ★${r.rating}`);
+    if (samples.length < 3) samples.push(`${r.platform}/${r.handle} ★${r.rating}${video ? " 🎬" : ""}`);
   }
 
   if (added > 0) {
@@ -170,9 +241,24 @@ export default async function handler(req, context) {
     added,
     dup,
     bad,
+    videoSaved,
+    videoFailed,
+    videoSkipped,
   });
 
-  return json({ ok: true, added, dup, bad, samples });
+  const video = { saved: videoSaved, failed: videoFailed, skipped: videoSkipped };
+  return json({
+    ok: true,
+    added,
+    dup,
+    bad,
+    video,
+    samples,
+    // บอกตัวเก็บตรง ๆ ว่ายังมีคลิปที่ยังไม่ได้เก็บ ให้แบ่งส่งมาใหม่ อย่าปล่อยเงียบ
+    ...(videoSkipped
+      ? { note: `คลิป ${videoSkipped} ใบยังไม่ได้เก็บ (จำกัด ${VIDEO_MAX_PER_CALL} ใบต่อครั้ง) — ส่งรีวิวที่มีคลิปแยกก้อนเล็กลง` }
+      : {}),
+  });
 }
 
 export const config = { path: "/api/reviews-ingest" };
