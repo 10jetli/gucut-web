@@ -73,12 +73,29 @@ try {
   console.log(`merge-pending-reviews: อ่าน products.json ไม่ได้ (${e?.message || e}) — แปลง SKU ไม่ได้รอบนี้`);
 }
 
-/** คืน handle ที่ใช้ได้จริง — ลองตรง ๆ ก่อน ไม่เจอค่อยลองแปลงจาก SKU */
+// ── ตารางเทียบชื่อสินค้าบนมาร์เก็ตเพลส → handle บนเว็บ ──
+// ชื่อบน Shopee/Lazada/TikTok มักไม่ตรงกับชื่อบนเว็บ (เช่น "ตะไบหางหนู NEWWAVE" บนเว็บคือ "ตะไบ NEWWAVE")
+// ตัวเก็บรีวิวจึงจับคู่ไม่ได้แล้วข้ามไป — ซึ่งถูกแล้ว เดาผิด = รีวิวไปโผล่ผิดสินค้า
+// เติมคู่ที่ตรวจด้วยตาแล้วลงใน src/data/review-alias.json รีวิวที่ค้างในคิวจะไหลเข้าเองรอบ build ถัดไป
+const alias = new Map();
+try {
+  const raw = JSON.parse(readFileSync(join(root, "src/data/review-alias.json"), "utf8"));
+  for (const [k, v] of Object.entries(raw)) {
+    if (k.startsWith("_") || typeof v !== "string") continue;
+    alias.set(k.trim().toLowerCase(), v);
+  }
+} catch {
+  /* ไม่มีไฟล์ก็ไม่เป็นไร — ข้ามการเทียบชื่อ */
+}
+
+/** คืน handle ที่ใช้ได้จริง — ลองตรง ๆ → แปลงจาก SKU → เทียบชื่อจากตาราง */
 function resolveHandle(h) {
   if (!h) return null;
   if (data[h]) return h;
   const viaSku = skuToHandle.get(String(h).trim().toUpperCase());
-  return viaSku && data[viaSku] ? viaSku : null;
+  if (viaSku && data[viaSku]) return viaSku;
+  const viaName = alias.get(String(h).trim().toLowerCase());
+  return viaName && data[viaName] ? viaName : null;
 }
 
 /** ยอดรวมทั้งไฟล์ — ใช้เทียบก่อน/หลัง เพื่อกันรีวิวเก่าหาย */
