@@ -24,7 +24,15 @@ async function pending() {
     return null; // รันในเครื่องที่ไม่มีแพ็กเกจ
   }
   try {
-    const store = getStore({ name: "gucut-reviews", consistency: "strong" });
+    // ⚠️ ตอน build บนเครื่อง Netlify ไม่มีค่าเชื่อมต่อ Blobs อัตโนมัติแบบตอนรันฟังก์ชัน
+    //    ต้องป้อน siteID + token เอง (เจอของจริง 2 ก.ย. 2569 — merge ข้ามเงียบทุก build
+    //    ทั้งที่ทดสอบในเครื่องผ่าน เพราะตอนทดสอบป้อนค่าเชื่อมต่อให้เองโดยไม่รู้ตัว)
+    //    ใช้ NLF_CREDITS_TOKEN ซึ่งตั้ง scope Builds ไว้แล้ว
+    const manual =
+      process.env.SITE_ID && process.env.NLF_CREDITS_TOKEN
+        ? { siteID: process.env.SITE_ID, token: process.env.NLF_CREDITS_TOKEN }
+        : {};
+    const store = getStore({ name: "gucut-reviews", consistency: "strong", ...manual });
     const { blobs } = await store.list({ prefix: "r/" });
     if (!blobs.length) return [];
     const out = [];
