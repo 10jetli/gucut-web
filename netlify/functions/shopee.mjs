@@ -12,6 +12,7 @@
 //    (บทเรียน 25 ส.ค. 2569: Netlify ตอบ "Function returned an unsupported value" ทุกคำขอ)
 import { adminGate } from "../lib/admin-gate.mjs";
 import { shopeeReady, isTest, authLink, exchangeCode, loadToken, validToken, shopCall } from "../lib/shopee.mjs";
+import { pullShopeeReviews } from "../lib/shopee-reviews.mjs";
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
@@ -71,6 +72,16 @@ export default async function handler(req, context) {
       tokenLeftMinutes: left,
       savedAt: t.savedAt ?? null,
     });
+  }
+
+  // ── สั่งดึงรีวิวผ่าน API เข้าคิวเดี๋ยวนั้น (ตัวจริงวิ่งเองทุกคืน 00:20 ไทย) ──
+  if (step === "pull") {
+    try {
+      const result = await pullShopeeReviews(url.origin);
+      return json(result);
+    } catch (e) {
+      return json({ error: String(e.message || e) }, 502);
+    }
   }
 
   if (step === "comments") {
