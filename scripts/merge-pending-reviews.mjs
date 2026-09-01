@@ -59,6 +59,10 @@ const data = JSON.parse(readFileSync(FILE, "utf8"));
 //    ไม่แปลง = จับคู่สินค้าไม่ติดสักตัว แล้วรีวิวกองค้างใน Blobs เงียบ ๆ ตลอดไป
 //    (เจอของจริง 31 ส.ค. 2569 รอบแรกที่งานตั้งเวลารันเอง — 53 ใบจับคู่ไม่ติดเลยสักใบ)
 const skuToHandle = new Map();
+// ชื่อสินค้า → handle ด้วย — ตัวดึงผ่าน Shopee API ส่งชื่อสินค้ามาเมื่อสินค้าไม่มี SKU
+// (ชื่อบน Shopee กับชื่อบนเว็บมาจากแคตตาล็อกเดียวกัน จึงเทียบตรง ๆ ได้เกือบหมด)
+const titleToHandle = new Map();
+const normTitle = (s) => String(s || "").trim().replace(/\s+/g, " ").toLowerCase();
 try {
   const products = JSON.parse(readFileSync(join(root, "src/data/products.json"), "utf8"));
   for (const p of Array.isArray(products) ? products : []) {
@@ -68,6 +72,8 @@ try {
       const k = String(s || "").trim().toUpperCase();
       if (k && !skuToHandle.has(k)) skuToHandle.set(k, p.h);
     }
+    const t = normTitle(p.t);
+    if (t && !titleToHandle.has(t)) titleToHandle.set(t, p.h);
   }
 } catch (e) {
   console.log(`merge-pending-reviews: อ่าน products.json ไม่ได้ (${e?.message || e}) — แปลง SKU ไม่ได้รอบนี้`);
@@ -88,12 +94,14 @@ try {
   /* ไม่มีไฟล์ก็ไม่เป็นไร — ข้ามการเทียบชื่อ */
 }
 
-/** คืน handle ที่ใช้ได้จริง — ลองตรง ๆ → แปลงจาก SKU → เทียบชื่อจากตาราง */
+/** คืน handle ที่ใช้ได้จริง — ตรง ๆ → SKU → ชื่อสินค้าในแคตตาล็อก → ตารางเทียบมือ */
 function resolveHandle(h) {
   if (!h) return null;
   if (data[h]) return h;
   const viaSku = skuToHandle.get(String(h).trim().toUpperCase());
   if (viaSku && data[viaSku]) return viaSku;
+  const viaTitle = titleToHandle.get(normTitle(h));
+  if (viaTitle && data[viaTitle]) return viaTitle;
   const viaName = alias.get(String(h).trim().toLowerCase());
   return viaName && data[viaName] ? viaName : null;
 }
