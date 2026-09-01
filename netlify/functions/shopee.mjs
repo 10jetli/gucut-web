@@ -4,6 +4,7 @@
 //   GET /api/shopee/callback  ← Shopee ส่งกลับมาที่นี่หลังร้านกดอนุญาต (เปิดโล่ง ต้องเปิดได้)
 //   GET /api/shopee/status    (ต้องมี x-admin-key) → เชื่อมร้านแล้วหรือยัง token เหลืออายุเท่าไหร่
 //   GET /api/shopee/comments  (ต้องมี x-admin-key) → ลองดึงรีวิวจริงมาดู (ใช้ทดสอบ)
+//   GET /api/shopee/buyer     (ต้องมี x-admin-key) → ชื่อ/เบอร์ผู้ซื้อของออเดอร์ใบเดียว (?sn=)
 //
 // ⚠️ /callback ต้องเปิดโล่ง เพราะคนเรียกคือเซิร์ฟเวอร์ Shopee ไม่ใช่เบราว์เซอร์ของร้าน
 //    จึงแนบรหัสหลังร้านไปด้วยไม่ได้ — ปลอดภัยเพราะ code ใช้ได้ครั้งเดียวและต้องคู่กับ partner_key
@@ -100,7 +101,42 @@ export default async function handler(req, context) {
     }
   }
 
-  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · comments" }, 404);
+  // ── ชื่อ/เบอร์ผู้ซื้อของออเดอร์หนึ่งใบ ──
+  //
+  // มีไว้ให้หน้า "ใบคืนของ" ที่ admin.gucut.com เปิดดูตัวจริงได้
+  // เพราะข้อมูลที่วิ่งมาทาง ZORT ถูก Shopee เซ็นเซอร์มาแล้ว (ลูกค้า u***** · โทร ******13)
+  //
+  // ⚠️ ห้าม log ห้ามส่งเข้า Telegram ห้ามเก็บลง Blobs — ส่งกลับให้คนกดดูเท่านั้น
+  //    (กติกาเดียวกับข้อมูลบัตรประชาชนที่ /api/read-id)
+  // ⚠️ ต้องกดดูทีละใบ ไม่ดึงล่วงหน้าทั้งหน้า — เปลืองโควตา Shopee และไม่มีเหตุให้ดูทุกใบ
+  if (step === "buyer") {
+    const sn = (url.searchParams.get("sn") || "").trim();
+    if (!sn) return json({ error: "ต้องบอกเลขออเดอร์ Shopee มาด้วย (?sn=)" }, 400);
+    try {
+      const t = await validToken();
+      if (!t) return json({ error: "ยังไม่ได้เชื่อมร้าน — เปิด /api/shopee/auth ก่อน" }, 400);
+      const data = await shopCall("/api/v2/order/get_order_detail", {
+        order_sn_list: sn,
+        // ⚠️ ไม่ขอ 2 ช่องนี้ = Shopee ไม่ส่งมาให้เลย (ไม่ใช่ค่าว่าง แต่ไม่มีช่องนั้นในคำตอบ)
+        response_optional_fields: "buyer_username,recipient_address",
+      });
+      const o = data?.response?.order_list?.[0];
+      if (!o) return json({ error: `Shopee ไม่รู้จักออเดอร์ ${sn}`, mode: isTest() ? "test" : "live" }, 404);
+      const r = o.recipient_address || {};
+      return json({
+        sn,
+        mode: isTest() ? "test" : "live",
+        buyer: o.buyer_username || "",
+        name: r.name || "",
+        phone: r.phone || "",
+        address: [r.full_address, r.district, r.city, r.state, r.zipcode].filter(Boolean).join(" "),
+      });
+    } catch (e) {
+      return json({ error: String(e.message || e), mode: isTest() ? "test" : "live" }, 502);
+    }
+  }
+
+  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · comments · buyer" }, 404);
 }
 
 export const config = { path: "/api/shopee/*" };
