@@ -63,7 +63,14 @@ export async function coreInit() {
       at TEXT DEFAULT (datetime('now')))`,
     `CREATE TABLE IF NOT EXISTS products (
       sku TEXT PRIMARY KEY, name TEXT, sellprice REAL, updated_at TEXT)`,
+    // ออเดอร์ที่ดึงตรงจาก Shopee Open API (แผนลับขั้น 3 — เทียบ 3 ทางกับ ZORT)
+    // ⚠️ แยกตารางจาก orders โดยตั้งใจ — ถ้ายัดรวม recon เดิมจะนับเบิ้ลทันที
+    `CREATE TABLE IF NOT EXISTS shopee_orders (
+      order_sn TEXT PRIMARY KEY, status TEXT, amount REAL NOT NULL DEFAULT 0,
+      buyer TEXT, order_date TEXT, create_time INTEGER,
+      updated_at TEXT)`,
+    `CREATE INDEX IF NOT EXISTS idx_sp_orders_date ON shopee_orders(order_date)`,
   ];
   for (const sql of stmts) await coreQuery(sql);
-  return { tables: 7 };
+  return { tables: 8 };
 }

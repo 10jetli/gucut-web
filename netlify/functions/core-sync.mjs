@@ -5,10 +5,13 @@
 //
 // ทุกรอบ: กระจกออเดอร์ 3 วันล่าสุด · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
+import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
 
 export default async function handler() {
   try {
     const sync = await syncOrders(3);
+    // ท่อที่สอง (แผนลับขั้น 3): ออเดอร์ตรงจาก Shopee API — พังไม่ล้มรอบ
+    const shopee = await syncShopeeOrders(3).catch((e) => ({ error: String(e?.message || e) }));
 
     // ตี 1 เวลาไทย (18:00-18:29 UTC) — งานรายวัน
     let daily = null;
@@ -19,9 +22,21 @@ export default async function handler() {
         recon: await reconYesterday().catch((e) => ({ error: String(e?.message || e) })),
         stock: await snapshotStock().catch((e) => ({ error: String(e?.message || e) })),
       };
+      // เทียบ 3 ทางฝั่ง Shopee — ส่งบรรทัดเดียวต่อวัน เด้งรวมช่วงเดียวกับ recon หลัก
+      const line = await shopeeReconYesterdayLine().catch(() => null);
+      const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
+      if (line && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+        await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: line }),
+          signal: AbortSignal.timeout(8000),
+        }).catch(() => null);
+        daily.shopeeLine = line;
+      }
     }
 
-    return new Response(JSON.stringify({ ok: true, sync, daily }), {
+    return new Response(JSON.stringify({ ok: true, sync, shopee, daily }), {
       headers: { "content-type": "application/json" },
     });
   } catch (e) {

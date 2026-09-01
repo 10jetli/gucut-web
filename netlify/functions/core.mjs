@@ -7,6 +7,7 @@
 import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
+import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -40,6 +41,10 @@ export default async function handler(req, context) {
     if (url.searchParams.get("recon")) {
       return json({ ok: true, recon: await reconYesterday() });
     }
+    if (url.searchParams.get("shopeesync")) {
+      const days = Math.min(15, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
+      return json({ ok: true, shopee: await syncShopeeOrders(days) });
+    }
     if (url.searchParams.get("snapshot")) {
       return json({ ok: true, snapshot: await snapshotStock() });
     }
@@ -55,7 +60,9 @@ export default async function handler(req, context) {
       `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders GROUP BY channel ORDER BY amount DESC LIMIT 20`
     );
-    return json({ ready: true, counts, recon, channels });
+    // เทียบ 3 ทางฝั่ง Shopee (แผนลับขั้น 3 — ระยะรันคู่) · ตารางยังไม่มี = ส่ง [] เฉย ๆ
+    const shopee = await shopeeRecon(7).catch(() => []);
+    return json({ ready: true, counts, recon, channels, shopee });
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500);
   }
