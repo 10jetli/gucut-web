@@ -3,15 +3,17 @@
 // ⚠️ ฟังก์ชันนี้ไม่มี URL โดยตั้งใจ (Netlify ไม่ให้ schedule พร้อม path)
 //    สั่งเดี๋ยวนั้น/ย้อนหลัง ใช้ /api/core?sync=1 (ต้องมีรหัสหลังร้าน)
 //
-// ทุกรอบ: กระจกออเดอร์ 3 วันล่าสุด · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
+// ทุกรอบ: กระจกออเดอร์ 7 วันล่าสุด (กันสถานะยกเลิกย้อนหลังค้างเก่า) · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
 
 export default async function handler() {
   try {
-    const sync = await syncOrders(3);
+    // 7 วัน (เดิม 3) — ออเดอร์ถูกยกเลิกได้หลายวันหลังสั่ง ถ้าหลุดหน้าต่างกระจกไปก่อน
+    // สถานะใน D1 จะค้างเก่าตลอดกาลแล้ว recon เพี้ยน (เจอจริง 29 ส.ค.: Voided 2 ใบไม่ถูกเก็บตาม)
+    const sync = await syncOrders(7);
     // ท่อที่สอง (แผนลับขั้น 3): ออเดอร์ตรงจาก Shopee API — พังไม่ล้มรอบ
-    const shopee = await syncShopeeOrders(3).catch((e) => ({ error: String(e?.message || e) }));
+    const shopee = await syncShopeeOrders(7).catch((e) => ({ error: String(e?.message || e) }));
 
     // ตี 1 เวลาไทย (18:00-18:29 UTC) — งานรายวัน
     let daily = null;
