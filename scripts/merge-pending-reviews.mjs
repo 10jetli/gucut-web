@@ -127,16 +127,21 @@ const tally = (d) => {
 const before = tally(data);
 
 // ลายนิ้วมือของที่มีอยู่แล้ว — กันซ้ำอีกชั้นเผื่อรีวิวเดิมเคยถูกดึงเข้ามาด้วยมือ
-const seen = new Set();
+// ⚠️ เก็บ "ตัวชี้ไปใบจริง" ไม่ใช่แค่ธง — รีวิวใบเดียวกันเข้าคิวได้สองทาง
+//    (เบราว์เซอร์เก็บแบบไม่มีรูป · Shopee API เก็บแบบมีรูป/คลิป) ถ้าฉบับจนกว่า
+//    ถูกรวมก่อน ฉบับที่มีรูปจะโดนตีเป็นซ้ำแล้วรูปหายถาวร (เจอของจริง 2 ก.ย. 2569)
+//    ⇒ เจอซ้ำที่มีสื่อมากกว่า ให้ "เติมของเข้าใบเดิม" แทนการทิ้ง
+const seen = new Map();
 for (const [handle, v] of Object.entries(data)) {
   for (const it of v.items || []) {
-    seen.add(`${handle}|${it.author || ""}|${(it.text || "").slice(0, 60)}|${it.date || ""}`);
+    seen.set(`${handle}|${it.author || ""}|${(it.text || "").slice(0, 60)}|${it.date || ""}`, it);
   }
 }
 
 let merged = 0;
 let skipDup = 0;
 let noProduct = 0;
+let enriched = 0;
 // นับแยกรายสินค้า — ใช้ตอนอัปเดตยอด/ดาว (ดูคำเตือนใหญ่ข้างล่าง)
 const addedPer = new Map(); // handle → { n, sum }
 
@@ -152,6 +157,18 @@ for (const r of fresh) {
 
   const key = `${handle}|${r.author || ""}|${(r.text || "").slice(0, 60)}|${r.date || ""}`;
   if (seen.has(key)) {
+    // ใบซ้ำ — แต่ถ้าฉบับนี้มีรูป/คลิปที่ใบเดิมไม่มี ให้เติมเข้าใบเดิม (ไม่บวกยอด)
+    const ex = seen.get(key);
+    if (ex) {
+      if ((r.images || []).length && !(ex.images || []).length) {
+        ex.images = r.images.slice(0, 6);
+        enriched++;
+      }
+      if (r.video && r.video.id && !ex.video) {
+        ex.video = r.video;
+        enriched++;
+      }
+    }
     skipDup++;
     continue;
   }
@@ -168,7 +185,7 @@ for (const r of fresh) {
   //    ลิงก์ตายไปแล้วตอนถึง build จะได้กรอบดำบนหน้าสินค้า
   if (r.video && typeof r.video === "object" && r.video.id) item.video = r.video;
   data[handle].items.push(item);
-  seen.add(key);
+  seen.set(key, item);
   merged++;
   const acc = addedPer.get(handle) || { n: 0, sum: 0 };
   acc.n++;
@@ -176,7 +193,7 @@ for (const r of fresh) {
   addedPer.set(handle, acc);
 }
 
-if (merged > 0) {
+if (merged > 0 || enriched > 0) {
   // ⚠️ ห้ามคิด count/avg ใหม่จาก items.length เด็ดขาด
   //    `count` คือ "จำนวนรีวิวทั้งหมดที่มาร์เก็ตเพลสบอก" ส่วน `items` เป็นแค่ตัวอย่างที่เก็บมา
   //    (เช่น count 366 แต่ items มี 188 ใบ) — คิดใหม่จาก items = ยอดรีวิวหายไปครึ่งหนึ่ง
@@ -212,5 +229,6 @@ if (merged > 0) {
 
 console.log(
   `merge-pending-reviews: รวมใหม่ ${merged} · ซ้ำข้าม ${skipDup} · ยังไม่มีสินค้าในเว็บ ${noProduct} (รอรอบหน้า)` +
-    (viaSku ? ` · จับคู่ผ่าน SKU ${viaSku}` : "")
+    (viaSku ? ` · จับคู่ผ่าน SKU ${viaSku}` : "") +
+    (enriched ? ` · เติมรูป/คลิปเข้าใบเดิม ${enriched}` : "")
 );
