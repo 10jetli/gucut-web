@@ -42,10 +42,13 @@ export function sign(path, query = {}, body = "") {
   return createHmac("sha256", appSecret()).update(base).digest("hex");
 }
 
-/** ลิงก์ให้เจ้าของร้านกดอนุญาตให้แอปเข้าถึงร้านตัวเอง (ทำครั้งเดียว) */
+/** ลิงก์ให้เจ้าของร้านกดอนุญาตให้แอปเข้าถึงร้านตัวเอง (ทำครั้งเดียว)
+ *  ⚠️ ต้องเป็น services.tiktokshop.com เท่านั้น — ใช้ `auth.tiktok-shops.com/oauth/authorize`
+ *  จะตอบ 36004003 invalid client_key (ลองแล้วของจริง 1 ก.ย. 2569)
+ *  ส่วนคำสั่งแลก/ต่ออายุ token ยังอยู่ที่ auth.tiktok-shops.com ตามเอกสาร อย่าสลับกัน */
 export function authLink(state = "gucut") {
   const q = new URLSearchParams({ service_id: process.env.TIKTOK_SERVICE_ID || "", state });
-  return `${AUTH}/oauth/authorize?${q}`;
+  return `https://services.tiktokshop.com/open/authorize?${q}`;
 }
 
 // ── เก็บ token ──
