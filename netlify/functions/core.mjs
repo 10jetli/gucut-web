@@ -12,6 +12,7 @@ import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
+import { createSale, voidSale, listSales } from "../lib/pos.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -56,6 +57,28 @@ export default async function handler(req, context) {
       const moves = Array.isArray(body) ? body : body.moves ?? [body];
       const r = await applyMoves(moves);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    // ขายหน้าร้าน (POS) เข้าคลังเงาตรง ๆ ไม่ผ่าน ZORT
+    //   POST   /api/core?sale=1   body {items:[{sku,name,qty,price}], day?, number?, customer?}
+    //   DELETE /api/core?salevoid=<เลขที่ใบ>   (เปลี่ยนสถานะเป็น Voided ไม่ลบ)
+    //   GET    /api/core?list=sales&day=YYYY-MM-DD
+    if (url.searchParams.get("salevoid")) {
+      if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
+      const r = await voidSale(url.searchParams.get("salevoid"));
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    if (url.searchParams.get("sale")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const r = await createSale(body);
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    if (url.searchParams.get("list") === "sales") {
+      return json({
+        ok: true,
+        ...(await listSales({ day: url.searchParams.get("day"), limit: url.searchParams.get("limit") })),
+      });
     }
     // SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก (พร้อมเดารหัสฐานให้) — ให้จอเตือนเอาไปโชว์
     if (url.searchParams.get("list") === "missing-sku") {
