@@ -20,9 +20,30 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const thaiDay = (epoch) =>
   new Date((num(epoch)) * 1000 + 7 * 3600 * 1000).toISOString().slice(0, 10);
 
+// ⚠️ ตารางต้องสร้างเองได้ ห้ามรอให้ใครไปกด /api/core?init=1
+//    เจอจริง 2 ก.ย. 2569: deploy แล้วทุกอย่างดูปกติ แต่ทุกรอบตายเงียบที่ "no such table"
+//    งานตามเวลาไม่มีใครอ่าน log = ไม่มีใครรู้ (กติกาเดียวกับที่ฝั่งจอใช้อยู่แล้ว)
+let tablesReady = false;
+async function ensureTables() {
+  if (tablesReady) return;
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS shopee_orders (
+      order_sn TEXT PRIMARY KEY, status TEXT, amount REAL NOT NULL DEFAULT 0,
+      buyer TEXT, order_date TEXT, create_time INTEGER, updated_at TEXT)`
+  );
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS shopee_order_items (
+      order_sn TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
+      qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (order_sn, line))`
+  );
+  tablesReady = true;
+}
+
 /** กระจกออเดอร์ Shopee ช่วง N วันล่าสุดลง D1 — idempotent รันซ้ำได้ */
 export async function syncShopeeOrders(days = 3) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await ensureTables();
   const t = await validToken();
   if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
 
