@@ -126,13 +126,36 @@ export async function peakStatus() {
 // ⚠️ ตัวเลขนี้เปลี่ยนความหมายยอดทั้งใบ ห้ามเดา — ยืนยันกับบัญชีของร้านก่อนเปิดใช้จริง
 const VAT_INCLUDED = 3;
 
+/** รหัสลูกค้าในบัญชี — **ห้ามใช้ชื่อผู้ซื้อจากมาร์เก็ตเพลส**
+ *
+ *  ⚠️ เจอจริง 2 ก.ย. 2569: ตัวอย่างใบแรกได้ contactCode = "อ******อ"
+ *     เพราะ Shopee/Lazada ปิดบังชื่อผู้ซื้อให้ ⇒ ถ้าส่งเข้าไปแบบนั้น PEAK จะได้
+ *     "ลูกค้า" ใหม่วันละหลายสิบรายที่ชื่อเป็นดอกจัน ตามตัวตนไม่ได้ และล้างทีหลังไม่ไหว
+ *  ⇒ ขายผ่านมาร์เก็ตเพลสให้ลงเป็น **ลูกค้ารายช่องทาง** ตัวเดียว (วิธีที่ร้านค้าออนไลน์ใช้กัน)
+ *     ชื่อจริงของผู้รับอยู่ในใบส่งของของแพลตฟอร์มอยู่แล้ว ไม่ใช่หน้าที่ของงบการเงิน
+ *  ⚠️ **ต้องให้บัญชีของร้านยืนยันก่อนเปิดใช้จริง** — ถ้าเขาอยากได้รายคน ต้องเปลี่ยนวิธีนี้ */
+const CHANNEL_CONTACT = [
+  [/shopee/i, "SHOPEE"],
+  [/lazada/i, "LAZADA"],
+  [/tiktok/i, "TIKTOK"],
+  [/pos|หน้าร้าน/i, "POS"],
+];
+function contactCode(order) {
+  const ch = String(order?.channel ?? "");
+  for (const [re, code] of CHANNEL_CONTACT) if (re.test(ch)) return code;
+  const name = String(order?.customer ?? "").trim();
+  // ชื่อที่มีดอกจัน = ถูกปิดบังมา ใช้เป็นรหัสลูกค้าไม่ได้
+  if (!name || name.includes("*")) return "WEB";
+  return name.slice(0, 60);
+}
+
 /** แปลงออเดอร์ในคลังเงาเป็นใบแจ้งหนี้ตามรูปแบบ PEAK (ยังไม่ส่ง — แค่แปลง) */
 export function toInvoice(order, items) {
   const day = String(order?.order_date ?? "").replace(/-/g, ""); // yyyyMMdd
   return {
     issuedDate: day,
     dueDate: day, // ขายปลีกเก็บเงินทันที ไม่มีเครดิต
-    contactCode: String(order?.customer ?? "").slice(0, 60) || undefined,
+    contactCode: contactCode(order),
     description: `${order?.channel ?? ""} ${order?.number ?? ""}`.trim(),
     products: (items ?? []).map((it) => ({
       code: String(it.sku ?? "").slice(0, 60) || undefined,
