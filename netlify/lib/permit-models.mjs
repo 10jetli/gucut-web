@@ -54,18 +54,30 @@ const norm = (s) =>
  *   required = ต้องขอทะเบียน · exempt = ไม่ต้องขอ (จุดขาย) ·
  *   unknown  = เป็นเลื่อยยนต์แต่จับรุ่นไม่ได้ ต้องให้คนตรวจ · null = ไม่ใช่ตัวเครื่อง
  */
+/** กุญแจเทียบรุ่น — ตัดช่องว่างและขีดทิ้งทั้งหมด
+ *
+ * ⚠️ **ห้ามเทียบด้วย norm() เฉย ๆ** — ร้านพิมพ์ชื่อรุ่นไม่ตรงกับในรายการเป็นเรื่องปกติ
+ *    รายการเขียน "9800 SUPER PRO"  ชื่อสินค้าจริงเขียน "9800 Super-Pro"   (ขีดกับเว้นวรรค)
+ *    รายการเขียน "F288XP"          ชื่อสินค้าจริงเขียน "F288 XP"          (เว้นวรรคเกิน)
+ *    เทียบตรง ๆ ไม่ตรง ⇒ **เลื่อยที่ต้องขอทะเบียนกลายเป็น "ไม่รู้จักรุ่น"**
+ *    เจอจริง 2 ก.ย. 2569: 8 เครื่อง (9800 Super-Pro 6 · F288 XP 2) ที่ในชื่อเขียน
+ *    "เลขทะเบียน" ชัด ๆ แต่ระบบตอบว่าไม่รู้จัก
+ *    ⚠️ ทางนี้ปลอดภัยกว่าเสมอ เพราะทำให้ "จับได้มากขึ้น" ไม่ใช่ "ปล่อยผ่านมากขึ้น"
+ *       และ EXEMPT ถูกเทียบก่อน PERMIT อยู่แล้ว รุ่นที่ไม่ต้องขอจึงไม่ถูกตีเป็นต้องขอ */
+const key = (s) => norm(s).replace(/[\s\-_/.]/g, "");
+
 export function permitInfo(name) {
-  const n = norm(name);
+  const n = key(name);
   // ไม่ใช่ตัวเครื่อง (โซ่ · บาร์ · อะไหล่) = ไม่เกี่ยวกับใบอนุญาต
   const isSaw = /เลื่อยยนต์|เลื่อยโซ่/.test(String(name ?? "")) && !/^โซ่|^บาร์/.test(String(name ?? "").trim());
   if (!isSaw) return { permit: null, needsPermit: null, model: null, why: "ไม่ใช่ตัวเครื่องเลื่อยยนต์" };
 
   // เทียบตัวที่ยาวกว่าก่อน — "7800 SUPER-S (รุ่นใหม่ 2025)" ต้องชนะ "7800 SUPER-S"
-  const exempt = [...EXEMPT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(norm(m)));
+  const exempt = [...EXEMPT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(key(m)));
   if (exempt)
     return { permit: "exempt", needsPermit: false, model: exempt, why: "อยู่ในรายการรุ่นที่ไม่ต้องขอใบอนุญาต" };
 
-  const permit = [...PERMIT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(norm(m)));
+  const permit = [...PERMIT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(key(m)));
   if (permit)
     return { permit: "required", needsPermit: true, model: permit, why: "อยู่ในรายการรุ่นที่ต้องขอใบอนุญาต" };
 
