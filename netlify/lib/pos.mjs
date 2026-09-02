@@ -78,9 +78,18 @@ export async function createSale(input = {}) {
     //    สินค้าหลายตัวในคลังมีราคาเป็น 0 (ยังไม่ได้ตั้งราคา) พอแคชเชียร์ยิงรหัสเข้าไป
     //    บิลออกเป็น ฿0 โดยไม่มีอะไรเตือน = **ขายฟรีโดยไม่มีใครรู้** และไปโผล่เป็นยอดขาย 0 บาท
     //    แจกของฟรีมีจริง จึงไม่ห้ามตาย ๆ แต่ต้องเป็นการ "ตั้งใจ" ผ่าน allowZero เท่านั้น
+    // ส่วนลดต่อชิ้น (บาท/ชิ้น) — ลดเกินราคาไม่ได้ ไม่งั้นได้ยอดติดลบเข้าบัญชี
+    else if (!Number.isFinite(Number(it?.discount ?? 0)) || Number(it?.discount ?? 0) < 0)
+      bad.push({ line: i + 1, sku, why: "ส่วนลดต่อชิ้นต้องไม่ติดลบ" });
+    else if (Number(it?.discount ?? 0) > price)
+      bad.push({ line: i + 1, sku, why: "ส่วนลดต่อชิ้นมากกว่าราคาสินค้า" });
     else if (price === 0 && !input.allowZero)
       bad.push({ line: i + 1, sku, why: "สินค้านี้ราคา 0 — ถ้าตั้งใจแจกฟรีให้ยืนยันก่อน" });
-    else clean.push({ sku, name: String(it?.name ?? "").slice(0, 120), qty, price });
+    else
+      clean.push({
+        sku, name: String(it?.name ?? "").slice(0, 120), qty, price,
+        discount: Number(it?.discount ?? 0),
+      });
   }
   if (!clean.length) return { error: "ไม่มีรายการสินค้าที่ใช้ได้", bad };
   if (clean.length > 100) return { error: "ใบเดียวใส่ได้ไม่เกิน 100 รายการ" };
@@ -103,7 +112,17 @@ export async function createSale(input = {}) {
 
   const number = String(input.number ?? "").trim().slice(0, 40) || (await nextNumber(day, branch.code));
   const id = `${POS_SOURCE}/${number}`;
-  const amount = Math.round(clean.reduce((s, it) => s + it.qty * it.price, 0) * 100) / 100;
+  // ⚠️ **เซิร์ฟเวอร์คิดเงินใหม่เองเสมอ ไม่เชื่อยอดจากเบราว์เซอร์** (กติกาเดิมของร้าน
+  //    ที่ใช้กับหน้าเช็คเอาต์อยู่แล้ว) — จอส่งมาแค่ราคา/จำนวน/ส่วนลด ยอดรวมคิดที่นี่
+  const sub = Math.round(clean.reduce((s, it) => s + it.qty * (it.price - it.discount), 0) * 100) / 100;
+  const billDiscount = Number(input.billDiscount ?? 0);
+  if (!Number.isFinite(billDiscount) || billDiscount < 0) {
+    return { error: "ส่วนลดท้ายบิลต้องไม่ติดลบ" };
+  }
+  if (billDiscount > sub) {
+    return { error: `ส่วนลดท้ายบิล (${billDiscount}) มากกว่ายอดก่อนลด (${sub})` };
+  }
+  const amount = Math.round((sub - billDiscount) * 100) / 100;
 
   // กันยิงซ้ำ: ใบเดิมเลขเดิม = ไม่เขียนทับ คืนของเดิมไปเลย
   // (เน็ตสะดุดแล้วกดซ้ำเป็นเรื่องปกติของเครื่องคิดเงินหน้าร้าน)
@@ -113,22 +132,26 @@ export async function createSale(input = {}) {
   if (exists) return { duplicate: true, order: exists };
 
   await coreQuery(
-    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,pay_method,updated_at)
+    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,pay_method,bill_discount,updated_at)
      VALUES (${esc(id)},${esc(POS_SOURCE)},${esc(number)},${esc(`POS ${branch.code}`)},
              'Success',${amount},${esc(String(input.customer ?? "").slice(0, 120))},${esc(day)},
-             ${esc(payRaw)},datetime('now'))`
+             ${esc(payRaw)},${billDiscount},datetime('now'))`
   );
   const values = clean
-    .map((it, i) => `(${esc(id)},${i + 1},${esc(it.sku)},${esc(it.name)},${it.qty},${Math.round(it.qty * it.price * 100) / 100})`)
+    .map(
+      (it, i) =>
+        `(${esc(id)},${i + 1},${esc(it.sku)},${esc(it.name)},${it.qty},` +
+        `${Math.round(it.qty * (it.price - it.discount) * 100) / 100},${it.discount})`
+    )
     .join(",");
   await coreQuery(
-    `INSERT INTO order_items (order_id,line,sku,name,qty,amount) VALUES ${values}`
+    `INSERT INTO order_items (order_id,line,sku,name,qty,amount,discount) VALUES ${values}`
   );
 
   return {
     order: {
       id, number, branch: branch.code, channel: `POS ${branch.code}`,
-      order_date: day, amount, status: "Success",
+      order_date: day, subtotal: sub, billDiscount, amount, status: "Success",
       payMethod: payRaw, payMethodName: PAY_METHODS[payRaw],
     },
     lines: clean.length,
