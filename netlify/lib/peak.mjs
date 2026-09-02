@@ -147,10 +147,21 @@ export function toInvoice(order, items) {
 /** ส่งใบแจ้งหนี้เข้า PEAK — ต้องเปิดสวิตช์ PEAK_LIVE ถึงจะยิงจริง
  *  ⚠️ ค่าปริยายคือ "ซ้อมอย่างเดียว" คืนสิ่งที่จะส่งให้ดูก่อน ไม่แตะบัญชีจริง */
 export async function sendInvoices(invoices, { dryRun = true } = {}) {
-  if (!peakReady()) return { skip: "ยังไม่ได้ตั้งคีย์ PEAK" };
   if (!invoices?.length) return { skip: "ไม่มีใบให้ส่ง" };
-  if (dryRun || !peakLive()) {
-    return { dryRun: true, count: invoices.length, sample: invoices[0] };
+  // ⚠️ โหมดซ้อมต้องทำงานได้ **แม้ยังไม่มีคีย์** — การแปลงออเดอร์เป็นใบแจ้งหนี้
+  //    เป็นส่วนที่ผิดง่ายที่สุด (ราคาต่อหน่วย · ประเภทภาษี · รหัสลูกค้า) และตรวจได้
+  //    โดยไม่ต้องแตะ PEAK เลย · ให้บัญชีของร้านตรวจก่อนซื้อแพ็กเกจได้ด้วย
+  if (dryRun || !peakLive() || !peakReady()) {
+    const bad = invoices.filter(
+      (v) => !v.issuedDate || !v.products?.length || v.products.some((p) => !(p.quantity > 0))
+    );
+    return {
+      dryRun: true,
+      ready: peakReady(),
+      count: invoices.length,
+      incomplete: bad.length,
+      sample: invoices[0],
+    };
   }
   const data = await peakCall("/api/v1/Invoices", { peakInvoices: { invoices } });
   const box = data?.peakInvoices ?? data?.PeakInvoices ?? {};
