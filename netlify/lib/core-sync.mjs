@@ -95,9 +95,36 @@ export async function syncOrders(days = 3) {
       orders.push(o);
     }
 
+    // ⚠️ **เขียนเฉพาะใบที่เปลี่ยนจริง** — งานนี้วิ่ง 48 รอบ/วัน แต่ออเดอร์เก่าไม่ขยับแล้ว
+    //    เดิมเขียนทับทุกใบทุกรอบ = เผาโควตาเขียนของ D1 ฟรี ๆ จนชนเพดานวันละแสนแถว
+    //    (ชนจริง 2 ก.ย. 2569 แล้วคำสั่งเขียนถัดไปตายทันที — ถ้าไปชนตอนตี 1 คลังเงาจะค้างเงียบ)
+    //    อ่านของเดิมมาเทียบก่อน · การอ่านถูกกว่าการเขียนมากบน D1
+    const prev = new Map(
+      (
+        await coreQuery(
+          `SELECT id, channel, status, amount, customer, order_date FROM orders
+           WHERE source = ? AND order_date >= ? AND order_date <= ?`,
+          [st.tag, after, before]
+        )
+      ).map((r) => [r.id, r])
+    );
+    const same = (o) => {
+      const p = prev.get(`${st.tag}/${o.number}`);
+      if (!p) return false;
+      return (
+        String(p.channel ?? "") === ((o.saleschannel || "").trim() || "POS หน้าร้าน") &&
+        String(p.status ?? "") === String(o.status ?? "") &&
+        num(p.amount) === num(o.amount) &&
+        String(p.customer ?? "") === String(o.customername ?? "").slice(0, 120) &&
+        String(p.order_date ?? "") === (orderDay(o) ?? "")
+      );
+    };
+    const changed = orders.filter((o) => !same(o));
+    const skipped = orders.length - changed.length;
+
     // upsert ออเดอร์ — ฝังค่าด้วย esc() ก้อนละ 80 ใบ
-    for (let i = 0; i < orders.length; i += 80) {
-      const chunk = orders.slice(i, i + 80);
+    for (let i = 0; i < changed.length; i += 80) {
+      const chunk = changed.slice(i, i + 80);
       const values = chunk
         .map((o) =>
           `(${esc(`${st.tag}/${o.number}`)},${esc(st.tag)},${esc(o.number)},` +
@@ -115,10 +142,10 @@ export async function syncOrders(days = 3) {
       );
     }
 
-    // รายการสินค้า — ลบของเดิมทั้งใบแล้วเขียนใหม่ (idempotent)
+    // รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน (ใบเก่าที่นิ่งแล้วไม่ต้องแตะ)
     let itemRows = 0;
-    for (let i = 0; i < orders.length; i += 80) {
-      const chunk = orders.slice(i, i + 80);
+    for (let i = 0; i < changed.length; i += 80) {
+      const chunk = changed.slice(i, i + 80);
       const ids = chunk.map((o) => esc(`${st.tag}/${o.number}`)).join(",");
       await coreQuery(`DELETE FROM order_items WHERE order_id IN (${ids})`);
       const rows = [];
@@ -143,7 +170,7 @@ export async function syncOrders(days = 3) {
       itemRows += rows.length;
     }
 
-    result.stores[st.tag] = { orders: orders.length, items: itemRows };
+    result.stores[st.tag] = { orders: orders.length, written: changed.length, skipped, items: itemRows };
   }
   return result;
 }

@@ -97,9 +97,27 @@ export async function syncShopeeOrders(days = 3) {
     }
   }
 
+  // ⚠️ เขียนเฉพาะใบที่เปลี่ยนจริง — เหตุผลเดียวกับตัวกระจก ZORT (โควตาเขียนของ D1)
+  const prev = new Map(
+    (await coreQuery(`SELECT order_sn, status, amount, buyer, order_date FROM shopee_orders`)).map(
+      (r) => [r.order_sn, r]
+    )
+  );
+  const changed = rows.filter((r) => {
+    const p = prev.get(r.sn);
+    return (
+      !p ||
+      String(p.status ?? "") !== r.status ||
+      num(p.amount) !== r.amount ||
+      String(p.buyer ?? "") !== r.buyer ||
+      String(p.order_date ?? "") !== r.day
+    );
+  });
+  const skipped = rows.length - changed.length;
+
   // 3) upsert — ฝังค่าด้วย esc() ก้อนละ 80 (กติกาเดียวกับตัวกระจก ZORT)
-  for (let i = 0; i < rows.length; i += 80) {
-    const values = rows
+  for (let i = 0; i < changed.length; i += 80) {
+    const values = changed
       .slice(i, i + 80)
       .map(
         (r) =>
@@ -114,10 +132,10 @@ export async function syncShopeeOrders(days = 3) {
          order_date=excluded.order_date, updated_at=excluded.updated_at`
     );
   }
-  // 4) รายการสินค้า — ลบของเดิมทั้งใบแล้วเขียนใหม่ (idempotent)
+  // 4) รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน
   let itemRows = 0;
-  for (let i = 0; i < rows.length; i += 60) {
-    const chunk = rows.slice(i, i + 60);
+  for (let i = 0; i < changed.length; i += 60) {
+    const chunk = changed.slice(i, i + 60);
     const snList = chunk.map((r) => esc(r.sn)).join(",");
     await coreQuery(`DELETE FROM shopee_order_items WHERE order_sn IN (${snList})`);
     const values = chunk
@@ -134,7 +152,7 @@ export async function syncShopeeOrders(days = 3) {
       itemRows += (values.match(/\)/g) || []).length;
     }
   }
-  return { days, orders: rows.length, itemRows };
+  return { days, orders: rows.length, written: changed.length, skipped, itemRows };
 }
 
 // สถานะที่ไม่นับเป็นยอดขาย — UNPAID ยังไม่จ่าย (ZORT ยังไม่รับเข้า) · CANCELLED ยกเลิก
