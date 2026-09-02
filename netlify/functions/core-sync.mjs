@@ -6,6 +6,7 @@
 // ทุกรอบ: กระจกออเดอร์ 7 วันล่าสุด (กันสถานะยกเลิกย้อนหลังค้างเก่า) · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
+import { shopeeStockLine } from "../lib/shopee-stock.mjs";
 import { stockReconDaily } from "../lib/core-stock.mjs";
 
 export default async function handler() {
@@ -31,7 +32,12 @@ export default async function handler() {
       daily.stockRecon = stockCmp;
 
       // เทียบ 3 ทางฝั่ง Shopee — ส่งบรรทัดเดียวต่อวัน เด้งรวมช่วงเดียวกับ recon หลัก
-      const line = await shopeeReconYesterdayLine().catch(() => null);
+      // รวมทุกเรื่องของ Shopee เป็นข้อความเดียว — วันละหลายข้อความคนจะเลิกอ่าน
+      const lines = [
+        await shopeeReconYesterdayLine().catch(() => null),
+        await shopeeStockLine().catch(() => null),
+      ].filter(Boolean);
+      const line = lines.length ? lines.join("\n") : null;
       const text = [line, stockCmp?.line].filter(Boolean).join("\n\n");
       const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
       if (text && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {

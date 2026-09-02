@@ -79,6 +79,20 @@ async function shopeeStock() {
   return rows;
 }
 
+/** บรรทัดสรุปสำหรับ Telegram ยามตี 1 — คืน null ถ้ายังตรวจไม่ได้
+ *  ⚠️ ต้องเป็นบรรทัดเดียว ไม่ใช่ข้อความยาว — วันละหลายข้อความคนจะเลิกอ่าน
+ *     แล้วยามที่ไม่มีใครอ่านก็ไม่ต่างอะไรกับไม่มียาม */
+export async function shopeeStockLine() {
+  const r = await shopeeStockCompare();
+  if (r?.skip || r?.note) return null;
+  const flag = r.diffCount === 0 ? "✅" : "⚠️";
+  return (
+    `📦 สต็อก Shopee vs คลังเรา: ตรง ${r.same} · ต่าง ${r.diffCount} ${flag}` +
+    ` | คลังยังไม่รู้จัก ${r.missing} รหัส (คนละระดับกับ Shopee ไม่ใช่ของหาย)` +
+    (r.negativeInCore ? ` | ⚠️ ติดลบในคลัง ${r.negativeInCore} รหัส` : "")
+  );
+}
+
 /** รหัสฐานของ SKU ตัวเลือก — Shopee แตกเป็นรายตัวเลือก (00369-54T) แต่ ZORT
  *  เก็บเป็นรหัสฐานตัวเดียว (00369) · ตัดท้ายทีละขีดจนกว่าจะเจอในคลังเรา */
 function baseCandidates(sku) {
