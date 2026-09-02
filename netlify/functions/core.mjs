@@ -173,6 +173,7 @@ export default async function handler(req, context) {
           from: p.get("from"),
           to: p.get("to"),
           channel: p.get("channel"),
+          status: p.get("status"),
           q: p.get("q"),
           limit: p.get("limit"),
           offset: p.get("offset"),

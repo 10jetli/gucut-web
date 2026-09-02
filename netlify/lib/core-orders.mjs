@@ -20,12 +20,19 @@ const daysAgo = (n) =>
   new Date(Date.now() + 7 * 3600e3 - n * 864e5).toISOString().slice(0, 10);
 
 /** ตัวกรองที่ใช้ร่วมกันทั้งตัวนับและตัวดึงแถว */
-function buildWhere({ from, to, channel, q, includeCancelled }) {
+function buildWhere({ from, to, channel, status, q, includeCancelled }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
   if (channel) {
     where.push("channel = ?");
     params.push(channel);
+  }
+  // กรองตามสถานะ — จอฝั่งเราทำแท็บสถานะแบบ ZORT (ทั้งหมด/รอโอน/สำเร็จ/ยกเลิก)
+  // ⚠️ เทียบแบบตรงตัวเท่านั้น ไม่ใช้ LIKE — ค่าที่มาจากตัวเลือกบนจอ ไม่ใช่คำค้นอิสระ
+  //    ใช้ LIKE เมื่อไหร่ "Success" จะไปลากคำอื่นที่มีคำนี้ประกอบมาด้วยแบบเงียบ ๆ
+  if (status) {
+    where.push("status = ?");
+    params.push(status);
   }
   if (q) {
     where.push("(number LIKE ? OR customer LIKE ?)");
@@ -37,7 +44,7 @@ function buildWhere({ from, to, channel, q, includeCancelled }) {
 
 /**
  * รายการขายจากคลังเงา
- * @param {object} o from · to (YYYY-MM-DD) · channel · q (เลขที่/ชื่อลูกค้า) ·
+ * @param {object} o from · to (YYYY-MM-DD) · channel · status · q (เลขที่/ชื่อลูกค้า) ·
  *                   limit · offset · includeCancelled
  */
 export async function listOrders(o = {}) {
@@ -49,10 +56,11 @@ export async function listOrders(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const channel = String(o.channel ?? "").slice(0, 60) || null;
+  const status = String(o.status ?? "").slice(0, 60) || null;
   const q = String(o.q ?? "").trim().slice(0, 60) || null;
   const includeCancelled = !!o.includeCancelled;
 
-  const w = buildWhere({ from, to, channel, q, includeCancelled });
+  const w = buildWhere({ from, to, channel, status, q, includeCancelled });
 
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
@@ -75,14 +83,27 @@ export async function listOrders(o = {}) {
     w.params
   );
 
+  // ยอดแยก "สถานะ" ของช่วงที่กรองอยู่ — จอเอาไปทำแท็บพร้อมจำนวนในวงเล็บแบบ ZORT
+  // ⚠️ ไม่กรองตามสถานะที่เลือกอยู่ ไม่งั้นแท็บอื่นจะกลายเป็นศูนย์หมดทันทีที่กดแท็บแรก
+  //    (แท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ใบ ไม่งั้นมันไม่ใช่แท็บ เป็นแค่ปุ่มกรอง)
+  const wAll = buildWhere({ from, to, channel, q, includeCancelled });
+  const byStatus = await coreQuery(
+    `SELECT status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+     FROM orders WHERE ${wAll.sql}
+     GROUP BY status ORDER BY orders DESC`,
+    wAll.params
+  );
+
   return {
     from,
     to,
     limit,
     offset,
+    status,
     total: num(sum?.c),
     totalAmount: num(sum?.s),
     byChannel,
+    byStatus,
     rows,
   };
 }
