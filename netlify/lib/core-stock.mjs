@@ -205,7 +205,16 @@ export async function listStock(o = {}) {
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
   // ⚠️ เดิมฝั่งจอกรองจาก 50 แถวที่โหลดมา ⇒ ตัวเลขในวงเล็บกับแถวที่เห็นมาจากคนละชุด
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
-  const only = { out: "cur.qty <= 0", low: "cur.qty > 0 AND cur.qty <= 3" }[o.only] || "";
+  const only =
+    {
+      out: "cur.qty <= 0",
+      low: "cur.qty > 0 AND cur.qty <= 3",
+      // แท็บ เปิด/ปิดใช้งาน แบบ ZORT — ต้องกรองที่ฐานข้อมูล ไม่ใช่ที่จอ
+      // ⚠️ กรองฝั่งจอจากข้อมูลที่แบ่งหน้ามาแล้ว = เลขหน้าผิดและตัวนับผิดทันทีที่มีของจริง
+      //    (บั๊กเดียวกับแท็บที่เคยกรองแค่ 400 แถวแรก)
+      active: "COALESCE(p.active,1) = 1",
+      inactive: "COALESCE(p.active,1) = 0",
+    }[o.only] || "";
 
   // ⚠️ "บริการ" ไม่ใช่สินค้าที่มีสต็อกจริง (ค่าส่ง · ค่าบริการซ่อม · ค่าน้ำมัน)
   //    ZORT ติดธง producttype = 1 ให้ — ตรวจทั้งคลังแล้วมี 6 ตัว
@@ -243,9 +252,18 @@ export async function listStock(o = {}) {
      SELECT COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
             SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
-            SUM(CASE WHEN COALESCE(p.product_type,0) = 1 THEN 1 ELSE 0 END) AS services,
-            SUM(CASE WHEN COALESCE(p.active,1) = 0 THEN 1 ELSE 0 END) AS inactive,
             ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
+     FROM cur ${JOIN} WHERE 1=1 ${kind ? `AND ${kind}` : ""} ${filter}`,
+    [day, since, ...fParams]
+  );
+
+  // ⚠️ **นับ "บริการ" / "ปิดใช้งาน" นอกกรอบ kind เสมอ** — สองตัวนี้มีไว้บอกว่า
+  //    *ซ่อนอะไรไว้กี่รายการ* ถ้าเอาไปกรองด้วย kind ด้วย พอตั้ง kind=goods มันจะตอบ 0
+  //    แล้วจอจะเขียนว่า "ซ่อนบริการ 0 รายการ" ทั้งที่ซ่อนไป 6 — คือหายเงียบอีกแบบหนึ่ง
+  const [aside] = await coreQuery(
+    `${CTE}
+     SELECT SUM(CASE WHEN COALESCE(p.product_type,0) = 1 THEN 1 ELSE 0 END) AS services,
+            SUM(CASE WHEN COALESCE(p.active,1) = 0 THEN 1 ELSE 0 END) AS inactive
      FROM cur ${JOIN} WHERE 1=1 ${filter}`,
     [day, since, ...fParams]
   );
@@ -281,14 +299,18 @@ export async function listStock(o = {}) {
     offset,
     only: o.only && only ? o.only : null,
     kind: o.kind && kind ? o.kind : null,
-    // ⚠️ total / outOfStock / low **ไม่ถูกกรองด้วย only** โดยตั้งใจ —
-    //    ตัวเลขบนแท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ตัว ไม่งั้นมันไม่ใช่แท็บ
-    //    (หลักเดียวกับ byStatus ในจอรายการขาย)
+    // ⚠️ **`only` กับ `kind` ต้องปฏิบัติคนละแบบ — พลาดตรงนี้ได้แท็บที่โกหก**
+    //    `only` = "แท็บ" ⇒ สรุปต้อง **ไม่** ถูกกรอง ไม่งั้นเลขบนแท็บอื่นหายไปหมด
+    //    `kind` = "โหมดว่ากำลังดูของกลุ่มไหน" ⇒ สรุปต้อง **ถูก** กรองตามไปด้วย
+    //    เจอจริง 2 ก.ย. 2569 ก่อนขึ้นจอ: kind=goods&only=out ตอบ outOfStock 564
+    //    แต่แถวจริงในแท็บมี 558 ⇒ แท็บเขียน "ของหมด (564)" กดเข้าไปนับได้ 558
+    //    เป็นบั๊กตัวเดียวกับ "ยกเลิก (44) กดแล้วว่าง" ที่เพิ่งแก้ไปเมื่อเช้าวันเดียวกัน
     total: num(sum?.skus),
     outOfStock: num(sum?.out_of_stock),
     low: num(sum?.low),
-    services: num(sum?.services), // จำนวน "บริการ" ทั้งคลัง — จอเอาไปบอกว่าซ่อนไปกี่ตัว
-    inactive: num(sum?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
+    // ⬇️ สองตัวนี้นับข้าม kind เสมอ (ดูเหตุผลที่ตัวแปร aside)
+    services: num(aside?.services), // จำนวน "บริการ" — จอเอาไปบอกว่าซ่อนไปกี่ตัว
+    inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
     shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
     value: num(sum?.value),
     rows: rows.map((r) => ({
