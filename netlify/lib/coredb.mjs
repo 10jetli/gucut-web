@@ -89,5 +89,13 @@ export async function coreInit() {
       at TEXT DEFAULT (datetime('now')))`,
   ];
   for (const sql of stmts) await coreQuery(sql);
+  // ⚠️ คอลัมน์ที่เพิ่มทีหลังต้องมาทาง ALTER TABLE เสมอ — แก้ CREATE TABLE ข้างบนไม่มีผล
+  //    เพราะ IF NOT EXISTS จะไม่แตะตารางที่มีอยู่แล้ว คอลัมน์ใหม่จะไม่เกิดขึ้นแบบเงียบ ๆ
+  //    SQLite ไม่มี ADD COLUMN IF NOT EXISTS → ยิงซ้ำจะ error จึงกลืนทิ้ง
+  for (const sql of [
+    `ALTER TABLE orders ADD COLUMN pay_method TEXT`, // เงินสด/บัตร/โอน — ใช้ปิดยอดสิ้นวัน
+  ]) {
+    await coreQuery(sql).catch(() => null);
+  }
   return { tables: 10 };
 }
