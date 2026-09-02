@@ -253,10 +253,16 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
   if (!day) return { rows: [] };
+  // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
+  //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~495 ⇒ ค้นจากประวัติขายอย่างเดียว
+  //    = คนขายพิมพ์ชื่อของที่ยังไม่เคยขาย แล้ว **หาไม่เจอทั้งที่มีของอยู่ในคลัง**
+  //    (บั๊กเดียวกับที่เจอในจอสินค้า · ที่นี่หนักกว่าเพราะลูกค้ายืนรออยู่หน้าร้าน)
   const where = term
-    ? `AND (s.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))`
+    ? `AND (s.sku LIKE ?
+            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = s.sku AND p2.name LIKE ?)
+            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))`
     : "";
-  const params = term ? [day, `%${term}%`, `%${term}%`, term] : [day];
+  const params = term ? [day, `%${term}%`, `%${term}%`, `%${term}%`, term] : [day];
   const rows = await coreQuery(
     `SELECT s.sku AS sku, s.qty AS qty, s.price AS price,
             COALESCE((SELECT name FROM products WHERE sku = s.sku AND name <> ''),
@@ -268,7 +274,11 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
      --    เดิมตัดที่ 400 แถวแรกแล้วกรองในหน่วยความจำ ⇒ หมวดที่ของอยู่ท้ายตารางได้ 0 ชิ้น
      --    ทั้งที่มีของจริงเป็นร้อย (เจอจริง: กด 'บาร์ KINGKONG' ที่มี 113 ตัว แล้วว่างเปล่า)
      --    2,672 แถวดึงทีเดียวไหว — การกรองบางส่วนแล้วบอกว่า "ไม่มีของ" อันตรายกว่าช้าขึ้นนิดเดียว
-     LIMIT ${group ? 5000 : lim}`,
+     -- ⚠️ ดึงมาแล้วค่อยตัดหน้าในหน่วยความจำ **เสมอ** ไม่ใช่เฉพาะตอนเลือกหมวด
+     --    ถ้าตัดที่ SQL ด้วย lim แล้วมาสไลซ์ด้วย offset อีกที หน้าที่ 2 จะว่างเปล่าตลอด
+     --    และ total จะเป็นแค่จำนวนของหน้าปัจจุบัน ไม่ใช่จำนวนที่หาเจอจริง
+     --    (คำค้นถูกกรองด้วย WHERE ไปแล้ว จำนวนแถวจึงน้อยอยู่แล้วในทางปฏิบัติ)
+     LIMIT 5000`,
     params
   );
   // กรองหมวดในหน่วยความจำ — หมวดคิดจากชื่อ ไม่ได้เก็บในฐาน จึงกรองด้วย SQL ไม่ได้
