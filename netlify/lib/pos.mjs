@@ -173,7 +173,8 @@ export async function lookup(q, limit = 20, cat = "") {
   const params = term ? [day, `%${term}%`, `%${term}%`, term] : [day];
   const rows = await coreQuery(
     `SELECT s.sku AS sku, s.qty AS qty, s.price AS price,
-            (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1) AS name
+            COALESCE((SELECT name FROM products WHERE sku = s.sku AND name <> ''),
+                     (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1)) AS name
      FROM stock_snapshots s
      WHERE s.day = ? ${where}
      ORDER BY ${term ? "CASE WHEN s.sku = ? THEN 0 ELSE 1 END," : ""} s.qty DESC
@@ -215,6 +216,16 @@ const GROUPS = [
   { code: "oil", name: "น้ำมัน / จาระบี", re: /น้ำมัน|จาระบี/i },
   { code: "start", name: "ชุดสตาร์ท", re: /สตาร์ท/i },
   { code: "service", name: "ค่าบริการ", re: /ค่าบริการ|ค่าซ่อม|ค่าส่ง/i },
+  // ⚠️ อะไหล่ส่วนใหญ่ชื่อเป็นภาษาอังกฤษแยกตาม "รุ่นเครื่อง" (MUFFLER 288XP · GEAR WHEEL MS070)
+  //    ไม่มีคำไทยให้จับ ⇒ ต้องจัดกลุ่มตามรุ่น ไม่งั้น 96% ของคลังไปกองรวมที่ 'อื่น ๆ'
+  { code: "p-288xp", name: "อะไหล่ 288XP", re: /\b288\s*XP\b/i },
+  { code: "p-ms070", name: "อะไหล่ MS070 / 070", re: /\bMS\s*070\b|\b070\b/i },
+  { code: "p-ms660", name: "อะไหล่ MS660 / 066", re: /\bMS\s*660\b|\b066\b/i },
+  { code: "p-ms440", name: "อะไหล่ MS440 / 044", re: /\bMS\s*440\b|\b044\b/i },
+  { code: "p-ms381", name: "อะไหล่ MS381 / 038", re: /\bMS\s*381\b|\b038\b/i },
+  { code: "p-5200", name: "อะไหล่ 5200 / 5800", re: /\b52 ?00\b|\b58 ?00\b/i },
+  { code: "p-7800", name: "อะไหล่ 7800", re: /\b78 ?00\b/i },
+  { code: "p-atom", name: "อะไหล่ ATOM", re: /\bATOM\b/i },
 ];
 
 function groupOf(name) {
@@ -232,7 +243,8 @@ export async function posCats() {
   if (!day) return { cats: [] };
   const rows = await coreQuery(
     `SELECT s.sku AS sku,
-            (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1) AS name
+            COALESCE((SELECT name FROM products WHERE sku = s.sku AND name <> ''),
+                     (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1)) AS name
      FROM stock_snapshots s WHERE s.day = ?`,
     [day]
   );

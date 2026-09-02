@@ -13,6 +13,7 @@ import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
 import { createSale, voidSale, listSales, branches, lookup, posCats } from "../lib/pos.mjs";
+import { syncProducts } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -73,6 +74,9 @@ export default async function handler(req, context) {
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
       const r = await createSale(body);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    if (url.searchParams.get("syncproducts")) {
+      return json({ ok: true, products: await syncProducts() });
     }
     if (url.searchParams.get("list") === "poscats") {
       return json({ ok: true, ...(await posCats()) });

@@ -7,6 +7,7 @@
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
 import { shopeeStockLine } from "../lib/shopee-stock.mjs";
+import { syncProducts } from "../lib/core-products.mjs";
 import { stockReconDaily } from "../lib/core-stock.mjs";
 
 export default async function handler() {
@@ -25,6 +26,8 @@ export default async function handler() {
       daily = {
         recon: await reconYesterday().catch((e) => ({ error: String(e?.message || e) })),
         stock: await snapshotStock().catch((e) => ({ error: String(e?.message || e) })),
+        // ทะเบียนสินค้า (ชื่อ/ราคา) — วันละครั้งพอ ชื่อสินค้าแทบไม่เปลี่ยน
+        products: await syncProducts().catch((e) => ({ error: String(e?.message || e) })),
       };
       // ⚠️ ต้องอยู่หลัง snapshotStock เสมอ — ตัวเทียบใช้ภาพถ่ายของ "วันนี้" เป็นวันปลาย
       //    สลับลำดับเมื่อไหร่ = เทียบกับภาพถ่ายเมื่อวานทั้งสองฝั่ง ส่วนต่างเป็นศูนย์หลอก ๆ
