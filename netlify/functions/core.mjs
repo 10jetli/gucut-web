@@ -9,7 +9,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
-import { shopeeStockCompare } from "../lib/shopee-stock.mjs";
+import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
@@ -55,6 +55,10 @@ export default async function handler(req, context) {
       const moves = Array.isArray(body) ? body : body.moves ?? [body];
       const r = await applyMoves(moves);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    // SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก (พร้อมเดารหัสฐานให้) — ให้จอเตือนเอาไปโชว์
+    if (url.searchParams.get("list") === "missing-sku") {
+      return json({ ok: true, ...(await shopeeMissingSkus()) });
     }
     if (url.searchParams.get("list") === "moves") {
       return json({

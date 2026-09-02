@@ -79,6 +79,62 @@ async function shopeeStock() {
   return rows;
 }
 
+/** รหัสฐานของ SKU ตัวเลือก — Shopee แตกเป็นรายตัวเลือก (00369-54T) แต่ ZORT
+ *  เก็บเป็นรหัสฐานตัวเดียว (00369) · ตัดท้ายทีละขีดจนกว่าจะเจอในคลังเรา */
+function baseCandidates(sku) {
+  const out = [];
+  let s = sku;
+  while (s.includes("-")) {
+    s = s.slice(0, s.lastIndexOf("-"));
+    if (s) out.push(s);
+  }
+  return out;
+}
+
+/** รายชื่อ SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก + เดารหัสฐานให้
+ *
+ *  ⚠️ ผลรอบแรก 2 ก.ย. 2569 บอกเรื่องใหญ่: 276 ใน 320 SKU ของ Shopee ไม่มีในคลังเรา
+ *     แต่ **ไม่ใช่เพราะสต็อกไม่ถูกซิงก์** — เป็นเพราะสองระบบนับคนละระดับ
+ *     ZORT: `00369` โซ่ 325 = 5,911 (รวมทุกความยาว)
+ *     Shopee: `00369-25T` `00369-54T` ... แยกตามจำนวนข้อโซ่
+ *     ⇒ ต่อให้เราดันสต็อกเองได้ ก็ยังตอบไม่ได้ว่าโซ่ 54 ข้อเหลือกี่เส้น
+ *        เพราะ **ต้นทางไม่เคยแยกไว้** — ต้องให้ร้านตัดสินใจเรื่องนี้ก่อน ห้ามเดาแทน */
+export async function shopeeMissingSkus() {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const t = await validToken();
+  if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
+
+  const day = (await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`))[0]?.d;
+  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
+  const snap = new Map(
+    (await coreQuery(`SELECT sku, qty, name FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [
+      String(r.sku).trim(),
+      { qty: num(r.qty), name: r.name },
+    ])
+  );
+
+  const rows = (await shopeeStock()).filter((r) => r.sku && !snap.has(r.sku));
+  const out = rows.map((r) => {
+    const base = baseCandidates(r.sku).find((b) => snap.has(b));
+    return {
+      sku: r.sku,
+      name: r.name,
+      shopee: r.qty,
+      baseSku: base || null,
+      baseQty: base ? snap.get(base).qty : null,
+      baseName: base ? snap.get(base).name : null,
+    };
+  });
+  const mapped = out.filter((r) => r.baseSku).length;
+  return {
+    day,
+    total: out.length,
+    mappedToBase: mapped, // จับคู่กับรหัสฐานได้ = แค่ชื่อคนละระดับ ไม่ใช่ของหาย
+    unknown: out.length - mapped, // ไม่มีเค้าใน ZORT เลย = ต้องตามหาว่าคืออะไร
+    rows: out,
+  };
+}
+
 /** เทียบสต็อก Shopee กับภาพถ่ายสต็อกล่าสุดในคลังเรา — อ่านอย่างเดียว */
 export async function shopeeStockCompare() {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
