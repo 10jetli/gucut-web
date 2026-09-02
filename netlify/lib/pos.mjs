@@ -18,6 +18,11 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const thaiToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
+// วิธีชำระเงินที่รับได้ — จำกัดไว้เท่าที่เครื่องคิดเงินจริงมี (เงินสด · บัตร · โอน)
+// ⚠️ จำเป็นกับการปิดยอดสิ้นวัน: เงินสดต้องนับในลิ้นชัก · โอนต้องเช็คสลิป ·
+//    บัตรต้องกระทบยอดกับเครื่องรูด — รวมเป็นก้อนเดียวแล้วแยกไม่ออกอีกเลย
+export const PAY_METHODS = { cash: "เงินสด", credit: "บัตรเครดิต", transfer: "โอนเงิน" };
+
 export const POS_SOURCE = "pos";
 export const POS_CHANNEL = "POS หน้าร้าน";
 
@@ -89,6 +94,13 @@ export async function createSale(input = {}) {
     return { error: `ต้องระบุสาขา (${list.map((b) => b.code).join(" หรือ ")})` };
   }
 
+  // วิธีจ่าย — ไม่ส่งมาถือว่าเงินสด (ค่าปริยายของหน้าร้าน) แต่ถ้าส่งค่าที่ไม่รู้จักต้องตีกลับ
+  // ห้ามเงียบ ๆ เปลี่ยนเป็นเงินสดให้ ไม่งั้นยอดโอนจะไปโผล่ในลิ้นชักเงินสดตอนปิดยอด
+  const payRaw = String(input.payMethod ?? "cash").trim().toLowerCase();
+  if (!PAY_METHODS[payRaw]) {
+    return { error: `payMethod ต้องเป็น ${Object.keys(PAY_METHODS).join(" / ")}` };
+  }
+
   const number = String(input.number ?? "").trim().slice(0, 40) || (await nextNumber(day, branch.code));
   const id = `${POS_SOURCE}/${number}`;
   const amount = Math.round(clean.reduce((s, it) => s + it.qty * it.price, 0) * 100) / 100;
@@ -101,9 +113,10 @@ export async function createSale(input = {}) {
   if (exists) return { duplicate: true, order: exists };
 
   await coreQuery(
-    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at)
+    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,pay_method,updated_at)
      VALUES (${esc(id)},${esc(POS_SOURCE)},${esc(number)},${esc(`POS ${branch.code}`)},
-             'Success',${amount},${esc(String(input.customer ?? "").slice(0, 120))},${esc(day)},datetime('now'))`
+             'Success',${amount},${esc(String(input.customer ?? "").slice(0, 120))},${esc(day)},
+             ${esc(payRaw)},datetime('now'))`
   );
   const values = clean
     .map((it, i) => `(${esc(id)},${i + 1},${esc(it.sku)},${esc(it.name)},${it.qty},${Math.round(it.qty * it.price * 100) / 100})`)
@@ -113,7 +126,11 @@ export async function createSale(input = {}) {
   );
 
   return {
-    order: { id, number, branch: branch.code, channel: `POS ${branch.code}`, order_date: day, amount, status: "Success" },
+    order: {
+      id, number, branch: branch.code, channel: `POS ${branch.code}`,
+      order_date: day, amount, status: "Success",
+      payMethod: payRaw, payMethodName: PAY_METHODS[payRaw],
+    },
     lines: clean.length,
     bad: bad.length ? bad : undefined,
   };
@@ -142,16 +159,31 @@ export async function listSales({ day = "", limit = 50 } = {}) {
   const d = DAY.test(String(day)) ? day : thaiToday();
   const lim = Math.max(1, Math.min(200, num(limit) || 50));
   const rows = await coreQuery(
-    `SELECT number, channel, status, amount, customer, order_date
+    `SELECT number, channel, status, amount, customer, order_date, pay_method
      FROM orders WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(d)}
      ORDER BY number DESC LIMIT ${lim}`
+  );
+  // ยอดแยกตามวิธีจ่าย — ตัวเลขที่ต้องใช้ตอนปิดยอดสิ้นวันจริง ๆ
+  const byPay = await coreQuery(
+    `SELECT COALESCE(pay_method,'cash') AS pay, COUNT(*) AS orders,
+            ROUND(COALESCE(SUM(amount),0),2) AS amount
+     FROM orders WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(d)}
+       AND status <> 'Voided'
+     GROUP BY COALESCE(pay_method,'cash')`
   );
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
      FROM orders WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(d)}
        AND status <> 'Voided'`
   );
-  return { day: d, total: num(sum?.c), totalAmount: num(sum?.s), rows };
+  return {
+    day: d,
+    total: num(sum?.c),
+    totalAmount: num(sum?.s),
+    methods: PAY_METHODS,
+    byPay: byPay.map((r) => ({ ...r, name: PAY_METHODS[r.pay] ?? r.pay })),
+    rows,
+  };
 }
 
 /** ค้นสินค้าให้เครื่องคิดเงิน — พิมพ์รหัสหรือชื่อแล้วได้ราคา+ของคงเหลือทันที
