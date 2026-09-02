@@ -54,6 +54,11 @@ export async function coreInit() {
       id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT NOT NULL, qty REAL NOT NULL,
       reason TEXT NOT NULL, ref TEXT, at TEXT DEFAULT (datetime('now')))`,
     `CREATE INDEX IF NOT EXISTS idx_moves_sku ON stock_moves(sku)`,
+    // ⚠️ ตารางนี้ไว้ "ปรับมือ" เท่านั้น (รับของเข้า · โอน · ปรับยอด) ห้ามให้ตัว sync เขียน
+    //    ยอดขายคำนวณสดจาก order_items ทุกครั้ง (ลบ-เขียนใหม่ทั้งใบ = รันซ้ำได้)
+    //    ดัชนีนี้บังคับ "หนึ่งเหตุ-หนึ่งอ้างอิง-หนึ่ง SKU = หนึ่งแถว" ให้คนเขียนรอบหน้า
+    //    ยิงซ้ำได้โดยไม่เบิ้ล — กติกาเดียวกับตัวนับคนเข้าเว็บ
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_moves_once ON stock_moves(reason,ref,sku)`,
     `CREATE TABLE IF NOT EXISTS stock_snapshots (
       day TEXT NOT NULL, sku TEXT NOT NULL, name TEXT, qty REAL, price REAL,
       PRIMARY KEY (day, sku))`,
@@ -70,7 +75,19 @@ export async function coreInit() {
       buyer TEXT, order_date TEXT, create_time INTEGER,
       updated_at TEXT)`,
     `CREATE INDEX IF NOT EXISTS idx_sp_orders_date ON shopee_orders(order_date)`,
+    // รายการสินค้าในออเดอร์ Shopee (ระดับ SKU) — รากฐานของ ledger ตัดสต็อกเองในขั้นถัดไป
+    `CREATE TABLE IF NOT EXISTS shopee_order_items (
+      order_sn TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
+      qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0,
+      PRIMARY KEY (order_sn, line))`,
+    `CREATE INDEX IF NOT EXISTS idx_sp_items_sku ON shopee_order_items(sku)`,
+    // สมุดเทียบสต็อกรายวัน (คลังเราคำนวณเอง vs ZORT) — แบบเดียวกับ recon_log ฝั่งออเดอร์
+    // เก็บไว้ดูแนวโน้ม: ส่วนต่างต้องนิ่งและเข้าใจได้ทุกตัวก่อนถึงจะกล้าให้คลังเราเป็นตัวจริง
+    `CREATE TABLE IF NOT EXISTS stock_recon_log (
+      day TEXT PRIMARY KEY, base_day TEXT, skus INTEGER, matched INTEGER,
+      mismatched INTEGER, abs_diff REAL, notes TEXT,
+      at TEXT DEFAULT (datetime('now')))`,
   ];
   for (const sql of stmts) await coreQuery(sql);
-  return { tables: 8 };
+  return { tables: 10 };
 }

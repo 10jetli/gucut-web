@@ -1,0 +1,159 @@
+// คลังเงา GUCUT Core — คำนวณสต็อกเอง แล้วเทียบกับ ZORT (แผนลับตัด ZORT ขั้น 1)
+//
+// สูตร:  สต็อกที่เราคิดว่าควรเหลือ = สต็อกวันฐาน − ที่ขายไป + ที่ปรับมือ
+//        แล้วเอาไปเทียบกับสต็อกจริงที่ ZORT บอกในวันปลาย
+//
+// ระยะนี้ยัง **ไม่ตัดสต็อกจริง** ที่ไหนทั้งนั้น — เป็นการเดินคู่ขนานเพื่อพิสูจน์ว่า
+// เราคำนวณเองได้ตรง ก่อนจะกล้าให้คลังเราเป็นตัวจริง (สูตรเดียวกับตอนปลด Shopify)
+//
+// ⚠️ ยอดขายอ่านจาก `order_items` (กระจก ZORT = ครบทุกช่องทาง) เท่านั้น
+//    ห้ามบวก `shopee_order_items` เข้าไปด้วย — ออเดอร์ Shopee ใบเดียวกันอยู่ทั้งสองตาราง
+//    บวกทั้งคู่ = ตัดสต็อกสองรอบแบบเงียบ ๆ (กติกาเดียวกับที่ recon แยกตารางไว้ตั้งแต่แรก)
+//    วันที่ ZORT ถูกตัดจริง ค่อยย้ายมาบวกจากท่อรายแพลตฟอร์มแทนทั้งชุด
+//
+// ⚠️ ความคลาดเคลื่อนที่ "ปกติ" ของระยะนี้ อย่าเพิ่งตกใจ:
+//    · ภาพถ่ายสต็อกถ่ายตอนตี 1 ของแต่ละวัน ของที่ขายระหว่าง 00:00–01:13 จึงตกไปอยู่คนละฝั่ง
+//    · ค่าที่เทียบคือ availablestock (ของว่างขาย) ไม่ใช่ของในมือ — ออเดอร์ที่จองของไว้ก็ทำให้ต่างได้
+//    · ขายหน้าร้าน/โอนของ/รับของเข้า ที่ไม่ได้ผ่านออเดอร์ จะโผล่เป็นส่วนต่างเสมอ
+//      จนกว่าจะมีหน้าปรับมือเขียนลง stock_moves
+import { coreQuery, coreReady } from "./coredb.mjs";
+
+const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+const CANCEL_SQL =
+  `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+
+/** ท่อนกลางที่ใช้ร่วมกันทั้งตัวนับและตัวลงรายละเอียด — ผูกค่าด้วย ? ตามลำดับ base,cur,base,cur,base,cur */
+const CALC_CTE = `
+  WITH base AS (SELECT sku, qty FROM stock_snapshots WHERE day = ?),
+       cur  AS (SELECT sku, qty FROM stock_snapshots WHERE day = ?),
+       sold AS (
+         SELECT oi.sku AS sku, SUM(oi.qty) AS qty
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+         WHERE o.order_date >= ? AND o.order_date < ? AND ${CANCEL_SQL}
+           AND oi.sku IS NOT NULL AND oi.sku <> ''
+         GROUP BY oi.sku
+       ),
+       moved AS (
+         SELECT sku, SUM(qty) AS qty FROM stock_moves
+         WHERE at >= ? AND at < ? GROUP BY sku
+       ),
+       calc AS (
+         SELECT b.sku AS sku, b.qty AS base_qty, c.qty AS actual_qty,
+                COALESCE(s.qty,0) AS sold_qty, COALESCE(m.qty,0) AS move_qty,
+                (b.qty - COALESCE(s.qty,0) + COALESCE(m.qty,0)) - c.qty AS diff
+         FROM base b
+         JOIN cur c ON c.sku = b.sku
+         LEFT JOIN sold s ON s.sku = b.sku
+         LEFT JOIN moved m ON m.sku = b.sku
+       )`;
+
+/** หาวันฐานกับวันปลายจากภาพถ่ายที่มีจริง (ไม่ใช่ปฏิทิน — บางวันงานอาจไม่ได้รัน) */
+async function pickDays(daysBack) {
+  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const curDay = latest?.d || null;
+  if (!curDay) return { curDay: null, baseDay: null };
+  const target = new Date(new Date(`${curDay}T00:00:00Z`).getTime() - daysBack * 864e5)
+    .toISOString()
+    .slice(0, 10);
+  const [older] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots WHERE day <= ?`, [
+    target,
+  ]);
+  return { curDay, baseDay: older?.d || null };
+}
+
+/**
+ * เทียบสต็อกที่เราคำนวณเอง กับสต็อกจริงของ ZORT
+ * @param {number} daysBack ย้อนกลับกี่วันเป็นวันฐาน (1 = เทียบเมื่อวานกับวันนี้)
+ * @param {number} limit จะเอารายละเอียดตัวที่ต่างมากี่ตัว
+ */
+export async function stockRecon(daysBack = 1, limit = 40) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+
+  // กระจกออเดอร์เก็บย้อนหลัง 7 วัน — ขอฐานเก่ากว่านั้นยอดขายจะไม่ครบแล้วส่วนต่างเพี้ยน
+  const back = Math.max(1, Math.min(7, num(daysBack) || 1));
+  const { curDay, baseDay } = await pickDays(back);
+  if (!curDay) return { skip: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
+  if (!baseDay || baseDay === curDay) {
+    return { skip: "ยังมีภาพถ่ายสต็อกไม่ถึงสองวัน — รออีกวันแล้วค่อยเทียบ", curDay };
+  }
+
+  const p = [baseDay, curDay, baseDay, curDay, baseDay, curDay];
+  const [sum] = await coreQuery(
+    `${CALC_CTE}
+     SELECT COUNT(*) AS skus,
+            SUM(CASE WHEN diff = 0 THEN 1 ELSE 0 END) AS matched,
+            SUM(CASE WHEN diff <> 0 THEN 1 ELSE 0 END) AS mismatched,
+            ROUND(COALESCE(SUM(ABS(diff)),0),2) AS abs_diff,
+            ROUND(COALESCE(SUM(sold_qty),0),2) AS sold_total
+     FROM calc`,
+    p
+  );
+
+  const rows = await coreQuery(
+    `${CALC_CTE}
+     SELECT calc.*,
+            (SELECT name FROM order_items WHERE sku = calc.sku AND name <> '' LIMIT 1) AS name
+     FROM calc WHERE diff <> 0
+     ORDER BY ABS(diff) DESC LIMIT ${Math.max(1, Math.min(200, num(limit) || 40))}`,
+    p
+  );
+
+  return {
+    baseDay,
+    curDay,
+    skus: num(sum?.skus),
+    matched: num(sum?.matched),
+    mismatched: num(sum?.mismatched),
+    absDiff: num(sum?.abs_diff),
+    soldTotal: num(sum?.sold_total),
+    // diff > 0 = เราคิดว่าควรเหลือมากกว่าที่ ZORT บอก (มีของออกที่เราไม่เห็น)
+    // diff < 0 = ZORT มีมากกว่าที่เราคิด (น่าจะมีของเข้าที่เราไม่เห็น)
+    items: rows.map((r) => ({
+      sku: r.sku,
+      name: r.name || "",
+      baseQty: num(r.base_qty),
+      soldQty: num(r.sold_qty),
+      moveQty: num(r.move_qty),
+      expected: num(r.base_qty) - num(r.sold_qty) + num(r.move_qty),
+      actualQty: num(r.actual_qty),
+      diff: num(r.diff),
+    })),
+  };
+}
+
+/** งานรายวัน: เทียบแล้วจดลงสมุด — คืนบรรทัดสรุปไว้พ่วง Telegram (null ถ้ายังเทียบไม่ได้) */
+export async function stockReconDaily() {
+  const r = await stockRecon(1, 40);
+  if (r.skip) return { skip: r.skip, line: null };
+
+  // ⚠️ ศูนย์ SKU ต้องไม่ขึ้นเขียวว่า "ตรงกันทุกตัว" — ไม่มีอะไรให้เทียบคือของเสีย ไม่ใช่ของดี
+  //    (บทเรียน 19 ส.ค.: ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ)
+  const empty = r.skus === 0;
+  const notes = empty
+    ? "⚠️ ไม่มี SKU ให้เทียบ — ภาพถ่ายสองวันไม่มี SKU ตรงกันสักตัว"
+    : r.mismatched === 0
+      ? "ตรงกันทุก SKU"
+      : `ต่าง ${r.mismatched} SKU · รวม ${r.absDiff.toLocaleString("th-TH")} ชิ้น`;
+  await coreQuery(
+    `INSERT INTO stock_recon_log (day,base_day,skus,matched,mismatched,abs_diff,notes,at)
+     VALUES (?,?,?,?,?,?,?,datetime('now'))
+     ON CONFLICT(day) DO UPDATE SET base_day=excluded.base_day, skus=excluded.skus,
+       matched=excluded.matched, mismatched=excluded.mismatched,
+       abs_diff=excluded.abs_diff, notes=excluded.notes, at=excluded.at`,
+    [r.curDay, r.baseDay, r.skus, r.matched, r.mismatched, r.absDiff, notes]
+  );
+
+  const icon = empty ? "📦❓" : r.mismatched === 0 ? "📦✅" : "📦⚠️";
+  const line =
+    `${icon} คลังเงา — เทียบสต็อกที่เราคำนวณเอง (${r.baseDay} → ${r.curDay})\n` +
+    `SKU ที่เทียบ ${r.skus.toLocaleString("th-TH")} · ตรง ${r.matched.toLocaleString("th-TH")} · ${notes}`;
+  return { ...r, line };
+}
+
+/** สมุดเทียบสต็อกย้อนหลัง (ไว้ดูว่าส่วนต่างนิ่งหรือแกว่ง) */
+export async function stockReconLog(days = 14) {
+  if (!coreReady()) return [];
+  return coreQuery(
+    `SELECT * FROM stock_recon_log ORDER BY day DESC LIMIT ${Math.max(1, Math.min(60, num(days) || 14))}`
+  );
+}

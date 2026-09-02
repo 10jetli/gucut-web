@@ -4,10 +4,12 @@
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
+//   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
 import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
+import { stockRecon, stockReconLog } from "../lib/core-stock.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -48,6 +50,10 @@ export default async function handler(req, context) {
     if (url.searchParams.get("snapshot")) {
       return json({ ok: true, snapshot: await snapshotStock() });
     }
+    if (url.searchParams.get("stock")) {
+      const days = parseInt(url.searchParams.get("days") ?? "1", 10) || 1;
+      return json({ ok: true, stock: await stockRecon(days, 60) });
+    }
 
     // สถานะรวม
     const [counts] = await coreQuery(
@@ -62,7 +68,9 @@ export default async function handler(req, context) {
     );
     // เทียบ 3 ทางฝั่ง Shopee (แผนลับขั้น 3 — ระยะรันคู่) · ตารางยังไม่มี = ส่ง [] เฉย ๆ
     const shopee = await shopeeRecon(7).catch(() => []);
-    return json({ ready: true, counts, recon, channels, shopee });
+    // สมุดเทียบสต็อก (แผนลับขั้น 1) — ตารางยังไม่ได้สร้าง = ส่ง [] ไม่ล้มทั้งหน้า
+    const stock = await stockReconLog(14).catch(() => []);
+    return json({ ready: true, counts, recon, channels, shopee, stock });
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500);
   }

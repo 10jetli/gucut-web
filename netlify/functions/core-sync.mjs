@@ -6,6 +6,7 @@
 // ทุกรอบ: กระจกออเดอร์ 7 วันล่าสุด (กันสถานะยกเลิกย้อนหลังค้างเก่า) · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
+import { stockReconDaily } from "../lib/core-stock.mjs";
 
 export default async function handler() {
   try {
@@ -24,14 +25,20 @@ export default async function handler() {
         recon: await reconYesterday().catch((e) => ({ error: String(e?.message || e) })),
         stock: await snapshotStock().catch((e) => ({ error: String(e?.message || e) })),
       };
+      // ⚠️ ต้องอยู่หลัง snapshotStock เสมอ — ตัวเทียบใช้ภาพถ่ายของ "วันนี้" เป็นวันปลาย
+      //    สลับลำดับเมื่อไหร่ = เทียบกับภาพถ่ายเมื่อวานทั้งสองฝั่ง ส่วนต่างเป็นศูนย์หลอก ๆ
+      const stockCmp = await stockReconDaily().catch((e) => ({ error: String(e?.message || e) }));
+      daily.stockRecon = stockCmp;
+
       // เทียบ 3 ทางฝั่ง Shopee — ส่งบรรทัดเดียวต่อวัน เด้งรวมช่วงเดียวกับ recon หลัก
       const line = await shopeeReconYesterdayLine().catch(() => null);
+      const text = [line, stockCmp?.line].filter(Boolean).join("\n\n");
       const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
-      if (line && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
+      if (text && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
         await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
           method: "POST",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text: line }),
+          body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
           signal: AbortSignal.timeout(8000),
         }).catch(() => null);
         daily.shopeeLine = line;
