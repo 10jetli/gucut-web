@@ -1,13 +1,17 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-02T21:55:22.064Z",
+  "generatedAt": "2026-09-02T22:03:34.238Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
   "functions": {
-    "count": 46,
+    "count": 47,
     "scheduled": [
+      {
+        "name": "backup-run",
+        "cron": "0 20 * * *"
+      },
       {
         "name": "beam-sweep",
         "cron": "*/30 * * * *"
@@ -47,6 +51,8 @@ export const ARCH = {
   ],
   "d1": {
     "tables": [
+      "backup_log",
+      "backups",
       "order_items",
       "orders",
       "products",

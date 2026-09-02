@@ -16,6 +16,7 @@ import { deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, po
 import { syncProducts } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
+import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -80,6 +81,27 @@ export default async function handler(req, context) {
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
       const r = await createSale(body);
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    // ── ระบบสำรองข้อมูล ────────────────────────────────────────────
+    //   GET ?backupstatus=1                      ดูว่าสำเนามีอะไรบ้าง สำรองล่าสุดเมื่อไหร่
+    //   GET ?backup=1                            สั่งสำรองเดี๋ยวนั้น (ปกติทำเองตี 3)
+    //   GET ?restore=<ถัง>[&key=..]              **ซ้อมให้ดู** ไม่เขียนอะไร
+    //   GET ?restore=<ถัง>&confirm=1[&overwrite=1]  เขียนจริง
+    // ⚠️ restore ไม่มี confirm = ซ้อมเสมอ · และไม่ทับของที่ยังอยู่ นอกจากสั่ง overwrite
+    if (url.searchParams.get("backupstatus")) {
+      return json({ ok: true, backup: await backupStatus() });
+    }
+    if (url.searchParams.get("backup")) {
+      return json({ ok: true, backup: await runBackup() });
+    }
+    if (url.searchParams.get("restore")) {
+      const r = await restore({
+        store: url.searchParams.get("restore"),
+        key: url.searchParams.get("key") || "",
+        confirm: url.searchParams.get("confirm") === "1",
+        overwrite: url.searchParams.get("overwrite") === "1",
+      });
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
     }
     // ผังสถาปัตยกรรม — โครงมาจากตัวสแกนตอน build (arch-data.mjs)

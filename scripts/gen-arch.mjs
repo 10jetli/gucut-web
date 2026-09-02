@@ -46,10 +46,11 @@ const blobs = [
 ].sort();
 
 /* ── ตารางในคลังเงา (Cloudflare D1) ────────────────────────────── */
+// ⚠️ ต้องกวาดทั้งโฟลเดอร์ ไม่ใช่อ่านแค่ coredb.mjs — บางตารางถูกสร้างตอนรันจากไฟล์อื่น
+//    (ตารางสำรองข้อมูลใน backup.mjs · ตาราง Shopee ใน shopee-orders.mjs)
+//    อ่านที่เดียวแล้วผังจะบอกจำนวนตารางน้อยกว่าความจริงโดยไม่มีใครรู้
 const d1Tables = [
-  ...new Set(
-    [...read("netlify/lib/coredb.mjs").matchAll(/CREATE TABLE IF NOT EXISTS\s+([a-z_]+)/g)].map((m) => m[1])
-  ),
+  ...new Set([...allServer.matchAll(/CREATE TABLE IF NOT EXISTS\s+([a-z_]+)/g)].map((m) => m[1])),
 ].sort();
 
 /* ── ของนอกบ้าน ────────────────────────────────────────────────
