@@ -96,6 +96,8 @@ export async function coreInit() {
     `ALTER TABLE orders ADD COLUMN pay_method TEXT`, // เงินสด/บัตร/โอน — ใช้ปิดยอดสิ้นวัน
     `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท)
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
+    // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)
+    `ALTER TABLE orders ADD COLUMN client_ref TEXT`,
     // ทะเบียนสินค้า — ฟิลด์ที่จอสินค้าต้องใช้ให้เหมือน ZORT
     `ALTER TABLE products ADD COLUMN purchase_price REAL`, // ราคาซื้อ (ต้นทุน)
     `ALTER TABLE products ADD COLUMN product_type INTEGER`, // 0 = สินค้า · 1 = บริการ (ไม่มีสต็อกจริง)

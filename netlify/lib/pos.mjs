@@ -111,6 +111,21 @@ export async function createSale(input = {}) {
     return { error: `payMethod ต้องเป็น ${Object.keys(PAY_METHODS).join(" / ")}` };
   }
 
+  // ⚠️ **กุญแจกันยิงซ้ำต้องมาจากจอ ไม่ใช่จากเลขที่ใบ** (ยิงของจริงพิสูจน์ 2 ก.ย. 2569)
+  //    ตัวกันซ้ำเดิมเทียบจาก `number` ซึ่ง**ยังไม่มีตอนกดครั้งแรก** — เซิร์ฟเวอร์เป็นคนตั้งให้
+  //    ⇒ เน็ตสะดุดแล้วแคชเชียร์กดซ้ำ = ได้เลขใหม่ = **บิลสองใบ ยอดขายเบิ้ล สต็อกตัดสองรอบ**
+  //    ทดสอบจริงแล้วได้ KLD-…-001 กับ KLD-…-002 จากการกดสองครั้งด้วยตะกร้าใบเดียวกัน
+  //    ⇒ จอต้องสร้าง clientRef หนึ่งค่าตอน "เริ่มบิลใหม่" แล้วส่งค่าเดิมทุกครั้งที่กดเปิดบิล
+  //      (ค่าเดียวกับที่ใช้คู่ร่างใน localStorage ได้เลย · เปลี่ยนค่าใหม่เมื่อขึ้นบิลถัดไป)
+  const clientRef = String(input.clientRef ?? "").trim().slice(0, 60);
+  if (clientRef) {
+    const [same] = await coreQuery(
+      `SELECT id, number, amount, status, order_date FROM orders
+       WHERE source = ${esc(POS_SOURCE)} AND client_ref = ${esc(clientRef)}`
+    );
+    if (same) return { duplicate: true, by: "clientRef", order: same };
+  }
+
   const number = String(input.number ?? "").trim().slice(0, 40) || (await nextNumber(day, branch.code));
   const id = `${POS_SOURCE}/${number}`;
   // ⚠️ **เซิร์ฟเวอร์คิดเงินใหม่เองเสมอ ไม่เชื่อยอดจากเบราว์เซอร์** (กติกาเดิมของร้าน
@@ -130,13 +145,42 @@ export async function createSale(input = {}) {
   const [exists] = await coreQuery(
     `SELECT id, number, amount, status, order_date FROM orders WHERE id = ${esc(id)}`
   );
-  if (exists) return { duplicate: true, order: exists };
+  if (exists) return { duplicate: true, by: "number", order: exists };
+
+  // ตาข่ายชั้นสองสำหรับจอที่ยังไม่ส่ง clientRef — **เตือน ไม่ใช่บล็อก**
+  // ⚠️ ห้ามบล็อกเด็ดขาด: ลูกค้าซื้อของชิ้นเดิมสองบิลติดกันเป็นเรื่องปกติหน้าร้าน
+  //    บล็อก = ขายของไม่ได้ ซึ่งแย่กว่าบิลซ้ำที่ยกเลิกได้ ⇒ ออกใบให้ตามปกติ
+  //    แล้วบอกจอว่า "เมื่อ N วินาทีที่แล้วมีใบเหมือนกันเป๊ะ" ให้คนตัดสินใจเอง
+  let maybeDuplicate = null;
+  if (!clientRef) {
+    const near = await coreQuery(
+      `SELECT id, number, amount,
+              CAST((julianday('now') - julianday(updated_at)) * 86400 AS INTEGER) AS ago
+       FROM orders
+       WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(day)}
+         AND channel = ${esc(`POS ${branch.code}`)} AND amount = ${amount}
+         AND status <> 'Voided'
+         AND updated_at >= datetime('now','-120 seconds')
+       ORDER BY updated_at DESC LIMIT 3`
+    );
+    for (const n of near) {
+      const lines = await coreQuery(
+        `SELECT sku, qty FROM order_items WHERE order_id = ${esc(n.id)} ORDER BY line`
+      );
+      const a = lines.map((l) => `${l.sku}:${num(l.qty)}`).join("|");
+      const b = clean.map((l) => `${l.sku}:${num(l.qty)}`).join("|");
+      if (a === b) {
+        maybeDuplicate = { number: n.number, amount: num(n.amount), secondsAgo: num(n.ago) };
+        break;
+      }
+    }
+  }
 
   await coreQuery(
-    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,pay_method,bill_discount,updated_at)
+    `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,pay_method,bill_discount,client_ref,updated_at)
      VALUES (${esc(id)},${esc(POS_SOURCE)},${esc(number)},${esc(`POS ${branch.code}`)},
              'Success',${amount},${esc(String(input.customer ?? "").slice(0, 120))},${esc(day)},
-             ${esc(payRaw)},${billDiscount},datetime('now'))`
+             ${esc(payRaw)},${billDiscount},${clientRef ? esc(clientRef) : "NULL"},datetime('now'))`
   );
   const values = clean
     .map(
@@ -157,6 +201,8 @@ export async function createSale(input = {}) {
     },
     lines: clean.length,
     bad: bad.length ? bad : undefined,
+    // จอต้องขึ้นกล่องถามเมื่อมีค่านี้ — "ใบ X ยอดเท่ากันเมื่อ N วินาทีที่แล้ว ใช่ใบซ้ำไหม"
+    maybeDuplicate: maybeDuplicate || undefined,
   };
 }
 
