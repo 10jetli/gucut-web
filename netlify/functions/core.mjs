@@ -159,6 +159,7 @@ export default async function handler(req, context) {
         ok: true,
         ...(await listStock({
           q: p.get("q"),
+          only: p.get("only"),
           sort: p.get("sort"),
           limit: p.get("limit"),
           offset: p.get("offset"),

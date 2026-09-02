@@ -197,6 +197,10 @@ export async function listStock(o = {}) {
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
   const sort = { qty: "cur.qty ASC", sold: "sold30 DESC", sku: "cur.sku ASC" }[o.sort] || "cur.qty ASC";
+  // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
+  // ⚠️ เดิมฝั่งจอกรองจาก 50 แถวที่โหลดมา ⇒ ตัวเลขในวงเล็บกับแถวที่เห็นมาจากคนละชุด
+  //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
+  const only = { out: "cur.qty <= 0", low: "cur.qty > 0 AND cur.qty <= 3" }[o.only] || "";
 
   const filter = q
     ? `AND (cur.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
@@ -223,13 +227,21 @@ export async function listStock(o = {}) {
     [day, since, ...fParams]
   );
 
+  // จำนวนแถวของ "แท็บที่เลือกอยู่" — ใช้ทำเลขหน้า ไม่ใช่ตัวเลขบนแท็บ
+  const [shown] = only
+    ? await coreQuery(
+        `${CTE} SELECT COUNT(*) AS c FROM cur WHERE ${only} ${filter}`,
+        [day, since, ...fParams]
+      )
+    : [{ c: sum?.skus }];
+
   const rows = await coreQuery(
     `${CTE}
      SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
             (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku
-     WHERE 1=1 ${filter}
+     WHERE 1=1 ${only ? `AND ${only}` : ""} ${filter}
      ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
     [day, since, ...fParams]
   );
@@ -239,9 +251,14 @@ export async function listStock(o = {}) {
     soldDays,
     limit,
     offset,
+    only: o.only && only ? o.only : null,
+    // ⚠️ total / outOfStock / low **ไม่ถูกกรองด้วย only** โดยตั้งใจ —
+    //    ตัวเลขบนแท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ตัว ไม่งั้นมันไม่ใช่แท็บ
+    //    (หลักเดียวกับ byStatus ในจอรายการขาย)
     total: num(sum?.skus),
     outOfStock: num(sum?.out_of_stock),
     low: num(sum?.low),
+    shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
     value: num(sum?.value),
     rows: rows.map((r) => ({
       sku: r.sku,
