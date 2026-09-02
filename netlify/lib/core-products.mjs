@@ -62,27 +62,59 @@ export async function syncProducts() {
       sku,
       name: String(p?.name ?? "").slice(0, 200),
       price: num(p?.sellprice),
+      buy: num(p?.purchaseprice),
+      // ⚠️ producttype 1 = "บริการ" (ค่าส่ง · ค่าบริการซ่อม · ค่าขนส่ง) — ของพวกนี้ไม่มีสต็อกจริง
+      //    ตรวจทั้งคลังแล้วมี 6 ตัว · เป็นตัวที่ทำให้จอสต็อกมีของติดลบหนัก ๆ ยึดแถวบน
+      type: Number(p?.producttype) || 0,
+      active: p?.active === false ? 0 : 1,
+      unit: String(p?.unittext ?? "").slice(0, 40),
+      // ⚠️ คงเหลือในมือ vs พร้อมขาย ต่างกันจริง 155 ตัว (ของที่ถูกจองไว้ในออเดอร์ที่ยังไม่ส่ง)
+      onhand: num(p?.stock),
+      available: num(p?.availablestock),
     });
   }
 
   // เทียบก่อนเขียน — ชื่อสินค้าแทบไม่เปลี่ยน เขียนทับทุกรอบคือเผาโควตาเปล่า ๆ
   const prev = new Map(
-    (await coreQuery(`SELECT sku, name, sellprice FROM products`)).map((r) => [r.sku, r])
+    (
+      await coreQuery(
+        `SELECT sku, name, sellprice, purchase_price, product_type, active, unit, onhand, available
+         FROM products`
+      )
+    ).map((r) => [r.sku, r])
   );
   const changed = rows.filter((r) => {
     const p = prev.get(r.sku);
-    return !p || String(p.name ?? "") !== r.name || num(p.sellprice) !== r.price;
+    return (
+      !p ||
+      String(p.name ?? "") !== r.name ||
+      num(p.sellprice) !== r.price ||
+      num(p.purchase_price) !== r.buy ||
+      num(p.product_type) !== r.type ||
+      num(p.active) !== r.active ||
+      String(p.unit ?? "") !== r.unit ||
+      num(p.onhand) !== r.onhand ||
+      num(p.available) !== r.available
+    );
   });
 
   for (let i = 0; i < changed.length; i += 80) {
     const values = changed
       .slice(i, i + 80)
-      .map((r) => `(${esc(r.sku)},${esc(r.name)},${r.price},datetime('now'))`)
+      .map(
+        (r) =>
+          `(${esc(r.sku)},${esc(r.name)},${r.price},${r.buy},${r.type},${r.active},` +
+          `${esc(r.unit)},${r.onhand},${r.available},datetime('now'))`
+      )
       .join(",");
     await coreQuery(
-      `INSERT INTO products (sku,name,sellprice,updated_at) VALUES ${values}
+      `INSERT INTO products
+         (sku,name,sellprice,purchase_price,product_type,active,unit,onhand,available,updated_at)
+       VALUES ${values}
        ON CONFLICT(sku) DO UPDATE SET name=excluded.name, sellprice=excluded.sellprice,
-         updated_at=excluded.updated_at`
+         purchase_price=excluded.purchase_price, product_type=excluded.product_type,
+         active=excluded.active, unit=excluded.unit, onhand=excluded.onhand,
+         available=excluded.available, updated_at=excluded.updated_at`
     );
   }
   return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };

@@ -211,6 +211,7 @@ export default async function handler(req, context) {
         ...(await listStock({
           q: p.get("q"),
           only: p.get("only"),
+          kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),
           limit: p.get("limit"),
           offset: p.get("offset"),

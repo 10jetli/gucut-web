@@ -207,6 +207,15 @@ export async function listStock(o = {}) {
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
   const only = { out: "cur.qty <= 0", low: "cur.qty > 0 AND cur.qty <= 3" }[o.only] || "";
 
+  // ⚠️ "บริการ" ไม่ใช่สินค้าที่มีสต็อกจริง (ค่าส่ง · ค่าบริการซ่อม · ค่าน้ำมัน)
+  //    ZORT ติดธง producttype = 1 ให้ — ตรวจทั้งคลังแล้วมี 6 ตัว
+  //    ของพวกนี้ยอดติดลบหนัก ๆ ได้ตามปกติ (ยิ่งขายยิ่งลบ) แล้วไป**ยึดแถวบนของแท็บ
+  //    "ของใกล้หมด"** จนสินค้าจริงที่ควรสั่งของถูกดันตกหน้า
+  // ⚠️ **ไม่กรองทิ้งเงียบ ๆ** — คืนจำนวนมาด้วยเสมอ (`services`) ให้จอบอกได้ว่าซ่อนไปกี่ตัว
+  //    กติกาเดียวกับ total/outOfStock: ตัวเลขบนแท็บต้องบอกได้ว่าแท็บอื่นมีอะไร
+  const kind =
+    { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[o.kind] || "";
+
   // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
   //    = พิมพ์ชื่อสินค้าที่ยังไม่เคยขายแล้วหาไม่เจอ ทั้งที่มีของอยู่ในคลัง (เจอจริง 2 ก.ย. 2569)
@@ -226,33 +235,41 @@ export async function listStock(o = {}) {
              AND oi.sku IS NOT NULL AND oi.sku <> ''
            GROUP BY oi.sku
          )`;
+  // ทะเบียนสินค้าเข้ามาทางนี้ — ราคาซื้อ · พร้อมขาย · หน่วย · เปิดใช้งาน · ประเภท
+  const JOIN = `LEFT JOIN products p ON p.sku = cur.sku`;
 
   const [sum] = await coreQuery(
     `${CTE}
      SELECT COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
             SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
+            SUM(CASE WHEN COALESCE(p.product_type,0) = 1 THEN 1 ELSE 0 END) AS services,
+            SUM(CASE WHEN COALESCE(p.active,1) = 0 THEN 1 ELSE 0 END) AS inactive,
             ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
-     FROM cur WHERE 1=1 ${filter}`,
+     FROM cur ${JOIN} WHERE 1=1 ${filter}`,
     [day, since, ...fParams]
   );
 
   // จำนวนแถวของ "แท็บที่เลือกอยู่" — ใช้ทำเลขหน้า ไม่ใช่ตัวเลขบนแท็บ
-  const [shown] = only
-    ? await coreQuery(
-        `${CTE} SELECT COUNT(*) AS c FROM cur WHERE ${only} ${filter}`,
-        [day, since, ...fParams]
-      )
-    : [{ c: sum?.skus }];
+  const [shown] =
+    only || kind
+      ? await coreQuery(
+          `${CTE} SELECT COUNT(*) AS c FROM cur ${JOIN}
+           WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}`,
+          [day, since, ...fParams]
+        )
+      : [{ c: sum?.skus }];
 
   const rows = await coreQuery(
     `${CTE}
      SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
+            p.purchase_price AS buy, p.available AS avail, p.unit AS unit,
+            p.product_type AS ptype, p.active AS active,
             COALESCE((SELECT name FROM products WHERE sku = cur.sku AND name <> ''),
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
-     FROM cur LEFT JOIN sold ON sold.sku = cur.sku
-     WHERE 1=1 ${only ? `AND ${only}` : ""} ${filter}
+     FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
+     WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
      ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
     [day, since, ...fParams]
   );
@@ -263,12 +280,15 @@ export async function listStock(o = {}) {
     limit,
     offset,
     only: o.only && only ? o.only : null,
+    kind: o.kind && kind ? o.kind : null,
     // ⚠️ total / outOfStock / low **ไม่ถูกกรองด้วย only** โดยตั้งใจ —
     //    ตัวเลขบนแท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ตัว ไม่งั้นมันไม่ใช่แท็บ
     //    (หลักเดียวกับ byStatus ในจอรายการขาย)
     total: num(sum?.skus),
     outOfStock: num(sum?.out_of_stock),
     low: num(sum?.low),
+    services: num(sum?.services), // จำนวน "บริการ" ทั้งคลัง — จอเอาไปบอกว่าซ่อนไปกี่ตัว
+    inactive: num(sum?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
     shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
     value: num(sum?.value),
     rows: rows.map((r) => ({
@@ -277,6 +297,15 @@ export async function listStock(o = {}) {
       qty: num(r.qty),
       price: num(r.price),
       sold: num(r.sold30),
+      // ⚠️ ราคาซื้อ 281 ตัวเป็น 0 จริง (ยังไม่ได้กรอกต้นทุน) — ส่ง null ไม่ใช่ 0
+      //    จอต้องขึ้น "—" ไม่ใช่ "฿0" ไม่งั้นอ่านว่าของฟรี แล้วคิดกำไรผิดทั้งแถว
+      buy: num(r.buy) > 0 ? num(r.buy) : null,
+      // ⚠️ พร้อมขาย ≠ คงเหลือ จริง 155 ตัว (ของถูกจองไว้ในออเดอร์ที่ยังไม่ส่ง)
+      //    null = ยังไม่มีในทะเบียน ให้จอแสดง "—" ห้ามเดาว่าเท่ากับ qty
+      available: r.avail === null || r.avail === undefined ? null : num(r.avail),
+      unit: r.unit || "",
+      service: num(r.ptype) === 1,
+      active: r.active === null || r.active === undefined ? null : num(r.active) === 1,
     })),
   };
 }
