@@ -11,6 +11,7 @@ import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs"
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
+import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -81,6 +82,39 @@ export default async function handler(req, context) {
         [from, to]
       );
       return json({ ok: true, from, to, items });
+    }
+    // สะพานส่งเอกสารขายเข้า PEAK (แทนหน้าที่ ZORT)
+    //   GET /api/core?peak=status            ต่อ PEAK ได้ไหม (ไม่สร้างเอกสารอะไร)
+    //   GET /api/core?peak=dry&day=YYYY-MM-DD  ซ้อมแปลงออเดอร์วันนั้นเป็นใบแจ้งหนี้ ไม่ส่งจริง
+    // ⚠️ ยังไม่มีทางส่งจริงผ่าน URL โดยตั้งใจ — ต้องตั้ง PEAK_LIVE แล้วเพิ่มตัวสั่งอีกชั้น
+    //    เอกสารขายผูกกับบัญชีและภาษี ยิงผิดต้องตามยกเลิกทีละใบ
+    if (url.searchParams.get("peak")) {
+      const mode = url.searchParams.get("peak");
+      if (mode === "status") return json({ ok: true, peak: await peakStatus() });
+      if (mode === "dry") {
+        const day = url.searchParams.get("day") ||
+          new Date(Date.now() + 7 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
+        const orders = await coreQuery(
+          `SELECT id, number, channel, customer, order_date, amount FROM orders
+           WHERE order_date = ? AND status NOT LIKE '%cancel%' AND status NOT LIKE '%void%'
+             AND status NOT LIKE '%ยกเลิก%' LIMIT 200`,
+          [day]
+        );
+        const items = await coreQuery(
+          `SELECT oi.order_id, oi.sku, oi.name, oi.qty, oi.amount
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE o.order_date = ?`,
+          [day]
+        );
+        const byOrder = new Map();
+        for (const it of items) {
+          if (!byOrder.has(it.order_id)) byOrder.set(it.order_id, []);
+          byOrder.get(it.order_id).push(it);
+        }
+        const invoices = orders.map((o) => toInvoice(o, byOrder.get(o.id) ?? []));
+        return json({ ok: true, day, orders: orders.length, peak: await sendInvoices(invoices) });
+      }
+      return json({ error: "peak รับได้เฉพาะ status หรือ dry" }, 400);
     }
     if (url.searchParams.get("list") === "moves") {
       return json({
