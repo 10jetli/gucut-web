@@ -309,8 +309,17 @@ function bareName(name, sku) {
 // ชนิดของ — ดูจากคำขึ้นต้นเท่านั้น (เรียงเฉพาะ→ทั่วไป)
 const KINDS = [
   { code: "chain", name: "โซ่", re: /^(ข้อต่อโซ่|โซ่)/, brandable: true },
-  { code: "bar", name: "บาร์", re: /^(บาร์|แผ่นบังคับโซ่)/, brandable: true },
-  { code: "saw", name: "เลื่อยยนต์", re: /^เลื่อย/, brandable: true },
+  { code: "bar", name: "บาร์", re: /^(บาร์|แผ่นบังคับโซ่|ปลอกบาร์)/, brandable: true },
+  {
+    code: "saw",
+    name: "เลื่อยยนต์",
+    re: /^เลื่อย/,
+    brandable: true,
+    // เลื่อยที่มีทะเบียนแยกกองต่างหาก — ตรงกับปุ่ม "เลื่อยยนต์ แบบมีทะเบียน" ในเครื่อง ZORT ตัวจริง
+    // ⚠️ ไม่ใช่เรื่องความสวยงาม — เลื่อยกลุ่มนี้ขายแล้วต้องทำเรื่อง ลซ.๒ ให้ลูกค้า
+    //    คนขายต้องแยกออกตั้งแต่ตอนกดปุ่ม ไม่ใช่มารู้ตอนจะเก็บเงิน
+    special: { code: "saw-reg", name: "เลื่อยยนต์ มีทะเบียน", re: /เลขทะเบียน|มีทะเบียน|ถูกต้องตามกฎหมาย/ },
+  },
   { code: "file", name: "ตะไบ / ลับโซ่", re: /^(ตะไบ|ลับโซ่|หินเจียร)/ },
   { code: "plug", name: "หัวเทียน", re: /^หัวเทียน/ },
   { code: "oil", name: "น้ำมัน / จาระบี", re: /^(น้ำมัน|จาระบี)/ },
@@ -324,16 +333,29 @@ const BRANDS = [
   { code: "nw", name: "NEWWAVE", re: /NEW\s*WAVE/i },
 ];
 
+/** เลขรุ่นที่ต้องไม่ติดกับตัวเลขอื่น — "070" ใน "MS070" ใช่ · ใน "12070" ไม่ใช่ */
+const modelRe = (...tokens) => new RegExp(`(?<![0-9])(${tokens.join("|")})(?![0-9])`, "i");
+
 // ⚠️ อะไหล่ส่วนใหญ่ชื่อเป็นภาษาอังกฤษแยกตาม "รุ่นเครื่อง" (MUFFLER 288XP · GEAR WHEEL MS070)
 //    ไม่มีคำไทยขึ้นต้นให้จับ ⇒ ใช้เป็นตาข่ายชั้นสอง หาที่ไหนในชื่อก็ได้
+// ⚠️ ตาข่ายนี้ทำงาน **หลัง** KINDS เสมอ จึงไม่ต้องกลัวว่า "เลื่อยยนต์ NEWWAVE F660"
+//    จะโดนจับเป็นอะไหล่ MS660 — ตัวนั้นถูกจับเป็นเลื่อยไปตั้งแต่ชั้นแรกแล้ว
+// ⚠️ **ห้ามใส่เลขล้วน "180"** — วัดแล้วมีแค่ 2 ตัวที่พึ่งมัน และทั้งคู่จับผิด
+//    ("ใบเลื่อยวงเดือน STIHL 18-180" · "BREATHER VALVE NO.180 7800TB" ซึ่งที่จริงเป็นของ 7800)
 const MODELS = [
-  { code: "p-288xp", name: "อะไหล่ 288XP", re: /\b288\s*XP\b/i },
-  { code: "p-ms070", name: "อะไหล่ MS070 / 070", re: /\bMS\s*070\b|\b070\b/i },
-  { code: "p-ms660", name: "อะไหล่ MS660 / 066", re: /\bMS\s*660\b|\b066\b/i },
-  { code: "p-ms440", name: "อะไหล่ MS440 / 044", re: /\bMS\s*440\b|\b044\b/i },
-  { code: "p-ms381", name: "อะไหล่ MS381 / 038", re: /\bMS\s*381\b|\b038\b/i },
-  { code: "p-5200", name: "อะไหล่ 5200 / 5800", re: /\b52 ?00\b|\b58 ?00\b/i },
-  { code: "p-7800", name: "อะไหล่ 7800", re: /\b78 ?00\b/i },
+  { code: "p-288xp", name: "อะไหล่ 288XP", re: /288\s*XP/i },
+  { code: "p-ms070", name: "อะไหล่ MS070 / 070", re: modelRe("MS\\s*070", "070") },
+  { code: "p-ms660", name: "อะไหล่ MS660 / 066", re: modelRe("MS\\s*660", "660", "066") },
+  { code: "p-ms440", name: "อะไหล่ MS440 / 044", re: modelRe("MS\\s*440", "440", "044") },
+  { code: "p-ms381", name: "อะไหล่ MS381 / 038", re: modelRe("MS\\s*381", "381", "038") },
+  { code: "p-ms250", name: "อะไหล่ MS250", re: modelRe("MS\\s*250") },
+  { code: "p-ms180", name: "อะไหล่ MS180", re: modelRe("MS\\s*180") },
+  { code: "p-mini", name: "อะไหล่ MINI", re: /\bMINI\b/i },
+  { code: "p-cs", name: "อะไหล่ CS (เลื่อยไฟฟ้า)", re: /\bCS\s*\d{3,4}/i },
+  { code: "p-5200", name: "อะไหล่ 5200 / 5800", re: modelRe("5200", "5800") },
+  { code: "p-7800", name: "อะไหล่ 7800", re: modelRe("7800") },
+  { code: "p-8800", name: "อะไหล่ 8800 / 9800", re: modelRe("8800", "9800") },
+  { code: "p-3800", name: "อะไหล่ 3800", re: modelRe("3800") },
   { code: "p-atom", name: "อะไหล่ ATOM", re: /\bATOM\b/i },
 ];
 
@@ -343,6 +365,7 @@ const OTHER = { code: "other", name: "อื่น ๆ" };
 const CAT_ORDER = (() => {
   const out = [];
   for (const k of KINDS) {
+    if (k.special) out.push({ code: k.special.code, name: k.special.name });
     if (k.brandable) {
       for (const b of BRANDS) out.push({ code: `${k.code}-${b.code}`, name: `${k.name} ${b.name}` });
       out.push({ code: k.code, name: `${k.name} (อื่น ๆ)` });
@@ -360,6 +383,9 @@ function groupOf(name, sku) {
   if (!n) return OTHER;
   const kind = KINDS.find((k) => k.re.test(n));
   if (kind) {
+    if (kind.special && kind.special.re.test(n)) {
+      return { code: kind.special.code, name: kind.special.name };
+    }
     if (!kind.brandable) return { code: kind.code, name: CAT_NAME.get(kind.code) };
     const brand = BRANDS.find((b) => b.re.test(n));
     const code = brand ? `${kind.code}-${brand.code}` : kind.code;
