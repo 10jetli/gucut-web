@@ -472,6 +472,26 @@ export default async function handler(req, context) {
       return { note: when };
     }),
 
+    // ⚠️ ระบบสำรองที่หยุดทำงานคือของอันตรายที่สุดในบรรดาของที่พังเงียบได้
+    //    เพราะ **มันดูเหมือนปกติทุกวันจนถึงวันที่ต้องใช้จริง** แล้ววันนั้นก็สายไปแล้ว
+    //    จึงต้องตรวจ "ความสดของสำเนา" ไม่ใช่แค่ว่ามีตารางสำรองอยู่ไหม
+    check("สำรองข้อมูล (Blobs → D1)", async () => {
+      if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const [r] = await coreQuery(
+        `SELECT MAX(at) AS t, COUNT(*) AS c, SUM(bytes) AS b FROM backups`
+      ).catch(() => [null]);
+      if (!r?.t) return { warn: true, note: "ยังไม่มีสำเนาสักชิ้น — ระบบสำรองอาจไม่เคยทำงานเลย" };
+      const keys = Number(r.c ?? 0);
+      const kb = Math.round(Number(r.b ?? 0) / 1024);
+      const hrs = (Date.now() - Date.parse(`${String(r.t).replace(" ", "T")}Z`)) / 3600000;
+      const what = `${keys.toLocaleString("th-TH")} คีย์ · ${kb.toLocaleString("th-TH")} KB`;
+      // งานสำรองวิ่งทุกชั่วโมง — เงียบเกิน 3 ชม. คือหยุดแล้ว
+      if (hrs > 3)
+        return { warn: true, note: `${what} · แต่ไม่มีอะไรใหม่มา ${Math.round(hrs)} ชม. — งานสำรองน่าจะหยุด` };
+      return { note: `${what} · สดภายใน ${Math.max(1, Math.round(hrs * 60))} นาที` };
+    }),
+
     check("ภาพถ่ายสต็อกรายวัน", async () => {
       if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
       const { coreQuery } = await import("../lib/coredb.mjs");
