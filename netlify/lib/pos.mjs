@@ -21,15 +21,37 @@ const thaiToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0,
 export const POS_SOURCE = "pos";
 export const POS_CHANNEL = "POS หน้าร้าน";
 
+// สาขาหน้าร้านจริงของร้าน — ตรงกับ "คลัง" ในร้าน ZORT ตัวที่สอง (ZAMA)
+// ⚠️ กระจกจาก ZORT รวมสองสาขาเป็นช่องทาง "POS" ก้อนเดียว แยกไม่ได้
+//    ของเราแยกตั้งแต่ต้นทางเป็น "POS KLD" / "POS ANJ" ⇒ รายงานรายสาขาได้เองโดยไม่ต้องทำอะไรเพิ่ม
+//    (จอที่จัดกลุ่มตาม channel อยู่แล้วจะเห็นสาขาแยกทันที)
+// ⚠️ ตั้งชื่อสาขาเพิ่มด้วย env POS_BRANCHES = "KLD:ชื่อเต็ม,ANJ:ชื่อเต็ม" ไม่ต้องแก้โค้ด
+export function branches() {
+  const raw = String(process.env.POS_BRANCHES ?? "").trim();
+  if (raw) {
+    return raw
+      .split(",")
+      .map((x) => x.split(":"))
+      .filter((x) => x[0]?.trim())
+      .map((x) => ({ code: x[0].trim().toUpperCase(), name: (x[1] ?? x[0]).trim() }));
+  }
+  return [
+    { code: "KLD", name: "สาขา KLD" },
+    { code: "ANJ", name: "สาขา ANJ" },
+  ];
+}
+
 /** เลขที่ใบถัดไปของวัน — POS-YYYYMMDD-001
  *  ⚠️ นับจากใบที่มีอยู่จริงในฐาน ไม่เก็บตัวนับแยก — ตัวนับแยกจะเพี้ยนทันทีที่มีใบถูกยกเลิก
  *     หรือมีคนเขียนตรง ๆ เข้าฐาน · ชนกันได้ถ้าสองสาขากดพร้อมกันเป๊ะ ๆ จึงมีตัวกันซ้ำที่ id อีกชั้น */
-async function nextNumber(day) {
+async function nextNumber(day, code) {
   const d = day.replace(/-/g, "");
   const [r] = await coreQuery(
-    `SELECT COUNT(*) AS c FROM orders WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(day)}`
+    `SELECT COUNT(*) AS c FROM orders
+     WHERE source = ${esc(POS_SOURCE)} AND order_date = ${esc(day)} AND channel = ${esc(`POS ${code}`)}`
   );
-  return `POS-${d}-${String(num(r?.c) + 1).padStart(3, "0")}`;
+  // เลขที่แยกตามสาขา — สองสาขาออกบิลพร้อมกันแล้วเลขไม่ชนกัน
+  return `${code}-${d}-${String(num(r?.c) + 1).padStart(3, "0")}`;
 }
 
 /** บันทึกใบขายหน้าร้าน — คืนใบที่บันทึกจริง (หรือบอกว่าเป็นใบซ้ำ) */
@@ -52,7 +74,16 @@ export async function createSale(input = {}) {
   if (!clean.length) return { error: "ไม่มีรายการสินค้าที่ใช้ได้", bad };
   if (clean.length > 100) return { error: "ใบเดียวใส่ได้ไม่เกิน 100 รายการ" };
 
-  const number = String(input.number ?? "").trim().slice(0, 40) || (await nextNumber(day));
+  // สาขาบังคับใส่ และต้องเป็นสาขาที่มีจริง — ขายหน้าร้านโดยไม่รู้ว่าสาขาไหน
+  // = เอาไปกระทบยอดรายสาขาและสต็อกรายคลังไม่ได้เลย
+  const list = branches();
+  const code = String(input.branch ?? "").trim().toUpperCase();
+  const branch = list.find((b) => b.code === code);
+  if (!branch) {
+    return { error: `ต้องระบุสาขา (${list.map((b) => b.code).join(" หรือ ")})` };
+  }
+
+  const number = String(input.number ?? "").trim().slice(0, 40) || (await nextNumber(day, branch.code));
   const id = `${POS_SOURCE}/${number}`;
   const amount = Math.round(clean.reduce((s, it) => s + it.qty * it.price, 0) * 100) / 100;
 
@@ -65,7 +96,7 @@ export async function createSale(input = {}) {
 
   await coreQuery(
     `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at)
-     VALUES (${esc(id)},${esc(POS_SOURCE)},${esc(number)},${esc(String(input.channel ?? POS_CHANNEL).slice(0, 60))},
+     VALUES (${esc(id)},${esc(POS_SOURCE)},${esc(number)},${esc(`POS ${branch.code}`)},
              'Success',${amount},${esc(String(input.customer ?? "").slice(0, 120))},${esc(day)},datetime('now'))`
   );
   const values = clean
@@ -76,7 +107,7 @@ export async function createSale(input = {}) {
   );
 
   return {
-    order: { id, number, channel: input.channel ?? POS_CHANNEL, order_date: day, amount, status: "Success" },
+    order: { id, number, branch: branch.code, channel: `POS ${branch.code}`, order_date: day, amount, status: "Success" },
     lines: clean.length,
     bad: bad.length ? bad : undefined,
   };
@@ -115,4 +146,31 @@ export async function listSales({ day = "", limit = 50 } = {}) {
        AND status <> 'Voided'`
   );
   return { day: d, total: num(sum?.c), totalAmount: num(sum?.s), rows };
+}
+
+/** ค้นสินค้าให้เครื่องคิดเงิน — พิมพ์รหัสหรือชื่อแล้วได้ราคา+ของคงเหลือทันที
+ *  ⚠️ อ่านจากภาพถ่ายสต็อกล่าสุด ซึ่งถ่ายตอนตี 1 ⇒ ของคงเหลือเป็น "ตัวช่วยดู" ไม่ใช่ตัวห้ามขาย
+ *     ห้ามเอาไปบล็อกการขายเด็ดขาด ลูกค้ายืนอยู่หน้าร้านแล้วขายไม่ได้เพราะเลขไม่ตรง แย่กว่าขายเกิน */
+export async function lookup(q, limit = 20) {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const term = String(q ?? "").trim().slice(0, 60);
+  if (!term) return { rows: [] };
+  const lim = Math.max(1, Math.min(50, num(limit) || 20));
+  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = latest?.d;
+  if (!day) return { rows: [] };
+  const rows = await coreQuery(
+    `SELECT s.sku AS sku, s.qty AS qty, s.price AS price,
+            (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1) AS name
+     FROM stock_snapshots s
+     WHERE s.day = ?
+       AND (s.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))
+     ORDER BY CASE WHEN s.sku = ? THEN 0 ELSE 1 END, s.qty DESC
+     LIMIT ${lim}`,
+    [day, `%${term}%`, `%${term}%`, term]
+  );
+  return {
+    day,
+    rows: rows.map((r) => ({ sku: r.sku, name: r.name || "", price: num(r.price), qty: num(r.qty) })),
+  };
 }
