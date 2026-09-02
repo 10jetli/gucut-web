@@ -10,7 +10,7 @@ import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare } from "../lib/shopee-stock.mjs";
-import { applyMoves, listMoves } from "../lib/stock-moves.mjs";
+import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -43,6 +43,11 @@ export default async function handler(req, context) {
     // ของเข้า-ของออกที่ไม่ได้มาจากออเดอร์ (รับของ · โอน · ของเสีย · ปรับจากการนับ)
     //   POST /api/core?move=1   body: {sku,qty,reason,ref} หรือ {moves:[...]}
     //   GET  /api/core?list=moves&sku=&limit=&offset=
+    if (url.searchParams.get("movedel")) {
+      if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
+      const r = await deleteMove(url.searchParams.get("movedel"));
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
     if (url.searchParams.get("move")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

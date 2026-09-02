@@ -61,6 +61,19 @@ export async function applyMoves(list) {
   return { sent: rows.length, added, duplicate: rows.length - added, bad: bad.length ? bad : undefined };
 }
 
+/** ลบใบที่บันทึกผิด (ทีละใบด้วยเลข id เท่านั้น)
+ *  ⚠️ ตั้งใจให้ลบได้ทีละใบและต้องรู้ id — ไม่มีลบทั้ง ref หรือลบทั้ง SKU
+ *     บัญชีสต็อกที่ลบเป็นชุดได้ = พลาดครั้งเดียวประวัติหายเป็นสิบใบโดยไม่มีอะไรเตือน */
+export async function deleteMove(id) {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const n = Number(id);
+  if (!Number.isInteger(n) || n <= 0) return { error: "ต้องระบุ id เป็นเลขจำนวนเต็ม" };
+  const row = (await coreQuery(`SELECT id,sku,qty,reason,ref FROM stock_moves WHERE id = ${n}`))[0];
+  if (!row) return { error: `ไม่พบใบเลข ${n}` };
+  await coreQuery(`DELETE FROM stock_moves WHERE id = ${n}`);
+  return { deleted: row };
+}
+
 /** รายการเคลื่อนไหวล่าสุด — ให้หน้าจอปรับสต็อกเอาไปโชว์ประวัติ */
 export async function listMoves({ sku = "", limit = 50, offset = 0 } = {}) {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
