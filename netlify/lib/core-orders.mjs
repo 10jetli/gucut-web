@@ -86,7 +86,11 @@ export async function listOrders(o = {}) {
   // ยอดแยก "สถานะ" ของช่วงที่กรองอยู่ — จอเอาไปทำแท็บพร้อมจำนวนในวงเล็บแบบ ZORT
   // ⚠️ ไม่กรองตามสถานะที่เลือกอยู่ ไม่งั้นแท็บอื่นจะกลายเป็นศูนย์หมดทันทีที่กดแท็บแรก
   //    (แท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ใบ ไม่งั้นมันไม่ใช่แท็บ เป็นแค่ปุ่มกรอง)
-  const wAll = buildWhere({ from, to, channel, q, includeCancelled });
+  // ⚠️ **นับใบยกเลิกด้วยเสมอ** ไม่ว่าตัวกรองหลักจะรวมหรือไม่ —
+  //    ไม่งั้นแท็บ "ยกเลิก" จะหายไปจากจอทั้งที่มีอยู่จริง (เจอจริง 2 ก.ย. 2569:
+  //    มี Voided 44 ใบ แต่จอไม่มีแท็บให้กดเลย เพราะ byStatus ถูกกรองทิ้งไปก่อน)
+  //    แท็บคือ "สารบัญ" ของข้อมูลทั้งหมด ไม่ใช่ผลของตัวกรองที่เลือกอยู่
+  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true });
   const byStatus = await coreQuery(
     `SELECT status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
      FROM orders WHERE ${wAll.sql}
