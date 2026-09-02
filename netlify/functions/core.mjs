@@ -82,6 +82,24 @@ export default async function handler(req, context) {
       const r = await createSale(body);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
     }
+    // ผังสถาปัตยกรรม — โครงมาจากตัวสแกนตอน build (arch-data.mjs)
+    // ส่วน "ตั้งคีย์แล้วหรือยัง" ต้องดูตอนรันเท่านั้น เพราะตัวแปรลับอยู่ที่ Netlify ไม่ได้อยู่ในโค้ด
+    // ⚠️ ส่งกลับแค่ "ตั้งแล้ว/ยัง" ห้ามส่งค่าจริงของตัวแปรออกไปเด็ดขาด
+    if (url.searchParams.get("arch")) {
+      const { ARCH } = await import("../lib/arch-data.mjs");
+      return json({
+        ok: true,
+        arch: {
+          ...ARCH,
+          integrations: ARCH.integrations.map((i) => ({
+            ...i,
+            envs: undefined, // ชื่อตัวแปรไม่ต้องส่งออกไปให้หน้าจอ
+            live: i.envs.every((e) => !!process.env[e]),
+            partial: i.envs.some((e) => !!process.env[e]) && !i.envs.every((e) => !!process.env[e]),
+          })),
+        },
+      });
+    }
     if (url.searchParams.get("syncproducts")) {
       return json({ ok: true, products: await syncProducts() });
     }
