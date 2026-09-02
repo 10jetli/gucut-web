@@ -9,6 +9,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
+import { shopeeStockCompare } from "../lib/shopee-stock.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -47,6 +48,10 @@ export default async function handler(req, context) {
     if (url.searchParams.get("shopeesync")) {
       const days = Math.min(15, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
       return json({ ok: true, shopee: await syncShopeeOrders(days) });
+    }
+    // เทียบสต็อกบน Shopee กับคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ Shopee
+    if (url.searchParams.get("stockcompare")) {
+      return json({ ok: true, stock: await shopeeStockCompare() });
     }
     if (url.searchParams.get("snapshot")) {
       return json({ ok: true, snapshot: await snapshotStock() });
