@@ -89,11 +89,16 @@ export default async function handler(req, context) {
     //   GET ?restore=<ถัง>[&key=..]              **ซ้อมให้ดู** ไม่เขียนอะไร
     //   GET ?restore=<ถัง>&confirm=1[&overwrite=1]  เขียนจริง
     // ⚠️ restore ไม่มี confirm = ซ้อมเสมอ · และไม่ทับของที่ยังอยู่ นอกจากสั่ง overwrite
+    // ⚠️ **คืนค่าแบบแบน ไม่ห่อในกล่องซ้อน** — ให้เหมือนทุก endpoint ในไฟล์นี้
+    //    (list=stock · list=sales · recon ล้วนเป็น { ok:true, ...ผลลัพธ์ })
+    //    เดิม arch กับ backup ห่อไว้อีกชั้น ⇒ ฝั่งจออ่านไม่เจอ ขึ้น "ไม่ทราบจำนวน" ทั้งหน้า
+    //    ทั้งที่ API ตอบ 200 พร้อมข้อมูลครบ (เจอจริง 3 ก.ย. 2569 ตอนเปิดหน้าดู)
+    //    บทเรียน: ความไม่สม่ำเสมอของรูปคำตอบ ทำให้อีกฝั่งเดาผิดโดยไม่มีอะไรฟ้อง
     if (url.searchParams.get("backupstatus")) {
-      return json({ ok: true, backup: await backupStatus() });
+      return json({ ok: true, ...(await backupStatus()) });
     }
     if (url.searchParams.get("backup")) {
-      return json({ ok: true, backup: await runBackup() });
+      return json({ ok: true, ...(await runBackup()) });
     }
     if (url.searchParams.get("restore")) {
       const r = await restore({
@@ -111,15 +116,13 @@ export default async function handler(req, context) {
       const { ARCH } = await import("../lib/arch-data.mjs");
       return json({
         ok: true,
-        arch: {
-          ...ARCH,
-          integrations: ARCH.integrations.map((i) => ({
-            ...i,
-            envs: undefined, // ชื่อตัวแปรไม่ต้องส่งออกไปให้หน้าจอ
-            live: i.envs.every((e) => !!process.env[e]),
-            partial: i.envs.some((e) => !!process.env[e]) && !i.envs.every((e) => !!process.env[e]),
-          })),
-        },
+        ...ARCH,
+        integrations: ARCH.integrations.map((i) => ({
+          ...i,
+          envs: undefined, // ชื่อตัวแปรไม่ต้องส่งออกไปให้หน้าจอ
+          live: i.envs.every((e) => !!process.env[e]),
+          partial: i.envs.some((e) => !!process.env[e]) && !i.envs.every((e) => !!process.env[e]),
+        })),
       });
     }
     if (url.searchParams.get("syncproducts")) {
