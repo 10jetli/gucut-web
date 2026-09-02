@@ -47,6 +47,25 @@ const CALC_CTE = `
          LEFT JOIN moved m ON m.sku = b.sku
        )`;
 
+/**
+ * สร้างตารางของงานนี้เองถ้ายังไม่มี — จะได้ไม่ต้องรอใครไปกด /api/core?init=1
+ * (ขั้นตอนมือที่ต้องจำ = ขั้นตอนที่จะถูกลืม แล้วยามตี 1 เงียบไปเฉย ๆ โดยไม่มีใครรู้)
+ * CREATE ... IF NOT EXISTS ทั้งคู่ ยิงซ้ำทุกคืนไม่เป็นไร
+ */
+async function ensureStockTables() {
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS stock_recon_log (
+       day TEXT PRIMARY KEY, base_day TEXT, skus INTEGER, matched INTEGER,
+       mismatched INTEGER, abs_diff REAL, notes TEXT,
+       at TEXT DEFAULT (datetime('now')))`
+  );
+  // ดัชนีกันเบิ้ลของ stock_moves — ยังไม่มีใครเขียนตารางนั้น จึงสร้างผ่านเสมอ
+  // แต่ถ้าวันหน้ามีแถวซ้ำอยู่ก่อน คำสั่งนี้จะล้ม → ห้ามให้ลากงานเทียบสต็อกล้มตาม
+  await coreQuery(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_moves_once ON stock_moves(reason,ref,sku)`
+  ).catch(() => null);
+}
+
 /** หาวันฐานกับวันปลายจากภาพถ่ายที่มีจริง (ไม่ใช่ปฏิทิน — บางวันงานอาจไม่ได้รัน) */
 async function pickDays(daysBack) {
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
@@ -123,6 +142,7 @@ export async function stockRecon(daysBack = 1, limit = 40) {
 
 /** งานรายวัน: เทียบแล้วจดลงสมุด — คืนบรรทัดสรุปไว้พ่วง Telegram (null ถ้ายังเทียบไม่ได้) */
 export async function stockReconDaily() {
+  await ensureStockTables();
   const r = await stockRecon(1, 40);
   if (r.skip) return { skip: r.skip, line: null };
 
