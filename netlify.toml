@@ -133,3 +133,10 @@
 # Serverless function สต็อก/ราคาสดจาก ZORT (/api/stock)
 [functions]
   directory = "netlify/functions"
+
+# แผนที่ SKU → รูปสินค้า ให้จอสินค้าฝั่ง admin.gucut.com ดึงข้ามโดเมน
+[[headers]]
+  for = "/sku-images.json"
+  [headers.values]
+    Access-Control-Allow-Origin = "*"
+    Cache-Control = "public, max-age=3600"
