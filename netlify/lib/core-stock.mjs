@@ -207,10 +207,15 @@ export async function listStock(o = {}) {
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
   const only = { out: "cur.qty <= 0", low: "cur.qty > 0 AND cur.qty <= 3" }[o.only] || "";
 
+  // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
+  //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
+  //    = พิมพ์ชื่อสินค้าที่ยังไม่เคยขายแล้วหาไม่เจอ ทั้งที่มีของอยู่ในคลัง (เจอจริง 2 ก.ย. 2569)
   const filter = q
-    ? `AND (cur.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
+    ? `AND (cur.sku LIKE ?
+            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = cur.sku AND p2.name LIKE ?)
+            OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
     : "";
-  const fParams = q ? [`%${q}%`, `%${q}%`] : [];
+  const fParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
 
   const CTE = `
     WITH cur AS (SELECT sku, qty, price FROM stock_snapshots WHERE day = ?),
@@ -244,7 +249,8 @@ export async function listStock(o = {}) {
     `${CTE}
      SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
-            (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1) AS name
+            COALESCE((SELECT name FROM products WHERE sku = cur.sku AND name <> ''),
+                     (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${filter}
      ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,

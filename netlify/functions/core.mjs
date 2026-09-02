@@ -12,7 +12,7 @@ import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
-import { createSale, voidSale, listSales, branches, lookup, posCats } from "../lib/pos.mjs";
+import { deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats } from "../lib/pos.mjs";
 import { syncProducts } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
@@ -63,6 +63,13 @@ export default async function handler(req, context) {
     //   POST   /api/core?sale=1   body {items:[{sku,name,qty,price}], day?, number?, customer?}
     //   DELETE /api/core?salevoid=<เลขที่ใบ>   (เปลี่ยนสถานะเป็น Voided ไม่ลบ)
     //   GET    /api/core?list=sales&day=YYYY-MM-DD
+    // ลบใบขายหน้าร้านที่ยกเลิกแล้วทิ้งถาวร (เก็บกวาดใบทดสอบ) — ห้ามลบใบที่ยังไม่ยกเลิก
+    //   DELETE /api/core?saledel=<เลขที่ใบ>
+    if (url.searchParams.get("saledel")) {
+      if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
+      const r = await deleteVoidedSale(url.searchParams.get("saledel"));
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
     if (url.searchParams.get("salevoid")) {
       if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
       const r = await voidSale(url.searchParams.get("salevoid"));

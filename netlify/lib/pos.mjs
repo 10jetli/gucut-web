@@ -176,6 +176,33 @@ export async function voidSale(number) {
   return { voided: { ...row, status: "Voided" } };
 }
 
+/** ลบใบขายหน้าร้านทิ้งถาวร — **เฉพาะใบที่ยกเลิกแล้วเท่านั้น**
+ *
+ * ทำไมต้องมี: ใบทดสอบตอนต่อท่อไม่มีทางเอาออกได้เลย (voidSale แค่เปลี่ยนสถานะ)
+ * ⇒ ค้างเป็นแถว "ยกเลิก" ในจอรายการขายและตัวเทียบยอดกับ ZORT ตลอดไป
+ *
+ * ⚠️ **ห้ามขยายให้ลบใบที่ยังไม่ยกเลิกเด็ดขาด** — บัญชีขายต้องตามรอยได้
+ *    ท่านี้ปลอดภัยเพราะใบที่ยกเลิกแล้วไม่กระทบอะไรเลย: ไม่นับในยอดขาย
+ *    และตัวคิดสต็อกคัดใบยกเลิกออกอยู่แล้ว ⇒ ลบทิ้งได้โดยไม่มีตัวเลขไหนขยับ
+ * ⚠️ แตะได้เฉพาะใบที่ source = 'pos' — ห้ามไปแตะออเดอร์ที่กระจกมาจาก ZORT/มาร์เก็ตเพลส
+ *    พวกนั้นกระจกจะดึงกลับมาใหม่อยู่ดี และเป็นข้อมูลของระบบอื่น */
+export async function deleteVoidedSale(number) {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const n = String(number ?? "").trim().slice(0, 40);
+  if (!n) return { error: "ต้องระบุเลขที่ใบ" };
+  const id = `${POS_SOURCE}/${n}`;
+  const [row] = await coreQuery(
+    `SELECT id, number, status, amount FROM orders WHERE id = ${esc(id)} AND source = ${esc(POS_SOURCE)}`
+  );
+  if (!row) return { error: `ไม่พบใบขายหน้าร้านเลขที่ ${n}` };
+  if (String(row.status) !== "Voided") {
+    return { error: `ใบ ${n} ยังไม่ถูกยกเลิก — ต้องยกเลิกก่อนถึงจะลบได้ (DELETE ?salevoid=${n})` };
+  }
+  await coreQuery(`DELETE FROM order_items WHERE order_id = ${esc(id)}`);
+  await coreQuery(`DELETE FROM orders WHERE id = ${esc(id)}`);
+  return { deleted: row };
+}
+
 /** ใบขายหน้าร้านล่าสุด — ให้จอ POS เอาไปโชว์ประวัติของวัน */
 export async function listSales({ day = "", limit = 50 } = {}) {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
@@ -241,7 +268,7 @@ export async function lookup(q, limit = 20, cat = "") {
     params
   );
   // กรองหมวดในหน่วยความจำ — หมวดคิดจากชื่อ ไม่ได้เก็บในฐาน จึงกรองด้วย SQL ไม่ได้
-  const picked = group ? rows.filter((r) => groupOf(r.name).code === group) : rows;
+  const picked = group ? rows.filter((r) => groupOf(r.name, r.sku).code === group) : rows;
   return {
     day,
     cat: group || null,
@@ -260,32 +287,46 @@ export async function lookup(q, limit = 20, cat = "") {
 //
 // ⚠️ นี่คือการ "เดาจากชื่อ" ไม่ใช่ข้อมูลจริงจากต้นทาง — ตัวไหนเข้าไม่ได้จะไปกอง "อื่น ๆ"
 //    วันที่เจ้าของร้านอยากจัดเอง ค่อยทำตารางจับคู่ทีหลัง กติกาชุดนี้ไม่ขวาง
-// ⚠️ ลำดับสำคัญ: บาร์ → โซ่ → เลื่อยยนต์ เพราะชื่อซ้อนกันเป็นชั้น
-//    "โซ่เลื่อยยนต์ NEWWAVE" มีคำว่า เลื่อยยนต์ ฝังอยู่ — เช็คเลื่อยยนต์ก่อน = โซ่ 110 ตัว
-//    ไปโผล่หมวดเลื่อยยนต์ (เจอจริง 2 ก.ย.) · "แผ่นบังคับโซ่" มีคำว่า โซ่ — บาร์จึงมาก่อนโซ่
-const GROUPS = [
-  // ⚠️ **ลำดับสำคัญมาก — ตัวแรกที่เข้าชนะ** และชื่อสินค้าไทยซ้อนคำกันเยอะ
-  //    "โซ่เลื่อยยนต์ NEWWAVE" มีคำว่า "เลื่อยยนต์" อยู่ด้วย ⇒ ถ้าเอากติกาเลื่อยยนต์ไว้ก่อน
-  //    กดหมวด "เลื่อยยนต์" แล้วจะได้โซ่ขึ้นมาเต็มไปหมด (เจอจริง 2 ก.ย. 2569)
-  //    ⇒ ของที่ "เป็นชิ้นส่วน" (โซ่ · บาร์ · ตะไบ) ต้องมาก่อน "ตัวเครื่อง" เสมอ
-  { code: "chain-kk", name: "โซ่ KINGKONG", re: /โซ่.*KINGKONG/i },
-  { code: "chain-nw", name: "โซ่ NEWWAVE", re: /โซ่.*NEWWAVE/i },
-  { code: "chain", name: "โซ่ (อื่น ๆ)", re: /โซ่/i },
-  { code: "bar-kk", name: "บาร์ KINGKONG", re: /บาร์.*KINGKONG/i },
-  { code: "bar-nw", name: "บาร์ NEWWAVE", re: /บาร์.*NEWWAVE/i },
-  { code: "bar", name: "บาร์ (อื่น ๆ)", re: /บาร์|แผ่นบังคับโซ่/i },
-  { code: "file", name: "ตะไบ / ลับโซ่", re: /ตะไบ|ลับโซ่|หินเจียร/i },
-  { code: "plug", name: "หัวเทียน", re: /หัวเทียน/i },
-  { code: "start", name: "ชุดสตาร์ท", re: /สตาร์ท/i },
-  { code: "oil", name: "น้ำมัน / จาระบี", re: /น้ำมัน|จาระบี/i },
-  { code: "service", name: "ค่าบริการ", re: /ค่าบริการ|ค่าซ่อม|ค่าส่ง/i },
-  // ตัวเครื่องมาทีหลังชิ้นส่วนเสมอ
-  { code: "saw-kk", name: "เลื่อยยนต์ KINGKONG", re: /เลื่อยยนต์.*KINGKONG|KINGKONG.*เลื่อยยนต์/i },
-  { code: "saw-nw", name: "เลื่อยยนต์ NEWWAVE", re: /เลื่อยยนต์.*NEWWAVE|NEWWAVE.*เลื่อยยนต์/i },
-  { code: "saw", name: "เลื่อยยนต์ (อื่น ๆ)", re: /เลื่อยยนต์|เลื่อยโซ่/i },
-  // ⚠️ อะไหล่ส่วนใหญ่ชื่อเป็นภาษาอังกฤษแยกตาม "รุ่นเครื่อง" (MUFFLER 288XP · GEAR WHEEL MS070)
-  //    ไม่มีคำไทยให้จับ ⇒ ต้องจัดกลุ่มตามรุ่น ไม่งั้นเกือบทั้งคลังไปกองรวมที่ 'อื่น ๆ'
-  //    ต้องอยู่ท้ายสุด เพราะรหัสรุ่นโผล่ในชื่อโซ่/บาร์ด้วย (เช่น บาร์ KINGKONG 30" (070))
+//
+// 🔴 **ต้องดูจาก "คำขึ้นต้น" ของชื่อ ห้ามใช้ "มีคำนี้อยู่ในชื่อ" เด็ดขาด** (แก้ 2 ก.ย. 2569)
+//    ชื่อสินค้าร้านนี้ขึ้นต้นด้วยชนิดของเสมอ แล้วต่อด้วยคำอธิบายที่มีชื่อชนิดอื่นปนอยู่:
+//      "โซ่เลื่อยยนต์ NEWWAVE 3623"          ← เป็นโซ่ แต่มีคำว่า "เลื่อยยนต์"
+//      "เลื่อยยนต์ KingKong 5800 พร้อมโซ่และบาร์" ← เป็นเลื่อย แต่มีทั้ง "โซ่" และ "บาร์"
+//    กติกาเดิมใช้ /เลื่อยยนต์.*NEWWAVE/ แบบหาที่ไหนก็ได้ ⇒ **โซ่ทั้งหมดถูกนับเป็นเลื่อยยนต์**
+//    ผลคือ กด "โซ่ NEWWAVE" ที่ขึ้นว่ามี 17 ตัว แล้วได้ของจริง 2 ตัว — ปุ่มที่โกหก
+//    (เจอตอนยิงของจริง 2 ก.ย. 2569 · ตัวเลขบนปุ่มกับของที่ได้มาจากคนละชุดเหมือนกับ
+//     กับดัก "แท็บยกเลิก (44) กดแล้วได้ 0" ในจอรายการขาย)
+
+/** ตัดรหัสสินค้าที่บางชื่อเอามาแปะไว้ข้างหน้า ("00596 ชุดเร่งโซ่ MS381" → "ชุดเร่งโซ่ MS381")
+ *  ⚠️ ตัดเฉพาะเมื่อตรงกับรหัสของแถวนั้นจริง ๆ **ห้ามตัดตัวเลขนำหน้าแบบมั่ว**
+ *     ไม่งั้นชื่ออย่าง "5200 ฝาสูบ" จะโดนตัดคำที่ใช้แยกรุ่นทิ้ง แล้วรุ่นจะจับไม่ได้ */
+function bareName(name, sku) {
+  const n = String(name ?? "").trim();
+  const s = String(sku ?? "").trim();
+  return s && n.startsWith(s) ? n.slice(s.length).trim() : n;
+}
+
+// ชนิดของ — ดูจากคำขึ้นต้นเท่านั้น (เรียงเฉพาะ→ทั่วไป)
+const KINDS = [
+  { code: "chain", name: "โซ่", re: /^(ข้อต่อโซ่|โซ่)/, brandable: true },
+  { code: "bar", name: "บาร์", re: /^(บาร์|แผ่นบังคับโซ่)/, brandable: true },
+  { code: "saw", name: "เลื่อยยนต์", re: /^เลื่อย/, brandable: true },
+  { code: "file", name: "ตะไบ / ลับโซ่", re: /^(ตะไบ|ลับโซ่|หินเจียร)/ },
+  { code: "plug", name: "หัวเทียน", re: /^หัวเทียน/ },
+  { code: "oil", name: "น้ำมัน / จาระบี", re: /^(น้ำมัน|จาระบี)/ },
+  { code: "start", name: "ชุดสตาร์ท", re: /^(ชุดสตาร์ท|สตาร์ท|ลานสตาร์ท)/ },
+  { code: "service", name: "ค่าบริการ", re: /^ค่า/ },
+];
+
+// ยี่ห้อ — หาที่ไหนในชื่อก็ได้ (ยี่ห้อมักอยู่กลางชื่อ)
+const BRANDS = [
+  { code: "kk", name: "KINGKONG", re: /KING\s*KONG/i },
+  { code: "nw", name: "NEWWAVE", re: /NEW\s*WAVE/i },
+];
+
+// ⚠️ อะไหล่ส่วนใหญ่ชื่อเป็นภาษาอังกฤษแยกตาม "รุ่นเครื่อง" (MUFFLER 288XP · GEAR WHEEL MS070)
+//    ไม่มีคำไทยขึ้นต้นให้จับ ⇒ ใช้เป็นตาข่ายชั้นสอง หาที่ไหนในชื่อก็ได้
+const MODELS = [
   { code: "p-288xp", name: "อะไหล่ 288XP", re: /\b288\s*XP\b/i },
   { code: "p-ms070", name: "อะไหล่ MS070 / 070", re: /\bMS\s*070\b|\b070\b/i },
   { code: "p-ms660", name: "อะไหล่ MS660 / 066", re: /\bMS\s*660\b|\b066\b/i },
@@ -296,14 +337,42 @@ const GROUPS = [
   { code: "p-atom", name: "อะไหล่ ATOM", re: /\bATOM\b/i },
 ];
 
-function groupOf(name) {
-  const n = String(name ?? "");
-  for (const g of GROUPS) if (g.re.test(n)) return g;
-  return { code: "other", name: "อื่น ๆ" };
+const OTHER = { code: "other", name: "อื่น ๆ" };
+
+/** ลำดับปุ่มบนแผง — ชนิดที่แยกยี่ห้อได้ให้ KINGKONG/NEWWAVE มาก่อน แล้วค่อย "อื่น ๆ" ของชนิดนั้น */
+const CAT_ORDER = (() => {
+  const out = [];
+  for (const k of KINDS) {
+    if (k.brandable) {
+      for (const b of BRANDS) out.push({ code: `${k.code}-${b.code}`, name: `${k.name} ${b.name}` });
+      out.push({ code: k.code, name: `${k.name} (อื่น ๆ)` });
+    } else out.push({ code: k.code, name: k.name });
+  }
+  for (const m of MODELS) out.push({ code: m.code, name: m.name });
+  out.push(OTHER);
+  return out;
+})();
+const CAT_NAME = new Map(CAT_ORDER.map((c) => [c.code, c.name]));
+
+/** ชื่อสินค้า (+รหัส) → หมวด · คืน {code,name} เสมอ ตกทุกกติกาก็ได้ "อื่น ๆ" ไม่มีทางคืน null */
+function groupOf(name, sku) {
+  const n = bareName(name, sku);
+  if (!n) return OTHER;
+  const kind = KINDS.find((k) => k.re.test(n));
+  if (kind) {
+    if (!kind.brandable) return { code: kind.code, name: CAT_NAME.get(kind.code) };
+    const brand = BRANDS.find((b) => b.re.test(n));
+    const code = brand ? `${kind.code}-${brand.code}` : kind.code;
+    return { code, name: CAT_NAME.get(code) };
+  }
+  const model = MODELS.find((m) => m.re.test(n));
+  return model ? { code: model.code, name: CAT_NAME.get(model.code) } : OTHER;
 }
 
 /** รายชื่อหมวดที่ "มีสินค้าจริง" พร้อมจำนวน — จอเอาไปทำปุ่มแผงซ้าย
- *  ⚠️ คืนเฉพาะหมวดที่มีของ ไม่คืนหมวดเปล่า — ปุ่มที่กดแล้วไม่มีอะไรคือปุ่มหลอก */
+ *  ⚠️ คืนเฉพาะหมวดที่มีของ ไม่คืนหมวดเปล่า — ปุ่มที่กดแล้วไม่มีอะไรคือปุ่มหลอก
+ *  ⚠️ ตัวเลข items ต้องมาจากกติกาชุดเดียวกับที่ poslookup ใช้กรอง ห้ามคิดคนละทาง
+ *     ไม่งั้นเลขบนปุ่มกับของที่ได้จะไม่ตรงกัน แล้วไม่มีอะไรฟ้อง */
 export async function posCats() {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
@@ -317,16 +386,20 @@ export async function posCats() {
     [day]
   );
   const count = new Map();
+  let unnamed = 0;
   for (const r of rows) {
-    const g = groupOf(r.name);
+    if (!String(r.name ?? "").trim()) unnamed += 1;
+    const g = groupOf(r.name, r.sku);
     const cur = count.get(g.code) ?? { code: g.code, name: g.name, items: 0 };
     cur.items += 1;
     count.set(g.code, cur);
   }
-  const order = [...GROUPS.map((g) => g.code), "other"];
   return {
     day,
     note: "หมวดหมู่จัดจากชื่อสินค้า (ZORT ไม่มีหมวดหมู่ในข้อมูลสินค้า) — ตัวที่เข้าไม่ได้อยู่ 'อื่น ๆ'",
-    cats: order.map((c) => count.get(c)).filter(Boolean),
+    // ⚠️ บอกจำนวนตัวที่ "ไม่มีชื่อเลย" ออกไปด้วย — พวกนี้ไปกอง 'อื่น ๆ' โดยไม่มีทางจัดหมวดได้
+    //    ถ้าไม่บอก จอจะดูเหมือนกติกาจัดหมวดห่วย ทั้งที่ต้นเหตุคือคลังไม่มีชื่อสินค้า
+    unnamed,
+    cats: CAT_ORDER.map((c) => count.get(c.code)).filter(Boolean),
   };
 }
