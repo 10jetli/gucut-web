@@ -69,6 +69,12 @@ export async function createSale(input = {}) {
     if (!sku) bad.push({ line: i + 1, why: "ไม่มี sku" });
     else if (!Number.isFinite(qty) || qty <= 0) bad.push({ line: i + 1, sku, why: "qty ต้องมากกว่า 0" });
     else if (!Number.isFinite(price) || price < 0) bad.push({ line: i + 1, sku, why: "price ต้องไม่ติดลบ" });
+    // ⚠️ **ราคา 0 ต้องยืนยันเสมอ** — เจอจริง 2 ก.ย. 2569 ตอนทดสอบจอ POS:
+    //    สินค้าหลายตัวในคลังมีราคาเป็น 0 (ยังไม่ได้ตั้งราคา) พอแคชเชียร์ยิงรหัสเข้าไป
+    //    บิลออกเป็น ฿0 โดยไม่มีอะไรเตือน = **ขายฟรีโดยไม่มีใครรู้** และไปโผล่เป็นยอดขาย 0 บาท
+    //    แจกของฟรีมีจริง จึงไม่ห้ามตาย ๆ แต่ต้องเป็นการ "ตั้งใจ" ผ่าน allowZero เท่านั้น
+    else if (price === 0 && !input.allowZero)
+      bad.push({ line: i + 1, sku, why: "สินค้านี้ราคา 0 — ถ้าตั้งใจแจกฟรีให้ยืนยันก่อน" });
     else clean.push({ sku, name: String(it?.name ?? "").slice(0, 120), qty, price });
   }
   if (!clean.length) return { error: "ไม่มีรายการสินค้าที่ใช้ได้", bad };
