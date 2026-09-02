@@ -34,8 +34,12 @@ const CALC_CTE = `
          GROUP BY oi.sku
        ),
        moved AS (
+         -- ⚠️ at เก็บเป็นเวลา UTC (datetime('now')) แต่ baseDay/curDay เป็น "วันแบบไทย"
+         --    เทียบตรง ๆ = หน้าต่างเลื่อนไป 7 ชม. ใบที่บันทึกช่วงเย็น (17:00 UTC เป็นต้นไป
+         --    = หลังเที่ยงคืนบ้านเรา) ตกไปนับผิดวันแบบเงียบ ๆ — ต้องแปลงเป็นวันไทยก่อนเสมอ
+         --    (กติกาเดียวกับ order_date และระบบลงเวลาพนักงาน)
          SELECT sku, SUM(qty) AS qty FROM stock_moves
-         WHERE at >= ? AND at < ? GROUP BY sku
+         WHERE date(at, '+7 hours') >= ? AND date(at, '+7 hours') < ? GROUP BY sku
        ),
        calc AS (
          SELECT b.sku AS sku, b.qty AS base_qty, c.qty AS actual_qty,
@@ -120,6 +124,10 @@ export async function stockRecon(daysBack = 1, limit = 40) {
   return {
     baseDay,
     curDay,
+    // ช่วงที่นับ "ของเข้า-ของออกมือ" — เป็นวันแบบไทย [baseDay, curDay)
+    // ใบที่บันทึกวันนี้จะยังไม่เข้ารอบนี้โดยตั้งใจ เพราะภาพถ่ายวันนี้ถ่ายไปตั้งแต่ตี 1
+    // (ของที่รับเข้าตอนสายจึงยังไม่มีทางอยู่ในภาพนั้น) — จะไปโผล่รอบพรุ่งนี้
+    moveWindow: `${baseDay} ถึงก่อน ${curDay} (วันแบบไทย)`,
     skus: num(sum?.skus),
     matched: num(sum?.matched),
     mismatched: num(sum?.mismatched),
