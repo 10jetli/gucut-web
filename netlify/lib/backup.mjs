@@ -51,6 +51,8 @@ export async function ensureBackupTables() {
        store TEXT NOT NULL, key TEXT NOT NULL, body TEXT, bytes INTEGER,
        at TEXT, gone_at TEXT, PRIMARY KEY (store, key))`
   );
+  // etag = ลายนิ้วมือของค่าจากฝั่ง Blobs — มีแล้วไม่ต้องอ่านตัวไฟล์ซ้ำ
+  await coreQuery(`ALTER TABLE backups ADD COLUMN etag TEXT`).catch(() => null);
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS backup_log (
        at TEXT, store TEXT, saved INTEGER, unchanged INTEGER,
@@ -59,33 +61,53 @@ export async function ensureBackupTables() {
 }
 
 /** สำรองถังเดียว */
-async function backupOne(cfg) {
+async function backupOne(cfg, deadline = Infinity) {
   const s = getStore(cfg.store);
   const { blobs } = await s.list();
-  const keys = (blobs || [])
-    .map((b) => b.key)
-    .filter((k) => !(cfg.skip || []).some((p) => k.startsWith(p)));
+  const entries = (blobs || []).filter(
+    (b) => !(cfg.skip || []).some((p) => String(b.key).startsWith(p))
+  );
+  const keys = entries.map((b) => b.key);
+  const etagOf = new Map(entries.map((b) => [b.key, b.etag || ""]));
 
   const prev = new Map(
-    (await coreQuery(`SELECT key, bytes, gone_at FROM backups WHERE store = ${esc(cfg.store)}`)).map(
-      (r) => [r.key, r]
-    )
+    (
+      await coreQuery(
+        `SELECT key, bytes, gone_at, etag FROM backups WHERE store = ${esc(cfg.store)}`
+      )
+    ).map((r) => [r.key, r])
   );
 
-  let saved = 0, unchanged = 0, skipped = 0, bytes = 0;
+  let saved = 0, unchanged = 0, skipped = 0, bytes = 0, left = 0;
   let batch = [], batchBytes = 0;
   const flush = async () => {
     if (!batch.length) return;
     await coreQuery(
-      `INSERT INTO backups (store,key,body,bytes,at,gone_at) VALUES ${batch.join(",")}
+      `INSERT INTO backups (store,key,body,bytes,at,gone_at,etag) VALUES ${batch.join(",")}
        ON CONFLICT(store,key) DO UPDATE SET body=excluded.body, bytes=excluded.bytes,
-         at=excluded.at, gone_at=NULL`
+         at=excluded.at, gone_at=NULL, etag=excluded.etag`
     );
     batch = [];
     batchBytes = 0;
   };
 
   for (const key of keys) {
+    // ⚠️ **ทางลัดที่ทำให้รอบต่อ ๆ ไปแทบไม่กินเวลา** — ค่าที่ลายนิ้วมือ (etag) เหมือนเดิม
+    //    ไม่ต้องอ่านตัวไฟล์ซ้ำเลย · รอบแรกใช้ 35 วินาทีเพราะอ่านทุกคีย์จริง ๆ
+    //    ซึ่งชิดเพดานเวลาของฟังก์ชันเกินไป (พลาดครั้งแรกไปแล้ว 3 ก.ย. 2569)
+    const p0 = prev.get(key);
+    const tag = etagOf.get(key);
+    if (p0 && tag && p0.etag === tag && !p0.gone_at) {
+      unchanged++;
+      bytes += num(p0.bytes);
+      continue;
+    }
+    // หมดเวลาแล้ว — หยุดตรงนี้ ที่เหลือรอบหน้าเก็บต่อ **ห้ามรีบทำจนฟังก์ชันถูกตัดกลางคัน**
+    // ถูกตัดกลางคัน = เขียนค้าง แล้วไม่มีบันทึกว่าทำถึงไหน
+    if (Date.now() > deadline) {
+      left = keys.length - (saved + unchanged + skipped);
+      break;
+    }
     let body;
     try {
       body = await s.get(key);
@@ -102,13 +124,15 @@ async function backupOne(cfg) {
     }
     const p = prev.get(key);
     // เขียนเฉพาะที่เปลี่ยนจริง — ประหยัดโควตาเขียนของ D1
-    // (ขนาดเท่าเดิมและไม่เคยหายไป = ถือว่าเหมือนเดิม)
-    if (p && num(p.bytes) === size && !p.gone_at) {
+    // (ขนาดเท่าเดิม ลายนิ้วมือเดิม และไม่เคยหายไป = ถือว่าเหมือนเดิม)
+    if (p && num(p.bytes) === size && p.etag === (tag || null) && !p.gone_at) {
       unchanged++;
       bytes += size;
       continue;
     }
-    batch.push(`(${esc(cfg.store)},${esc(key)},${esc(text)},${size},datetime('now'),NULL)`);
+    batch.push(
+      `(${esc(cfg.store)},${esc(key)},${esc(text)},${size},datetime('now'),NULL,${tag ? esc(tag) : "NULL"})`
+    );
     batchBytes += size;
     saved++;
     bytes += size;
@@ -117,8 +141,12 @@ async function backupOne(cfg) {
   await flush();
 
   // คีย์ที่หายไปจากต้นทาง — ติดธงไว้ **ห้ามลบแถว**
+  // ⚠️ รอบที่หยุดกลางคัน (หมดเวลา) **ห้ามติดธง** เพราะยังดูไม่ครบทุกคีย์
+  //    ติดธงตอนดูไม่ครบ = บอกว่าของหายทั้งที่แค่ยังไม่ได้ดู
   const live = new Set(keys);
-  const vanished = [...prev.keys()].filter((k) => live.has(k) === false && !prev.get(k).gone_at);
+  const vanished = left
+    ? []
+    : [...prev.keys()].filter((k) => live.has(k) === false && !prev.get(k).gone_at);
   for (let i = 0; i < vanished.length; i += 40) {
     const chunk = vanished.slice(i, i + 40).map(esc).join(",");
     await coreQuery(
@@ -131,17 +159,25 @@ async function backupOne(cfg) {
     `INSERT INTO backup_log (at,store,saved,unchanged,skipped,gone,bytes)
      VALUES (datetime('now'),${esc(cfg.store)},${saved},${unchanged},${skipped},${vanished.length},${bytes})`
   );
-  return { store: cfg.store, what: cfg.what, keys: keys.length, saved, unchanged, skipped, gone: vanished.length, bytes };
+  return {
+    store: cfg.store, what: cfg.what, keys: keys.length,
+    saved, unchanged, skipped, gone: vanished.length, bytes,
+    left: left || 0, // ยังเหลือกี่คีย์ที่ยังไม่ได้ดูรอบนี้ (หมดเวลา) — 0 = ครบแล้ว
+  };
 }
 
 /** สำรองทุกถังที่คุ้มครอง */
-export async function runBackup() {
+export async function runBackup(budgetMs = 18000) {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureBackupTables();
+  // ⚠️ **ต้องมีงบเวลา** — Netlify ตัดฟังก์ชันทิ้งเมื่อรันนาน รอบแรกใช้ไป 35 วินาที
+  //    ซึ่งชิดเพดานเกินไป · หมดงบแล้วหยุดสวย ๆ ดีกว่าถูกตัดกลางคัน
+  //    ที่เหลือรอบหน้าเก็บต่อเอง (งานตั้งเวลาวิ่งทุกชั่วโมง) ไม่ต้องมีใครมาสั่ง
+  const deadline = Date.now() + Math.max(3000, Math.min(60000, num(budgetMs) || 18000));
   const out = [];
   for (const cfg of PROTECTED) {
     try {
-      out.push(await backupOne(cfg));
+      out.push(await backupOne(cfg, deadline));
     } catch (e) {
       // ถังเดียวพังต้องไม่ล้มทั้งรอบ — ถังที่เหลือยังต้องได้สำรอง
       out.push({ store: cfg.store, what: cfg.what, error: String(e?.message || e).slice(0, 160) });
@@ -154,6 +190,8 @@ export async function runBackup() {
       keys: out.reduce((s, r) => s + num(r.keys), 0),
       bytes: out.reduce((s, r) => s + num(r.bytes), 0),
       failed: out.filter((r) => r.error).length,
+      // เหลือค้าง = รอบนี้หมดเวลาก่อน · รอบถัดไปเก็บต่อเอง ไม่ต้องสั่ง
+      left: out.reduce((s, r) => s + num(r.left), 0),
     },
     never: NEVER,
   };

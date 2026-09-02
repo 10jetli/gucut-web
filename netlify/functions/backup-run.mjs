@@ -5,9 +5,13 @@
 import { runBackup } from "../lib/backup.mjs";
 
 export default async () => {
-  const r = await runBackup();
+  const r = await runBackup(18000);
   console.log("backup:", JSON.stringify(r?.totals ?? r));
   return new Response("ok");
 };
 
-export const config = { schedule: "0 20 * * *" };
+// ⚠️ วิ่งทุกชั่วโมงโดยตั้งใจ ไม่ใช่วันละครั้ง
+//    รอบที่หมดงบเวลาจะเหลือคีย์ค้างไว้ ⇒ ต้องมีรอบถัดไปมาเก็บต่อเองโดยไม่ต้องมีคนสั่ง
+//    ถ้าตั้งวันละครั้ง ของที่ค้างจะรอถึงพรุ่งนี้ และถ้าค้างทุกวันก็ไม่มีวันครบสักที
+//    รอบที่ไม่มีอะไรเปลี่ยนแทบไม่กินอะไรเลย เพราะข้ามด้วยลายนิ้วมือ (etag)
+export const config = { schedule: "40 * * * *" };

@@ -78,7 +78,7 @@ const providers = [...oauth.matchAll(/^\s*id:\s*"([a-z]+)",/gm)].map((m) => m[1]
 // ป้ายชื่อของแต่ละกลุ่มตัวแปร — เขียนเองส่วนนี้เพราะชื่อตัวแปรไม่ได้บอกว่ามันคือใคร
 const LABELS = [
   { id: "zort", name: "ZORT V4", what: "สต็อก · ราคา · ออเดอร์ · ทะเบียนสินค้า", envs: ["ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"] },
-  { id: "d1", name: "Cloudflare D1", what: "คลังเงา — ฐานข้อมูลของเราเอง", envs: ["CLOUDFLARE_D1_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "CORE_D1_ID"] },
+  { id: "d1", name: "Cloudflare D1", what: "คลังเงา — ฐานข้อมูลของเราเอง", envs: ["CLOUDFLARE_D1_TOKEN"], prefix: "^(CLOUDFLARE|CORE_D1)" },
   { id: "r2", name: "Cloudflare R2", what: "คลิป HLS + รูปสินค้า (เบราว์เซอร์โหลดตรง)", envs: ["R2_ACCESS_KEY_ID", "R2_BUCKET", "R2_ENDPOINT"] },
   { id: "shopee", name: "Shopee Open API", what: "ออเดอร์ · สต็อก · รีวิว", envs: ["SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY"] },
   { id: "tiktok", name: "TikTok Shop API", what: "ยังไม่ได้รับอนุมัติ", envs: ["TIKTOK_APP_KEY", "TIKTOK_APP_SECRET"] },

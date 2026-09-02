@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-02T22:03:34.238Z",
+  "generatedAt": "2026-09-02T22:11:26.406Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
@@ -10,7 +10,7 @@ export const ARCH = {
     "scheduled": [
       {
         "name": "backup-run",
-        "cron": "0 20 * * *"
+        "cron": "40 * * * *"
       },
       {
         "name": "beam-sweep",
@@ -81,10 +81,9 @@ export const ARCH = {
       "name": "Cloudflare D1",
       "what": "คลังเงา — ฐานข้อมูลของเราเอง",
       "envs": [
-        "CLOUDFLARE_D1_TOKEN",
-        "CLOUDFLARE_ACCOUNT_ID",
-        "CORE_D1_ID"
+        "CLOUDFLARE_D1_TOKEN"
       ],
+      "prefix": "^(CLOUDFLARE|CORE_D1)",
       "inCode": true
     },
     {
