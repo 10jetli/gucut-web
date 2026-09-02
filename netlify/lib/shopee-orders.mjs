@@ -53,7 +53,7 @@ export async function syncShopeeOrders(days = 3) {
   for (let i = 0; i < sns.length; i += 50) {
     const data = await shopCall("/api/v2/order/get_order_detail", {
       order_sn_list: sns.slice(i, i + 50).join(","),
-      response_optional_fields: "total_amount,buyer_username",
+      response_optional_fields: "total_amount,buyer_username,item_list",
     });
     for (const o of data?.response?.order_list ?? []) {
       if (!o?.order_sn) continue;
@@ -64,6 +64,14 @@ export async function syncShopeeOrders(days = 3) {
         buyer: String(o.buyer_username || "").slice(0, 60),
         day: thaiDay(o.create_time),
         ct: num(o.create_time),
+        // ระดับ SKU — model_sku คือรหัสของตัวเลือกที่ลูกค้าหยิบ (ตรงกับ SKU ในระบบเรา)
+        items: (o.item_list ?? []).map((it, idx) => ({
+          line: idx + 1,
+          sku: String(it.model_sku || it.item_sku || "").trim().slice(0, 60),
+          name: String(it.item_name || "").slice(0, 120),
+          qty: num(it.model_quantity_purchased),
+          price: num(it.model_discounted_price),
+        })),
       });
     }
   }
@@ -85,7 +93,27 @@ export async function syncShopeeOrders(days = 3) {
          order_date=excluded.order_date, updated_at=excluded.updated_at`
     );
   }
-  return { days, orders: rows.length };
+  // 4) รายการสินค้า — ลบของเดิมทั้งใบแล้วเขียนใหม่ (idempotent)
+  let itemRows = 0;
+  for (let i = 0; i < rows.length; i += 60) {
+    const chunk = rows.slice(i, i + 60);
+    const snList = chunk.map((r) => esc(r.sn)).join(",");
+    await coreQuery(`DELETE FROM shopee_order_items WHERE order_sn IN (${snList})`);
+    const values = chunk
+      .flatMap((r) =>
+        (r.items ?? []).map(
+          (it) => `(${esc(r.sn)},${it.line},${esc(it.sku)},${esc(it.name)},${it.qty},${it.price})`
+        )
+      )
+      .join(",");
+    if (values) {
+      await coreQuery(
+        `INSERT INTO shopee_order_items (order_sn,line,sku,name,qty,price) VALUES ${values}`
+      );
+      itemRows += (values.match(/\)/g) || []).length;
+    }
+  }
+  return { days, orders: rows.length, itemRows };
 }
 
 // สถานะที่ไม่นับเป็นยอดขาย — UNPAID ยังไม่จ่าย (ZORT ยังไม่รับเข้า) · CANCELLED ยกเลิก
