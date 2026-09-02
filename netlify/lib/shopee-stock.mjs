@@ -101,12 +101,17 @@ export async function shopeeStockCompare() {
   );
 
   const diff = [];
+  const missingSample = [];
   let same = 0;
   let missing = 0;
   for (const r of withSku) {
     if (!snap.has(r.sku)) {
       missing += 1;
-      continue; // Shopee มี SKU นี้ แต่คลังเราไม่รู้จัก — คนละเรื่องกับตัวเลขไม่ตรง
+      // Shopee มี SKU นี้ แต่คลังเราไม่รู้จัก — คนละเรื่องกับ "ตัวเลขไม่ตรง"
+      // ต้องเห็นตัวอย่างด้วย ไม่งั้นบอกไม่ได้ว่าเป็นสินค้าที่ไม่มีใน ZORT
+      // หรือเป็นแค่ชื่อ SKU เขียนคนละแบบ (ตัวพิมพ์ · ขีด · เว้นวรรค)
+      if (missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name });
+      continue;
     }
     const ours = snap.get(r.sku);
     if (ours === r.qty) same += 1;
@@ -115,11 +120,14 @@ export async function shopeeStockCompare() {
   diff.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
   return {
     day,
+    snapshotRows: snap.size, // คลังเรารู้จักกี่ SKU ในวันนั้น — ตัวหารของเรื่องนี้
     shopeeRows: rows.length,
     shopeeSkus: withSku.length,
     noSku: rows.length - withSku.length,
     same,
     missing,
+    missingSample,
+    negativeInCore: [...snap.values()].filter((v) => v < 0).length,
     diffCount: diff.length,
     diff: diff.slice(0, 50),
   };
