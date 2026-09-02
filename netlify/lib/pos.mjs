@@ -239,13 +239,16 @@ export async function listSales({ day = "", limit = 50 } = {}) {
 /** ค้นสินค้าให้เครื่องคิดเงิน — พิมพ์รหัสหรือชื่อแล้วได้ราคา+ของคงเหลือทันที
  *  ⚠️ อ่านจากภาพถ่ายสต็อกล่าสุด ซึ่งถ่ายตอนตี 1 ⇒ ของคงเหลือเป็น "ตัวช่วยดู" ไม่ใช่ตัวห้ามขาย
  *     ห้ามเอาไปบล็อกการขายเด็ดขาด ลูกค้ายืนอยู่หน้าร้านแล้วขายไม่ได้เพราะเลขไม่ตรง แย่กว่าขายเกิน */
-export async function lookup(q, limit = 20, cat = "") {
+export async function lookup(q, limit = 20, cat = "", offset = 0) {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const term = String(q ?? "").trim().slice(0, 60);
   const group = String(cat ?? "").trim();
   // เลือกหมวดอย่างเดียวโดยไม่พิมพ์คำค้นได้ (คนขายกดปุ่มหมวด ไม่ได้พิมพ์รหัส)
   if (!term && !group) return { rows: [] };
-  const lim = Math.max(1, Math.min(50, num(limit) || 20));
+  // ⚠️ เพดาน 200 ไม่ใช่ 50 — หมวดใหญ่สุด (อะไหล่ 8800/9800) มี 462 ตัว
+  //    ถ้าตัดที่ 50 คนขายจะเห็นของแค่หนึ่งในเก้าของหมวด **โดยไม่มีอะไรบอกว่าถูกตัด**
+  const lim = Math.max(1, Math.min(200, num(limit) || 20));
+  const off = Math.max(0, num(offset));
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
   if (!day) return { rows: [] };
@@ -272,8 +275,11 @@ export async function lookup(q, limit = 20, cat = "") {
   return {
     day,
     cat: group || null,
+    // บอกจำนวนทั้งหมดของหมวดไปด้วย จอจะได้ทำเลขหน้าและรู้ว่ายังมีของเหลือ
+    total: picked.length,
+    offset: off,
     rows: picked
-      .slice(0, lim)
+      .slice(off, off + lim)
       .map((r) => ({ sku: r.sku, name: r.name || "", price: num(r.price), qty: num(r.qty) })),
   };
 }

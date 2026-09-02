@@ -97,7 +97,8 @@ export default async function handler(req, context) {
         ...(await lookup(
           url.searchParams.get("poslookup"),
           url.searchParams.get("limit"),
-          url.searchParams.get("cat")
+          url.searchParams.get("cat"),
+          url.searchParams.get("offset")
         )),
       });
     }
