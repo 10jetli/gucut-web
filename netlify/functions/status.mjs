@@ -445,6 +445,61 @@ export default async function handler(req, context) {
     // ---------- ส่งออเดอร์ต่อไปที่อื่น ----------
     check("ส่งออเดอร์ต่อไป Make.com", async () =>
       env.ORDER_FORWARD_URL ? {} : { off: true, note: "ไม่ได้ใช้ (ไม่บังคับ)" }),
+
+    // ---------- คลังเงา (โครงการแก่น) ----------
+    // ⚠️ วันนี้ (2 ก.ย. 2569) คลังเงาตายเงียบมาแล้ว 3 แบบ: ตารางไม่เคยถูกสร้าง ·
+    //    ชนโควตาเขียนของ D1 · งานตามเวลาหยุดไปเฉย ๆ — ทุกครั้ง "ข้างนอกดูปกติทุกประการ"
+    //    ตัวตรวจพวกนี้จึงต้องยิงของจริงและดู **ความสดของข้อมูล** ไม่ใช่แค่ต่อฐานติดไหม
+    check("คลังเงา (ฐานข้อมูล D1)", async () => {
+      if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const [r] = await coreQuery(`SELECT COUNT(*) AS c FROM orders`);
+      const n = Number(r?.c ?? 0);
+      if (!n) return { warn: true, note: "ต่อฐานได้ แต่ยังไม่มีออเดอร์สักใบ" };
+      return { note: `ออเดอร์ในคลังเงา ${n.toLocaleString("th-TH")} ใบ` };
+    }),
+
+    check("คลังเงาอัปเดตล่าสุด", async () => {
+      if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const [r] = await coreQuery(`SELECT MAX(updated_at) AS t FROM orders`);
+      if (!r?.t) return { warn: true, note: "ไม่เคยมีการอัปเดตเลย" };
+      // updated_at เป็นเวลา UTC จากฐาน — เทียบกับเวลาปัจจุบันแบบ UTC เท่านั้น
+      const mins = Math.round((Date.now() - Date.parse(`${String(r.t).replace(" ", "T")}Z`)) / 60000);
+      const when = `ล่าสุด ${mins < 60 ? `${mins} นาทีที่แล้ว` : `${Math.round(mins / 60)} ชม.ที่แล้ว`}`;
+      // งานกระจกวิ่งทุกครึ่งชั่วโมง — เงียบเกิน 2 ชม. คือผิดปกติ
+      if (mins > 120) return { warn: true, note: `${when} — งานกระจกน่าจะหยุด ควรเข้าไปดู` };
+      return { note: when };
+    }),
+
+    check("ภาพถ่ายสต็อกรายวัน", async () => {
+      if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const [r] = await coreQuery(
+        `SELECT day, COUNT(*) AS c FROM stock_snapshots
+         WHERE day = (SELECT MAX(day) FROM stock_snapshots) GROUP BY day`
+      );
+      if (!r?.day) return { warn: true, note: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const note = `${String(r.day)} · ${Number(r.c).toLocaleString("th-TH")} SKU`;
+      // ถ่ายตอนตี 1 ทุกวัน — ถ้าภาพล่าสุดไม่ใช่วันนี้แปลว่ารอบตี 1 ไม่ได้ทำงาน
+      return String(r.day) === today ? { note } : { warn: true, note: `${note} (ไม่ใช่ของวันนี้)` };
+    }),
+
+    check("ท่อ Shopee (ดึงออเดอร์/รีวิวเอง)", async () => {
+      if (!env.SHOPEE_PARTNER_ID) return { off: true, note: "ยังไม่ได้ตั้งคีย์ Shopee" };
+      const { validToken } = await import("../lib/shopee.mjs");
+      const t = await validToken();
+      return t ? { note: "เชื่อมร้านแล้ว ใช้งานได้" } : { warn: true, note: "ยังไม่ได้เชื่อมร้าน หรือ token หมดอายุ" };
+    }),
+
+    check("สะพานส่งบัญชีเข้า PEAK", async () => {
+      const { peakStatus } = await import("../lib/peak.mjs");
+      const r = await peakStatus();
+      if (!r.ready) return { off: true, note: r.note ?? "ยังไม่ได้ตั้งคีย์ PEAK" };
+      if (r.error) return { warn: true, note: r.error };
+      return { note: r.live ? "เชื่อมได้ · เปิดส่งจริงแล้ว" : "เชื่อมได้ · ยังเป็นโหมดซ้อม" };
+    }),
   ]);
 
   return json({ at: Date.now(), checks });
