@@ -12,6 +12,7 @@
 // ⚠️ ระหว่างที่ยังใช้ ZORT อยู่ **ห้ามยิงท่อนี้คู่กับการเปิดบิลใน ZORT ใบเดียวกัน**
 //    จะกลายเป็นสองใบในคลังเงา — ท่อนี้มีไว้ใช้ "หลัง" ตัด ZORT หรือใช้กับสาขาที่ไม่ได้ใช้ ZORT
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { permitInfo } from "./permit-models.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -278,9 +279,20 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
     // บอกจำนวนทั้งหมดของหมวดไปด้วย จอจะได้ทำเลขหน้าและรู้ว่ายังมีของเหลือ
     total: picked.length,
     offset: off,
-    rows: picked
-      .slice(off, off + lim)
-      .map((r) => ({ sku: r.sku, name: r.name || "", price: num(r.price), qty: num(r.qty) })),
+    rows: picked.slice(off, off + lim).map((r) => {
+      const pm = permitInfo(r.name);
+      return {
+        sku: r.sku,
+        name: r.name || "",
+        price: num(r.price),
+        qty: num(r.qty),
+        // ⚠️ สามสถานะ ไม่ใช่สอง — true = ต้องขอทะเบียน · false = ไม่ต้องขอ (จุดขายของร้าน) ·
+        //    null = ไม่เกี่ยว หรือเป็นเลื่อยยนต์แต่จับรุ่นไม่ได้ ⇒ ต้องให้คนตรวจ ห้ามเดาไปทางไหน
+        needsPermit: pm.needsPermit,
+        permitModel: pm.model,
+        permitWhy: pm.why,
+      };
+    }),
   };
 }
 
