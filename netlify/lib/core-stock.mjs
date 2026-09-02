@@ -170,6 +170,81 @@ export async function stockReconDaily() {
   return { ...r, line };
 }
 
+/**
+ * จอ "สินค้า/สต็อก" อ่านจากคลังเราเอง — ตัวแทนหน้าสินค้าของ ZORT
+ * ใช้ภาพถ่ายสต็อกวันล่าสุด + ยอดขาย N วันย้อนหลังจาก order_items
+ * ⚠️ อ่านอย่างเดียว · ตัวเลขคือภาพถ่ายตอนตี 1 ไม่ใช่สดวินาทีนี้ (จอต้องเขียนกำกับให้ชัด)
+ */
+export async function listStock(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = latest?.d;
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
+
+  const soldDays = Math.max(1, Math.min(90, num(o.soldDays) || 30));
+  const since = new Date(new Date(`${day}T00:00:00Z`).getTime() - soldDays * 864e5)
+    .toISOString()
+    .slice(0, 10);
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+  const q = String(o.q ?? "").trim().slice(0, 60);
+  const sort = { qty: "cur.qty ASC", sold: "sold30 DESC", sku: "cur.sku ASC" }[o.sort] || "cur.qty ASC";
+
+  const filter = q
+    ? `AND (cur.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
+    : "";
+  const fParams = q ? [`%${q}%`, `%${q}%`] : [];
+
+  const CTE = `
+    WITH cur AS (SELECT sku, qty, price FROM stock_snapshots WHERE day = ?),
+         sold AS (
+           SELECT oi.sku AS sku, SUM(oi.qty) AS qty
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE o.order_date >= ? AND ${CANCEL_SQL}
+             AND oi.sku IS NOT NULL AND oi.sku <> ''
+           GROUP BY oi.sku
+         )`;
+
+  const [sum] = await coreQuery(
+    `${CTE}
+     SELECT COUNT(*) AS skus,
+            SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
+            SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
+            ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
+     FROM cur WHERE 1=1 ${filter}`,
+    [day, since, ...fParams]
+  );
+
+  const rows = await coreQuery(
+    `${CTE}
+     SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
+            COALESCE(sold.qty,0) AS sold30,
+            (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1) AS name
+     FROM cur LEFT JOIN sold ON sold.sku = cur.sku
+     WHERE 1=1 ${filter}
+     ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
+    [day, since, ...fParams]
+  );
+
+  return {
+    day,
+    soldDays,
+    limit,
+    offset,
+    total: num(sum?.skus),
+    outOfStock: num(sum?.out_of_stock),
+    low: num(sum?.low),
+    value: num(sum?.value),
+    rows: rows.map((r) => ({
+      sku: r.sku,
+      name: r.name || "",
+      qty: num(r.qty),
+      price: num(r.price),
+      sold: num(r.sold30),
+    })),
+  };
+}
+
 /** สมุดเทียบสต็อกย้อนหลัง (ไว้ดูว่าส่วนต่างนิ่งหรือแกว่ง) */
 export async function stockReconLog(days = 14) {
   if (!coreReady()) return [];

@@ -9,7 +9,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
-import { stockRecon, stockReconLog } from "../lib/core-stock.mjs";
+import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
 export default async function handler(req, context) {
@@ -60,6 +60,18 @@ export default async function handler(req, context) {
     const p = url.searchParams;
     if (p.get("order")) {
       return json({ ok: true, ...(await getOrder(p.get("order"))) });
+    }
+    if (p.get("list") === "stock") {
+      return json({
+        ok: true,
+        ...(await listStock({
+          q: p.get("q"),
+          sort: p.get("sort"),
+          limit: p.get("limit"),
+          offset: p.get("offset"),
+          soldDays: p.get("soldDays"),
+        })),
+      });
     }
     if (p.get("list") === "orders") {
       return json({
