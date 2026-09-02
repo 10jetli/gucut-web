@@ -208,7 +208,16 @@ export async function backupStatus() {
      FROM backups GROUP BY store ORDER BY store`
   );
   const [last] = await coreQuery(`SELECT MAX(at) AS at FROM backup_log`);
-  return { ready: true, lastRun: last?.at || null, stores: rows, never: NEVER };
+  return {
+    ready: true,
+    lastRun: last?.at || null,
+    stores: rows,
+    // ⚠️ ต้องส่งรายชื่อถังที่คุ้มครอง**ทั้งหมด**ไปด้วย ไม่ใช่แค่ถังที่มีสำเนาแล้ว
+    //    `stores` มาจาก GROUP BY ⇒ ถังที่ยังไม่มีคีย์เลย (gucut-clips) จะหายไปจากตาราง
+    //    บนจอจะเห็น 9 ถังทั้งที่คุ้มครอง 10 ⇒ อ่านได้ว่า "ถังนั้นไม่ได้ถูกสำรอง" ซึ่งผิด
+    protected: PROTECTED.map((p) => ({ store: p.store, what: p.what, skip: p.skip || [] })),
+    never: NEVER,
+  };
 }
 
 /**
