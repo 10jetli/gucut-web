@@ -288,7 +288,9 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
         qty: num(r.qty),
         // ⚠️ สามสถานะ ไม่ใช่สอง — true = ต้องขอทะเบียน · false = ไม่ต้องขอ (จุดขายของร้าน) ·
         //    null = ไม่เกี่ยว หรือเป็นเลื่อยยนต์แต่จับรุ่นไม่ได้ ⇒ ต้องให้คนตรวจ ห้ามเดาไปทางไหน
-        needsPermit: pm.needsPermit,
+        // required / exempt / unknown / null(ไม่ใช่ตัวเครื่อง) — ใช้ตัวนี้เป็นหลัก
+        permit: pm.permit,
+        needsPermit: pm.needsPermit, // เก็บไว้เพื่อความเข้ากันได้ แต่กำกวม อย่าใช้ตัดสินใจ
         permitModel: pm.model,
         permitWhy: pm.why,
       };

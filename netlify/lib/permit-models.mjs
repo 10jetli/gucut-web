@@ -38,22 +38,28 @@ const norm = (s) => String(s ?? "").toUpperCase().replace(/\s+/g, " ").trim();
 
 /**
  * ชื่อสินค้านี้เป็นเลื่อยยนต์ที่ต้องขอใบอนุญาตไหม
- * @returns {{ needsPermit: boolean|null, model: string|null, why: string }}
- *   true  = ต้องขอ · false = ไม่ต้องขอ · null = ไม่ใช่เลื่อยยนต์ หรือ รุ่นไม่อยู่ในรายการ
+ * @returns {{ permit: "required"|"exempt"|"unknown"|null, needsPermit: boolean|null, model, why }}
+ *   ⚠️ ใช้ `permit` เป็นหลัก — `needsPermit` เก็บไว้เพื่อความเข้ากันได้ แต่ **กำกวม**
+ *      เพราะ null ของมันแปลได้สองอย่าง: "ไม่เกี่ยว" กับ "เป็นเลื่อยแต่ไม่รู้จักรุ่น"
+ *      ซึ่งบนจอต้องแสดงคนละแบบสุดขั้ว (ไม่ต้องขึ้นอะไรเลย vs ขึ้นเตือนให้คนตรวจ)
+ *   required = ต้องขอทะเบียน · exempt = ไม่ต้องขอ (จุดขาย) ·
+ *   unknown  = เป็นเลื่อยยนต์แต่จับรุ่นไม่ได้ ต้องให้คนตรวจ · null = ไม่ใช่ตัวเครื่อง
  */
 export function permitInfo(name) {
   const n = norm(name);
   // ไม่ใช่ตัวเครื่อง (โซ่ · บาร์ · อะไหล่) = ไม่เกี่ยวกับใบอนุญาต
   const isSaw = /เลื่อยยนต์|เลื่อยโซ่/.test(String(name ?? "")) && !/^โซ่|^บาร์/.test(String(name ?? "").trim());
-  if (!isSaw) return { needsPermit: null, model: null, why: "ไม่ใช่ตัวเครื่องเลื่อยยนต์" };
+  if (!isSaw) return { permit: null, needsPermit: null, model: null, why: "ไม่ใช่ตัวเครื่องเลื่อยยนต์" };
 
   // เทียบตัวที่ยาวกว่าก่อน — "7800 SUPER-S (รุ่นใหม่ 2025)" ต้องชนะ "7800 SUPER-S"
   const exempt = [...EXEMPT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(norm(m)));
-  if (exempt) return { needsPermit: false, model: exempt, why: "อยู่ในรายการรุ่นที่ไม่ต้องขอใบอนุญาต" };
+  if (exempt)
+    return { permit: "exempt", needsPermit: false, model: exempt, why: "อยู่ในรายการรุ่นที่ไม่ต้องขอใบอนุญาต" };
 
   const permit = [...PERMIT_MODELS].sort((a, b) => b.length - a.length).find((m) => n.includes(norm(m)));
-  if (permit) return { needsPermit: true, model: permit, why: "อยู่ในรายการรุ่นที่ต้องขอใบอนุญาต" };
+  if (permit)
+    return { permit: "required", needsPermit: true, model: permit, why: "อยู่ในรายการรุ่นที่ต้องขอใบอนุญาต" };
 
   // ⚠️ เป็นเลื่อยยนต์แต่จับรุ่นไม่ได้ — ห้ามเดาไปทางไหนทั้งนั้น ต้องให้คนตรวจ
-  return { needsPermit: null, model: null, why: "เป็นเลื่อยยนต์แต่ไม่รู้จักรุ่น — ต้องตรวจก่อนขาย" };
+  return { permit: "unknown", needsPermit: null, model: null, why: "เป็นเลื่อยยนต์แต่ไม่รู้จักรุ่น — ต้องตรวจก่อนขาย" };
 }
