@@ -60,6 +60,28 @@ export default async function handler(req, context) {
     if (url.searchParams.get("list") === "missing-sku") {
       return json({ ok: true, ...(await shopeeMissingSkus()) });
     }
+    // สินค้าขายดีรวมยอดฝั่งเซิร์ฟเวอร์ — จอ /sales ใช้เติมช่อง "ยอดเงิน" (ขอโดยฝั่งจอ 2 ก.ย.)
+    //   GET /api/core?list=topproducts&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15
+    //   ยอดเงินรวมจาก order_items จริง ไม่ใช่ qty×ราคาขาย (อันนั้นเป็นการเดา)
+    if (url.searchParams.get("list") === "topproducts") {
+      const day = (s, fallback) => (/^\d{4}-\d{2}-\d{2}$/.test(s || "") ? s : fallback);
+      const today = new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 10);
+      const monthAgo = new Date(Date.now() + 7 * 3600 * 1000 - 30 * 86400 * 1000)
+        .toISOString().slice(0, 10);
+      const from = day(url.searchParams.get("from"), monthAgo);
+      const to = day(url.searchParams.get("to"), today);
+      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "15", 10) || 15));
+      const items = await coreQuery(
+        `SELECT oi.sku, MAX(oi.name) AS name,
+                SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+         WHERE o.order_date >= ? AND o.order_date <= ?
+           AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+         GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
+        [from, to]
+      );
+      return json({ ok: true, from, to, items });
+    }
     if (url.searchParams.get("list") === "moves") {
       return json({
         ok: true,
