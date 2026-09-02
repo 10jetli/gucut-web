@@ -12,7 +12,7 @@ import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
-import { createSale, voidSale, listSales, branches, lookup } from "../lib/pos.mjs";
+import { createSale, voidSale, listSales, branches, lookup, posCats } from "../lib/pos.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
@@ -74,11 +74,21 @@ export default async function handler(req, context) {
       const r = await createSale(body);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
     }
+    if (url.searchParams.get("list") === "poscats") {
+      return json({ ok: true, ...(await posCats()) });
+    }
     if (url.searchParams.get("list") === "branches") {
       return json({ ok: true, branches: branches() });
     }
     if (url.searchParams.get("poslookup") !== null && url.searchParams.get("poslookup") !== undefined) {
-      return json({ ok: true, ...(await lookup(url.searchParams.get("poslookup"), url.searchParams.get("limit"))) });
+      return json({
+        ok: true,
+        ...(await lookup(
+          url.searchParams.get("poslookup"),
+          url.searchParams.get("limit"),
+          url.searchParams.get("cat")
+        )),
+      });
     }
     if (url.searchParams.get("list") === "sales") {
       return json({

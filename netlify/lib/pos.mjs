@@ -157,26 +157,96 @@ export async function listSales({ day = "", limit = 50 } = {}) {
 /** ค้นสินค้าให้เครื่องคิดเงิน — พิมพ์รหัสหรือชื่อแล้วได้ราคา+ของคงเหลือทันที
  *  ⚠️ อ่านจากภาพถ่ายสต็อกล่าสุด ซึ่งถ่ายตอนตี 1 ⇒ ของคงเหลือเป็น "ตัวช่วยดู" ไม่ใช่ตัวห้ามขาย
  *     ห้ามเอาไปบล็อกการขายเด็ดขาด ลูกค้ายืนอยู่หน้าร้านแล้วขายไม่ได้เพราะเลขไม่ตรง แย่กว่าขายเกิน */
-export async function lookup(q, limit = 20) {
+export async function lookup(q, limit = 20, cat = "") {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const term = String(q ?? "").trim().slice(0, 60);
-  if (!term) return { rows: [] };
+  const group = String(cat ?? "").trim();
+  // เลือกหมวดอย่างเดียวโดยไม่พิมพ์คำค้นได้ (คนขายกดปุ่มหมวด ไม่ได้พิมพ์รหัส)
+  if (!term && !group) return { rows: [] };
   const lim = Math.max(1, Math.min(50, num(limit) || 20));
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
   if (!day) return { rows: [] };
+  const where = term
+    ? `AND (s.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))`
+    : "";
+  const params = term ? [day, `%${term}%`, `%${term}%`, term] : [day];
   const rows = await coreQuery(
     `SELECT s.sku AS sku, s.qty AS qty, s.price AS price,
             (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1) AS name
      FROM stock_snapshots s
-     WHERE s.day = ?
-       AND (s.sku LIKE ? OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))
-     ORDER BY CASE WHEN s.sku = ? THEN 0 ELSE 1 END, s.qty DESC
-     LIMIT ${lim}`,
-    [day, `%${term}%`, `%${term}%`, term]
+     WHERE s.day = ? ${where}
+     ORDER BY ${term ? "CASE WHEN s.sku = ? THEN 0 ELSE 1 END," : ""} s.qty DESC
+     LIMIT ${group ? 400 : lim}`,
+    params
   );
+  // กรองหมวดในหน่วยความจำ — หมวดคิดจากชื่อ ไม่ได้เก็บในฐาน จึงกรองด้วย SQL ไม่ได้
+  const picked = group ? rows.filter((r) => groupOf(r.name).code === group) : rows;
   return {
     day,
-    rows: rows.map((r) => ({ sku: r.sku, name: r.name || "", price: num(r.price), qty: num(r.qty) })),
+    cat: group || null,
+    rows: picked
+      .slice(0, lim)
+      .map((r) => ({ sku: r.sku, name: r.name || "", price: num(r.price), qty: num(r.qty) })),
+  };
+}
+
+// ── หมวดหมู่สินค้าสำหรับแผงปุ่มของเครื่องคิดเงิน ──────────────────────────────
+//
+// ⚠️ **ZORT ไม่มีหมวดหมู่ในข้อมูลสินค้าเลย** — สุ่มตรวจ 200 ตัว ได้ category = null ทุกตัว
+//    และ producttype = 0 ทุกตัว ⇒ ปุ่มหมวดในแอป POS ของ ZORT ไม่ได้มาจากตัวสินค้า
+//    แต่มาจาก "กลุ่มสินค้า" ที่ตั้งไว้ในหลังบ้านของ ZORT POS เอง ซึ่งไม่มี API ให้ดึง
+// ⇒ เราจึง **จัดกลุ่มเองจากชื่อสินค้า** เป็นค่าเริ่มต้น ให้ใช้งานได้ทันทีโดยไม่ต้องรอใครมานั่งจัด
+//
+// ⚠️ นี่คือการ "เดาจากชื่อ" ไม่ใช่ข้อมูลจริงจากต้นทาง — ตัวไหนเข้าไม่ได้จะไปกอง "อื่น ๆ"
+//    วันที่เจ้าของร้านอยากจัดเอง ค่อยทำตารางจับคู่ทีหลัง กติกาชุดนี้ไม่ขวาง
+const GROUPS = [
+  { code: "saw-kk", name: "เลื่อยยนต์ KINGKONG", re: /เลื่อยยนต์.*KINGKONG|KINGKONG.*เลื่อยยนต์/i },
+  { code: "saw-nw", name: "เลื่อยยนต์ NEWWAVE", re: /เลื่อยยนต์.*NEWWAVE|NEWWAVE.*เลื่อยยนต์/i },
+  { code: "saw", name: "เลื่อยยนต์ (อื่น ๆ)", re: /เลื่อยยนต์|เลื่อยโซ่/i },
+  { code: "bar-kk", name: "บาร์ KINGKONG", re: /บาร์.*KINGKONG/i },
+  { code: "bar-nw", name: "บาร์ NEWWAVE", re: /บาร์.*NEWWAVE/i },
+  { code: "bar", name: "บาร์ (อื่น ๆ)", re: /บาร์เลื่อย|แผ่นบังคับโซ่/i },
+  { code: "chain-kk", name: "โซ่ KINGKONG", re: /โซ่.*KINGKONG/i },
+  { code: "chain-nw", name: "โซ่ NEWWAVE", re: /โซ่.*NEWWAVE/i },
+  { code: "chain", name: "โซ่ (อื่น ๆ)", re: /โซ่เลื่อย|โซ่ม้วน/i },
+  { code: "file", name: "ตะไบ / ลับโซ่", re: /ตะไบ|ลับโซ่|หินเจียร/i },
+  { code: "plug", name: "หัวเทียน", re: /หัวเทียน/i },
+  { code: "oil", name: "น้ำมัน / จาระบี", re: /น้ำมัน|จาระบี/i },
+  { code: "start", name: "ชุดสตาร์ท", re: /สตาร์ท/i },
+  { code: "service", name: "ค่าบริการ", re: /ค่าบริการ|ค่าซ่อม|ค่าส่ง/i },
+];
+
+function groupOf(name) {
+  const n = String(name ?? "");
+  for (const g of GROUPS) if (g.re.test(n)) return g;
+  return { code: "other", name: "อื่น ๆ" };
+}
+
+/** รายชื่อหมวดที่ "มีสินค้าจริง" พร้อมจำนวน — จอเอาไปทำปุ่มแผงซ้าย
+ *  ⚠️ คืนเฉพาะหมวดที่มีของ ไม่คืนหมวดเปล่า — ปุ่มที่กดแล้วไม่มีอะไรคือปุ่มหลอก */
+export async function posCats() {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = latest?.d;
+  if (!day) return { cats: [] };
+  const rows = await coreQuery(
+    `SELECT s.sku AS sku,
+            (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1) AS name
+     FROM stock_snapshots s WHERE s.day = ?`,
+    [day]
+  );
+  const count = new Map();
+  for (const r of rows) {
+    const g = groupOf(r.name);
+    const cur = count.get(g.code) ?? { code: g.code, name: g.name, items: 0 };
+    cur.items += 1;
+    count.set(g.code, cur);
+  }
+  const order = [...GROUPS.map((g) => g.code), "other"];
+  return {
+    day,
+    note: "หมวดหมู่จัดจากชื่อสินค้า (ZORT ไม่มีหมวดหมู่ในข้อมูลสินค้า) — ตัวที่เข้าไม่ได้อยู่ 'อื่น ๆ'",
+    cats: order.map((c) => count.get(c)).filter(Boolean),
   };
 }
