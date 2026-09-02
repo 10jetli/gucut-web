@@ -196,7 +196,12 @@ export async function listStock(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const sort = { qty: "cur.qty ASC", sold: "sold30 DESC", sku: "cur.sku ASC" }[o.sort] || "cur.qty ASC";
+  const sort = {
+    qty: "cur.qty ASC",
+    qtydesc: "cur.qty DESC",
+    sold: "sold30 DESC",
+    sku: "cur.sku ASC",
+  }[o.sort] || "cur.qty ASC";
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
   // ⚠️ เดิมฝั่งจอกรองจาก 50 แถวที่โหลดมา ⇒ ตัวเลขในวงเล็บกับแถวที่เห็นมาจากคนละชุด
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
