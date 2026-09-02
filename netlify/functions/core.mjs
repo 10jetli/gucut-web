@@ -10,6 +10,7 @@ import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { stockRecon, stockReconLog } from "../lib/core-stock.mjs";
+import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -53,6 +54,27 @@ export default async function handler(req, context) {
     if (url.searchParams.get("stock")) {
       const days = parseInt(url.searchParams.get("days") ?? "1", 10) || 1;
       return json({ ok: true, stock: await stockRecon(days, 60) });
+    }
+
+    // ── จอ "รายการขาย" ที่ยืนได้เองโดยไม่มี ZORT ──
+    const p = url.searchParams;
+    if (p.get("order")) {
+      return json({ ok: true, ...(await getOrder(p.get("order"))) });
+    }
+    if (p.get("list") === "orders") {
+      return json({
+        ok: true,
+        ...(await listOrders({
+          from: p.get("from"),
+          to: p.get("to"),
+          channel: p.get("channel"),
+          q: p.get("q"),
+          limit: p.get("limit"),
+          offset: p.get("offset"),
+          includeCancelled: p.get("cancelled") === "1",
+        })),
+        channels: await listChannels(),
+      });
     }
 
     // สถานะรวม
