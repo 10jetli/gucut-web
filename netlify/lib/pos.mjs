@@ -548,8 +548,16 @@ export async function posCats() {
 }
 
 /** จอ "หมวดหมู่" แบบ ZORT — ชื่อหมวด · จำนวน SKU · มูลค่าคงเหลือ · มูลค่าพร้อมขาย
- *  ⚠️ มูลค่าคิดจาก **ราคาขาย** เหมือนที่ ZORT แสดง ไม่ใช่ต้นทุน
- *     (ต้นทุนยังกรอกไม่ครบ 281 ตัวเป็น 0 — ใช้คิดมูลค่ารวมจะต่ำกว่าจริงโดยไม่มีใครทันสังเกต) */
+ *
+ *  ⚠️ **ZORT คิดมูลค่าจาก "ต้นทุน" ไม่ใช่ราคาขาย** — เทียบของจริง 3 ก.ย. 2569
+ *     หมวด "อะไหล่ MINI": ZORT บอก ฿1,242,943.72 · ถ้าคิดจากราคาขายได้ ฿1,370,540
+ *     ต่างกันแสนกว่าบาท และเลขของ ZORT มีทศนิยม .72 = ต้นทุนถัวเฉลี่ย ไม่ใช่ราคาขายกลม ๆ
+ *     ⇒ คืนทั้งสองแบบ ให้จอเลือกโชว์แบบต้นทุนเป็นหลัก (ให้ตรงกับ ZORT)
+ *
+ *  ⚠️ **ต้นทุนที่เรามีคือ "ราคาซื้อล่าสุด" ไม่ใช่ต้นทุนถัวเฉลี่ยแบบ ZORT**
+ *     และมี 281 ตัวที่ต้นทุนเป็น 0 (ยังไม่ได้กรอก) ⇒ ตัวเลขจะ **ต่ำกว่า ZORT เสมอ**
+ *     จอต้องบอกจำนวนตัวที่ไม่มีต้นทุนไปด้วย ห้ามโชว์ยอดรวมเฉย ๆ เหมือนว่ามันครบ
+ *     ไม่งั้นคนเอาไปเทียบกับ ZORT แล้วนึกว่าของหาย ทั้งที่เป็นเรื่องข้อมูลต้นทุนไม่ครบ */
 export async function listCategories() {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   // ⚠️ **ห้ามตั้งชื่อ alias ชนกับคอลัมน์จริงในตาราง แล้วเอาไป GROUP BY**
@@ -561,8 +569,11 @@ export async function listCategories() {
   const rows = await coreQuery(
     `SELECT COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS cat_name,
             COUNT(*) AS skus,
-            ROUND(COALESCE(SUM(COALESCE(onhand,0) * COALESCE(sellprice,0)),0),2) AS onhand_value,
-            ROUND(COALESCE(SUM(COALESCE(available,0) * COALESCE(sellprice,0)),0),2) AS available_value,
+            ROUND(COALESCE(SUM(COALESCE(onhand,0) * COALESCE(purchase_price,0)),0),2) AS onhand_value,
+            ROUND(COALESCE(SUM(COALESCE(available,0) * COALESCE(purchase_price,0)),0),2) AS available_value,
+            ROUND(COALESCE(SUM(COALESCE(onhand,0) * COALESCE(sellprice,0)),0),2) AS onhand_value_sell,
+            ROUND(COALESCE(SUM(COALESCE(available,0) * COALESCE(sellprice,0)),0),2) AS available_value_sell,
+            SUM(CASE WHEN COALESCE(purchase_price,0) = 0 THEN 1 ELSE 0 END) AS no_cost,
             SUM(CASE WHEN COALESCE(product_type,0) = 1 THEN 1 ELSE 0 END) AS services
      FROM products
      GROUP BY COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)')
@@ -573,6 +584,11 @@ export async function listCategories() {
     total: rows.reduce((s, r) => s + num(r.skus), 0),
     categories: real.length,
     uncategorised: num(rows.find((r) => String(r.cat_name).startsWith("("))?.skus),
+    // จำนวนสินค้าที่ยังไม่ได้กรอกต้นทุน — จอต้องบอกด้วย ไม่งั้นยอดรวมจะดูเหมือนครบ
+    noCost: rows.reduce((s, r) => s + num(r.no_cost), 0),
+    valueBasis:
+      "มูลค่าคิดจากต้นทุน (ราคาซื้อล่าสุด) เพื่อให้เทียบกับ ZORT ได้ — " +
+      "ZORT ใช้ต้นทุนถัวเฉลี่ย ตัวเลขจึงไม่ตรงกันเป๊ะ และตัวที่ยังไม่ได้กรอกต้นทุนจะนับเป็น 0",
     // จอฝั่งหลังร้านอ่านชื่อหมวดจากช่อง `name` — คงชื่อเดิมไว้ให้ใช้ง่าย
     rows: rows.map((r) => ({ ...r, name: r.cat_name })),
   };
