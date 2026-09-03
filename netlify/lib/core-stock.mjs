@@ -509,15 +509,23 @@ export async function stockCard(o = {}) {
   if (!sku) return { error: "ต้องระบุ sku" };
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
 
-  // ชื่อโหมดตรงกับตัวเลือกของ ZORT เท่าที่เราทำได้จริง
-  const kind = String(o.kind ?? "all");
-  const want = {
+  /* ชื่อโหมดตรงกับตัวเลือกของ ZORT เท่าที่เราทำได้จริง
+     ⚠️ **ค่าที่ไม่รู้จักต้องบอกออกไป ห้ามถอยไป all เงียบ ๆ**
+        เดิมสะท้อน applied.kind = ค่าที่ส่งมา แต่ข้างในใช้ all ⇒ **ตัวสะท้อนโกหก**
+        จอที่ใช้ applied เป็นด่านจะ "ผ่าน" ทั้งที่ข้อมูลไม่ตรงตัวกรองที่ขอ
+        (ฝั่งจอทำนายเคสนี้ไว้ก่อนแล้วขอให้ยิงทดสอบ — เจอจริง 4 ก.ย. 2569)
+        ⇒ applied.kind ต้องเป็น "ค่าที่ใช้จริง" เสมอ + บอกด้วยว่าค่าที่ส่งมาถูกเมิน */
+  const KINDS = {
     all: ["sale", "buy", "adjust"],
     trade: ["sale", "buy"], // รายการซื้อขายทั้งหมด
     sale: ["sale"],
     buy: ["buy"],
     adjust: ["adjust"], // รายการปรับ (ของเราเอง — ไม่ใช่ใบปรับของ ZORT)
-  }[kind] || ["sale", "buy", "adjust"];
+  };
+  const asked = String(o.kind ?? "all");
+  const known = Object.prototype.hasOwnProperty.call(KINDS, asked);
+  const kind = known ? asked : "all";
+  const want = KINDS[kind];
 
   const rows = [];
   if (want.includes("sale")) {
@@ -550,8 +558,10 @@ export async function stockCard(o = {}) {
   rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
   return {
     sku,
-    // ⚠️ สะท้อนพารามิเตอร์กลับ — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
+    // ⚠️ สะท้อน **ค่าที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
     applied: { sku, kind, limit },
+    // ค่าที่ส่งมาแต่ไม่รู้จัก → บอกให้รู้ ไม่เมินเงียบ
+    ...(known ? {} : { ignored: { kind: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — ใช้ "all" แทน` }),
     kinds: [
       { key: "all", label: "การเคลื่อนไหว" },
       { key: "trade", label: "รายการซื้อขายทั้งหมด" },

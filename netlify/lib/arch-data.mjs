@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-03T02:31:20.918Z",
+  "generatedAt": "2026-09-03T08:34:27.542Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
@@ -55,6 +55,8 @@ export const ARCH = {
       "backups",
       "bundle_items",
       "bundles",
+      "category_values",
+      "contacts",
       "order_items",
       "orders",
       "products",
@@ -228,7 +230,10 @@ export const ARCH = {
       "inCode": true
     }
   ],
-  "unlabelled": [],
+  "unlabelled": [
+    "NETLIFY_API_TOKEN",
+    "NETLIFY_AUTH_TOKEN"
+  ],
   "loginProviders": [
     "line",
     "facebook",
