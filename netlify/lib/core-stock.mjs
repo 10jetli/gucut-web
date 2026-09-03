@@ -660,13 +660,21 @@ export async function channelGaps(o = {}) {
       ⇒ **ลำดับสำคัญกว่ารายการ**: เช็คมาร์เก็ตเพลสก่อนเสมอ แล้วจบตรงนั้น
          ต่อให้ชื่อร้านมีคำอื่นปนก็ไม่หลุด · ส่วน chat เทียบแบบตรงตัว ไม่ใช่ substring */
   const MARKETPLACE = ["lazada", "shopee", "tiktok"];
-  const RETIRED = ["shopify"];
+  /* ⚠️ **ร้าน ZAMA ปิดไปแล้วทั้ง 3 ช่องทาง** (เจ้าของร้านยืนยัน 4 ก.ย. 2569)
+      TikTok ZAMA · Lazada ZAMA · Shopee ZAMA ⇒ "เงียบ" เป็นเรื่องปกติ ไม่ใช่สัญญาณ
+      ข้อมูลเก่ายังอยู่ในฐาน (ZAMA 98 ใบ ฿296,203 · ZAMA Shopee 88 ใบ ฿267,878
+      ขายล่าสุด พ.ย. 2568) ⇒ ถ้าไม่กรองออก จะโผล่เป็นบวกลวงตลอดไป
+      ⚠️ ต้องเช็ค retired **ก่อน** marketplace สำหรับชื่อที่มีทั้งสองคำ
+         เช่น "ZAMA Shopee" มีคำว่า shopee อยู่ด้วย */
+  const RETIRED = ["shopify", "zama"];
   const CHAT_EXACT = ["facebook เลื่อยยนต์ gucut newwave", "line oa @gucut1", "🔮gucut.com", "gucut"];
   const norm = (c) => String(c || "").trim().toLowerCase();
   const kindOf = (c) => {
     const n = norm(c);
-    if (MARKETPLACE.some((x) => n.includes(x))) return "marketplace"; // ← ต้องมาก่อนเสมอ
+    // ⚠️ **เลิกใช้แล้วต้องมาก่อนมาร์เก็ตเพลส** — "ZAMA Shopee" มีคำว่า shopee อยู่ด้วย
+    //    ถ้าเช็คมาร์เก็ตเพลสก่อน มันจะถูกนับเป็นช่องทางที่ยังใช้อยู่
     if (RETIRED.some((x) => n.includes(x))) return "retired";
+    if (MARKETPLACE.some((x) => n.includes(x))) return "marketplace";
     if (n.includes("pos") || n.includes("หน้าร้าน")) return "pos";
     if (CHAT_EXACT.includes(n)) return "chat"; // เทียบตรงตัว ไม่ใช่ substring
     return "other"; // ชื่อที่ไม่รู้จัก — **ไม่เดา** ให้โผล่ใน excluded ให้เห็น
