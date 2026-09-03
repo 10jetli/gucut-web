@@ -552,19 +552,28 @@ export async function posCats() {
  *     (ต้นทุนยังกรอกไม่ครบ 281 ตัวเป็น 0 — ใช้คิดมูลค่ารวมจะต่ำกว่าจริงโดยไม่มีใครทันสังเกต) */
 export async function listCategories() {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  // ⚠️ **ห้ามตั้งชื่อ alias ชนกับคอลัมน์จริงในตาราง แล้วเอาไป GROUP BY**
+  //    เขียนครั้งแรกเป็น `... AS name ... GROUP BY name` — ตาราง products มีคอลัมน์ `name`
+  //    (ชื่อสินค้า) อยู่แล้ว SQLite เลยจัดกลุ่มตาม **ชื่อสินค้า** ไม่ใช่ชื่อหมวด
+  //    ผลคือได้ "2,512 หมวด" จากสินค้า 2,672 ตัว และชื่อหมวดเดียวกันโผล่ซ้ำหลายแถว
+  //    **ไม่มี error ใด ๆ ทั้งสิ้น** — คำตอบดูสมเหตุสมผลจนกว่าจะอ่านตัวเลข (เจอจริง 3 ก.ย. 2569)
+  //    ⇒ GROUP BY ที่ตัว expression ตรง ๆ และตั้งชื่อ alias ที่ไม่ชนกับใคร
   const rows = await coreQuery(
-    `SELECT COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS name,
+    `SELECT COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS cat_name,
             COUNT(*) AS skus,
             ROUND(COALESCE(SUM(COALESCE(onhand,0) * COALESCE(sellprice,0)),0),2) AS onhand_value,
             ROUND(COALESCE(SUM(COALESCE(available,0) * COALESCE(sellprice,0)),0),2) AS available_value,
             SUM(CASE WHEN COALESCE(product_type,0) = 1 THEN 1 ELSE 0 END) AS services
-     FROM products GROUP BY name ORDER BY skus DESC`
+     FROM products
+     GROUP BY COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)')
+     ORDER BY skus DESC`
   );
-  const real = rows.filter((r) => !String(r.name).startsWith("("));
+  const real = rows.filter((r) => !String(r.cat_name).startsWith("("));
   return {
     total: rows.reduce((s, r) => s + num(r.skus), 0),
     categories: real.length,
-    uncategorised: num(rows.find((r) => String(r.name).startsWith("("))?.skus),
-    rows,
+    uncategorised: num(rows.find((r) => String(r.cat_name).startsWith("("))?.skus),
+    // จอฝั่งหลังร้านอ่านชื่อหมวดจากช่อง `name` — คงชื่อเดิมไว้ให้ใช้ง่าย
+    rows: rows.map((r) => ({ ...r, name: r.cat_name })),
   };
 }
