@@ -404,19 +404,45 @@ export default async function handler(req, context) {
       const params = [from, to];
       let filter = "";
       if (sku) { filter = "AND oi.sku = ?"; params.push(sku); }
-      const items = await coreQuery(
-        `SELECT oi.sku, MAX(oi.name) AS name,
-                SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
-         FROM order_items oi JOIN orders o ON o.id = oi.order_id
-         WHERE o.order_date >= ? AND o.order_date <= ?
-           AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
-           ${filter}
-         GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
-        params
-      );
+      /* by=month — แบ่งเป็นรายเดือนในคำขอเดียว (ฝั่งจอขอ: กราฟยอดขายรายสินค้า)
+         ⚠️ เดิมจอต้องยิง 12 ครั้ง เดือนละครั้ง ⇒ **12 การเรียกฟังก์ชันต่อการเปิดกราฟหนึ่งครั้ง**
+            ซึ่งกินเครดิตโดยไม่จำเป็น และช้ากว่าด้วย
+         ⚠️ `order_date` เก็บเป็นวันแบบไทยอยู่แล้ว ⇒ ตัด 7 ตัวแรกได้เลย ไม่ต้องบวกเวลาอีก
+            (ถ้าเป็นคอลัมน์ที่เก็บ UTC ต้อง date(col,'+7 hours') ก่อนเสมอ — คนละกรณีกัน) */
+      const byMonth = url.searchParams.get("by") === "month";
+      const items = byMonth
+        ? await coreQuery(
+            `SELECT substr(o.order_date,1,7) AS month,
+                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
+                    COUNT(DISTINCT o.id) AS orders
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             WHERE o.order_date >= ? AND o.order_date <= ?
+               AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+               ${filter}
+             GROUP BY substr(o.order_date,1,7) ORDER BY month`,
+            params
+          )
+        : await coreQuery(
+            `SELECT oi.sku, MAX(oi.name) AS name,
+                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             WHERE o.order_date >= ? AND o.order_date <= ?
+               AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+               ${filter}
+             GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
+            params
+          );
       // ⚠️ **สะท้อนพารามิเตอร์ที่รับไปจริงกลับไปด้วยเสมอ** (ฝั่งจอเสนอ — ดีมาก)
       //    จอจะได้ตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปจริงไหม แทนที่จะรู้ตอนตัวเลขผิดบนจอ
-      return json({ ok: true, from, to, applied: { sku: sku || null, limit }, items });
+      // ⚠️ **จอใช้ applied เป็นด่านจริง ไม่ใช่แค่ debug** (ฝั่งจอทำแล้ว: applied.sku ไม่ตรง = ทิ้งข้อมูล)
+      //    ⇒ ห้ามถอดฟิลด์นี้ออก และห้ามส่งค่าที่ไม่ใช่ค่าที่ใช้จริง
+      return json({
+        ok: true,
+        from,
+        to,
+        applied: { sku: sku || null, limit, by: byMonth ? "month" : null },
+        items,
+      });
     }
     // สะพานส่งเอกสารขายเข้า PEAK (แทนหน้าที่ ZORT)
     //   GET /api/core?peak=status            ต่อ PEAK ได้ไหม (ไม่สร้างเอกสารอะไร)
