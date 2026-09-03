@@ -134,11 +134,33 @@ export default async function handler(req, context) {
     //   POST ?bundleitems=1  body {items:[{bundleSku,sku,name,qty,line}]}
     //   GET  ?list=bundleitems[&sku=<ชุด>]
     if (url.searchParams.get("bundleitems")) {
+      // ⚠️ **เปิดข้ามโดเมนเฉพาะเส้นทางนี้ และเฉพาะหน้าเว็บ ZORT เท่านั้น**
+      //    เพราะรายการสินค้าในชุดมีอยู่แค่ในหน้าเว็บ ZORT ที่ต้องล็อกอิน
+      //    ⇒ ต้องให้เบราว์เซอร์ที่เปิด ZORT อยู่ยิงเข้ามาได้โดยตรง
+      //    **ยังต้องมีรหัสหลังร้านเหมือนเดิม** CORS แค่อนุญาตให้ "ส่งรหัสมาได้"
+      //    ไม่ได้ยกเว้นการตรวจรหัส · และล็อกที่โดเมนเดียว ไม่ใช่ *
+      if (req.method === "OPTIONS") {
+        return new Response(null, {
+          status: 204,
+          headers: {
+            "access-control-allow-origin": "https://secure.zortout.com",
+            "access-control-allow-headers": "content-type, x-admin-key",
+            "access-control-allow-methods": "POST, OPTIONS",
+            "access-control-max-age": "600",
+          },
+        });
+      }
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
       const r = await saveBundleItems(body);
-      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+      return new Response(JSON.stringify(r.error ? { ok: false, ...r } : { ok: true, ...r }), {
+        status: r.error ? 400 : 200,
+        headers: {
+          "content-type": "application/json",
+          "access-control-allow-origin": "https://secure.zortout.com",
+        },
+      });
     }
     if (url.searchParams.get("list") === "bundleitems") {
       return json({ ok: true, ...(await listBundleItems(url.searchParams.get("sku"))) });
