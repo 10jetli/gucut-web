@@ -127,9 +127,53 @@ export async function shopeeMissingSkus() {
     ])
   );
 
+  // ✅ **สูตรชุดจริงจาก ZORT — เลิกเดาได้แล้ว** (3 ก.ย. 2569)
+  //    ย่อหน้าเตือนด้านบนเขียนไว้ว่า "ต้องให้ร้านตัดสินใจก่อน ห้ามเดาแทน"
+  //    ตอนนี้ไม่ต้องให้ใครตัดสินใจแล้ว เพราะ **ร้านเคยตอบไว้แล้วในสูตรสินค้าชุด**
+  //    ⇒ อ่านจาก bundle_items แทนการอนุมานจากชื่อ
+  //    ⚠️ **สูตรเป็นภาพนิ่งเก็บครั้งเดียว ไม่ได้ซิงก์เอง** — ส่ง recipeAt ออกไปทุกครั้ง
+  //       จอต้องโชว์วันที่เก็บ ไม่งั้นจะกลายเป็นตาข่ายที่เคยถูกแล้วหยุดอัปเดตเงียบ ๆ
+  const recipe = new Map();
+  let recipeAt = null;
+  try {
+    for (const r of await coreQuery(
+      `SELECT bundle_sku, sku, qty, MAX(at) AS at FROM bundle_items GROUP BY bundle_sku, sku, qty`
+    )) {
+      const k = String(r.bundle_sku).trim();
+      if (!recipe.has(k)) recipe.set(k, []);
+      recipe.get(k).push({ sku: String(r.sku).trim(), qty: num(r.qty) });
+      if (!recipeAt || String(r.at) > recipeAt) recipeAt = String(r.at);
+    }
+  } catch {
+    // ยังไม่มีตาราง = ถอยไปใช้การเดาจากชื่อเหมือนเดิม ห้ามล้ม
+  }
+
   const rows = (await shopeeStock()).filter((r) => r.sku && !snap.has(r.sku));
   const out = rows.map((r) => {
     const base = baseCandidates(r.sku).find((b) => snap.has(b));
+    const parts = recipe.get(r.sku) || null;
+
+    // จำนวนที่ประกอบได้จริง = ชิ้นส่วนที่ทำได้น้อยที่สุด (คอขวด)
+    // ⚠️ **ห้ามคิดจากชิ้นส่วนตัวเดียว** ชุดหนึ่งมีได้ถึง 4 ชิ้น (เครื่อง+บาร์+โซ่+อะไหล่)
+    //    คิดจากตัวเดียว = บอกว่าประกอบได้ทั้งที่โซ่หมด ⇒ ขายเกินของที่มี
+    let buildable = null;
+    let limitedBy = null;
+    let partsOut = null;
+    if (parts?.length) {
+      partsOut = parts.map((p) => {
+        const have = snap.has(p.sku) ? num(snap.get(p.sku).qty) : null;
+        const can = p.qty > 0 && have !== null ? Math.floor(have / p.qty) : null;
+        return { sku: p.sku, per: p.qty, have, can };
+      });
+      const known = partsOut.filter((p) => p.can !== null);
+      // ⚠️ ชิ้นส่วนที่คลังไม่รู้จักแม้แต่ตัวเดียว = ตอบไม่ได้ ห้ามเมินแล้วตอบเลขสวย
+      if (known.length === partsOut.length && known.length) {
+        const min = known.reduce((a, b) => (b.can < a.can ? b : a));
+        buildable = min.can;
+        limitedBy = min.sku;
+      }
+    }
+
     return {
       sku: r.sku,
       name: r.name,
@@ -137,14 +181,27 @@ export async function shopeeMissingSkus() {
       baseSku: base || null,
       baseQty: base ? snap.get(base).qty : null,
       baseName: base ? snap.get(base).name : null,
+      // ── จากสูตรชุดจริง ──
+      hasRecipe: Boolean(parts?.length),
+      parts: partsOut,
+      buildable, // ประกอบได้กี่ชุดจากของในคลัง (null = ตอบไม่ได้)
+      limitedBy, // ชิ้นส่วนที่เป็นคอขวด
+      matchesShopee: buildable === null ? null : buildable === num(r.qty),
     };
   });
   const mapped = out.filter((r) => r.baseSku).length;
+  const withRecipe = out.filter((r) => r.hasRecipe).length;
+  const computed = out.filter((r) => r.buildable !== null);
+  const agree = computed.filter((r) => r.matchesShopee).length;
   return {
     day,
     total: out.length,
     mappedToBase: mapped, // จับคู่กับรหัสฐานได้ = แค่ชื่อคนละระดับ ไม่ใช่ของหาย
     unknown: out.length - mapped, // ไม่มีเค้าใน ZORT เลย = ต้องตามหาว่าคืออะไร
+    withRecipe, // มีสูตรชุดจริง ⇒ คำนวณสต็อกดันกลับได้
+    computed: computed.length,
+    agreeWithShopee: agree, // คำนวณแล้วตรงกับที่ Shopee โชว์อยู่จริง
+    recipeAt, // ⚠️ วันที่เก็บสูตร — จอต้องโชว์เสมอ สูตรไม่ได้ซิงก์เอง
     rows: out,
   };
 }
