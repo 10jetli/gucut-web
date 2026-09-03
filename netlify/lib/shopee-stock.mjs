@@ -162,7 +162,9 @@ export async function shopeeMissingSkus() {
     if (parts?.length) {
       partsOut = parts.map((p) => {
         const have = snap.has(p.sku) ? num(snap.get(p.sku).qty) : null;
-        const can = p.qty > 0 && have !== null ? Math.floor(have / p.qty) : null;
+        // ⚠️ **ปัดต่ำสุดที่ 0** — สต็อกฐานใน ZORT ติดลบได้จริง (01209 = -134.5 · 03413 = -66)
+        //    ไม่ปัด = ได้ "ประกอบได้ -6 ชุด" ซึ่งไม่มีความหมายและทำให้ตัวเลขเทียบเพี้ยน
+        const can = p.qty > 0 && have !== null ? Math.max(0, Math.floor(have / p.qty)) : null;
         return { sku: p.sku, per: p.qty, have, can };
       });
       const known = partsOut.filter((p) => p.can !== null);
@@ -187,6 +189,10 @@ export async function shopeeMissingSkus() {
       buildable, // ประกอบได้กี่ชุดจากของในคลัง (null = ตอบไม่ได้)
       limitedBy, // ชิ้นส่วนที่เป็นคอขวด
       matchesShopee: buildable === null ? null : buildable === num(r.qty),
+      // ⚠️ **ต่างกันไม่ได้แปลว่าสูตรผิด** — ตัวเลขสองตัวนี้ตอบคนละคำถาม
+      //    buildable = "ของในคลังประกอบได้กี่ชุด" · shopee = "ร้านเลือกโชว์กี่ชิ้น"
+      //    ร้านกดปิดของที่ใกล้หมดเองได้ (00817 เหลือ 34.5 ประกอบได้ 1 แต่ร้านตั้ง 0)
+      //    ⇒ **ห้ามเอาไปดันสต็อกอัตโนมัติโดยไม่ให้ร้านดูก่อน** จะไปเปิดขายของที่ร้านตั้งใจปิด
     };
   });
   const mapped = out.filter((r) => r.baseSku).length;
