@@ -7,6 +7,7 @@
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
 import { adminGate } from "../lib/admin-gate.mjs";
 import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
+import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
@@ -254,6 +255,28 @@ export default async function handler(req, context) {
       return json({
         ok: true,
         ...(await listPurchaseItems({
+          q: url.searchParams.get("q"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
+    /* ลูกค้า/ผู้ติดต่อ — เจ้าของร้านสั่งดึง 3 ก.ย. 2569
+       🔒 ข้อมูลส่วนบุคคลจริง 28,250 ราย · ผ่าน adminGate เหมือนทุกเส้นทางในไฟล์นี้
+       ⚠️ **ห้ามเพิ่มโหมด "เอาทั้งหมด"** เพดาน 100 แถว/ครั้งเป็นของตั้งใจ */
+    if (url.searchParams.get("synccontacts")) {
+      return json({
+        ok: true,
+        contacts: await syncContacts({
+          startPage: url.searchParams.get("startpage"),
+          maxPages: url.searchParams.get("maxpages"),
+        }),
+      });
+    }
+    if (url.searchParams.get("list") === "contacts") {
+      return json({
+        ok: true,
+        ...(await listContacts({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
