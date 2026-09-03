@@ -231,7 +231,13 @@ export default async function handler(req, context) {
     }
     // รายการโอนสินค้า — ร้านใช้หนักที่สุดในกลุ่มสินค้า (12,196 ใบใน ZORT)
     if (url.searchParams.get("synctransfers")) {
-      return json({ ok: true, transfers: await syncTransfers(url.searchParams.get("days")) });
+      return json({
+        ok: true,
+        transfers: await syncTransfers(url.searchParams.get("days"), {
+          startPage: url.searchParams.get("startpage"),
+          maxPages: url.searchParams.get("maxpages"),
+        }),
+      });
     }
     if (url.searchParams.get("list") === "transfers") {
       return json({

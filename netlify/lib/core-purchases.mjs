@@ -193,7 +193,7 @@ export async function listWarehouses() {
       ส่วนตารางนี้คือกระจกของ ZORT · ปนกันเมื่อไหร่ = ตัดสต็อกสองรอบ
    ⚠️ ดึงย้อนหลังเป็นช่วง ไม่ดึงทั้ง 12,000 รายการรวดเดียว — เขียน D1 ก้อนใหญ่
       เสี่ยงชนโควตาและใช้เวลาเกินที่ Netlify ให้ฟังก์ชันรอ (เคยชนมาแล้ว 2 ก.ย.) */
-export async function syncTransfers(days = 90) {
+export async function syncTransfers(days = 90, opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();
   if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
@@ -207,10 +207,15 @@ export async function syncTransfers(days = 90) {
   const back = Math.max(1, Math.min(3650, num(days) || 90));
   const since = new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
 
+  // ⚠️ **ดึงย้อนหลังครบทั้ง 12,000 ใบต้องแบ่งรอบ** — Netlify ให้ฟังก์ชันรอผลแค่ 26 วินาที
+  //    61 หน้าเรียงกันไม่มีทางจบในคำขอเดียว ⇒ ตัดเป็นช่วงหน้าแล้วให้คนเรียกวนต่อเอง
+  //    คืน nextPage มาด้วยเมื่อยังไม่หมด · ไม่มี nextPage = ครบแล้ว
+  const startPage = Math.max(1, num(opt.startPage) || 1);
+  const maxPages = Math.max(1, Math.min(20, num(opt.maxPages) || 6));
   const rows = [];
+  let nextPage = null;
   // ⚠️ หยุดเมื่อเจอใบที่เก่ากว่าช่วงที่ขอ — ZORT เรียงใหม่ไปเก่าอยู่แล้ว
-  //    ถ้าไม่หยุด จะไล่ครบ 12,000 ใบทุกครั้งที่รัน
-  for (let page = 1; page <= 40; page++) {
+  for (let page = startPage; page < startPage + maxPages; page++) {
     const res = await fetch(`${BASE}/Transfer/GetTransfers?limit=200&page=${page}`, {
       headers: h,
       signal: AbortSignal.timeout(12000),
@@ -236,8 +241,9 @@ export async function syncTransfers(days = 90) {
       });
     }
     if (hitOld || list.length < 200) break;
+    nextPage = page + 1;
   }
-  if (!rows.length) return { fetched: 0, written: 0, since };
+  if (!rows.length) return { fetched: 0, written: 0, since, startPage, nextPage: null };
 
   const prev = new Map(
     (
@@ -274,7 +280,14 @@ export async function syncTransfers(days = 90) {
          reference=excluded.reference, note=excluded.note, updated_at=excluded.updated_at`
     );
   }
-  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length, since };
+  return {
+    fetched: rows.length,
+    written: changed.length,
+    skipped: rows.length - changed.length,
+    since,
+    startPage,
+    nextPage, // ยังไม่หมด — เรียกซ้ำด้วย startPage=nextPage · null = ครบแล้ว
+  };
 }
 
 /** จอ "รายการโอนสินค้า" แบบ ZORT */
