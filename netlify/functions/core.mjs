@@ -410,6 +410,7 @@ export default async function handler(req, context) {
           limit: p.get("limit"),
           offset: p.get("offset"),
           soldDays: p.get("soldDays"),
+          marketplaces: url.searchParams.get("marketplaces"),
         })),
       });
     }

@@ -292,6 +292,27 @@ export async function listStock(o = {}) {
     [day, since, ...fParams]
   );
 
+  /* คอลัมน์ Marketplace แบบ ZORT — โลโก้ช่องทางที่สินค้าตัวนั้นกำลังลงขายอยู่
+     ⚠️ ล้มไม่ได้ทำให้ทั้งจอพัง — เช็คไม่ได้ก็แค่ไม่มีโลโก้ พร้อมบอกว่าเช็คใครได้บ้าง
+     ⚠️ **จอต้องแยก "ไม่ได้ลงขาย" ออกจาก "เรายังเช็คไม่ได้"** ดูที่ checkedMarketplaces
+        Lazada ยังรอ review ⇒ จะไม่โผล่ใน checked ตลอด ไม่ใช่ว่าไม่มีของลงขาย */
+  let mk = { checkedMarketplaces: [], marketplacesAt: null };
+  if (o.marketplaces) {
+    try {
+      const { marketplaceListings } = await import("./marketplace-listings.mjs");
+      const ml = await marketplaceListings();
+      for (const r of rows) r.marketplaces = ml.listings[String(r.sku)] || [];
+      mk = {
+        checkedMarketplaces: ml.checked,
+        marketplacesAt: new Date(ml.at).toISOString(),
+        marketplacesNotConnected: ml.notConnected,
+        marketplacesFailed: ml.failed,
+      };
+    } catch (e) {
+      mk.marketplacesError = String(e?.message || e).slice(0, 160);
+    }
+  }
+
   return {
     day,
     soldDays,
@@ -313,6 +334,7 @@ export async function listStock(o = {}) {
     inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
     shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
     value: num(sum?.value),
+    ...mk,
     rows: rows.map((r) => ({
       sku: r.sku,
       name: r.name || "",

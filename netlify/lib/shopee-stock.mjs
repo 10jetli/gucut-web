@@ -265,3 +265,16 @@ export async function shopeeStockCompare() {
     diff: diff.slice(0, 50),
   };
 }
+
+/** รหัสสินค้าที่กำลังลงขายอยู่บน Shopee (สถานะ NORMAL เท่านั้น)
+ *  ⚠️ ใช้รายการสินค้าจริง ไม่ใช่ประวัติการขาย — ของที่ถอดออกไปแล้วต้องไม่ติดมาด้วย */
+export async function shopeeListedSkus() {
+  const t = await validToken();
+  if (!t) throw new Error("ยังไม่ได้เชื่อมร้าน Shopee");
+  const out = new Set();
+  for (const r of await shopeeStock()) {
+    const k = String(r?.sku ?? "").trim();
+    if (k) out.add(k);
+  }
+  return out;
+}
