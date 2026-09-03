@@ -29,7 +29,23 @@ export default async function handler(req, context) {
   // แบบตัวนี้ต้องบังคับ ok เท่านั้น (เจอจริงตอนยิงทดสอบ 30 ส.ค. — ไม่มีรหัสได้ 200)
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
-  if (!gate.ok) {
+  // ⚠️ ทางเข้าที่สองสำหรับ "ส่งรายการสินค้าในชุด" เท่านั้น — ใช้รหัสใช้ครั้งเดียว
+  //    เพราะข้อมูลนี้อยู่แค่ในหน้าเว็บ ZORT และเราไม่อยากเอารหัสหลังร้านไปวางที่นั่น
+  //    ⚠️ ตรวจแล้วลบทิ้งทันที ใช้ซ้ำไม่ได้ · หมดอายุ 10 นาที
+  let ticket = false;
+  if (!gate.ok && new URL(req.url).searchParams.get("bundleitems") && req.method === "POST") {
+    try {
+      const { getStore } = await import("@netlify/blobs");
+      const store = getStore("gucut-admin");
+      const saved = await store.get("upload/bundleitems", { type: "json" });
+      const sent = req.headers.get("x-upload-token") || "";
+      if (saved?.token && sent && saved.token === sent && Date.now() < Number(saved.until || 0)) {
+        await store.delete("upload/bundleitems");
+        ticket = true;
+      }
+    } catch { /* อ่านไม่ได้ = ไม่ให้ผ่าน */ }
+  }
+  if (!gate.ok && !ticket) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
       headers: { "content-type": "application/json" },
@@ -133,6 +149,19 @@ export default async function handler(req, context) {
     // รายการสินค้าในชุด — เก็บจากหน้าเว็บ ZORT (API ไม่เปิดให้ดึง)
     //   POST ?bundleitems=1  body {items:[{bundleSku,sku,name,qty,line}]}
     //   GET  ?list=bundleitems[&sku=<ชุด>]
+    // รหัสใช้ครั้งเดียวสำหรับอัปโหลดจากหน้าเว็บ ZORT
+    // ⚠️ **มีไว้เพื่อไม่ต้องเอารหัสหลังร้านไปวางในหน้าเว็บของคนอื่น**
+    //    รหัสหลังร้านเปิดได้ทุกอย่าง · รหัสนี้ทำได้อย่างเดียวคือส่งรายการสินค้าในชุด
+    //    อายุ 10 นาที · ใช้ได้ครั้งเดียว · หมดแล้วต้องขอใหม่
+    if (url.searchParams.get("uploadtoken")) {
+      const { getStore } = await import("@netlify/blobs");
+      const token = crypto.randomUUID();
+      await getStore("gucut-admin").setJSON("upload/bundleitems", {
+        token,
+        until: Date.now() + 10 * 60 * 1000,
+      });
+      return json({ ok: true, token, expiresInMinutes: 10 });
+    }
     if (url.searchParams.get("bundleitems")) {
       // ⚠️ **เปิดข้ามโดเมนเฉพาะเส้นทางนี้ และเฉพาะหน้าเว็บ ZORT เท่านั้น**
       //    เพราะรายการสินค้าในชุดมีอยู่แค่ในหน้าเว็บ ZORT ที่ต้องล็อกอิน
@@ -144,7 +173,7 @@ export default async function handler(req, context) {
           status: 204,
           headers: {
             "access-control-allow-origin": "https://secure.zortout.com",
-            "access-control-allow-headers": "content-type, x-admin-key",
+            "access-control-allow-headers": "content-type, x-admin-key, x-upload-token",
             "access-control-allow-methods": "POST, OPTIONS",
             "access-control-max-age": "600",
           },
