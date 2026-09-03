@@ -61,7 +61,12 @@ async function main() {
   });
 
   const done = readDone();
-  let files = fs.readdirSync(SRC_DIR).filter((f) => /\.(webp|jpe?g|png)$/i.test(f));
+  /* ⚠️ **ต้องรับ .avif ด้วย** — เจอจริง 4 ก.ย. 2569
+      รูปสินค้า 03709 (ถังน้ำมันเบนซิน MS381) เป็น .avif ใบเดียวในคลัง
+      ตัวกรองเดิมรับแค่ webp/jpg/png ⇒ **ใบนั้นไม่เคยถูกอัปขึ้น R2 เลย และไม่มีอะไรฟ้อง**
+      สคริปต์รายงานว่า "เสร็จ" ทุกครั้ง เพราะมันไม่นับไฟล์ที่ไม่เข้าตัวกรองว่าเป็นงานค้าง
+      ⇒ ของหายเงียบเพราะ "ไม่เข้าเกณฑ์" ไม่ใช่เพราะ "ทำแล้วพลาด" — จับยากกว่ามาก */
+  let files = fs.readdirSync(SRC_DIR).filter((f) => /\.(webp|jpe?g|png|avif)$/i.test(f));
   const todo = files.filter((f) => !done.has(f));
   const pick = LIMIT ? todo.slice(0, LIMIT) : todo;
 
