@@ -102,6 +102,8 @@ export async function coreInit() {
     `ALTER TABLE orders ADD COLUMN ship_name TEXT`,
     `ALTER TABLE orders ADD COLUMN ship_date TEXT`,
     `ALTER TABLE orders ADD COLUMN is_cod INTEGER`,
+    // สถานะชำระเงินจาก ZORT (Paid · Unpaid …) — คนละอย่างกับ status ของใบ
+    `ALTER TABLE orders ADD COLUMN pay_status TEXT`,
     `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท)
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
     // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)

@@ -40,7 +40,7 @@ async function ensureTables() {
 }
 
 /** ดึงใบสั่งซื้อทั้งหมดจาก ZORT มาเก็บ — เขียนเฉพาะใบที่เปลี่ยนจริง (โควตา D1) */
-export async function syncPurchases() {
+export async function syncPurchases(opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();
   if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
@@ -115,12 +115,19 @@ export async function syncPurchases() {
         ตอนเพิ่มตาราง purchase_order_items ทีหลัง ใบ 32 ใบเดิมนิ่งอยู่แล้วทั้งหมด
         ⇒ sync กี่รอบก็ตอบ written 0 · lines 0 **ดูเหมือนทำงานปกติทุกครั้ง**
         ⇒ ต้องเติมใบที่ยังไม่มีบรรทัดด้วยเสมอ ไม่ใช่ดูแค่ว่าหัวใบเปลี่ยนไหม */
+  /* ⚠️ **ฟิลด์จำนวนในบรรทัดใบซื้อของ ZORT ชื่อ `number` ไม่ใช่ `quantity`**
+      (ชื่อเดียวกับ "เลขที่ใบ" ที่หัวใบ — คนละความหมายกันคนละระดับ)
+      เดิมอ่าน quantity ⇒ ได้ 0 ทุกบรรทัด · ยอดรวมเป็น ฿0 **แต่จำนวนบรรทัดถูกต้องครบ**
+      ดูเผิน ๆ เหมือนท่อทำงานแล้ว มีแถวขึ้นครบ 234 บรรทัด — แค่ตัวเลขเป็นศูนย์หมด */
   const haveLines = new Set(
     (await coreQuery(`SELECT DISTINCT number FROM purchase_order_items`).catch(() => [])).map((r) =>
       String(r.number)
     )
   );
-  const needLines = rows.filter((r) => r.items.length && !haveLines.has(r.number));
+  // repairItems=1 ⇒ เขียนบรรทัดใหม่ทุกใบ (ใช้ตอนแก้การจับคู่ฟิลด์ที่ผิด)
+  const needLines = opt.repairItems
+    ? rows.filter((r) => r.items.length)
+    : rows.filter((r) => r.items.length && !haveLines.has(r.number));
   const todo = [...new Map([...changed, ...needLines].map((r) => [r.number, r])).values()];
   let lines = 0;
   for (const r of todo) {
@@ -131,7 +138,7 @@ export async function syncPurchases() {
       .map(
         (it, i) =>
           `(${esc(r.number)},${i + 1},${esc(String(it?.sku ?? "").slice(0, 60))},` +
-          `${esc(String(it?.name ?? "").slice(0, 160))},${num(it?.quantity ?? it?.qty)},${num(it?.pricepernumber ?? it?.price)})`
+          `${esc(String(it?.name ?? "").slice(0, 160))},${num(it?.number ?? it?.quantity ?? it?.qty)},${num(it?.pricepernumber ?? it?.price)})`
       )
       .join(",");
     if (values) {

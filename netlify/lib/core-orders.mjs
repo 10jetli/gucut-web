@@ -68,7 +68,7 @@ export async function listOrders(o = {}) {
     w.params
   );
   const rows = await coreQuery(
-    `SELECT id, source, number, channel, status, amount, customer, order_date
+    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status
      FROM orders WHERE ${w.sql}
      ORDER BY order_date DESC, number DESC
      LIMIT ${limit} OFFSET ${offset}`,
@@ -118,7 +118,7 @@ export async function getOrder(id) {
   const key = String(id ?? "").slice(0, 80);
   if (!key) return { error: "ไม่ได้ระบุเลขใบ" };
   const [order] = await coreQuery(
-    `SELECT id, source, number, channel, status, amount, customer, order_date, updated_at
+    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, updated_at
      FROM orders WHERE id = ?`,
     [key]
   );

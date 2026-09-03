@@ -220,7 +220,7 @@ export default async function handler(req, context) {
     }
     // ── ใบสั่งซื้อ (PO) จาก ZORT — คนละชุดกับ "ระบบสั่งของโรงงาน" ที่หลังร้านมีอยู่ ──
     if (url.searchParams.get("syncpurchases")) {
-      return json({ ok: true, purchases: await syncPurchases() });
+      return json({ ok: true, purchases: await syncPurchases({ repairItems: url.searchParams.get("repairitems") }) });
     }
     if (url.searchParams.get("list") === "purchases") {
       return json({
