@@ -19,6 +19,7 @@ import { syncProducts } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
+import { syncPurchases, listPurchases, listWarehouses } from "../lib/core-purchases.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -129,6 +130,24 @@ export default async function handler(req, context) {
     }
     if (url.searchParams.get("syncproducts")) {
       return json({ ok: true, products: await syncProducts() });
+    }
+    // ── ใบสั่งซื้อ (PO) จาก ZORT — คนละชุดกับ "ระบบสั่งของโรงงาน" ที่หลังร้านมีอยู่ ──
+    if (url.searchParams.get("syncpurchases")) {
+      return json({ ok: true, purchases: await syncPurchases() });
+    }
+    if (url.searchParams.get("list") === "purchases") {
+      return json({
+        ok: true,
+        ...(await listPurchases({
+          q: url.searchParams.get("q"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
+    // คลังสินค้าทั้งหมด (รวมโกดัง) — คนละอย่างกับ list=branches ที่เป็นสาขาขายหน้าร้าน
+    if (url.searchParams.get("list") === "warehouses") {
+      return json({ ok: true, ...(await listWarehouses()) });
     }
     // จอหมวดหมู่แบบ ZORT — หมวดจริง 42 หมวดจากทะเบียนสินค้า
     if (url.searchParams.get("list") === "categories") {

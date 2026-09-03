@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-02T22:50:46.224Z",
+  "generatedAt": "2026-09-03T00:36:31.320Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
@@ -56,6 +56,8 @@ export const ARCH = {
       "order_items",
       "orders",
       "products",
+      "purchase_order_items",
+      "purchase_orders",
       "recon_log",
       "shopee_order_items",
       "shopee_orders",
