@@ -491,3 +491,85 @@ export async function listDeadStock(o = {}) {
     rows,
   };
 }
+
+/** สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า (แบบ ZORT)
+ *
+ *  ⚠️ **ครอบคลุมไม่เท่า ZORT และต้องบอกให้ชัดว่าขาดอะไร**
+ *     ได้: ขาย (order_items) · ซื้อ (purchase_order_items) · ปรับมือของเราเอง (stock_moves)
+ *     ไม่ได้: **ใบ "ปรับ" · "ยกมา" · "โอน" ของ ZORT รายสินค้า**
+ *            เพราะกระจกใบโอนเก็บแค่ "หัวใบ" ไม่มีรายการสินค้าในใบ
+ *            และ ZORT ไม่เปิด API ให้ดึงรายการในใบโอน (ยิงจริงแล้ว 404)
+ *            ⇒ ยอดคงเหลือสะสมจึงคำนวณย้อนหลังให้ไม่ได้ **ห้ามใส่คอลัมน์ "คงเหลือ" มั่ว**
+ *  ⚠️ **ไม่มีข้อมูลรายคลัง** — ZORT มีตัวกรองคลัง (โกดัง/KLD/ANJ) เราไม่มี
+ *     ⇒ ส่ง warehouses: null ออกไป ให้จอเขียนว่าทำไมกรองไม่ได้ ไม่ใช่ทำ dropdown เปล่า
+ */
+export async function stockCard(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const sku = String(o.sku ?? "").trim().slice(0, 60);
+  if (!sku) return { error: "ต้องระบุ sku" };
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+
+  // ชื่อโหมดตรงกับตัวเลือกของ ZORT เท่าที่เราทำได้จริง
+  const kind = String(o.kind ?? "all");
+  const want = {
+    all: ["sale", "buy", "adjust"],
+    trade: ["sale", "buy"], // รายการซื้อขายทั้งหมด
+    sale: ["sale"],
+    buy: ["buy"],
+    adjust: ["adjust"], // รายการปรับ (ของเราเอง — ไม่ใช่ใบปรับของ ZORT)
+  }[kind] || ["sale", "buy", "adjust"];
+
+  const rows = [];
+  if (want.includes("sale")) {
+    for (const r of await coreQuery(
+      `SELECT o.order_date AS date, 'ขาย' AS kind, o.status AS status,
+              o.number AS ref, o.customer AS party, -oi.qty AS qty, oi.amount AS amount
+       FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}
+       ORDER BY o.order_date DESC LIMIT ${limit}`
+    )) rows.push(r);
+  }
+  if (want.includes("buy")) {
+    for (const r of await coreQuery(
+      `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
+              i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
+       FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
+       WHERE i.sku = ${esc(sku)}
+       ORDER BY po.po_date DESC LIMIT ${limit}`
+    )) rows.push(r);
+  }
+  if (want.includes("adjust")) {
+    for (const r of await coreQuery(
+      `SELECT date(at, '+7 hours') AS date, 'ปรับ (ของเราเอง)' AS kind, reason AS status,
+              ref AS ref, '' AS party, qty AS qty, NULL AS amount
+       FROM stock_moves WHERE sku = ${esc(sku)}
+       ORDER BY at DESC LIMIT ${limit}`
+    ).catch(() => [])) rows.push(r);
+  }
+
+  rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  return {
+    sku,
+    // ⚠️ สะท้อนพารามิเตอร์กลับ — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
+    applied: { sku, kind, limit },
+    kinds: [
+      { key: "all", label: "การเคลื่อนไหว" },
+      { key: "trade", label: "รายการซื้อขายทั้งหมด" },
+      { key: "sale", label: "รายการขายเท่านั้น" },
+      { key: "buy", label: "รายการซื้อเท่านั้น" },
+      { key: "adjust", label: "รายการปรับเท่านั้น" },
+    ],
+    // ⚠️ ZORT มี 8 ตัวเลือก เราทำได้ 5 — บอกไปตรง ๆ ว่าขาดอันไหนและเพราะอะไร
+    missingKinds: [
+      "การเคลื่อนไหวที่รอโอนเท่านั้น",
+      "รายการยกมา",
+      "รายการโอนระหว่างคลัง",
+    ],
+    warehouses: null, // ไม่มีข้อมูลรายคลัง — จอต้องเขียนเหตุผล ไม่ใช่ทำ dropdown เปล่า
+    coverage:
+      "ครอบคลุม: ขาย · ซื้อ · ปรับด้วยมือในระบบเรา · " +
+      "ยังไม่รวม: ใบ 'ปรับ' และ 'ยกมา' ของ ZORT รายสินค้า (กระจกใบโอนเก็บแค่หัวใบ " +
+      "และ ZORT ไม่เปิด API ให้ดึงรายการในใบ) · ไม่มีคอลัมน์คงเหลือสะสมเพราะคำนวณย้อนหลังไม่ครบ",
+    rows: rows.slice(0, limit),
+  };
+}

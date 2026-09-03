@@ -19,7 +19,7 @@ import {
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems,
 } from "../lib/core-products.mjs";
-import { stockRecon, stockReconLog, listStock, listDeadStock,
+import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard,
 } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels, listLogistics,
 } from "../lib/core-orders.mjs";
@@ -314,6 +314,17 @@ export default async function handler(req, context) {
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
       return json({ ok: true, ...(await listQuotations(url.searchParams.get("limit"))) });
+    }
+    // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
+    if (url.searchParams.get("list") === "stockcard") {
+      return json({
+        ok: true,
+        ...(await stockCard({
+          sku: url.searchParams.get("sku"),
+          kind: url.searchParams.get("kind"),
+          limit: url.searchParams.get("limit"),
+        })),
+      });
     }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
     if (url.searchParams.get("list") === "deadstock") {
