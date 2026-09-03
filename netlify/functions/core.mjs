@@ -20,10 +20,11 @@ import {
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock,
 } from "../lib/core-stock.mjs";
-import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
+import { listOrders, getOrder, listChannels listLogistics,
+} from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
-  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers,
+  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers, listQuotations,
 } from "../lib/core-purchases.mjs";
 
 export default async function handler(req, context) {
@@ -235,6 +236,22 @@ export default async function handler(req, context) {
     if (url.searchParams.get("usage")) {
       const { netlifyUsage } = await import("../lib/netlify-usage.mjs");
       return json({ ok: true, ...(await netlifyUsage()) });
+    }
+    // บริการส่งสินค้า — อ่านจากกระจกออเดอร์ (ZORT ไม่มี API ขนส่งแยก)
+    if (url.searchParams.get("list") === "logistics") {
+      return json({
+        ok: true,
+        ...(await listLogistics({
+          q: url.searchParams.get("q"),
+          only: url.searchParams.get("only"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
+    // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
+    if (url.searchParams.get("list") === "quotations") {
+      return json({ ok: true, ...(await listQuotations(url.searchParams.get("limit"))) });
     }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
     if (url.searchParams.get("list") === "deadstock") {

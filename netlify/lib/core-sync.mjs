@@ -108,7 +108,7 @@ export async function syncOrders(days = 3, range = {}) {
     const prev = new Map(
       (
         await coreQuery(
-          `SELECT id, channel, status, amount, customer, order_date FROM orders
+          `SELECT id, channel, status, amount, customer, order_date, tracking_no FROM orders
            WHERE source = ? AND order_date >= ? AND order_date <= ?`,
           [st.tag, after, before]
         )
@@ -122,7 +122,12 @@ export async function syncOrders(days = 3, range = {}) {
         String(p.status ?? "") === String(o.status ?? "") &&
         num(p.amount) === num(o.amount) &&
         String(p.customer ?? "") === String(o.customername ?? "").slice(0, 120) &&
-        String(p.order_date ?? "") === (orderDay(o) ?? "")
+        String(p.order_date ?? "") === (orderDay(o) ?? "") &&
+        // ⚠️ **ต้องเทียบเลขพัสดุด้วย** ไม่งั้นใบเก่าที่หัวใบไม่เปลี่ยนจะถูกข้ามตลอดกาล
+        //    แล้วคอลัมน์ขนส่งที่เพิ่งเพิ่มจะว่างเปล่าไปเรื่อย ๆ โดยไม่มีอะไรฟ้อง
+        //    (เจอแบบเดียวกันมาแล้วกับรายการสินค้าในใบซื้อ — เขียนเฉพาะใบที่เปลี่ยน
+        //     ทำให้ใบที่นิ่งแล้วไม่เคยได้ข้อมูลใหม่เลยสักครั้ง)
+        String(p.tracking_no ?? "") === String(o.trackingno ?? "").slice(0, 60)
       );
     };
     const changed = orders.filter((o) => !same(o));
@@ -136,15 +141,23 @@ export async function syncOrders(days = 3, range = {}) {
           `(${esc(`${st.tag}/${o.number}`)},${esc(st.tag)},${esc(o.number)},` +
           `${esc((o.saleschannel || "").trim() || "POS หน้าร้าน")},${esc(o.status)},` +
           `${num(o.amount)},${esc(String(o.customername ?? "").slice(0, 120))},` +
-          `${esc(orderDay(o) ?? "")},datetime('now'))`
+          `${esc(orderDay(o) ?? "")},datetime('now'),` +
+          `${esc(String(o.trackingno ?? "").slice(0, 60))},` +
+          `${esc(String(o.shippingchannel ?? "").slice(0, 120))},` +
+          `${esc(String(o.shippingname ?? "").slice(0, 120))},` +
+          `${esc(String(o.shippingdateString ?? o.shippingdate ?? "").slice(0, 10))},` +
+          `${o.isCOD ? 1 : 0})`
         )
         .join(",");
       await coreQuery(
-        `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at)
+        `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at,
+                             tracking_no,ship_channel,ship_name,ship_date,is_cod)
          VALUES ${values}
          ON CONFLICT(id) DO UPDATE SET
            channel=excluded.channel, status=excluded.status, amount=excluded.amount,
-           customer=excluded.customer, order_date=excluded.order_date, updated_at=excluded.updated_at`
+           customer=excluded.customer, order_date=excluded.order_date, updated_at=excluded.updated_at,
+           tracking_no=excluded.tracking_no, ship_channel=excluded.ship_channel,
+           ship_name=excluded.ship_name, ship_date=excluded.ship_date, is_cod=excluded.is_cod`
       );
     }
 

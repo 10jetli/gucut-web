@@ -141,3 +141,69 @@ export async function listChannels() {
   );
   return rows.map((r) => r.channel);
 }
+
+/** จอ "บริการส่งสินค้า" แบบ ZORT — เลขพัสดุ · วันที่ · ผู้รับ · ขนส่ง · สถานะ · เลขออเดอร์
+ *
+ *  ⚠️ **ZORT ไม่มี endpoint ขนส่งแยก** (Logistic · Shipping · Delivery ตอบ 404 ทั้งหมด)
+ *     แต่ใบขายมี 114 ฟิลด์ รวมข้อมูลขนส่งครบ ⇒ อ่านจากกระจกออเดอร์ที่มีอยู่แล้ว
+ *     ไม่ต้องยิง ZORT เพิ่มแม้แต่ครั้งเดียว
+ *  ⚠️ **ใบที่ยังไม่มีเลขพัสดุ ไม่ใช่ "ข้อมูลหาย"** — คือยังไม่ได้ส่งของ
+ *     จอต้องแยกสองอย่างนี้ ห้ามรวมเป็นช่องว่างเหมือนกัน
+ */
+export async function listLogistics(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+  const q = String(o.q ?? "").trim().slice(0, 60);
+  const parts = [];
+  const params = [];
+  if (q) {
+    parts.push(`(tracking_no LIKE ? OR number LIKE ? OR ship_name LIKE ?)`);
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+  }
+  // แท็บ: ส่งแล้ว / ยังไม่ได้ส่ง — ตัดสินจาก "มีเลขพัสดุหรือยัง"
+  const only = { shipped: `COALESCE(tracking_no,'') <> ''`, unshipped: `COALESCE(tracking_no,'') = ''` }[o.only];
+  const where = [...parts, ...(only ? [only] : [])].join(" AND ") || "1=1";
+  const whereNoTab = parts.join(" AND ") || "1=1";
+
+  // ⚠️ ตัวเลขบนแท็บต้องนับข้ามตัวกรองแท็บเสมอ (กติกาเดียวกับทุกจอ)
+  const [sum] = await coreQuery(
+    `SELECT COUNT(*) AS c,
+            SUM(CASE WHEN COALESCE(tracking_no,'') <> '' THEN 1 ELSE 0 END) AS shipped,
+            SUM(CASE WHEN COALESCE(tracking_no,'') = '' THEN 1 ELSE 0 END) AS unshipped,
+            SUM(CASE WHEN COALESCE(is_cod,0) = 1 THEN 1 ELSE 0 END) AS cod
+     FROM orders WHERE ${whereNoTab}`,
+    params
+  );
+  const byChannel = await coreQuery(
+    `SELECT COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') AS channel, COUNT(*) AS c
+     FROM orders WHERE ${whereNoTab}
+     GROUP BY COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') ORDER BY c DESC LIMIT 20`,
+    params
+  );
+  const rows = await coreQuery(
+    `SELECT o.id AS id, o.number AS number, o.tracking_no AS trackingNo,
+            COALESCE(NULLIF(o.ship_date,''), o.order_date) AS date,
+            o.ship_name AS receiver, o.ship_channel AS carrier, o.status AS status,
+            COALESCE(o.is_cod,0) AS isCod,
+            (SELECT COUNT(*) FROM order_items i WHERE i.order_id = o.id) AS lines
+     FROM orders o WHERE ${where}
+     ORDER BY COALESCE(NULLIF(o.ship_date,''), o.order_date) DESC, o.number DESC
+     LIMIT ${limit} OFFSET ${offset}`,
+    params
+  );
+  return {
+    total: num(sum?.c),
+    shipped: num(sum?.shipped),
+    unshipped: num(sum?.unshipped),
+    cod: num(sum?.cod),
+    limit,
+    offset,
+    only: o.only || null,
+    byChannel,
+    note:
+      "อ่านจากกระจกออเดอร์ — ZORT ไม่มี API ขนส่งแยก · " +
+      "แถวที่ไม่มีเลขพัสดุคือยังไม่ได้ส่ง ไม่ใช่ข้อมูลหาย",
+    rows: rows.map((r) => ({ ...r, isCod: num(r.isCod) === 1 })),
+  };
+}

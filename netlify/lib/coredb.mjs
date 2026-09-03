@@ -94,6 +94,14 @@ export async function coreInit() {
   //    SQLite ไม่มี ADD COLUMN IF NOT EXISTS → ยิงซ้ำจะ error จึงกลืนทิ้ง
   for (const sql of [
     `ALTER TABLE orders ADD COLUMN pay_method TEXT`, // เงินสด/บัตร/โอน — ใช้ปิดยอดสิ้นวัน
+    /* ข้อมูลขนส่ง — **ไม่มี endpoint แยกใน ZORT** (Logistic/Shipping/Delivery ตอบ 404 หมด)
+       แต่ซ่อนอยู่ในใบขายอยู่แล้ว: ใบขายมี 114 ฟิลด์ รวม trackingno · shippingchannel ·
+       shippingname · shippingdate · isCOD ⇒ เก็บตอน sync ออเดอร์ไปเลย ไม่ต้องยิงเพิ่ม */
+    `ALTER TABLE orders ADD COLUMN tracking_no TEXT`,
+    `ALTER TABLE orders ADD COLUMN ship_channel TEXT`,
+    `ALTER TABLE orders ADD COLUMN ship_name TEXT`,
+    `ALTER TABLE orders ADD COLUMN ship_date TEXT`,
+    `ALTER TABLE orders ADD COLUMN is_cod INTEGER`,
     `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท)
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
     // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)

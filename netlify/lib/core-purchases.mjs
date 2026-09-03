@@ -110,9 +110,20 @@ export async function syncPurchases() {
     );
   }
 
-  // รายการสินค้าในใบ — เขียนใหม่ทั้งใบเฉพาะใบที่เปลี่ยน (ลบ-เขียนใหม่ = รันซ้ำได้)
+  /* รายการสินค้าในใบ
+     ⚠️ **บั๊กที่เจอ 3 ก.ย. 2569: เขียนเฉพาะ `changed` ⇒ ใบที่หัวไม่เปลี่ยนไม่เคยได้บรรทัดเลย**
+        ตอนเพิ่มตาราง purchase_order_items ทีหลัง ใบ 32 ใบเดิมนิ่งอยู่แล้วทั้งหมด
+        ⇒ sync กี่รอบก็ตอบ written 0 · lines 0 **ดูเหมือนทำงานปกติทุกครั้ง**
+        ⇒ ต้องเติมใบที่ยังไม่มีบรรทัดด้วยเสมอ ไม่ใช่ดูแค่ว่าหัวใบเปลี่ยนไหม */
+  const haveLines = new Set(
+    (await coreQuery(`SELECT DISTINCT number FROM purchase_order_items`).catch(() => [])).map((r) =>
+      String(r.number)
+    )
+  );
+  const needLines = rows.filter((r) => r.items.length && !haveLines.has(r.number));
+  const todo = [...new Map([...changed, ...needLines].map((r) => [r.number, r])).values()];
   let lines = 0;
-  for (const r of changed) {
+  for (const r of todo) {
     if (!r.items.length) continue;
     await coreQuery(`DELETE FROM purchase_order_items WHERE number = ${esc(r.number)}`);
     const values = r.items
@@ -131,7 +142,13 @@ export async function syncPurchases() {
     }
   }
 
-  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length, lines };
+  return {
+    fetched: rows.length,
+    written: changed.length,
+    skipped: rows.length - changed.length,
+    lines,
+    lineRepairs: needLines.length, // ใบเก่าที่ไม่เคยมีบรรทัดแล้วเพิ่งเติมให้
+  };
 }
 
 /** จอ "รายการซื้อ" แบบ ZORT — วันที่ · เลขที่ · ผู้ติดต่อ · มูลค่า · สถานะ · ชำระเงิน */
@@ -345,5 +362,34 @@ export async function listTransfers(o = {}) {
     // ⚠️ จอต้องบอกว่าเก็บย้อนหลังแค่ช่วงหนึ่ง ไม่ใช่ทั้งหมดที่ ZORT มี (12,196 ใบ)
     note: "กระจกเก็บย้อนหลังเป็นช่วง ไม่ใช่ทั้งหมดที่ ZORT มี — ดูวันที่เก่าสุดที่ oldest",
     rows,
+  };
+}
+
+/** ใบเสนอราคา — จอ "รายการขาย → ใบเสนอราคา" ของ ZORT
+ *  ⚠️ ร้านมีแค่ 3 ใบ (ไม่ค่อยได้ใช้) — ดึงสดทุกครั้ง ไม่ต้องทำกระจก
+ *     ทำกระจกให้ของที่มี 3 แถวคือเพิ่มที่ให้ข้อมูลไม่ตรงกันได้เปล่า ๆ */
+export async function listQuotations(limit = 50) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const n = Math.max(1, Math.min(200, num(limit) || 50));
+  const res = await fetch(`${BASE}/Quotation/GetQuotations?limit=${n}`, {
+    headers: h,
+    signal: AbortSignal.timeout(15000),
+  }).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const list = Array.isArray(data?.list) ? data.list : null;
+  if (!list) return { error: "ดึงใบเสนอราคาจาก ZORT ไม่ได้" };
+  return {
+    total: num(data?.count),
+    live: true, // ดึงสดจาก ZORT ไม่ใช่กระจก — จอเขียนบอกได้ว่าเป็นข้อมูลสด
+    rows: list.map((q) => ({
+      number: String(q?.number ?? ""),
+      customer: String(q?.customername ?? ""),
+      phone: String(q?.customerphone ?? ""),
+      amount: num(q?.amount),
+      status: String(q?.status ?? ""),
+      date: String(q?.quotationdateString ?? q?.quotationdate ?? "").slice(0, 10),
+      reference: String(q?.reference ?? ""),
+    })),
   };
 }
