@@ -198,11 +198,17 @@ export async function syncTransfers(days = 90, opt = {}) {
   const h = headers();
   if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
   await coreQuery(
+    /* ⚠️ **กุญแจหลักต้องเป็น `id` ห้ามใช้ `number`** — พลาดมาแล้ว 3 ก.ย. 2569
+        เลขที่ใบใน ZORT **ซ้ำกันได้จริง** 546 เลขซ้ำ ใบถูกกลืนหายไป 581 ใบ
+        (TF-2022062674 ซ้ำถึง 4 ใบ) · `id` ต่างหากที่ไม่ซ้ำครบ 12,002
+        และมันหายแบบ **เงียบสนิท** — ดึงครบ เขียนครบ ไม่มี error สักตัว
+        รู้เพราะเอาผลรวมในตารางไปเทียบกับจำนวนที่ ZORT บอกเท่านั้น */
     `CREATE TABLE IF NOT EXISTS transfers (
-       number TEXT PRIMARY KEY, kind TEXT, from_wh TEXT, to_wh TEXT,
+       id TEXT PRIMARY KEY, number TEXT, kind TEXT, from_wh TEXT, to_wh TEXT,
        status TEXT, transfer_date TEXT, reference TEXT, note TEXT, updated_at TEXT)`
   );
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_date ON transfers(transfer_date)`);
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_number ON transfers(number)`);
 
   const back = Math.max(1, Math.min(3650, num(days) || 90));
   const since = new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
@@ -227,10 +233,11 @@ export async function syncTransfers(days = 90, opt = {}) {
     for (const t of list) {
       const date = String(t?.transferdate ?? "").slice(0, 10);
       if (date && date < since) { hitOld = true; continue; }
-      const number = String(t?.number ?? "").trim().slice(0, 60);
-      if (!number) continue;
+      const id = String(t?.id ?? "").trim().slice(0, 60);
+      if (!id) continue;
       rows.push({
-        number,
+        id,
+        number: String(t?.number ?? "").trim().slice(0, 60),
         kind: String(t?.transferType ?? "").slice(0, 40),
         from: String(t?.fromwarehousecode ?? "").slice(0, 40),
         to: String(t?.towarehousecode ?? "").slice(0, 40),
@@ -248,15 +255,15 @@ export async function syncTransfers(days = 90, opt = {}) {
   const prev = new Map(
     (
       await coreQuery(
-        `SELECT number, kind, from_wh, to_wh, status, transfer_date, reference, note
+        `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
          FROM transfers WHERE transfer_date >= ${esc(since)}`
       )
-    ).map((r) => [r.number, r])
+    ).map((r) => [String(r.id), r])
   );
   const changed = rows.filter((r) => {
-    const p = prev.get(r.number);
+    const p = prev.get(r.id);
     return (
-      !p || String(p.kind ?? "") !== r.kind || String(p.from_wh ?? "") !== r.from ||
+      !p || String(p.number ?? "") !== r.number || String(p.kind ?? "") !== r.kind || String(p.from_wh ?? "") !== r.from ||
       String(p.to_wh ?? "") !== r.to || String(p.status ?? "") !== r.status ||
       String(p.transfer_date ?? "") !== r.date || String(p.reference ?? "") !== r.ref ||
       String(p.note ?? "") !== r.note
@@ -268,14 +275,14 @@ export async function syncTransfers(days = 90, opt = {}) {
       .slice(i, i + 60)
       .map(
         (r) =>
-          `(${esc(r.number)},${esc(r.kind)},${esc(r.from)},${esc(r.to)},${esc(r.status)},` +
+          `(${esc(r.id)},${esc(r.number)},${esc(r.kind)},${esc(r.from)},${esc(r.to)},${esc(r.status)},` +
           `${esc(r.date)},${esc(r.ref)},${esc(r.note)},datetime('now'))`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO transfers (number,kind,from_wh,to_wh,status,transfer_date,reference,note,updated_at)
+      `INSERT INTO transfers (id,number,kind,from_wh,to_wh,status,transfer_date,reference,note,updated_at)
        VALUES ${values}
-       ON CONFLICT(number) DO UPDATE SET kind=excluded.kind, from_wh=excluded.from_wh,
+       ON CONFLICT(id) DO UPDATE SET number=excluded.number, kind=excluded.kind, from_wh=excluded.from_wh,
          to_wh=excluded.to_wh, status=excluded.status, transfer_date=excluded.transfer_date,
          reference=excluded.reference, note=excluded.note, updated_at=excluded.updated_at`
     );
@@ -290,12 +297,27 @@ export async function syncTransfers(days = 90, opt = {}) {
   };
 }
 
+/** ทิ้งตาราง transfers แล้วสร้างใหม่ — ใช้ตอนโครงกุญแจเปลี่ยน
+ *  ⚠️ ปลอดภัยเพราะตารางนี้เป็น **กระจก** ล้วน ดึงกลับมาใหม่ได้ทั้งหมดจาก ZORT
+ *     ห้ามเอาท่านี้ไปใช้กับตารางที่มีของที่เราเป็นเจ้าของเอง (stock_moves · orders) */
+export async function resetTransfers() {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const [before] = await coreQuery(`SELECT COUNT(*) AS c FROM transfers`).catch(() => [{ c: 0 }]);
+  await coreQuery(`DROP TABLE IF EXISTS transfers`);
+  return { dropped: num(before?.c) };
+}
+
 /** จอ "รายการโอนสินค้า" แบบ ZORT */
 export async function listTransfers(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await coreQuery(
+    /* ⚠️ **กุญแจหลักต้องเป็น `id` ห้ามใช้ `number`** — พลาดมาแล้ว 3 ก.ย. 2569
+        เลขที่ใบใน ZORT **ซ้ำกันได้จริง** 546 เลขซ้ำ ใบถูกกลืนหายไป 581 ใบ
+        (TF-2022062674 ซ้ำถึง 4 ใบ) · `id` ต่างหากที่ไม่ซ้ำครบ 12,002
+        และมันหายแบบ **เงียบสนิท** — ดึงครบ เขียนครบ ไม่มี error สักตัว
+        รู้เพราะเอาผลรวมในตารางไปเทียบกับจำนวนที่ ZORT บอกเท่านั้น */
     `CREATE TABLE IF NOT EXISTS transfers (
-       number TEXT PRIMARY KEY, kind TEXT, from_wh TEXT, to_wh TEXT,
+       id TEXT PRIMARY KEY, number TEXT, kind TEXT, from_wh TEXT, to_wh TEXT,
        status TEXT, transfer_date TEXT, reference TEXT, note TEXT, updated_at TEXT)`
   );
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
@@ -310,7 +332,7 @@ export async function listTransfers(o = {}) {
     `SELECT status, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
   );
   const rows = await coreQuery(
-    `SELECT number, kind, from_wh, to_wh, status, transfer_date, reference, note
+    `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
      FROM transfers WHERE 1=1 ${filter}
      ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
   );

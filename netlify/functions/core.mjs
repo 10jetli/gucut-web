@@ -22,7 +22,7 @@ import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
-  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers,
+  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers,
 } from "../lib/core-purchases.mjs";
 
 export default async function handler(req, context) {
@@ -230,6 +230,9 @@ export default async function handler(req, context) {
       });
     }
     // รายการโอนสินค้า — ร้านใช้หนักที่สุดในกลุ่มสินค้า (12,196 ใบใน ZORT)
+    if (url.searchParams.get("resettransfers")) {
+      return json({ ok: true, reset: await resetTransfers() });
+    }
     if (url.searchParams.get("synctransfers")) {
       return json({
         ok: true,
