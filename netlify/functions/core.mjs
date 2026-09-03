@@ -12,7 +12,9 @@ import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
-import { deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats } from "../lib/pos.mjs";
+import {
+  deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats, listCategories,
+} from "../lib/pos.mjs";
 import { syncProducts } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
@@ -127,6 +129,10 @@ export default async function handler(req, context) {
     }
     if (url.searchParams.get("syncproducts")) {
       return json({ ok: true, products: await syncProducts() });
+    }
+    // จอหมวดหมู่แบบ ZORT — หมวดจริง 42 หมวดจากทะเบียนสินค้า
+    if (url.searchParams.get("list") === "categories") {
+      return json({ ok: true, ...(await listCategories()) });
     }
     if (url.searchParams.get("list") === "poscats") {
       return json({ ok: true, ...(await posCats()) });

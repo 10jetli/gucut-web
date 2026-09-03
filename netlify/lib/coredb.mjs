@@ -105,6 +105,11 @@ export async function coreInit() {
     `ALTER TABLE products ADD COLUMN unit TEXT`,            // หน่วยนับ
     `ALTER TABLE products ADD COLUMN onhand REAL`,          // คงเหลือในมือ
     `ALTER TABLE products ADD COLUMN available REAL`,       // พร้อมขาย (หักที่จองไว้แล้ว)
+    // หมวดหมู่ "ของจริง" จาก ZORT — 42 หมวด ครอบคลุม 87% ของคลัง
+    // ⚠️ ดีกว่าการเดาหมวดจากชื่อสินค้ามาก (ของเดิมเดาได้ 52%) ห้ามกลับไปใช้การเดาเป็นหลัก
+    `ALTER TABLE products ADD COLUMN category TEXT`,
+    `ALTER TABLE products ADD COLUMN category_id TEXT`,
+    `ALTER TABLE products ADD COLUMN sub_category TEXT`,
   ]) {
     await coreQuery(sql).catch(() => null);
   }

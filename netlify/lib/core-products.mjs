@@ -71,6 +71,12 @@ export async function syncProducts() {
       // ⚠️ คงเหลือในมือ vs พร้อมขาย ต่างกันจริง 155 ตัว (ของที่ถูกจองไว้ในออเดอร์ที่ยังไม่ส่ง)
       onhand: num(p?.stock),
       available: num(p?.availablestock),
+      // ⚠️ หมวดหมู่จริงจาก ZORT — **อย่าเดาจากชื่อสินค้าถ้าช่องนี้มีค่า**
+      //    ตรวจทั้งคลัง 3 ก.ย. 2569: 2,533 จาก 2,898 ตัวมีหมวด (87%) · 42 หมวด
+      //    ตัวเดาจากชื่อที่เราเขียนเองครอบคลุมแค่ 52% และตั้งชื่อหมวดไม่ตรงกับที่ร้านใช้จริง
+      cat: String(p?.category ?? "").trim().slice(0, 120),
+      catId: String(p?.categoryid ?? "").trim().slice(0, 40),
+      subCat: String(p?.subCategory ?? "").trim().slice(0, 120),
     });
   }
 
@@ -78,7 +84,8 @@ export async function syncProducts() {
   const prev = new Map(
     (
       await coreQuery(
-        `SELECT sku, name, sellprice, purchase_price, product_type, active, unit, onhand, available
+        `SELECT sku, name, sellprice, purchase_price, product_type, active, unit, onhand, available,
+                category, category_id, sub_category
          FROM products`
       )
     ).map((r) => [r.sku, r])
@@ -94,7 +101,10 @@ export async function syncProducts() {
       num(p.active) !== r.active ||
       String(p.unit ?? "") !== r.unit ||
       num(p.onhand) !== r.onhand ||
-      num(p.available) !== r.available
+      num(p.available) !== r.available ||
+      String(p.category ?? "") !== r.cat ||
+      String(p.category_id ?? "") !== r.catId ||
+      String(p.sub_category ?? "") !== r.subCat
     );
   });
 
@@ -104,17 +114,21 @@ export async function syncProducts() {
       .map(
         (r) =>
           `(${esc(r.sku)},${esc(r.name)},${r.price},${r.buy},${r.type},${r.active},` +
-          `${esc(r.unit)},${r.onhand},${r.available},datetime('now'))`
+          `${esc(r.unit)},${r.onhand},${r.available},${esc(r.cat)},${esc(r.catId)},` +
+          `${esc(r.subCat)},datetime('now'))`
       )
       .join(",");
     await coreQuery(
       `INSERT INTO products
-         (sku,name,sellprice,purchase_price,product_type,active,unit,onhand,available,updated_at)
+         (sku,name,sellprice,purchase_price,product_type,active,unit,onhand,available,
+          category,category_id,sub_category,updated_at)
        VALUES ${values}
        ON CONFLICT(sku) DO UPDATE SET name=excluded.name, sellprice=excluded.sellprice,
          purchase_price=excluded.purchase_price, product_type=excluded.product_type,
          active=excluded.active, unit=excluded.unit, onhand=excluded.onhand,
-         available=excluded.available, updated_at=excluded.updated_at`
+         available=excluded.available, category=excluded.category,
+         category_id=excluded.category_id, sub_category=excluded.sub_category,
+         updated_at=excluded.updated_at`
     );
   }
   return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };

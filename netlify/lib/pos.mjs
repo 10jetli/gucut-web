@@ -495,28 +495,76 @@ export async function posCats() {
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
   if (!day) return { cats: [] };
+  // ⚠️ **ใช้หมวดหมู่จริงจาก ZORT เป็นหลัก การเดาจากชื่อเป็นทางสำรองเท่านั้น**
+  //    คอมเมนต์เดิมตรงนี้เขียนว่า "ZORT ไม่มีหมวดหมู่ในข้อมูลสินค้า" — **ผิด**
+  //    เข้าไปดูจอ ZORT ของจริง 3 ก.ย. 2569 เจอหน้า "หมวดหมู่" มี 42 หมวดพร้อมใช้
+  //    และ API ส่ง `category` มาให้อยู่แล้ว: 2,533 จาก 2,898 ตัวมีหมวด (87%)
+  //    ⇒ ที่เราเดาเองครอบคลุมแค่ 52% และตั้งชื่อหมวดไม่ตรงกับที่ร้านเรียกกันจริง
+  //    บทเรียน: คำกล่าวอ้างว่า "ระบบต้นทางไม่มีข้อมูลนี้" ต้องไปเปิดดูก่อนเสมอ
+  //    ไม่งั้นเราจะสร้างของทดแทนที่แย่กว่าของจริงที่มีอยู่แล้ว
   const rows = await coreQuery(
-    `SELECT s.sku AS sku,
-            COALESCE((SELECT name FROM products WHERE sku = s.sku AND name <> ''),
+    `SELECT s.sku AS sku, p.category AS cat,
+            COALESCE(NULLIF(p.name,''),
                      (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1)) AS name
-     FROM stock_snapshots s WHERE s.day = ?`,
+     FROM stock_snapshots s LEFT JOIN products p ON p.sku = s.sku
+     WHERE s.day = ?`,
     [day]
   );
   const count = new Map();
-  let unnamed = 0;
+  let unnamed = 0, fromZort = 0, guessed = 0;
   for (const r of rows) {
     if (!String(r.name ?? "").trim()) unnamed += 1;
-    const g = groupOf(r.name, r.sku);
-    const cur = count.get(g.code) ?? { code: g.code, name: g.name, items: 0 };
+    const real = String(r.cat ?? "").trim();
+    let code, name;
+    if (real) {
+      code = `z:${real}`;
+      name = real;
+      fromZort += 1;
+    } else {
+      const g = groupOf(r.name, r.sku);
+      code = g.code;
+      name = g.name;
+      guessed += 1;
+    }
+    const cur = count.get(code) ?? { code, name, items: 0, zort: !!real };
     cur.items += 1;
-    count.set(g.code, cur);
+    count.set(code, cur);
   }
+  // หมวดจริงมาก่อน เรียงตามจำนวนของมากไปน้อย · หมวดที่เดาเองต่อท้ายตามลำดับเดิม
+  const zortCats = [...count.values()].filter((c) => c.zort).sort((a, b) => b.items - a.items);
+  const guessCats = CAT_ORDER.map((c) => count.get(c.code)).filter(Boolean);
   return {
     day,
-    note: "หมวดหมู่จัดจากชื่อสินค้า (ZORT ไม่มีหมวดหมู่ในข้อมูลสินค้า) — ตัวที่เข้าไม่ได้อยู่ 'อื่น ๆ'",
+    note:
+      `หมวดหมู่จริงจาก ZORT ${zortCats.length} หมวด (ครอบคลุม ${fromZort} รายการ)` +
+      (guessed ? ` · อีก ${guessed} รายการยังไม่มีหมวดใน ZORT จึงจัดจากชื่อสินค้าให้` : ""),
     // ⚠️ บอกจำนวนตัวที่ "ไม่มีชื่อเลย" ออกไปด้วย — พวกนี้ไปกอง 'อื่น ๆ' โดยไม่มีทางจัดหมวดได้
     //    ถ้าไม่บอก จอจะดูเหมือนกติกาจัดหมวดห่วย ทั้งที่ต้นเหตุคือคลังไม่มีชื่อสินค้า
     unnamed,
-    cats: CAT_ORDER.map((c) => count.get(c.code)).filter(Boolean),
+    fromZort,
+    guessed,
+    cats: [...zortCats, ...guessCats],
+  };
+}
+
+/** จอ "หมวดหมู่" แบบ ZORT — ชื่อหมวด · จำนวน SKU · มูลค่าคงเหลือ · มูลค่าพร้อมขาย
+ *  ⚠️ มูลค่าคิดจาก **ราคาขาย** เหมือนที่ ZORT แสดง ไม่ใช่ต้นทุน
+ *     (ต้นทุนยังกรอกไม่ครบ 281 ตัวเป็น 0 — ใช้คิดมูลค่ารวมจะต่ำกว่าจริงโดยไม่มีใครทันสังเกต) */
+export async function listCategories() {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const rows = await coreQuery(
+    `SELECT COALESCE(NULLIF(category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS name,
+            COUNT(*) AS skus,
+            ROUND(COALESCE(SUM(COALESCE(onhand,0) * COALESCE(sellprice,0)),0),2) AS onhand_value,
+            ROUND(COALESCE(SUM(COALESCE(available,0) * COALESCE(sellprice,0)),0),2) AS available_value,
+            SUM(CASE WHEN COALESCE(product_type,0) = 1 THEN 1 ELSE 0 END) AS services
+     FROM products GROUP BY name ORDER BY skus DESC`
+  );
+  const real = rows.filter((r) => !String(r.name).startsWith("("));
+  return {
+    total: rows.reduce((s, r) => s + num(r.skus), 0),
+    categories: real.length,
+    uncategorised: num(rows.find((r) => String(r.name).startsWith("("))?.skus),
+    rows,
   };
 }
