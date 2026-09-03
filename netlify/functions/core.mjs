@@ -19,7 +19,7 @@ import {
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems,
 } from "../lib/core-products.mjs";
-import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard,
+import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels, listLogistics,
 } from "../lib/core-orders.mjs";
@@ -322,6 +322,18 @@ export default async function handler(req, context) {
         ...(await stockCard({
           sku: url.searchParams.get("sku"),
           kind: url.searchParams.get("kind"),
+          limit: url.searchParams.get("limit"),
+        })),
+      });
+    }
+    // 🔔 สินค้าที่หายไปจากช่องทางขาย — จับเรื่องแบบเครื่อง 00073 ที่เงียบไป 3 เดือน
+    if (url.searchParams.get("list") === "channel-gaps") {
+      return json({
+        ok: true,
+        ...(await channelGaps({
+          quietDays: url.searchParams.get("quietdays"),
+          lookbackDays: url.searchParams.get("lookbackdays"),
+          minSold: url.searchParams.get("minsold"),
           limit: url.searchParams.get("limit"),
         })),
       });

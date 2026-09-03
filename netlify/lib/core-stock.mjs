@@ -616,3 +616,82 @@ export async function stockCard(o = {}) {
     rows: rows.slice(0, limit),
   };
 }
+
+/** 🔔 ตัวตรวจ "สินค้าหายจากช่องทางขาย" — จับเรื่องแบบเครื่อง 00073 ที่หายไป 3 เดือน
+ *
+ *  ⚠️ **นี่คือบั๊กคลาสเดียวกับที่เราไล่จับทั้งวัน แต่เป็นเวอร์ชันธุรกิจ**
+ *     ไม่มีจอไหนแดง · ไม่มี error สักตัว · ระบบทุกตัวรายงานว่าปกติ
+ *     **ยอดแค่หายไปเงียบ ๆ 3 เดือน** แล้วรู้ตอนบังเอิญมาไล่ดูกราฟ
+ *     (เครื่อง 00073: พ.ค. 0 · มิ.ย. 1 · ก.ค. 1 ชิ้น ทั้งที่มีของ 66 ตัวในคลัง
+ *      และเดือนเดียวกันนั้นร้านขายของอื่นบน Lazada ได้ 180-250 ใบตามปกติ
+ *      ⇒ เสียโอกาสราว 100-150 ชิ้น หรือ 600,000-900,000 บาท)
+ *
+ *  ⚠️ **ไม่ต้องใช้ API ของมาร์เก็ตเพลสเลย** — ใช้ช่องทางที่ติดมากับใบขายใน ZORT
+ *     ⇒ ครอบคลุม Lazada · Shopee · TikTok ได้ทันที **รวมเจ้าที่เรายังต่อ API ไม่ได้**
+ *
+ *  ⚠️ **ไม่ใช่ตัวตรวจว่า "ขายไม่ดี" — เป็นตัวตรวจว่า "หายไปจากช่องทางที่เคยขายได้"**
+ *     เกณฑ์: เคยขายช่องทางนั้นสม่ำเสมอในอดีต · ช่วงหลังเงียบสนิท · **แต่ยังมีของในคลัง**
+ *     ของหมด = ไม่เข้าข่าย (นั่นคือปัญหาสต็อก คนละเรื่อง)
+ */
+export async function channelGaps(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const quiet = Math.max(7, Math.min(365, num(o.quietDays) || 45)); // เงียบกี่วันถึงนับว่าหาย
+  const look = Math.max(30, Math.min(730, num(o.lookbackDays) || 365)); // ดูอดีตย้อนไปแค่ไหน
+  const minSold = Math.max(1, num(o.minSold) || 5); // เคยขายอย่างน้อยกี่ชิ้นถึงถือว่า "เคยขายได้"
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+
+  const [snap] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = snap?.d;
+  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อก" };
+  const cut = new Date(new Date(`${day}T00:00:00Z`).getTime() - quiet * 864e5).toISOString().slice(0, 10);
+  const from = new Date(new Date(`${day}T00:00:00Z`).getTime() - look * 864e5).toISOString().slice(0, 10);
+
+  const [hist] = await coreQuery(`SELECT MIN(order_date) AS f FROM orders`);
+  const historyFrom = hist?.f || null;
+  // ⚠️ ประวัติสั้นกว่าช่วงที่ถาม = ตอบไม่ได้ **ห้ามตอบเป็นรายการที่ดูเหมือนคำตอบ**
+  const enough = Boolean(historyFrom) && historyFrom <= from;
+
+  const rows = enough
+    ? await coreQuery(
+        `WITH sold AS (
+           SELECT oi.sku AS sku, o.channel AS ch,
+                  SUM(CASE WHEN o.order_date <  ${esc(cut)} THEN oi.qty ELSE 0 END) AS before_qty,
+                  SUM(CASE WHEN o.order_date >= ${esc(cut)} THEN oi.qty ELSE 0 END) AS after_qty,
+                  MAX(o.order_date) AS last_sold
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE o.order_date >= ${esc(from)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}
+             AND oi.sku IS NOT NULL AND oi.sku <> ''
+             AND COALESCE(o.channel,'') <> '' AND o.channel NOT LIKE '%POS%'
+           GROUP BY oi.sku, o.channel
+         )
+         SELECT s.sku AS sku, s.ch AS channel, s.before_qty AS soldBefore,
+                s.last_sold AS lastSoldOnChannel, cur.qty AS onhand,
+                COALESCE((SELECT name FROM products WHERE sku = s.sku), cur.name) AS name,
+                ROUND(cur.qty * cur.price, 2) AS stockValue
+         FROM sold s JOIN stock_snapshots cur ON cur.sku = s.sku AND cur.day = ${esc(day)}
+         WHERE s.after_qty = 0 AND s.before_qty >= ${minSold} AND cur.qty > 0
+         ORDER BY s.before_qty DESC LIMIT ${limit}`
+      )
+    : [];
+
+  return {
+    day,
+    quietDays: quiet,
+    lookbackDays: look,
+    minSold,
+    cut, // ไม่มีการขายบนช่องทางนั้นตั้งแต่วันนี้ = เข้าข่าย
+    historyFrom,
+    enoughHistory: enough,
+    total: rows.length,
+    applied: { quietDays: quiet, lookbackDays: look, minSold, limit },
+    note: enough
+      ? "สินค้าที่เคยขายได้บนช่องทางนั้น แต่เงียบสนิทช่วงหลัง ทั้งที่ยังมีของในคลัง"
+      : `ตอบไม่ได้ — มีประวัติออเดอร์ตั้งแต่ ${historyFrom || "ยังไม่มีเลย"} ซึ่งสั้นกว่าช่วง ${look} วันที่ถาม`,
+    // ⚠️ ไม่ได้แปลว่า "ถูกซ่อน" เสมอไป — อาจหยุดขายเอง ปรับราคา หรือของรุ่นนั้นเลิกทำ
+    //    จอต้องเขียนว่าเป็น "จุดที่ควรไปดู" ไม่ใช่ "ข้อสรุปว่าผิดพลาด"
+    caveat:
+      "เป็นจุดที่ควรไปดูในหน้าร้านช่องทางนั้น ไม่ใช่ข้อสรุปว่าถูกซ่อน — " +
+      "อาจหยุดขายเอง เปลี่ยนรุ่น หรือปรับราคาก็ได้",
+    rows,
+  };
+}
