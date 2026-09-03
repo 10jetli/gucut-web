@@ -21,7 +21,9 @@ import {
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
-import { syncPurchases, listPurchases, listWarehouses } from "../lib/core-purchases.mjs";
+import {
+  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers,
+} from "../lib/core-purchases.mjs";
 
 export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
@@ -221,6 +223,20 @@ export default async function handler(req, context) {
       return json({
         ok: true,
         ...(await listPurchases({
+          q: url.searchParams.get("q"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
+    // รายการโอนสินค้า — ร้านใช้หนักที่สุดในกลุ่มสินค้า (12,196 ใบใน ZORT)
+    if (url.searchParams.get("synctransfers")) {
+      return json({ ok: true, transfers: await syncTransfers(url.searchParams.get("days")) });
+    }
+    if (url.searchParams.get("list") === "transfers") {
+      return json({
+        ok: true,
+        ...(await listTransfers({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),

@@ -184,3 +184,131 @@ export async function listWarehouses() {
     note: "โกดัง (NEW) ไม่ใช่จุดขาย — เครื่องคิดเงินเปิดบิลได้เฉพาะสาขาที่ isPos = true",
   };
 }
+
+/* ══ รายการโอนสินค้า (Transfer) ══════════════════════════════════════
+   ⚠️ **ร้านใช้จอนี้หนักที่สุดในกลุ่มสินค้า — 12,196 รายการ** (เห็นจากจอจริง 3 ก.ย. 2569)
+      เป็นบันทึกการย้ายของระหว่างคลัง และการ "ปรับ" สต็อก
+      ⇒ เป็นเส้นเลือดของความถูกต้องของสต็อก ไม่ใช่จอประกอบ
+   ⚠️ **อย่าเอาไปปนกับ stock_moves ของเรา** — stock_moves คือของที่ "เราปรับเอง"
+      ส่วนตารางนี้คือกระจกของ ZORT · ปนกันเมื่อไหร่ = ตัดสต็อกสองรอบ
+   ⚠️ ดึงย้อนหลังเป็นช่วง ไม่ดึงทั้ง 12,000 รายการรวดเดียว — เขียน D1 ก้อนใหญ่
+      เสี่ยงชนโควตาและใช้เวลาเกินที่ Netlify ให้ฟังก์ชันรอ (เคยชนมาแล้ว 2 ก.ย.) */
+export async function syncTransfers(days = 90) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const h = headers();
+  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS transfers (
+       number TEXT PRIMARY KEY, kind TEXT, from_wh TEXT, to_wh TEXT,
+       status TEXT, transfer_date TEXT, reference TEXT, note TEXT, updated_at TEXT)`
+  );
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_date ON transfers(transfer_date)`);
+
+  const back = Math.max(1, Math.min(3650, num(days) || 90));
+  const since = new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
+
+  const rows = [];
+  // ⚠️ หยุดเมื่อเจอใบที่เก่ากว่าช่วงที่ขอ — ZORT เรียงใหม่ไปเก่าอยู่แล้ว
+  //    ถ้าไม่หยุด จะไล่ครบ 12,000 ใบทุกครั้งที่รัน
+  for (let page = 1; page <= 40; page++) {
+    const res = await fetch(`${BASE}/Transfer/GetTransfers?limit=200&page=${page}`, {
+      headers: h,
+      signal: AbortSignal.timeout(12000),
+    }).catch(() => null);
+    const data = res?.ok ? await res.json().catch(() => null) : null;
+    const list = Array.isArray(data?.list) ? data.list : [];
+    if (!list.length) break;
+    let hitOld = false;
+    for (const t of list) {
+      const date = String(t?.transferdate ?? "").slice(0, 10);
+      if (date && date < since) { hitOld = true; continue; }
+      const number = String(t?.number ?? "").trim().slice(0, 60);
+      if (!number) continue;
+      rows.push({
+        number,
+        kind: String(t?.transferType ?? "").slice(0, 40),
+        from: String(t?.fromwarehousecode ?? "").slice(0, 40),
+        to: String(t?.towarehousecode ?? "").slice(0, 40),
+        status: String(t?.status ?? "").slice(0, 40),
+        date,
+        ref: String(t?.reference ?? "").slice(0, 80),
+        note: String(t?.description ?? "").slice(0, 200),
+      });
+    }
+    if (hitOld || list.length < 200) break;
+  }
+  if (!rows.length) return { fetched: 0, written: 0, since };
+
+  const prev = new Map(
+    (
+      await coreQuery(
+        `SELECT number, kind, from_wh, to_wh, status, transfer_date, reference, note
+         FROM transfers WHERE transfer_date >= ${esc(since)}`
+      )
+    ).map((r) => [r.number, r])
+  );
+  const changed = rows.filter((r) => {
+    const p = prev.get(r.number);
+    return (
+      !p || String(p.kind ?? "") !== r.kind || String(p.from_wh ?? "") !== r.from ||
+      String(p.to_wh ?? "") !== r.to || String(p.status ?? "") !== r.status ||
+      String(p.transfer_date ?? "") !== r.date || String(p.reference ?? "") !== r.ref ||
+      String(p.note ?? "") !== r.note
+    );
+  });
+
+  for (let i = 0; i < changed.length; i += 60) {
+    const values = changed
+      .slice(i, i + 60)
+      .map(
+        (r) =>
+          `(${esc(r.number)},${esc(r.kind)},${esc(r.from)},${esc(r.to)},${esc(r.status)},` +
+          `${esc(r.date)},${esc(r.ref)},${esc(r.note)},datetime('now'))`
+      )
+      .join(",");
+    await coreQuery(
+      `INSERT INTO transfers (number,kind,from_wh,to_wh,status,transfer_date,reference,note,updated_at)
+       VALUES ${values}
+       ON CONFLICT(number) DO UPDATE SET kind=excluded.kind, from_wh=excluded.from_wh,
+         to_wh=excluded.to_wh, status=excluded.status, transfer_date=excluded.transfer_date,
+         reference=excluded.reference, note=excluded.note, updated_at=excluded.updated_at`
+    );
+  }
+  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length, since };
+}
+
+/** จอ "รายการโอนสินค้า" แบบ ZORT */
+export async function listTransfers(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS transfers (
+       number TEXT PRIMARY KEY, kind TEXT, from_wh TEXT, to_wh TEXT,
+       status TEXT, transfer_date TEXT, reference TEXT, note TEXT, updated_at TEXT)`
+  );
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+  const q = String(o.q ?? "").trim().slice(0, 60);
+  const filter = q ? `AND (number LIKE ${esc(`%${q}%`)} OR reference LIKE ${esc(`%${q}%`)})` : "";
+  const [sum] = await coreQuery(
+    `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filter}`
+  );
+  // แท็บสถานะ — นับข้ามตัวกรองสถานะเสมอ (กติกาเดียวกับทุกจอ)
+  const byStatus = await coreQuery(
+    `SELECT status, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
+  );
+  const rows = await coreQuery(
+    `SELECT number, kind, from_wh, to_wh, status, transfer_date, reference, note
+     FROM transfers WHERE 1=1 ${filter}
+     ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
+  );
+  return {
+    total: num(sum?.c),
+    oldest: sum?.oldest || null,
+    limit,
+    offset,
+    byStatus,
+    // ⚠️ จอต้องบอกว่าเก็บย้อนหลังแค่ช่วงหนึ่ง ไม่ใช่ทั้งหมดที่ ZORT มี (12,196 ใบ)
+    note: "กระจกเก็บย้อนหลังเป็นช่วง ไม่ใช่ทั้งหมดที่ ZORT มี — ดูวันที่เก่าสุดที่ oldest",
+    rows,
+  };
+}
