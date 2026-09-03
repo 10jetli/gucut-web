@@ -52,6 +52,27 @@ export async function syncProducts() {
   }
   if (!all.length) return { error: "ดึงสินค้าจาก ZORT ไม่ได้" };
 
+  /* ⚠️ **สินค้าที่ไม่มีรหัสเก็บเข้ากระจกไม่ได้เลยโดยโครงสร้าง** (SKU เป็นกุญแจหลัก)
+      ตรวจจริง 3 ก.ย. 2569: ZORT มี 2,898 · **ไม่มีรหัส 226 ตัว (7.8%)** · คลังเงาจึงได้ 2,672
+      โชคดีที่ทั้ง 226 ตัว **สต็อกเป็นศูนย์หมด มูลค่ารวม ฿0** ⇒ ไม่มีตัวเลขไหนของเราผิดเพราะเรื่องนี้
+      ⇒ **ไม่แก้โครง แต่ต้องเลิกเงียบ** — ส่งตัวเลขออกไปให้จอเขียนบอกว่าขาดอะไรไปเท่าไหร่
+      (เปลี่ยนไปใช้ id ของ ZORT เป็นกุญแจ = ต้องรื้อทุกตารางที่จับคู่ด้วย SKU
+       ทั้ง Shopee · สินค้าชุด · ใบซื้อ · ออเดอร์ — แลกความเสี่ยงทั้งระบบเพื่อของที่มูลค่าศูนย์) */
+  const zortTotal = all.length;
+  const noSku = all.filter((p) => !String(p?.sku ?? "").trim());
+  const noSkuStock = noSku.filter((p) => num(p?.stock) !== 0).length;
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    await getStore("gucut-coupon").setJSON("zort-product-counts", {
+      at: new Date().toISOString(),
+      zortTotal,
+      noSku: noSku.length,
+      noSkuWithStock: noSkuStock,
+    });
+  } catch {
+    // เก็บตัวนับไม่ได้ไม่ใช่เรื่องคอขาดบาดตาย — อย่าให้ sync ล้มเพราะเรื่องนี้
+  }
+
   const rows = [];
   const seen = new Set();
   for (const p of all) {
@@ -429,4 +450,74 @@ export async function listBundleItems(bundleSku = "") {
     sku: one || undefined,
     rows,
   };
+}
+
+/* ══ มูลค่าสินค้ารายหมวดที่คัดมาจากจอ ZORT ══════════════════════════════
+   ⚠️ **ทำฝั่งเซิร์ฟเวอร์ไม่ได้ — ZORT ไม่มี Category API เลย** (ยิงจริงแล้ว 404)
+      ค่านี้อยู่แต่ในจอ ZORT ซึ่งต้องล็อกอิน ⇒ ต้องคัดจากเบราว์เซอร์แล้วอัปเข้ามา
+      แพตเทิร์นเดียวกับส่วนประกอบสินค้าชุด 360 ชุด
+   ⚠️ **เป็นค่าที่ "คัดมา" ไม่ใช่ "คิดเอง"** — ส่ง collectedAt ออกไปทุกครั้ง
+      จอต้องโชว์ว่าคัดมาเมื่อไหร่ ไม่งั้นกลายเป็นตาข่ายที่เคยถูกแล้วหยุดอัปเดตเงียบ ๆ
+   ⚠️ ต้นทุนเฉลี่ยขยับเฉพาะตอน "ซื้อเข้า" — ร้านนี้มีใบซื้อ 32 ใบ ปี 2026 ใบเดียว
+      ⇒ เก็บใหม่เมื่อมีใบซื้อใหม่ก็พอ ไม่ต้องเก็บทุกวัน */
+export async function saveCategoryValues(rows = []) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS category_values (
+       name TEXT PRIMARY KEY, skus INTEGER, value_remain REAL, value_available REAL, at TEXT)`
+  );
+  const clean = (Array.isArray(rows) ? rows : [])
+    .map((r) => ({
+      name: String(r?.name ?? "").trim().slice(0, 120),
+      skus: num(r?.skus),
+      remain: num(r?.remain),
+      avail: num(r?.avail),
+    }))
+    .filter((r) => r.name);
+  if (!clean.length) return { error: "ไม่มีข้อมูลที่ใช้ได้" };
+  for (let i = 0; i < clean.length; i += 40) {
+    const values = clean
+      .slice(i, i + 40)
+      .map((r) => `(${esc(r.name)},${r.skus},${r.remain},${r.avail},datetime('now'))`)
+      .join(",");
+    await coreQuery(
+      `INSERT INTO category_values (name,skus,value_remain,value_available,at)
+       VALUES ${values}
+       ON CONFLICT(name) DO UPDATE SET skus=excluded.skus, value_remain=excluded.value_remain,
+         value_available=excluded.value_available, at=excluded.at`
+    );
+  }
+  const [sum] = await coreQuery(
+    `SELECT COUNT(*) AS c, ROUND(SUM(value_remain),2) AS remain, ROUND(SUM(value_available),2) AS avail
+     FROM category_values`
+  );
+  return {
+    saved: clean.length,
+    categories: num(sum?.c),
+    totalRemain: num(sum?.remain),
+    totalAvailable: num(sum?.avail),
+  };
+}
+
+/** อ่านมูลค่าที่คัดมา — คืน map ชื่อหมวด → ค่า พร้อมวันที่คัด */
+export async function categoryValues() {
+  if (!coreReady()) return { map: new Map(), at: null };
+  try {
+    const rows = await coreQuery(
+      `SELECT name, skus, value_remain, value_available, at FROM category_values`
+    );
+    let at = null;
+    const map = new Map();
+    for (const r of rows) {
+      map.set(String(r.name), {
+        zortSkus: num(r.skus),
+        zortValue: num(r.value_remain),
+        zortAvailable: num(r.value_available),
+      });
+      if (!at || String(r.at) > at) at = String(r.at);
+    }
+    return { map, at };
+  } catch {
+    return { map: new Map(), at: null };
+  }
 }

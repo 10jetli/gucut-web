@@ -306,6 +306,25 @@ export async function listStock(o = {}) {
      ⚠️ ล้มไม่ได้ทำให้ทั้งจอพัง — เช็คไม่ได้ก็แค่ไม่มีโลโก้ พร้อมบอกว่าเช็คใครได้บ้าง
      ⚠️ **จอต้องแยก "ไม่ได้ลงขาย" ออกจาก "เรายังเช็คไม่ได้"** ดูที่ checkedMarketplaces
         Lazada ยังรอ review ⇒ จะไม่โผล่ใน checked ตลอด ไม่ใช่ว่าไม่มีของลงขาย */
+  /* จำนวนที่ ZORT มีจริง กับจำนวนที่เราเก็บไม่ได้เพราะไม่มีรหัส
+     ⚠️ **ห้ามซ่อนเงียบ** — หัวจอเขียน 2,672 ทั้งที่ ZORT มี 2,898 โดยไม่บอกอะไร
+        คือโรคเดียวกับที่เพิ่งแก้ในจอหมวดหมู่ (เลขบนหัวไม่ตรงกับความจริง) */
+  let zc = {};
+  try {
+    const { getStore } = await import("@netlify/blobs");
+    const c = await getStore("gucut-coupon").get("zort-product-counts", { type: "json" });
+    if (c?.zortTotal) {
+      zc = {
+        zortTotal: num(c.zortTotal),
+        noSkuInZort: num(c.noSku),
+        noSkuWithStock: num(c.noSkuWithStock),
+        zortCountedAt: c.at || null,
+      };
+    }
+  } catch {
+    // ไม่มีตัวนับก็ไม่ส่งฟิลด์นี้ — จอไม่แสดงอะไร ดีกว่าส่งเลขที่เดาเอง
+  }
+
   let mk = { checkedMarketplaces: [], marketplacesAt: null };
   let mkKey = null;
   if (o.marketplaces) {
@@ -364,6 +383,7 @@ export async function listStock(o = {}) {
     services: num(aside?.services), // จำนวน "บริการ" — จอเอาไปบอกว่าซ่อนไปกี่ตัว
     inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
     shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
+    ...zc, // ZORT มีกี่ตัว · เราขาดไปกี่ตัวเพราะไม่มีรหัส (ห้ามซ่อนเงียบ)
     value: num(sum?.value), // ราคาขายรวม — **ไม่ใช่ตัวที่ ZORT โชว์**
     valueCost: num(sum?.value_cost), // ราคาทุนรวม — ตัวนี้ตรงกับ "มูลค่าสินค้าทั้งหมด" ของ ZORT
     noCostSkus: num(sum?.no_cost), // ยังไม่ได้กรอกราคาทุน ⇒ valueCost ต่ำกว่าจริงเท่านี้รหัส

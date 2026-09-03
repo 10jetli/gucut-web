@@ -37,7 +37,11 @@ export default async function handler(req, context) {
   //    มันจะตอบ 401 แล้วเบราว์เซอร์จะบล็อกคำขอจริงทิ้งด้วย **โดยฟ้องแค่ว่า Failed to fetch**
   //    ซึ่งไม่ได้บอกเลยว่าเป็นเพราะ preflight (เจอจริง 3 ก.ย. 2569 ตอนส่งรายการสินค้าในชุด)
   //    เปิดเฉพาะเส้นทางนี้ · เฉพาะโดเมน ZORT · และยังต้องมีรหัสในคำขอจริงเหมือนเดิม
-  if (req.method === "OPTIONS" && new URL(req.url).searchParams.get("bundleitems")) {
+  // ⚠️ **เพิ่มเส้นทางคัดข้อมูลจากจอ ZORT ต้องเพิ่มชื่อทั้ง 3 จุด** (preflight · ตั๋ว · ตัวรับ)
+  //    ลืมจุดใดจุดหนึ่ง = เบราว์เซอร์ฟ้องแค่ "Failed to fetch" ไม่บอกว่าตกตรงไหน
+  const UPLOAD_PATHS = ["bundleitems", "categoryvalues"];
+  const isUpload = (u) => UPLOAD_PATHS.some((k) => u.searchParams.get(k));
+  if (req.method === "OPTIONS" && isUpload(new URL(req.url))) {
     return new Response(null, {
       status: 204,
       headers: {
@@ -55,14 +59,14 @@ export default async function handler(req, context) {
   //    เพราะข้อมูลนี้อยู่แค่ในหน้าเว็บ ZORT และเราไม่อยากเอารหัสหลังร้านไปวางที่นั่น
   //    ⚠️ ตรวจแล้วลบทิ้งทันที ใช้ซ้ำไม่ได้ · หมดอายุ 10 นาที
   let ticket = false;
-  if (!gate.ok && new URL(req.url).searchParams.get("bundleitems") && req.method === "POST") {
+  if (!gate.ok && isUpload(new URL(req.url)) && req.method === "POST") {
     try {
       const { getStore } = await import("@netlify/blobs");
       const store = getStore("gucut-admin");
-      const saved = await store.get("upload/bundleitems", { type: "json" });
+      const saved = await store.get("upload/harvest", { type: "json" });
       const sent = req.headers.get("x-upload-token") || "";
       if (saved?.token && sent && saved.token === sent && Date.now() < Number(saved.until || 0)) {
-        await store.delete("upload/bundleitems");
+        await store.delete("upload/harvest");
         ticket = true;
       }
     } catch { /* อ่านไม่ได้ = ไม่ให้ผ่าน */ }
@@ -178,11 +182,26 @@ export default async function handler(req, context) {
     if (url.searchParams.get("uploadtoken")) {
       const { getStore } = await import("@netlify/blobs");
       const token = crypto.randomUUID();
-      await getStore("gucut-admin").setJSON("upload/bundleitems", {
+      await getStore("gucut-admin").setJSON("upload/harvest", {
         token,
         until: Date.now() + 10 * 60 * 1000,
       });
       return json({ ok: true, token, expiresInMinutes: 10 });
+    }
+    // มูลค่าสินค้ารายหมวดที่คัดมาจากจอ ZORT (ไม่มี Category API — ต้องคัดจากเบราว์เซอร์)
+    if (url.searchParams.get("categoryvalues")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { saveCategoryValues } = await import("../lib/core-products.mjs");
+      const r = await saveCategoryValues(body.rows || body);
+      return new Response(JSON.stringify(r.error ? { ok: false, ...r } : { ok: true, ...r }), {
+        status: r.error ? 400 : 200,
+        headers: {
+          "content-type": "application/json",
+          "access-control-allow-origin": "https://secure.zortout.com",
+        },
+      });
     }
     if (url.searchParams.get("bundleitems")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);

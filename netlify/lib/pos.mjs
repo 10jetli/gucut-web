@@ -580,6 +580,11 @@ export async function listCategories() {
      ORDER BY skus DESC`
   );
   const real = rows.filter((r) => !String(r.cat_name).startsWith("("));
+  /* มูลค่าที่คัดมาจากจอ ZORT (ถ้ามี) — เติมลงแต่ละแถวเป็นคอลัมน์เทียบ
+     ⚠️ **ไม่ทับค่าที่เราคิดเอง** ให้จอโชว์คู่กันได้ว่าอันไหนของใคร
+        ทับเมื่อไหร่ = เราจะไม่มีทางรู้อีกเลยว่าตัวเลขไหนมาจากไหน */
+  const { categoryValues } = await import("./core-products.mjs");
+  const cv = await categoryValues();
   return {
     total: rows.reduce((s, r) => s + num(r.skus), 0),
     categories: real.length,
@@ -598,8 +603,14 @@ export async function listCategories() {
       "มูลค่าคิดจากต้นทุน (ราคาซื้อในทะเบียนสินค้า) และส่งแบบราคาขายมาด้วย — " +
       "⚠️ ทั้งสองแบบยังไม่ตรงกับ ZORT เพราะ ZORT ใช้ต้นทุนถัวเฉลี่ยจากประวัติการซื้อ " +
       "ซึ่งคลังเงายังไม่ได้ดึงมา · ตัวเลขนี้ใช้ดูสัดส่วนระหว่างหมวดได้ แต่อย่าเอาไปเทียบกับ ZORT ตรง ๆ",
-    matchesZort: false,
+    matchesZort: cv.map.size > 0, // จริงเมื่อมีค่าที่คัดมาจาก ZORT แล้วเท่านั้น
+    // ⚠️ ค่าที่คัดมาจากจอ ZORT — **จอต้องโชว์ว่าคัดมาเมื่อไหร่เสมอ**
+    zortCollectedAt: cv.at,
+    zortCategories: cv.map.size,
+    zortTotalValue: cv.map.size
+      ? Math.round([...cv.map.values()].reduce((s, x) => s + x.zortValue, 0) * 100) / 100
+      : null,
     // จอฝั่งหลังร้านอ่านชื่อหมวดจากช่อง `name` — คงชื่อเดิมไว้ให้ใช้ง่าย
-    rows: rows.map((r) => ({ ...r, name: r.cat_name })),
+    rows: rows.map((r) => ({ ...r, name: r.cat_name, ...(cv.map.get(String(r.cat_name)) || {}) })),
   };
 }
