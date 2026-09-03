@@ -210,6 +210,7 @@ export default async function handler(req, context) {
           only: url.searchParams.get("only"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          marketplaces: url.searchParams.get("marketplaces"),
         })),
       });
     }

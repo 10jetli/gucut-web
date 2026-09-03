@@ -291,6 +291,43 @@ export async function listBundles(o = {}) {
     }
   }
 
+  /* คอลัมน์ Marketplace ในจอสินค้าชุด — เจ้าของร้านวงมาให้เอง 3 ก.ย. 2569
+     พร้อมสั่งกำกับว่า **ห้ามใส่มั่ว ต้องเชื่อมจริง ๆ**
+     ⇒ ถามแพลตฟอร์มเองทุกครั้ง ไม่เดาจากชื่อ ไม่เดาจากประวัติการขาย
+     ⚠️ ในจอ ZORT รหัสชุด (00073-11.8-KK) ขึ้นโลโก้ตรง ๆ ไม่ต้องตัดท้าย
+        แต่ยังตัดเผื่อไว้ เพราะบางชุดบนแพลตฟอร์มมีหางต่อท้ายอีกชั้น */
+  let mk = { checkedMarketplaces: [] };
+  if (o.marketplaces && rows.length) {
+    try {
+      const { marketplaceListings } = await import("./marketplace-listings.mjs");
+      const ml = await marketplaceListings();
+      const byKey = new Map();
+      const put = (k, tags) => {
+        if (!k) return;
+        const cur = byKey.get(k) || new Set();
+        for (const t of tags) cur.add(t);
+        byKey.set(k, cur);
+      };
+      for (const [code, tags] of Object.entries(ml.listings)) {
+        put(code, tags);
+        let b = code;
+        while (b.includes("-")) {
+          b = b.slice(0, b.lastIndexOf("-"));
+          put(b, tags);
+        }
+      }
+      for (const r of rows) r.marketplaces = [...(byKey.get(String(r.sku)) || [])];
+      mk = {
+        checkedMarketplaces: ml.checked,
+        marketplacesAt: new Date(ml.at).toISOString(),
+        marketplacesNotConnected: ml.notConnected,
+        marketplacesFailed: ml.failed,
+      };
+    } catch (e) {
+      mk.marketplacesError = String(e?.message || e).slice(0, 160);
+    }
+  }
+
   return {
     total: num(sum?.c),
     active: num(sum?.act),
@@ -298,7 +335,8 @@ export async function listBundles(o = {}) {
     negative: num(sum?.negative),
     limit,
     offset,
-    recipeAt, // ⚠️ วันที่เก็บสูตรชุด — จอต้องโชว์ สูตรไม่ได้ซิงก์เอง
+    recipeAt,
+    ...mk, // ⚠️ วันที่เก็บสูตรชุด — จอต้องโชว์ สูตรไม่ได้ซิงก์เอง
     note:
       "รายการในชุดเก็บจากหน้าเว็บ ZORT ครั้งเดียว ไม่ได้ซิงก์เอง — " +
       "ราคาสินค้ารวมคิดจากราคาขายของชิ้นส่วน (ตรวจกับ ZORT แล้ว) · " +

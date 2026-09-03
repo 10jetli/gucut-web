@@ -297,6 +297,7 @@ export async function listStock(o = {}) {
      ⚠️ **จอต้องแยก "ไม่ได้ลงขาย" ออกจาก "เรายังเช็คไม่ได้"** ดูที่ checkedMarketplaces
         Lazada ยังรอ review ⇒ จะไม่โผล่ใน checked ตลอด ไม่ใช่ว่าไม่มีของลงขาย */
   let mk = { checkedMarketplaces: [], marketplacesAt: null };
+  let mkKey = null;
   if (o.marketplaces) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
@@ -321,7 +322,7 @@ export async function listStock(o = {}) {
           put(b, tags);
         }
       }
-      for (const r of rows) r.marketplaces = [...(byKey.get(String(r.sku)) || [])];
+      mkKey = byKey;
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
@@ -370,6 +371,11 @@ export async function listStock(o = {}) {
       unit: r.unit || "",
       service: num(r.ptype) === 1,
       active: r.active === null || r.active === undefined ? null : num(r.active) === 1,
+      // ⚠️ **ต้องหยิบตรงนี้ ไม่ใช่ไปแปะไว้บนแถวดิบ** — แถวถูกแปลงเป็นวัตถุใหม่ตรงนี้
+      //    ค่าที่แปะไว้ก่อนหน้าจะหลุดหายเงียบ ๆ ทั้งที่โค้ดข้างบนทำงานสำเร็จทุกบรรทัด
+      //    (เจอจริง 3 ก.ย. 2569 — checkedMarketplaces มาถูก แต่ทุกแถวไม่มีฟิลด์เลย
+      //     ดูเหมือน "ร้านไม่ได้ลงขายอะไรเลย" ทั้งที่ของจริงลงขายเกือบทุกตัว)
+      ...(mkKey ? { marketplaces: [...(mkKey.get(String(r.sku)) || [])] } : {}),
     })),
   };
 }
