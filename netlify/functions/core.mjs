@@ -261,6 +261,11 @@ export default async function handler(req, context) {
         })),
       });
     }
+    // ทะเบียนการเชื่อมต่อ — ยิงของจริงทุกเจ้า ไม่มีค่าเขียนตายตัว
+    if (url.searchParams.get("connections")) {
+      const { connectionsStatus } = await import("../lib/connections.mjs");
+      return json({ ok: true, ...(await connectionsStatus()) });
+    }
     /* ลูกค้า/ผู้ติดต่อ — เจ้าของร้านสั่งดึง 3 ก.ย. 2569
        🔒 ข้อมูลส่วนบุคคลจริง 28,250 ราย · ผ่าน adminGate เหมือนทุกเส้นทางในไฟล์นี้
        ⚠️ **ห้ามเพิ่มโหมด "เอาทั้งหมด"** เพดาน 100 แถว/ครั้งเป็นของตั้งใจ */
