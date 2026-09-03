@@ -139,6 +139,23 @@ export async function listContacts(o = {}) {
   const limit = Math.max(1, Math.min(100, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
+  /* ⚠️ **กันไล่ดึงทั้งฐานทีละหน้า** — เพดาน 100 แถวอย่างเดียวไม่พอ
+      ใครยิง offset ไปเรื่อย ๆ 283 ครั้งก็ได้ครบ 28,250 ราย
+      ⇒ เปิดให้เปิดดูหน้าแรก ๆ ได้เหมือนจอ ZORT แต่จะเดินลึกต้องมีคำค้น
+      (ตัวเลข 500 = ~10 หน้าแรก พอสำหรับการเปิดดู ไม่พอสำหรับการกวาด) */
+  const DEEP = 500;
+  if (!q && offset > DEEP) {
+    return {
+      total: null,
+      limit,
+      offset,
+      needQuery: true,
+      rows: [],
+      note:
+        `เปิดดูได้ถึงแถวที่ ${DEEP} โดยไม่ต้องค้นหา · ลึกกว่านี้ต้องพิมพ์คำค้น ` +
+        "— ตั้งใจกันการไล่ดึงข้อมูลลูกค้าทั้งฐานทีละหน้า",
+    };
+  }
   const filter = q
     ? `AND (name LIKE ${esc(`%${q}%`)} OR phone LIKE ${esc(`%${q}%`)} OR code LIKE ${esc(`%${q}%`)})`
     : "";
