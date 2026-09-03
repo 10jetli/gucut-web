@@ -301,7 +301,27 @@ export async function listStock(o = {}) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
       const ml = await marketplaceListings();
-      for (const r of rows) r.marketplaces = ml.listings[String(r.sku)] || [];
+      /* ⚠️ **รหัสบนแพลตฟอร์มเป็นระดับตัวเลือก แต่คลังเราเก็บรหัสฐาน**
+          Shopee ขาย `00369-54T` `00369-25T` … ส่วนคลังมีแค่ `00369`
+          จับคู่ตรง ๆ = ไม่ขึ้นโลโก้สักแถวเดียว (เจอจริงตอนยิงรอบแรก 3 ก.ย. 2569
+          เช็ค Shopee สำเร็จ แต่ผลลัพธ์ว่างเปล่า ซึ่งดูเหมือน "ไม่ได้ลงขายอะไรเลย")
+          ⇒ ตัดท้ายทีละขีดแล้วติดโลโก้ให้รหัสฐานด้วย (กติกาเดียวกับ missing-sku) */
+      const byKey = new Map();
+      const put = (k, tags) => {
+        if (!k) return;
+        const cur = byKey.get(k) || new Set();
+        for (const t of tags) cur.add(t);
+        byKey.set(k, cur);
+      };
+      for (const [code, tags] of Object.entries(ml.listings)) {
+        put(code, tags);
+        let b = code;
+        while (b.includes("-")) {
+          b = b.slice(0, b.lastIndexOf("-"));
+          put(b, tags);
+        }
+      }
+      for (const r of rows) r.marketplaces = [...(byKey.get(String(r.sku)) || [])];
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
