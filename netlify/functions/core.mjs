@@ -15,7 +15,9 @@ import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
 import {
   deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats, listCategories,
 } from "../lib/pos.mjs";
-import { syncProducts, syncBundles, listBundles } from "../lib/core-products.mjs";
+import {
+  syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems,
+} from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
@@ -127,6 +129,19 @@ export default async function handler(req, context) {
           partial: i.envs.some((e) => !!process.env[e]) && !i.envs.every((e) => !!process.env[e]),
         })),
       });
+    }
+    // รายการสินค้าในชุด — เก็บจากหน้าเว็บ ZORT (API ไม่เปิดให้ดึง)
+    //   POST ?bundleitems=1  body {items:[{bundleSku,sku,name,qty,line}]}
+    //   GET  ?list=bundleitems[&sku=<ชุด>]
+    if (url.searchParams.get("bundleitems")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const r = await saveBundleItems(body);
+      return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
+    }
+    if (url.searchParams.get("list") === "bundleitems") {
+      return json({ ok: true, ...(await listBundleItems(url.searchParams.get("sku"))) });
     }
     // สินค้าเป็นชุด (Bundle) — 360 ชุดที่ร้านใช้จริง
     if (url.searchParams.get("syncbundles")) {

@@ -250,3 +250,89 @@ export async function listBundles(o = {}) {
     rows,
   };
 }
+
+/** รับ "รายการสินค้าในชุด" ที่เก็บมาจากหน้าเว็บ ZORT
+ *
+ * ⚠️ **ทำไมต้องรับจากข้างนอก ไม่ดึงเอง** — ZORT ไม่เปิด API ให้ดึงรายการในชุด
+ *    (ลองครบ: Bundle/GetBundle 404 · GetBundles?id= คืนทั้ง 360 ไม่กรอง · detail/showdetail ไม่มีผล)
+ *    ข้อมูลนี้อยู่เฉพาะในหน้าเว็บที่ต้องล็อกอิน ⇒ เก็บจากเบราว์เซอร์ที่ล็อกอินอยู่แล้วส่งเข้ามา
+ *
+ * ⚠️ **เป็นการเก็บครั้งเดียว ไม่ใช่ของที่ซิงก์เองทุกคืน** — ส่วนประกอบของชุดแทบไม่เปลี่ยน
+ *    แต่ถ้าร้านแก้สูตรชุดเมื่อไหร่ ต้องเก็บใหม่ **ไม่มีอะไรเตือนให้** ⇒ จอต้องโชว์วันที่เก็บล่าสุด
+ *
+ * ⚠️ **ห้ามเดาส่วนประกอบเด็ดขาด** — รับเฉพาะที่ส่งมาจริง ชุดไหนไม่มีข้อมูลก็ปล่อยว่างไว้
+ *    เดาผิด = ตัดสต็อกผิดตัว ซึ่งแก้ยากกว่าไม่มีข้อมูล
+ */
+export async function saveBundleItems(input = {}) {
+  if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const items = Array.isArray(input.items) ? input.items : [];
+  if (!items.length) return { error: "ไม่มีรายการส่งมา" };
+
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundle_items (
+       bundle_sku TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
+       qty REAL NOT NULL DEFAULT 0, at TEXT,
+       PRIMARY KEY (bundle_sku, line))`
+  );
+
+  const clean = [];
+  const bad = [];
+  for (const [i, it] of items.entries()) {
+    const bundle = String(it?.bundleSku ?? "").trim().slice(0, 60);
+    const sku = String(it?.sku ?? "").trim().slice(0, 60);
+    const qty = Number(it?.qty);
+    if (!bundle) bad.push({ i, why: "ไม่มี bundleSku" });
+    else if (!sku) bad.push({ i, bundle, why: "ไม่มี sku ของสินค้าในชุด" });
+    else if (!Number.isFinite(qty) || qty <= 0) bad.push({ i, bundle, sku, why: "qty ต้องมากกว่า 0" });
+    else clean.push({ bundle, sku, qty, name: String(it?.name ?? "").slice(0, 200), line: Number(it?.line) || clean.length + 1 });
+  }
+  if (!clean.length) return { error: "ไม่มีรายการที่ใช้ได้", bad };
+
+  // เขียนใหม่ทั้งชุดสำหรับชุดที่ส่งมา — ลบก่อนใส่ ทำให้ยิงซ้ำได้ผลเหมือนเดิม
+  const bundles = [...new Set(clean.map((c) => c.bundle))];
+  for (let i = 0; i < bundles.length; i += 60) {
+    const chunk = bundles.slice(i, i + 60).map(esc).join(",");
+    await coreQuery(`DELETE FROM bundle_items WHERE bundle_sku IN (${chunk})`);
+  }
+  for (let i = 0; i < clean.length; i += 80) {
+    const values = clean
+      .slice(i, i + 80)
+      .map((c) => `(${esc(c.bundle)},${c.line},${esc(c.sku)},${esc(c.name)},${c.qty},datetime('now'))`)
+      .join(",");
+    await coreQuery(
+      `INSERT INTO bundle_items (bundle_sku,line,sku,name,qty,at) VALUES ${values}`
+    );
+  }
+  return { bundles: bundles.length, lines: clean.length, bad: bad.length ? bad.slice(0, 5) : undefined };
+}
+
+/** รายการสินค้าในชุด — ใช้ทั้งบนจอและตอนคิดสต็อก */
+export async function listBundleItems(bundleSku = "") {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundle_items (
+       bundle_sku TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
+       qty REAL NOT NULL DEFAULT 0, at TEXT,
+       PRIMARY KEY (bundle_sku, line))`
+  );
+  const one = String(bundleSku ?? "").trim().slice(0, 60);
+  const [sum] = await coreQuery(
+    `SELECT COUNT(DISTINCT bundle_sku) AS bundles, COUNT(*) AS lines, MAX(at) AS last FROM bundle_items`
+  );
+  const rows = one
+    ? await coreQuery(
+        `SELECT line, sku, name, qty FROM bundle_items WHERE bundle_sku = ${esc(one)} ORDER BY line`
+      )
+    : [];
+  const [total] = await coreQuery(`SELECT COUNT(*) AS c FROM bundles`);
+  return {
+    bundlesWithItems: num(sum?.bundles),
+    lines: num(sum?.lines),
+    collectedAt: sum?.last || null,
+    bundlesTotal: num(total?.c),
+    // จอต้องบอกว่าเก็บมาแล้วกี่ชุดจากทั้งหมด — ไม่งั้นคนนึกว่าครบ
+    note: "รายการในชุดเก็บจากหน้าเว็บ ZORT ครั้งเดียว ไม่ได้ซิงก์เอง — ร้านแก้สูตรชุดเมื่อไหร่ต้องเก็บใหม่",
+    sku: one || undefined,
+    rows,
+  };
+}
