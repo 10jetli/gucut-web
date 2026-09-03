@@ -133,3 +133,120 @@ export async function syncProducts() {
   }
   return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
 }
+
+/* ══ สินค้าเป็นชุด (Bundle) ══════════════════════════════════════════
+   ⚠️ **ของจริงที่ร้านใช้อยู่ 360 ชุด และระบบเราไม่เคยรู้จักเลย** (เจอ 3 ก.ย. 2569
+      ตอนเจ้าของร้านสั่งให้เข้าไปดูเมนู "สินค้า" ของ ZORT ทีละหัวข้อ)
+      เช่น "NEWWAVE 7800 SUPER-S 30\" (SET KINGKONG)" = เลื่อย + บาร์ + โซ่ ขายเป็นชุดเดียว
+   ⚠️ **สำคัญกับสต็อกมาก** — ขายชุดหนึ่งชุดต้องตัดของหลายตัว
+      ตราบใดที่คลังเงายังไม่รู้จักชุด การตัดสต็อกของเราจะไม่ตรงกับความจริงทุกครั้งที่ขายชุด
+   ⚠️ **รายการสินค้าในชุด ZORT ไม่เปิด API ให้ดึง** — ช่อง `list` คืน null ทุกตัว
+      (ลองแล้ว: Bundle/GetBundle 404 · GetBundles?id= และ GetBundleDetail คืน list ว่าง)
+      ⇒ เรารู้ว่า "มีชุดอะไรบ้าง ราคาเท่าไหร่ เหลือกี่ชุด" แต่ **ไม่รู้ว่าในชุดมีอะไร**
+      ห้ามเดาส่วนประกอบจากชื่อชุดเด็ดขาด — เดาผิดคือตัดสต็อกผิดตัว */
+export async function syncBundles() {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const h = headers();
+  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundles (
+       sku TEXT PRIMARY KEY, name TEXT, sellprice REAL, onhand REAL, available REAL,
+       active INTEGER, unit TEXT, updated_at TEXT)`
+  );
+
+  const all = [];
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, {
+      headers: h,
+      signal: AbortSignal.timeout(12000),
+    }).catch(() => null);
+    const data = res?.ok ? await res.json().catch(() => null) : null;
+    const list = Array.isArray(data?.list) ? data.list : [];
+    all.push(...list);
+    if (list.length < 200) break;
+  }
+  if (!all.length) return { error: "ดึงสินค้าเป็นชุดจาก ZORT ไม่ได้" };
+
+  const rows = [];
+  const seen = new Set();
+  for (const b of all) {
+    const sku = String(b?.sku ?? "").trim().slice(0, 60);
+    if (!sku || seen.has(sku)) continue;
+    seen.add(sku);
+    rows.push({
+      sku,
+      name: String(b?.name ?? "").slice(0, 200),
+      price: num(b?.sellprice),
+      onhand: num(b?.stock),
+      available: num(b?.availablestock),
+      active: b?.active === false ? 0 : 1,
+      unit: String(b?.unittext ?? "").slice(0, 40),
+    });
+  }
+
+  const prev = new Map(
+    (await coreQuery(`SELECT sku, name, sellprice, onhand, available, active, unit FROM bundles`))
+      .map((r) => [r.sku, r])
+  );
+  const changed = rows.filter((r) => {
+    const p = prev.get(r.sku);
+    return (
+      !p || String(p.name ?? "") !== r.name || num(p.sellprice) !== r.price ||
+      num(p.onhand) !== r.onhand || num(p.available) !== r.available ||
+      num(p.active) !== r.active || String(p.unit ?? "") !== r.unit
+    );
+  });
+
+  for (let i = 0; i < changed.length; i += 80) {
+    const values = changed
+      .slice(i, i + 80)
+      .map(
+        (r) =>
+          `(${esc(r.sku)},${esc(r.name)},${r.price},${r.onhand},${r.available},` +
+          `${r.active},${esc(r.unit)},datetime('now'))`
+      )
+      .join(",");
+    await coreQuery(
+      `INSERT INTO bundles (sku,name,sellprice,onhand,available,active,unit,updated_at)
+       VALUES ${values}
+       ON CONFLICT(sku) DO UPDATE SET name=excluded.name, sellprice=excluded.sellprice,
+         onhand=excluded.onhand, available=excluded.available, active=excluded.active,
+         unit=excluded.unit, updated_at=excluded.updated_at`
+    );
+  }
+  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
+}
+
+/** จอ "สินค้าเป็นชุด" แบบ ZORT */
+export async function listBundles(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+  const q = String(o.q ?? "").trim().slice(0, 60);
+  const filter = q ? `AND (sku LIKE ${esc(`%${q}%`)} OR name LIKE ${esc(`%${q}%`)})` : "";
+  const only = { active: "AND active = 1", inactive: "AND active = 0" }[o.only] || "";
+
+  const [sum] = await coreQuery(
+    `SELECT COUNT(*) AS c,
+            SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS act,
+            SUM(CASE WHEN active = 0 THEN 1 ELSE 0 END) AS inact,
+            SUM(CASE WHEN COALESCE(onhand,0) < 0 THEN 1 ELSE 0 END) AS negative
+     FROM bundles WHERE 1=1 ${filter}`
+  );
+  const rows = await coreQuery(
+    `SELECT sku, name, sellprice, onhand, available, active, unit
+     FROM bundles WHERE 1=1 ${filter} ${only}
+     ORDER BY sku LIMIT ${limit} OFFSET ${offset}`
+  );
+  return {
+    total: num(sum?.c),
+    active: num(sum?.act),
+    inactive: num(sum?.inact),
+    negative: num(sum?.negative),
+    limit,
+    offset,
+    // ⚠️ จอต้องเขียนบอกด้วย ไม่งั้นคนจะนึกว่าเราเก็บส่วนประกอบไว้แล้วแค่ยังไม่แสดง
+    note: "ZORT ไม่เปิด API ให้ดึงรายการสินค้าในชุด — เรารู้แค่ตัวชุด ไม่รู้ว่าในชุดมีอะไร",
+    rows,
+  };
+}

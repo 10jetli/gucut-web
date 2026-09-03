@@ -15,7 +15,7 @@ import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
 import {
   deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats, listCategories,
 } from "../lib/pos.mjs";
-import { syncProducts } from "../lib/core-products.mjs";
+import { syncProducts, syncBundles, listBundles } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
@@ -125,6 +125,21 @@ export default async function handler(req, context) {
           envs: undefined, // ชื่อตัวแปรไม่ต้องส่งออกไปให้หน้าจอ
           live: i.envs.every((e) => !!process.env[e]),
           partial: i.envs.some((e) => !!process.env[e]) && !i.envs.every((e) => !!process.env[e]),
+        })),
+      });
+    }
+    // สินค้าเป็นชุด (Bundle) — 360 ชุดที่ร้านใช้จริง
+    if (url.searchParams.get("syncbundles")) {
+      return json({ ok: true, bundles: await syncBundles() });
+    }
+    if (url.searchParams.get("list") === "bundles") {
+      return json({
+        ok: true,
+        ...(await listBundles({
+          q: url.searchParams.get("q"),
+          only: url.searchParams.get("only"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
         })),
       });
     }
