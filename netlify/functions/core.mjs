@@ -27,6 +27,23 @@ export default async function handler(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
   // และ "ไม่ส่งรหัสมาเลย" gate จะไม่ deny ให้เอง (wants:false) — API หลังร้านล้วน
   // แบบตัวนี้ต้องบังคับ ok เท่านั้น (เจอจริงตอนยิงทดสอบ 30 ส.ค. — ไม่มีรหัสได้ 200)
+  // ⚠️ **ต้องตอบ preflight ก่อนด่านรหัสเสมอ** — คำขอ OPTIONS ไม่มีรหัสติดมาโดยธรรมชาติ
+  //    (เบราว์เซอร์ไม่ส่ง header ที่กำหนดเองไปกับ preflight) ถ้าปล่อยให้ด่านตรวจก่อน
+  //    มันจะตอบ 401 แล้วเบราว์เซอร์จะบล็อกคำขอจริงทิ้งด้วย **โดยฟ้องแค่ว่า Failed to fetch**
+  //    ซึ่งไม่ได้บอกเลยว่าเป็นเพราะ preflight (เจอจริง 3 ก.ย. 2569 ตอนส่งรายการสินค้าในชุด)
+  //    เปิดเฉพาะเส้นทางนี้ · เฉพาะโดเมน ZORT · และยังต้องมีรหัสในคำขอจริงเหมือนเดิม
+  if (req.method === "OPTIONS" && new URL(req.url).searchParams.get("bundleitems")) {
+    return new Response(null, {
+      status: 204,
+      headers: {
+        "access-control-allow-origin": "https://secure.zortout.com",
+        "access-control-allow-headers": "content-type, x-admin-key, x-upload-token",
+        "access-control-allow-methods": "POST, OPTIONS",
+        "access-control-max-age": "600",
+      },
+    });
+  }
+
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
   // ⚠️ ทางเข้าที่สองสำหรับ "ส่งรายการสินค้าในชุด" เท่านั้น — ใช้รหัสใช้ครั้งเดียว
@@ -163,22 +180,6 @@ export default async function handler(req, context) {
       return json({ ok: true, token, expiresInMinutes: 10 });
     }
     if (url.searchParams.get("bundleitems")) {
-      // ⚠️ **เปิดข้ามโดเมนเฉพาะเส้นทางนี้ และเฉพาะหน้าเว็บ ZORT เท่านั้น**
-      //    เพราะรายการสินค้าในชุดมีอยู่แค่ในหน้าเว็บ ZORT ที่ต้องล็อกอิน
-      //    ⇒ ต้องให้เบราว์เซอร์ที่เปิด ZORT อยู่ยิงเข้ามาได้โดยตรง
-      //    **ยังต้องมีรหัสหลังร้านเหมือนเดิม** CORS แค่อนุญาตให้ "ส่งรหัสมาได้"
-      //    ไม่ได้ยกเว้นการตรวจรหัส · และล็อกที่โดเมนเดียว ไม่ใช่ *
-      if (req.method === "OPTIONS") {
-        return new Response(null, {
-          status: 204,
-          headers: {
-            "access-control-allow-origin": "https://secure.zortout.com",
-            "access-control-allow-headers": "content-type, x-admin-key, x-upload-token",
-            "access-control-allow-methods": "POST, OPTIONS",
-            "access-control-max-age": "600",
-          },
-        });
-      }
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
