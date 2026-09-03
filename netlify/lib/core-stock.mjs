@@ -650,15 +650,26 @@ export async function channelGaps(o = {}) {
    ⚠️ **ชื่อช่องทางในฐานสะกดไม่ตรงกัน** — 'Line OA @gucut1' (176 ใบ) กับ
       'LINE OA @gucut1' (66 ใบ) เป็นเจ้าเดียวกัน · ไม่รวมกัน = ประวัติขาดเป็นสองท่อน
       แล้ว **สร้างช่องว่างปลอมขึ้นมาเอง** ⇒ ต้องรวมชื่อก่อนคิด */
-  const RETIRED = ["shopify"]; // เลิกใช้แล้ว — ไม่ใช่สัญญาณ
-  const CHAT = ["facebook", "line oa", "gucut.com", "gucut"]; // ช่องแชท/หน้าร้านเรา ไม่ใช่มาร์เก็ตเพลส
+  /* ⚠️⚠️ **ห้ามใช้ includes() จัดประเภทชื่อที่คนตั้งเอง** — บั๊กตัวเดิมที่เคยเจอแล้ว 2 ก.ย. 2569
+      ครั้งนั้น: ปุ่มหมวด POS "โซ่ NEWWAVE" บอกมี 17 กดแล้วได้ 2
+                เพราะ "โซ่เลื่อยยนต์ NEWWAVE" ถูกนับเป็นเลื่อยยนต์
+      ครั้งนี้: ผมใส่ "gucut" ในรายการ CHAT (ตั้งใจจับ "🔮GUCUT.COM")
+                ⇒ **"lazada-gucut" กับ "shopee-gucut" ถูกโยนเข้ากอง chat ทั้งกอง**
+                ⇒ ตัวตรวจที่สร้างมาจับยอดหายจากมาร์เก็ตเพลส **มองไม่เห็น Lazada
+                   ซึ่งเป็นช่องทางที่ร้านขายเยอะที่สุด** และหัวจอขึ้น total 27 ดูสุขภาพดี
+      ⇒ **ลำดับสำคัญกว่ารายการ**: เช็คมาร์เก็ตเพลสก่อนเสมอ แล้วจบตรงนั้น
+         ต่อให้ชื่อร้านมีคำอื่นปนก็ไม่หลุด · ส่วน chat เทียบแบบตรงตัว ไม่ใช่ substring */
+  const MARKETPLACE = ["lazada", "shopee", "tiktok"];
+  const RETIRED = ["shopify"];
+  const CHAT_EXACT = ["facebook เลื่อยยนต์ gucut newwave", "line oa @gucut1", "🔮gucut.com", "gucut"];
   const norm = (c) => String(c || "").trim().toLowerCase();
   const kindOf = (c) => {
     const n = norm(c);
+    if (MARKETPLACE.some((x) => n.includes(x))) return "marketplace"; // ← ต้องมาก่อนเสมอ
     if (RETIRED.some((x) => n.includes(x))) return "retired";
     if (n.includes("pos") || n.includes("หน้าร้าน")) return "pos";
-    if (CHAT.some((x) => n.includes(x))) return "chat";
-    return "marketplace";
+    if (CHAT_EXACT.includes(n)) return "chat"; // เทียบตรงตัว ไม่ใช่ substring
+    return "other"; // ชื่อที่ไม่รู้จัก — **ไม่เดา** ให้โผล่ใน excluded ให้เห็น
   };
 
   const [snap] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
@@ -722,7 +733,11 @@ export async function channelGaps(o = {}) {
       retired: byKind.retired || 0, // Shopify ปิดแล้ว — เงียบเป็นเรื่องปกติ
       chat: byKind.chat || 0, // Facebook · LINE — ช่องแชท ไม่ใช่หน้าร้าน
       pos: byKind.pos || 0,
+      // ⚠️ ชื่อช่องทางที่ตัวจัดประเภทไม่รู้จัก — **ต้องเห็น ไม่ใช่หายเงียบ**
+      //    (กติกาเดียวกับกลุ่ม warehouse ที่เคยหายจากทะเบียนการเชื่อมต่อ)
+      other: byKind.other || 0,
     },
+    unknownChannels: [...new Set(tagged.filter((r) => r.channelKind === "other").map((r) => r.channel))],
     applied: { quietDays: quiet, lookbackDays: look, minSold, limit, offset },
     note: enough
       ? "สินค้าที่เคยขายได้บนช่องทางนั้น แต่เงียบสนิทช่วงหลัง ทั้งที่ยังมีของในคลัง"
