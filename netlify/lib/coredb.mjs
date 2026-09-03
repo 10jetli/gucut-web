@@ -104,6 +104,11 @@ export async function coreInit() {
     `ALTER TABLE orders ADD COLUMN is_cod INTEGER`,
     // สถานะชำระเงินจาก ZORT (Paid · Unpaid …) — คนละอย่างกับ status ของใบ
     `ALTER TABLE orders ADD COLUMN pay_status TEXT`,
+    /* น้ำหนักสินค้า (กรัม) — ZORT ส่งมาใน Product/GetProducts อยู่แล้ว
+       ⚠️ **มีค่าจริงแค่ 669 จาก 2,898 ตัว (23%)** ⇒ ส่วนใหญ่ยังไม่ได้กรอก
+          ต้องคืน null ไม่ใช่ 0 — **0 กรัมแปลว่าของไม่มีน้ำหนัก ไม่ใช่ยังไม่รู้**
+          (กติกาเดียวกับราคาซื้อที่ตัดสินไว้แล้ว) */
+    `ALTER TABLE products ADD COLUMN weight REAL`,
     `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท)
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
     // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)

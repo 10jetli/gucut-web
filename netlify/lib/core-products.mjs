@@ -84,6 +84,9 @@ export async function syncProducts() {
       name: String(p?.name ?? "").slice(0, 200),
       price: num(p?.sellprice),
       buy: num(p?.purchaseprice),
+      // ⚠️ น้ำหนัก (กรัม) — มีค่าจริงแค่ 669 จาก 2,898 ตัว ⇒ **0 หรือว่าง = ยังไม่กรอก ไม่ใช่ไร้น้ำหนัก**
+      //    เก็บเป็น null ไม่ใช่ 0 เพื่อให้จอแสดงขีด (กติกาเดียวกับราคาซื้อ)
+      weight: num(p?.weight) > 0 ? num(p?.weight) : null,
       // ⚠️ producttype 1 = "บริการ" (ค่าส่ง · ค่าบริการซ่อม · ค่าขนส่ง) — ของพวกนี้ไม่มีสต็อกจริง
       //    ตรวจทั้งคลังแล้วมี 6 ตัว · เป็นตัวที่ทำให้จอสต็อกมีของติดลบหนัก ๆ ยึดแถวบน
       type: Number(p?.producttype) || 0,
@@ -106,7 +109,7 @@ export async function syncProducts() {
     (
       await coreQuery(
         `SELECT sku, name, sellprice, purchase_price, product_type, active, unit, onhand, available,
-                category, category_id, sub_category
+                category, category_id, sub_category, weight
          FROM products`
       )
     ).map((r) => [r.sku, r])
@@ -125,7 +128,8 @@ export async function syncProducts() {
       num(p.available) !== r.available ||
       String(p.category ?? "") !== r.cat ||
       String(p.category_id ?? "") !== r.catId ||
-      String(p.sub_category ?? "") !== r.subCat
+      String(p.sub_category ?? "") !== r.subCat ||
+      (p.weight === null ? null : num(p.weight)) !== r.weight
     );
   });
 
@@ -136,20 +140,20 @@ export async function syncProducts() {
         (r) =>
           `(${esc(r.sku)},${esc(r.name)},${r.price},${r.buy},${r.type},${r.active},` +
           `${esc(r.unit)},${r.onhand},${r.available},${esc(r.cat)},${esc(r.catId)},` +
-          `${esc(r.subCat)},datetime('now'))`
+          `${esc(r.subCat)},${r.weight === null ? "NULL" : r.weight},datetime('now'))`
       )
       .join(",");
     await coreQuery(
       `INSERT INTO products
          (sku,name,sellprice,purchase_price,product_type,active,unit,onhand,available,
-          category,category_id,sub_category,updated_at)
+          category,category_id,sub_category,weight,updated_at)
        VALUES ${values}
        ON CONFLICT(sku) DO UPDATE SET name=excluded.name, sellprice=excluded.sellprice,
          purchase_price=excluded.purchase_price, product_type=excluded.product_type,
          active=excluded.active, unit=excluded.unit, onhand=excluded.onhand,
          available=excluded.available, category=excluded.category,
          category_id=excluded.category_id, sub_category=excluded.sub_category,
-         updated_at=excluded.updated_at`
+         weight=excluded.weight, updated_at=excluded.updated_at`
     );
   }
   return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };

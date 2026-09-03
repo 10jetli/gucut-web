@@ -293,7 +293,7 @@ export async function listStock(o = {}) {
      SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
             p.purchase_price AS buy, p.available AS avail, p.unit AS unit,
-            p.product_type AS ptype, p.active AS active,
+            p.product_type AS ptype, p.active AS active, p.weight AS weight,
             COALESCE((SELECT name FROM products WHERE sku = cur.sku AND name <> ''),
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
@@ -401,6 +401,8 @@ export async function listStock(o = {}) {
       //    null = ยังไม่มีในทะเบียน ให้จอแสดง "—" ห้ามเดาว่าเท่ากับ qty
       available: r.avail === null || r.avail === undefined ? null : num(r.avail),
       unit: r.unit || "",
+      // ⚠️ null = ยังไม่ได้กรอกน้ำหนัก (669 จาก 2,898 เท่านั้นที่มี) — จอต้องขึ้น "—" ห้ามขึ้น 0
+      weight: r.weight === null || r.weight === undefined ? null : num(r.weight),
       service: num(r.ptype) === 1,
       active: r.active === null || r.active === undefined ? null : num(r.active) === 1,
       // ⚠️ **ต้องหยิบตรงนี้ ไม่ใช่ไปแปะไว้บนแถวดิบ** — แถวถูกแปลงเป็นวัตถุใหม่ตรงนี้
