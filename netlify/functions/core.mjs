@@ -20,7 +20,7 @@ import {
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock,
 } from "../lib/core-stock.mjs";
-import { listOrders, getOrder, listChannels listLogistics,
+import { listOrders, getOrder, listChannels, listLogistics,
 } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
