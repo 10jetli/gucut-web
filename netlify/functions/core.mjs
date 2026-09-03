@@ -230,6 +230,11 @@ export default async function handler(req, context) {
         })),
       });
     }
+    // เครดิต Netlify — อะไรกินเยอะสุด (เจ้าของร้านสั่ง 3 ก.ย. 2569)
+    if (url.searchParams.get("usage")) {
+      const { netlifyUsage } = await import("../lib/netlify-usage.mjs");
+      return json({ ok: true, ...(await netlifyUsage()) });
+    }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
     if (url.searchParams.get("list") === "deadstock") {
       return json({
