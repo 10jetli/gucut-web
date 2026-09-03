@@ -238,6 +238,59 @@ export async function listBundles(o = {}) {
      FROM bundles WHERE 1=1 ${filter} ${only}
      ORDER BY sku LIMIT ${limit} OFFSET ${offset}`
   );
+
+  /* คอลัมน์ "ราคาสินค้ารวม" แบบ ZORT = ผลรวม (ราคาขายของชิ้นส่วน × จำนวน)
+     ✅ **ตรวจกับของจริงแล้วก่อนเปิดใช้** (3 ก.ย. 2569) — ชุด 00073-30-KK
+        00073 ฿5,200 + 02289 ฿60 + 01763 ฿1,700 + 03794 ฿14 ×48 = **฿7,632**
+        ZORT โชว์ ฿7,632 พอดี ⇒ ยืนยันว่าใช้ **ราคาขาย** ไม่ใช่ราคาซื้อ
+        (ราคาซื้อรวมได้ ฿4,365.80 ซึ่งไม่ตรง — ถ้าเดาผิดข้างจะได้เลขที่เกือบถูก)
+     ⚠️ ชิ้นส่วนตัวไหนไม่มีราคาในคลัง = **คืนค่าว่าง ห้ามคิดเป็นศูนย์**
+        คิดเป็นศูนย์ = ได้ราคาที่ต่ำกว่าจริงแบบดูสมเหตุสมผล ซึ่งจับไม่ได้ด้วยตา
+     ⚠️ สูตรชุดเป็นภาพนิ่งเก็บครั้งเดียว — ส่ง recipeAt ไปให้จอโชว์เสมอ */
+  let recipeAt = null;
+  if (rows.length) {
+    const keys = rows.map((r) => esc(String(r.sku))).join(",");
+    const items = await coreQuery(
+      `SELECT bundle_sku, sku, qty, at FROM bundle_items WHERE bundle_sku IN (${keys})`
+    ).catch(() => []);
+    if (items.length) {
+      const need = [...new Set(items.map((i) => String(i.sku)))];
+      const price = new Map();
+      for (let i = 0; i < need.length; i += 200) {
+        const part = need.slice(i, i + 200).map((x) => esc(x)).join(",");
+        for (const r of await coreQuery(
+          `SELECT sku, sellprice FROM products WHERE sku IN (${part})`
+        ).catch(() => [])) {
+          price.set(String(r.sku), r.sellprice === null ? null : num(r.sellprice));
+        }
+      }
+      const byBundle = new Map();
+      for (const it of items) {
+        const k = String(it.bundle_sku);
+        if (!byBundle.has(k)) byBundle.set(k, []);
+        byBundle.get(k).push(it);
+        if (it.at && (!recipeAt || String(it.at) > recipeAt)) recipeAt = String(it.at);
+      }
+      for (const r of rows) {
+        const parts = byBundle.get(String(r.sku));
+        if (!parts?.length) {
+          r.itemsValue = null;
+          r.itemCount = 0;
+          continue;
+        }
+        r.itemCount = parts.length;
+        let total = 0;
+        let complete = true;
+        for (const p of parts) {
+          const v = price.get(String(p.sku));
+          if (v === undefined || v === null) { complete = false; break; }
+          total += v * num(p.qty);
+        }
+        r.itemsValue = complete ? Math.round(total * 100) / 100 : null;
+      }
+    }
+  }
+
   return {
     total: num(sum?.c),
     active: num(sum?.act),
@@ -245,8 +298,11 @@ export async function listBundles(o = {}) {
     negative: num(sum?.negative),
     limit,
     offset,
-    // ⚠️ จอต้องเขียนบอกด้วย ไม่งั้นคนจะนึกว่าเราเก็บส่วนประกอบไว้แล้วแค่ยังไม่แสดง
-    note: "ZORT ไม่เปิด API ให้ดึงรายการสินค้าในชุด — เรารู้แค่ตัวชุด ไม่รู้ว่าในชุดมีอะไร",
+    recipeAt, // ⚠️ วันที่เก็บสูตรชุด — จอต้องโชว์ สูตรไม่ได้ซิงก์เอง
+    note:
+      "รายการในชุดเก็บจากหน้าเว็บ ZORT ครั้งเดียว ไม่ได้ซิงก์เอง — " +
+      "ราคาสินค้ารวมคิดจากราคาขายของชิ้นส่วน (ตรวจกับ ZORT แล้ว) · " +
+      "ชิ้นส่วนที่ไม่มีราคาในคลังจะคืนค่าว่าง ไม่คิดเป็นศูนย์",
     rows,
   };
 }
