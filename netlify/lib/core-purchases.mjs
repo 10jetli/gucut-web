@@ -426,10 +426,21 @@ export async function listPurchaseItems(o = {}) {
      WHERE 1=1 ${filter}
      GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
   );
+  /* ⚠️ **บรรทัดสรุปที่ถูก + ตารางที่ไม่ครบ = อันตรายกว่าตัวเลขผิดตรง ๆ**
+      (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569) — จอเขียนสรุป '217 รหัส ฿6,225,166'
+      ซึ่งถูก เพราะเป็นเลขรวมจากท่อ **แต่ตารางมีแค่ 200 แถว ขาด 17 รหัส**
+      และคอลัมน์ % คิดจากผลรวมของ 200 แถวที่แสดง ไม่ใช่ยอดในบรรทัดสรุป
+      ⇒ คนละฐานกันเงียบ ๆ · ไม่มีอะไรดูขัดตาเลย
+      ⇒ ส่ง total · shown · truncated · applied ไปด้วยเสมอ **ห้ามตัดเงียบ** */
+  const shown = rows.length;
   return {
     skus: num(sum?.skus),
     lines: num(sum?.lines),
     amount: num(sum?.amount),
+    total: num(sum?.skus), // จำนวนรหัสทั้งหมดในตัวกรองนี้ (ตารางจัดกลุ่มตาม sku)
+    shown,
+    truncated: num(sum?.skus) > shown + offset,
+    applied: { q: q || null, limit, offset },
     limit,
     offset,
     rows,
