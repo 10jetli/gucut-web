@@ -335,6 +335,7 @@ export default async function handler(req, context) {
           lookbackDays: url.searchParams.get("lookbackdays"),
           minSold: url.searchParams.get("minsold"),
           limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
         })),
       });
     }

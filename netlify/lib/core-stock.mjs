@@ -488,7 +488,7 @@ export async function listDeadStock(o = {}) {
       ? "รายการที่ยังมีของในคลังแต่ไม่มีใบขายในช่วงที่กำหนด"
       : `ตอบไม่ได้ — คลังเงามีประวัติออเดอร์ตั้งแต่ ${historyFrom || "ยังไม่มีเลย"} ` +
         `ซึ่งสั้นกว่าช่วง ${days} วันที่ถาม · ต้องเติมประวัติย้อนหลังก่อน`,
-    rows,
+    rows: page,
   };
 }
 
@@ -639,6 +639,27 @@ export async function channelGaps(o = {}) {
   const look = Math.max(30, Math.min(730, num(o.lookbackDays) || 365)); // ดูอดีตย้อนไปแค่ไหน
   const minSold = Math.max(1, num(o.minSold) || 5); // เคยขายอย่างน้อยกี่ชิ้นถึงถือว่า "เคยขายได้"
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+
+  /* ⚠️ **ช่องทางที่เลิกใช้แล้ว = สัญญาณลวง 100%** (ฝั่งจอจับได้ 4 ก.ย. 2569)
+      Shopify ปิดถาวรไปแล้ว 28 ส.ค. ⇒ "เงียบ" เป็นเรื่องปกติที่สุด
+      แต่มันโผล่ 39 แถวและ **ติดอันดับต้น ๆ เพราะยอดเก่าสูง**
+      ⇒ ตัวที่ตาไปหยุดก่อนคือตัวที่ลวง — ตัวเตือนแบบนี้ถูกเลิกเชื่อตั้งแต่ครั้งแรกที่เปิด
+   ⚠️ **ช่องแชทไม่ใช่หน้าร้าน** — Facebook · LINE เงียบแปลว่าไม่มีใครทักมาซื้อรหัสนั้น
+      ไม่ใช่ "ของถูกซ่อน" ⇒ แยกกลุ่มออกจากมาร์เก็ตเพลส ไม่ใช่เอามาปนกัน
+   ⚠️ **ชื่อช่องทางในฐานสะกดไม่ตรงกัน** — 'Line OA @gucut1' (176 ใบ) กับ
+      'LINE OA @gucut1' (66 ใบ) เป็นเจ้าเดียวกัน · ไม่รวมกัน = ประวัติขาดเป็นสองท่อน
+      แล้ว **สร้างช่องว่างปลอมขึ้นมาเอง** ⇒ ต้องรวมชื่อก่อนคิด */
+  const RETIRED = ["shopify"]; // เลิกใช้แล้ว — ไม่ใช่สัญญาณ
+  const CHAT = ["facebook", "line oa", "gucut.com", "gucut"]; // ช่องแชท/หน้าร้านเรา ไม่ใช่มาร์เก็ตเพลส
+  const norm = (c) => String(c || "").trim().toLowerCase();
+  const kindOf = (c) => {
+    const n = norm(c);
+    if (RETIRED.some((x) => n.includes(x))) return "retired";
+    if (n.includes("pos") || n.includes("หน้าร้าน")) return "pos";
+    if (CHAT.some((x) => n.includes(x))) return "chat";
+    return "marketplace";
+  };
 
   const [snap] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = snap?.d;
@@ -670,9 +691,19 @@ export async function channelGaps(o = {}) {
                 ROUND(cur.qty * cur.price, 2) AS stockValue
          FROM sold s JOIN stock_snapshots cur ON cur.sku = s.sku AND cur.day = ${esc(day)}
          WHERE s.after_qty = 0 AND s.before_qty >= ${minSold} AND cur.qty > 0
-         ORDER BY s.before_qty DESC LIMIT ${limit}`
+         ORDER BY s.before_qty DESC`
       )
     : [];
+
+  /* ⚠️ **นับหลังกรอง แล้วค่อยตัดหน้า — ห้ามตัดก่อนนับ**
+      รอบแรกผมใส่ LIMIT ใน SQL แล้วรายงาน total = จำนวนแถวที่คืน
+      ⇒ ขอ limit=200 ได้ total=200 · ขอ offset=200 ก็ยังได้ total=200 และแถวเดิม
+         **เกิน 200 เมื่อไหร่ไม่มีทางรู้** — คลาสเดียวกับที่ท่อนี้สร้างมาเพื่อจับพอดี
+      (ฝั่งจอจับได้ทันทีที่ยิงทดสอบ · ผมพลาดเพราะไม่ได้ทดสอบ offset) */
+  const tagged = rows.map((r) => ({ ...r, channelKind: kindOf(r.channel) }));
+  const marketplace = tagged.filter((r) => r.channelKind === "marketplace");
+  const byKind = tagged.reduce((a, r) => ((a[r.channelKind] = (a[r.channelKind] || 0) + 1), a), {});
+  const page = marketplace.slice(offset, offset + limit);
 
   return {
     day,
@@ -682,8 +713,17 @@ export async function channelGaps(o = {}) {
     cut, // ไม่มีการขายบนช่องทางนั้นตั้งแต่วันนี้ = เข้าข่าย
     historyFrom,
     enoughHistory: enough,
-    total: rows.length,
-    applied: { quietDays: quiet, lookbackDays: look, minSold, limit },
+    // ⚠️ total = **มาร์เก็ตเพลสทั้งหมดหลังกรอง** ไม่ใช่จำนวนแถวที่คืน
+    total: marketplace.length,
+    shown: page.length,
+    truncated: marketplace.length > offset + page.length,
+    // จำนวนที่ถูกกรองออก — **บอกไปด้วย ห้ามกรองเงียบ**
+    excluded: {
+      retired: byKind.retired || 0, // Shopify ปิดแล้ว — เงียบเป็นเรื่องปกติ
+      chat: byKind.chat || 0, // Facebook · LINE — ช่องแชท ไม่ใช่หน้าร้าน
+      pos: byKind.pos || 0,
+    },
+    applied: { quietDays: quiet, lookbackDays: look, minSold, limit, offset },
     note: enough
       ? "สินค้าที่เคยขายได้บนช่องทางนั้น แต่เงียบสนิทช่วงหลัง ทั้งที่ยังมีของในคลัง"
       : `ตอบไม่ได้ — มีประวัติออเดอร์ตั้งแต่ ${historyFrom || "ยังไม่มีเลย"} ซึ่งสั้นกว่าช่วง ${look} วันที่ถาม`,
