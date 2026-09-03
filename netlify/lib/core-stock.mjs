@@ -556,10 +556,43 @@ export async function stockCard(o = {}) {
   }
 
   rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+
+  /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
+      เดิมดึงแต่ละแหล่ง LIMIT เท่ากัน แล้วรวม-เรียง-ตัด ⇒ ใบซื้อ 4 ใบที่เก่ากว่า
+      ถูกดันตกหมดเมื่อใบขายเต็มเพดาน · จอเขียนว่า "รายการซื้อขายทั้งหมด"
+      แต่แสดงใบขายล้วน ⇒ **อ่านได้ว่ารหัสนี้ไม่เคยซื้อเข้าเลย ทั้งที่ซื้อ 4 ครั้ง**
+      ⇒ ส่งจำนวนจริงไปด้วย จอจะได้เขียน "แสดง 100 จาก N" แทนการเดาจากการชนเพดาน */
+  const counts = { sale: 0, buy: 0, adjust: 0 };
+  if (want.includes("sale")) {
+    const [c] = await coreQuery(
+      `SELECT COUNT(*) AS c FROM order_items oi JOIN orders o ON o.id = oi.order_id
+       WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}`
+    );
+    counts.sale = num(c?.c);
+  }
+  if (want.includes("buy")) {
+    const [c] = await coreQuery(
+      `SELECT COUNT(*) AS c FROM purchase_order_items WHERE sku = ${esc(sku)}`
+    );
+    counts.buy = num(c?.c);
+  }
+  if (want.includes("adjust")) {
+    const [c] = await coreQuery(
+      `SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`
+    ).catch(() => [{ c: 0 }]);
+    counts.adjust = num(c?.c);
+  }
+  const total = counts.sale + counts.buy + counts.adjust;
+  const shown = Math.min(rows.length, limit);
   return {
     sku,
     // ⚠️ สะท้อน **ค่าที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
     applied: { sku, kind, limit },
+    total, // จำนวนจริงทั้งหมดในตัวกรองนี้ (ไม่ใช่จำนวนที่แสดง)
+    shown,
+    counts, // แยกตามแหล่ง — จอเขียนได้ว่า "ขาย N · ซื้อ M · ปรับ K"
+    // ⚠️ true = มีของถูกตัดออกเพราะชนเพดาน **จอต้องเขียนบอก ห้ามตัดเงียบ**
+    truncated: total > shown,
     // ค่าที่ส่งมาแต่ไม่รู้จัก → บอกให้รู้ ไม่เมินเงียบ
     ...(known ? {} : { ignored: { kind: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — ใช้ "all" แทน` }),
     kinds: [
