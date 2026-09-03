@@ -256,7 +256,13 @@ export async function listStock(o = {}) {
      SELECT COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
             SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
-            ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
+            ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value,
+            /* ⚠️ **ZORT คิดมูลค่าสต็อกจาก "ราคาทุน" ไม่ใช่ราคาขาย** (วัดเทียบแล้ว 3 ก.ย. 2569)
+                ราคาขายรวมได้ ฿26.7 ล้าน · ZORT โชว์ ฿16.4 ล้าน — ต่างกันสิบล้าน
+                จอที่เขียนว่า "มูลค่าสินค้าทั้งหมด" ต้องใช้ valueCost ไม่ใช่ value
+                ⚠️ และต้องบอกด้วยว่ากี่รหัสยังไม่มีราคาทุน ไม่งั้นยอดต่ำกว่าจริงเงียบ ๆ */
+            ROUND(COALESCE(SUM(cur.qty * COALESCE(p.purchase_price,0)),0),2) AS value_cost,
+            SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS no_cost
      FROM cur ${JOIN} WHERE 1=1 ${kind ? `AND ${kind}` : ""} ${filter}`,
     [day, since, ...fParams]
   );
@@ -358,7 +364,9 @@ export async function listStock(o = {}) {
     services: num(aside?.services), // จำนวน "บริการ" — จอเอาไปบอกว่าซ่อนไปกี่ตัว
     inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
     shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
-    value: num(sum?.value),
+    value: num(sum?.value), // ราคาขายรวม — **ไม่ใช่ตัวที่ ZORT โชว์**
+    valueCost: num(sum?.value_cost), // ราคาทุนรวม — ตัวนี้ตรงกับ "มูลค่าสินค้าทั้งหมด" ของ ZORT
+    noCostSkus: num(sum?.no_cost), // ยังไม่ได้กรอกราคาทุน ⇒ valueCost ต่ำกว่าจริงเท่านี้รหัส
     ...mk,
     rows: rows.map((r) => ({
       sku: r.sku,
