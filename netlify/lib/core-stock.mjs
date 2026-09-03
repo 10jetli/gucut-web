@@ -19,6 +19,10 @@
 import { coreQuery, coreReady } from "./coredb.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+/* ⚠️ **ไฟล์ .mjs ไม่มีตัวตรวจชนิดข้อมูล — ตัวแปรที่ไม่มีอยู่จริงพังตอนรันเท่านั้น**
+    listDeadStock เรียก esc() ทั้งที่ไฟล์นี้ไม่เคยประกาศไว้ · `npm run build` เขียวสนิท
+    เจอตอนฝั่งจอยิงของจริง (3 ก.ย. 2569) ⇒ เพิ่ม API ใหม่ในไฟล์ .mjs ต้องยิงจริงเสมอ */
+const esc = (v) => `'${String(v ?? "").replace(/'/g, "''")}'`;
 const CANCEL_SQL =
   `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
 
