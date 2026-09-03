@@ -174,7 +174,8 @@ export default async function handler(req, context) {
     }
     // รายการสินค้าในชุด — เก็บจากหน้าเว็บ ZORT (API ไม่เปิดให้ดึง)
     //   POST ?bundleitems=1  body {items:[{bundleSku,sku,name,qty,line}]}
-    //   GET  ?list=bundleitems[&sku=<ชุด>]
+    //   GET  ?list=bundleitems[&sku=<ชุด>]      ชุดนี้มีอะไรบ้าง
+    //   GET  ?list=bundleitems&member=<รหัส>   รหัสนี้อยู่ในชุดไหนบ้าง (ถามกลับทาง)
     // รหัสใช้ครั้งเดียวสำหรับอัปโหลดจากหน้าเว็บ ZORT
     // ⚠️ **มีไว้เพื่อไม่ต้องเอารหัสหลังร้านไปวางในหน้าเว็บของคนอื่น**
     //    รหัสหลังร้านเปิดได้ทุกอย่าง · รหัสนี้ทำได้อย่างเดียวคือส่งรายการสินค้าในชุด
@@ -217,7 +218,10 @@ export default async function handler(req, context) {
       });
     }
     if (url.searchParams.get("list") === "bundleitems") {
-      return json({ ok: true, ...(await listBundleItems(url.searchParams.get("sku"))) });
+      return json({
+        ok: true,
+        ...(await listBundleItems(url.searchParams.get("sku"), url.searchParams.get("member"))),
+      });
     }
     // สินค้าเป็นชุด (Bundle) — 360 ชุดที่ร้านใช้จริง
     if (url.searchParams.get("syncbundles")) {
@@ -391,16 +395,28 @@ export default async function handler(req, context) {
       const from = day(url.searchParams.get("from"), monthAgo);
       const to = day(url.searchParams.get("to"), today);
       const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "15", 10) || 15));
+      /* ⚠️ **sku= ถามยอดขายของสินค้าตัวเดียว** — ฝั่งจอต้องใช้ในหน้ารายละเอียดสินค้า
+          ก่อนหน้านี้ผมบอกฝั่งจอว่า "ใช้ sku= ได้" ทั้งที่ยังไม่ได้ทำ
+          ⇒ ท่อเมินพารามิเตอร์ที่ไม่รู้จักเงียบ ๆ แล้วคืนสินค้าขายดีทั้งร้าน
+             ถ้าจอเชื่อชื่อพารามิเตอร์แล้วหยิบแถวแรกมาแสดง = **โชว์ยอดขายของสินค้าตัวอื่น
+             ในหน้าสินค้าตัวนี้ โดยดูสมเหตุสมผลทุกประการ** (ฝั่งจอจับได้ 3 ก.ย. 2569) */
+      const sku = String(url.searchParams.get("sku") ?? "").trim().slice(0, 60);
+      const params = [from, to];
+      let filter = "";
+      if (sku) { filter = "AND oi.sku = ?"; params.push(sku); }
       const items = await coreQuery(
         `SELECT oi.sku, MAX(oi.name) AS name,
                 SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
          FROM order_items oi JOIN orders o ON o.id = oi.order_id
          WHERE o.order_date >= ? AND o.order_date <= ?
            AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+           ${filter}
          GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
-        [from, to]
+        params
       );
-      return json({ ok: true, from, to, items });
+      // ⚠️ **สะท้อนพารามิเตอร์ที่รับไปจริงกลับไปด้วยเสมอ** (ฝั่งจอเสนอ — ดีมาก)
+      //    จอจะได้ตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปจริงไหม แทนที่จะรู้ตอนตัวเลขผิดบนจอ
+      return json({ ok: true, from, to, applied: { sku: sku || null, limit }, items });
     }
     // สะพานส่งเอกสารขายเข้า PEAK (แทนหน้าที่ ZORT)
     //   GET /api/core?peak=status            ต่อ PEAK ได้ไหม (ไม่สร้างเอกสารอะไร)

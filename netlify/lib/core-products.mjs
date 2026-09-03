@@ -422,7 +422,7 @@ export async function saveBundleItems(input = {}) {
 }
 
 /** รายการสินค้าในชุด — ใช้ทั้งบนจอและตอนคิดสต็อก */
-export async function listBundleItems(bundleSku = "") {
+export async function listBundleItems(bundleSku = "", memberSku = "") {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS bundle_items (
@@ -431,16 +431,35 @@ export async function listBundleItems(bundleSku = "") {
        PRIMARY KEY (bundle_sku, line))`
   );
   const one = String(bundleSku ?? "").trim().slice(0, 60);
+  /* ⚠️ **member= ถามกลับทาง: "รหัสนี้อยู่ในชุดไหนบ้าง"**
+      ต่างจาก sku= ที่ถามว่า "ชุดนี้มีอะไรบ้าง" — คนละคำถาม ใช้คนละหน้าจอ
+      ก่อนมีตัวนี้ ท่อเมิน member= เงียบ ๆ แล้วคืน rows ว่าง
+      ⇒ จอจะเขียนว่า "ไม่อยู่ในชุดไหนเลย" ทั้งที่ความจริงคือ **ยังไม่รองรับ**
+         (ฝั่งจอจับได้ 3 ก.ย. 2569 — คำตอบว่างที่ดูเหมือนคำตอบจริง) */
+  const member = String(memberSku ?? "").trim().slice(0, 60);
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT bundle_sku) AS bundles, COUNT(*) AS lines, MAX(at) AS last FROM bundle_items`
   );
-  const rows = one
-    ? await coreQuery(
-        `SELECT line, sku, name, qty FROM bundle_items WHERE bundle_sku = ${esc(one)} ORDER BY line`
-      )
-    : [];
+  let rows = [];
+  if (one) {
+    rows = await coreQuery(
+      `SELECT line, sku, name, qty FROM bundle_items WHERE bundle_sku = ${esc(one)} ORDER BY line`
+    );
+  } else if (member) {
+    // อยู่ในชุดไหนบ้าง + ชื่อชุด (เอาจากตาราง bundles ถ้ามี)
+    rows = await coreQuery(
+      `SELECT i.bundle_sku AS bundleSku,
+              COALESCE((SELECT name FROM bundles b WHERE b.sku = i.bundle_sku), '') AS bundleName,
+              i.qty AS qty
+       FROM bundle_items i WHERE i.sku = ${esc(member)}
+       ORDER BY i.bundle_sku`
+    );
+  }
   const [total] = await coreQuery(`SELECT COUNT(*) AS c FROM bundles`);
   return {
+    // ⚠️ สะท้อนพารามิเตอร์ที่รับไปจริง — จอตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปไหม
+    applied: { sku: one || null, member: member || null },
+    mode: one ? "ชุดนี้มีอะไรบ้าง" : member ? "รหัสนี้อยู่ในชุดไหนบ้าง" : "สรุปรวม",
     bundlesWithItems: num(sum?.bundles),
     lines: num(sum?.lines),
     collectedAt: sum?.last || null,
