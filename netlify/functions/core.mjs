@@ -24,7 +24,7 @@ import { listOrders, getOrder, listChannels, listLogistics,
 } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
-  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers, listQuotations,
+  syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers, listQuotations, listPurchaseItems,
 } from "../lib/core-purchases.mjs";
 
 export default async function handler(req, context) {
@@ -244,6 +244,17 @@ export default async function handler(req, context) {
         ...(await listLogistics({
           q: url.searchParams.get("q"),
           only: url.searchParams.get("only"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
+    // รายการสินค้าในใบซื้อ — แยกรายสินค้าแบบรายงานยอดซื้อของ ZORT
+    if (url.searchParams.get("list") === "purchaseitems") {
+      return json({
+        ok: true,
+        ...(await listPurchaseItems({
+          q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),

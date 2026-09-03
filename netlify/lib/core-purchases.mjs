@@ -393,3 +393,38 @@ export async function listQuotations(limit = 50) {
     })),
   };
 }
+
+/** รายการสินค้าในใบซื้อ — สำหรับจอ "รายงาน → ยอดซื้อ" แบบแยกรายสินค้า
+ *  ⚠️ ข้อมูลนี้ **เก็บอยู่แล้ว** ตั้งแต่ทำ syncPurchases แต่ไม่เคยมีทางอ่าน
+ *     ⇒ ฝั่งจอจึงเข้าใจว่าคลังเงาเก็บแค่หัวใบ · ของมีอยู่ แค่ไม่มีประตู */
+export async function listPurchaseItems(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+  const q = String(o.q ?? "").trim().slice(0, 60);
+  const filter = q ? `AND (i.sku LIKE ${esc(`%${q}%`)} OR i.name LIKE ${esc(`%${q}%`)})` : "";
+  const [sum] = await coreQuery(
+    `SELECT COUNT(DISTINCT i.sku) AS skus, COUNT(*) AS lines,
+            ROUND(COALESCE(SUM(i.qty * i.price),0),2) AS amount
+     FROM purchase_order_items i WHERE 1=1 ${filter}`
+  );
+  // รวมรายสินค้า — แบบเดียวกับที่ ZORT แสดงในรายงานยอดซื้อ
+  const rows = await coreQuery(
+    `SELECT i.sku AS sku, MAX(i.name) AS name,
+            SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount,
+            COUNT(DISTINCT i.number) AS orders,
+            MAX(po.po_date) AS lastDate
+     FROM purchase_order_items i
+     LEFT JOIN purchase_orders po ON po.number = i.number
+     WHERE 1=1 ${filter}
+     GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
+  );
+  return {
+    skus: num(sum?.skus),
+    lines: num(sum?.lines),
+    amount: num(sum?.amount),
+    limit,
+    offset,
+    rows,
+  };
+}
