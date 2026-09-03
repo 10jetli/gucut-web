@@ -18,7 +18,8 @@ import {
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems,
 } from "../lib/core-products.mjs";
-import { stockRecon, stockReconLog, listStock } from "../lib/core-stock.mjs";
+import { stockRecon, stockReconLog, listStock, listDeadStock,
+} from "../lib/core-stock.mjs";
 import { listOrders, getOrder, listChannels } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
@@ -229,6 +230,17 @@ export default async function handler(req, context) {
         })),
       });
     }
+    // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
+    if (url.searchParams.get("list") === "deadstock") {
+      return json({
+        ok: true,
+        ...(await listDeadStock({
+          days: url.searchParams.get("days"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        })),
+      });
+    }
     // รายการโอนสินค้า — ร้านใช้หนักที่สุดในกลุ่มสินค้า (12,196 ใบใน ZORT)
     if (url.searchParams.get("resettransfers")) {
       return json({ ok: true, reset: await resetTransfers() });
@@ -354,7 +366,14 @@ export default async function handler(req, context) {
     }
     if (url.searchParams.get("sync")) {
       const days = Math.min(60, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
-      return json({ ok: true, sync: await syncOrders(days) });
+      // from/to ใช้ตอนเติมประวัติย้อนหลัง — ต้องไล่ทีละเดือน ห้ามขอทีเดียวยาว ๆ
+      return json({
+        ok: true,
+        sync: await syncOrders(days, {
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+        }),
+      });
     }
     if (url.searchParams.get("recon")) {
       return json({ ok: true, recon: await reconYesterday() });

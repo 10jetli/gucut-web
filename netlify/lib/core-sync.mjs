@@ -78,10 +78,16 @@ async function fetchOrders(st, after, before) {
 }
 
 /** กระจกออเดอร์ N วันล่าสุด (รวมวันนี้) ลง D1 — คืนสรุปจำนวน */
-export async function syncOrders(days = 3) {
+export async function syncOrders(days = 3, range = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const after = thaiDayOffset(days - 1);
-  const before = thaiDayOffset(0);
+  /* ⚠️ **เติมประวัติย้อนหลังต้องแบ่งเป็นช่วง ห้ามขอทีเดียวยาว ๆ**
+      งานประจำขอแค่ 3 วันจึงจบในคำขอเดียว แต่ตอนเติมย้อนหลังเป็นปี
+      จำนวนหน้าจะเกินเวลาที่ Netlify ให้ฟังก์ชันรอ (26 วิ) แล้วตายกลางทาง
+      ⇒ รับ from/to มาตรง ๆ แล้วให้คนเรียกไล่ทีละเดือนเอง
+      รูปแบบ YYYY-MM-DD เท่านั้น · ค่าที่ไม่เข้ารูปจะถูกเมิน ไม่ใช่ตีความเอาเอง */
+  const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : null);
+  const after = ymd(range.from) || thaiDayOffset(days - 1);
+  const before = ymd(range.to) || thaiDayOffset(0);
   const result = { after, before, stores: {} };
 
   for (const st of stores()) {

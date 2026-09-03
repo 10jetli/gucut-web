@@ -339,3 +339,73 @@ export async function stockReconLog(days = 14) {
     `SELECT * FROM stock_recon_log ORDER BY day DESC LIMIT ${Math.max(1, Math.min(60, num(days) || 14))}`
   );
 }
+
+/** จอ "สินค้าจม" ในรายงานสินค้าของ ZORT — ของที่ยังมีในคลังแต่ขายไม่ออกเกิน N วัน
+ *
+ *  ⚠️ **ตอบได้แค่เท่าที่มีประวัติออเดอร์จริง** — คลังเงาเก็บออเดอร์ย้อนหลังเท่าที่เคยดึงมา
+ *     ถ้าประวัติสั้นกว่าช่วงที่ถาม จะได้จอที่บอกว่า "ทุกอย่างจม" ซึ่งผิดสนิท
+ *     ⇒ ส่ง historyFrom กับ enoughHistory ออกไปทุกครั้ง **จอต้องเช็คก่อนแสดงผล**
+ *        ไม่พอ = บอกตรง ๆ ว่ายังตอบไม่ได้ ห้ามแสดงรายการที่ดูเหมือนคำตอบ
+ *  ⚠️ ZORT ไม่มีฟิลด์ "วันขายล่าสุด" ในสินค้า (ตรวจครบ 30 ฟิลด์แล้ว 3 ก.ย. 2569)
+ *     ทางเดียวคือไล่จากใบขาย — จึงต้องมีประวัติในมือก่อนเท่านั้น
+ */
+export async function listDeadStock(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const days = Math.max(1, Math.min(3650, num(o.days) || 90));
+  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const offset = Math.max(0, num(o.offset));
+
+  const [snap] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = snap?.d;
+  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
+
+  const [hist] = await coreQuery(`SELECT MIN(order_date) AS f, MAX(order_date) AS t FROM orders`);
+  const historyFrom = hist?.f || null;
+  // ⚠️ นับวันจาก "วันที่ถ่ายสต็อก" ไม่ใช่วันนี้ — สองค่านี้ไม่จำเป็นต้องเป็นวันเดียวกัน
+  const cut = new Date(new Date(`${day}T00:00:00Z`).getTime() - days * 864e5)
+    .toISOString()
+    .slice(0, 10);
+  const enoughHistory = Boolean(historyFrom) && historyFrom <= cut;
+
+  const where = `cur.qty > 0 AND COALESCE(p.product_type,'') <> 'Service'`;
+  const [sum] = await coreQuery(
+    `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
+     FROM stock_snapshots cur
+     LEFT JOIN products p ON p.sku = cur.sku
+     LEFT JOIN (SELECT sku, MAX(o.order_date) AS last_sold
+                FROM order_items i JOIN orders o ON o.id = i.order_id
+                GROUP BY sku) s ON s.sku = cur.sku
+     WHERE cur.day = ${esc(day)} AND ${where}
+       AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})`
+  );
+  const rows = await coreQuery(
+    `SELECT cur.sku AS sku, COALESCE(NULLIF(p.name,''), cur.name) AS name,
+            COALESCE(p.category,'') AS category, s.last_sold AS lastSoldAt,
+            cur.qty AS onhand, ROUND(cur.qty * cur.price, 2) AS value, cur.price AS price
+     FROM stock_snapshots cur
+     LEFT JOIN products p ON p.sku = cur.sku
+     LEFT JOIN (SELECT sku, MAX(o.order_date) AS last_sold
+                FROM order_items i JOIN orders o ON o.id = i.order_id
+                GROUP BY sku) s ON s.sku = cur.sku
+     WHERE cur.day = ${esc(day)} AND ${where}
+       AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})
+     ORDER BY (cur.qty * cur.price) DESC, cur.sku
+     LIMIT ${limit} OFFSET ${offset}`
+  );
+  return {
+    day,
+    days,
+    cut, // ขายครั้งสุดท้ายก่อนวันนี้ = ถือว่าจม
+    total: num(sum?.c),
+    value: num(sum?.value),
+    limit,
+    offset,
+    historyFrom, // ออเดอร์เก่าสุดที่คลังเงามี
+    enoughHistory, // false = ประวัติสั้นกว่าช่วงที่ถาม **จอห้ามแสดงรายการ**
+    note: enoughHistory
+      ? "รายการที่ยังมีของในคลังแต่ไม่มีใบขายในช่วงที่กำหนด"
+      : `ตอบไม่ได้ — คลังเงามีประวัติออเดอร์ตั้งแต่ ${historyFrom || "ยังไม่มีเลย"} ` +
+        `ซึ่งสั้นกว่าช่วง ${days} วันที่ถาม · ต้องเติมประวัติย้อนหลังก่อน`,
+    rows,
+  };
+}
