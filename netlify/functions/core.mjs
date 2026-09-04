@@ -680,6 +680,12 @@ export default async function handler(req, context) {
             เคยมี  ⇒ แถวที่ว่างคือของผิดปกติ (ต้นทางไม่ส่งมา / ร้านปิดไปแล้ว)
             ไม่เคยมีเลย ⇒ ช่องทางนั้นไม่มีใครบอกสถานะ ว่างคือถูกต้อง
           ⇒ ไม่ต้องรู้จักชื่อ "Shopee"/"POS" เลยสักตัวอักษร */
+      /* แยกตามร้าน × ช่องทาง — ไว้ตอบว่าร้านที่สอง (ceojet) ขายทางไหนบ้างจริง ๆ */
+      const byStoreChannel = await coreQuery(
+        `SELECT source, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, COUNT(*) AS c,
+                ROUND(COALESCE(SUM(amount),0),2) AS amount
+         FROM orders GROUP BY 1,2 ORDER BY source, c DESC`
+      );
       const blankByChannel = await coreQuery(
         `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
                 COUNT(*) AS blank,
@@ -718,6 +724,7 @@ export default async function handler(req, context) {
         note:
           "ทั้งตาราง ไม่จำกัดช่วงวัน · blankReason คิดจากข้อมูล (ช่องทางนั้นเคยมีค่าไหม) " +
           "ไม่ได้เดาจากชื่อช่องทาง · none_expected = ว่างถูกต้อง · source_empty = ต้นทางไม่ส่งมา",
+        byStoreChannel,
         cross: rows,
         blankByChannel: withReason,
       });
