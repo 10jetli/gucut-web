@@ -709,6 +709,62 @@ export default async function handler(req, context) {
           ทุกครั้งที่เรียก ช่องทางที่อยู่ริมเส้นจึงพลิกไปมาได้เอง
           ที่นี่คืน **ตัวเลขดิบ** (ว่างกี่ใบ · มีค่ากี่ใบ) ให้คนตัดสินเอง
           ป้ายที่พลิกได้เองแย่กว่าไม่มีป้าย */
+    /* ── ไล่ว่าการ์ดหน้าแรกของ ZORT นับจากอะไร ── (4 ก.ย. 2569)
+       การ์ดจริงบอก: ค้างชำระเงิน **24** · ค้างโอนสินค้า **132** (รวม 156)
+       กระจกเราเคยนับ "ใบที่ยังไม่จบ" ได้ **193** ⇒ ต่างกัน 37 ใบ
+       พิสูจน์แล้วว่า**ไม่ได้เกิดจากกระจกเพี้ยน** (ordercheck ตรงทุกช่อง 12 เดือน)
+       ⇒ เหลือทางเดียว: **นิยามของการ์ดไม่ใช่ "status ยังไม่ success"**
+
+       ⚠️ **ห้ามเดาแล้วเอาไปใช้** — ตัวนี้คำนวณ "นิยามที่เป็นไปได้" หลายแบบพร้อมกัน
+          แล้วให้คนดูว่าอันไหนตรงกับ 24/132 · อันไหนไม่ตรงก็ตัดทิ้งได้ทันที
+          ทดสอบแบบนี้ถึงจะแยกแยะได้ (test-must-discriminate)
+       ⚠️ อ่านจากกระจกอย่างเดียว ไม่ยิง ZORT — เร็ว และไม่กินโควตา */
+    if (url.searchParams.get("cardguess")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      const NOTDONE = `status NOT LIKE '%Success%' AND status NOT LIKE '%สำเร็จ%'`;
+      const NOTCANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+      const noTrack = `COALESCE(tracking_no,'') = ''`;
+      const noShipDate = `COALESCE(ship_date,'') = ''`;
+      const notPaid = `COALESCE(pay_status,'') NOT LIKE '%Paid%'`;
+
+      const [r] = await coreQuery(
+        `SELECT
+           COUNT(*) AS ordersAll,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} THEN 1 ELSE 0 END) AS notDone,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND ${notPaid} THEN 1 ELSE 0 END) AS notDoneUnpaid,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND NOT (${notPaid}) THEN 1 ELSE 0 END) AS notDonePaid,
+           SUM(CASE WHEN ${NOTCANCEL} AND ${noTrack} AND ${noShipDate} THEN 1 ELSE 0 END) AS noShipAtAll,
+           SUM(CASE WHEN ${NOTCANCEL} AND ${noTrack} AND ${noShipDate} AND ${notPaid} THEN 1 ELSE 0 END) AS noShipUnpaid,
+           SUM(CASE WHEN ${NOTCANCEL} AND ${noTrack} AND ${noShipDate} AND NOT (${notPaid}) THEN 1 ELSE 0 END) AS noShipPaid,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND ${noTrack} THEN 1 ELSE 0 END) AS notDoneNoTrack,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND ${noShipDate} THEN 1 ELSE 0 END) AS notDoneNoShipDate,
+           SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND ${noTrack} AND ${noShipDate} THEN 1 ELSE 0 END) AS notDoneNoTrackNoShipDate
+         FROM orders WHERE source = ?`,
+        [store]
+      );
+
+      // แจกแจงสถานะดิบของใบที่ยังไม่จบ — เผื่อชื่อสถานะเองเป็นตัวแยก
+      const byStatus = await coreQuery(
+        `SELECT status, COALESCE(pay_status,'') AS pay, COUNT(*) AS c
+         FROM orders WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
+         GROUP BY 1,2 ORDER BY c DESC LIMIT 20`,
+        [store]
+      );
+
+      return json({
+        ok: true,
+        store,
+        target: { คงค้างชำระเงิน: 24, ค้างโอนสินค้า: 132, รวม: 156 },
+        candidates: r,
+        byStatus,
+        note:
+          "เทียบเลขในนี้กับ target · ตรงกับคู่ไหน = นิยามนั้นคือของการ์ด · " +
+          "ไม่ตรงสักคู่ = การ์ดใช้ข้อมูลที่กระจกยังไม่มี (เช่น movementList / successDate) " +
+          "⇒ ต้องไปดึงเพิ่ม ไม่ใช่เดาต่อ",
+      });
+    }
+
     if (url.searchParams.get("blankwhere")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const blank = `COALESCE(integration_status,'') = ''`;
