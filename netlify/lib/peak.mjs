@@ -150,20 +150,63 @@ function contactCode(order) {
 }
 
 /** แปลงออเดอร์ในคลังเงาเป็นใบแจ้งหนี้ตามรูปแบบ PEAK (ยังไม่ส่ง — แค่แปลง) */
+/* ⚠️ **ค่าส่งต้องเป็นบรรทัดของมันเอง ห้ามปล่อยหาย** (ฝั่งจอชี้ 5 ก.ย. 2569)
+    วัดทั้งปีแล้ว: ส่วนต่างระหว่างยอดหัวใบกับผลรวมบรรทัดสินค้า **ทั้งหมดคือค่าส่ง**
+      70/80/90/400 = ตารางค่าส่งของร้าน · 29/38 = ค่าส่งของ Shopee/TikTok
+      82–117 = ค่าส่งจริงที่คนกรอกในใบเก็บเงินปลายทาง
+    ⇒ ถ้าส่งเข้า PEAK แต่บรรทัดสินค้าอย่างเดียว **ยอดในใบกำกับจะน้อยกว่ายอดที่เก็บเงินจริง
+       ทุกใบที่มีค่าส่ง** และจะเป็นความต่างที่ **ผ่านทุกด่านที่เราสร้างมาทั้งวัน**
+       เพราะด่านเราตรวจว่า "บรรทัดตรงกับหัวใบไหม" ไม่ได้ตรวจว่า
+       "สิ่งที่ส่งเข้า PEAK ตรงกับหัวใบไหม" — คนละคำถาม
+
+    ⚠️ **ยอดรวมของเอกสารต้องเท่ากับยอดหัวใบ ไม่ใช่เท่ากับผลรวมบรรทัดสินค้า** */
+const SHIPPING_LINE = "ค่าจัดส่ง";
+
 export function toInvoice(order, items) {
   const day = String(order?.order_date ?? "").replace(/-/g, ""); // yyyyMMdd
+  const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const products = (items ?? []).map((it) => ({
+    code: String(it.sku ?? "").slice(0, 60) || undefined,
+    name: String(it.name ?? "").slice(0, 200) || undefined,
+    quantity: n(it.qty) || 0,
+    price: n(it.qty) ? n(it.amount) / n(it.qty) : n(it.amount) || 0,
+    vatType: VAT_INCLUDED,
+  }));
+
+  const header = n(order?.amount);
+  const lines = products.reduce((a, p) => a + p.quantity * p.price, 0);
+  const diff = Math.round((header - lines) * 100) / 100;
+
+  /* ค่าส่งเป็นบวก = เติมเป็นบรรทัด · ติดลบ = **ยังไม่รู้ว่าคืออะไร ห้ามเดา**
+     (อาจเป็นส่วนลดท้ายบิลที่เรายังไม่ได้เก็บ) ⇒ ติดธงไว้ให้คนดู ไม่ใช่ปรับตัวเลขให้ลงตัว */
+  if (diff > 0.009) {
+    products.push({
+      name: SHIPPING_LINE,
+      quantity: 1,
+      price: diff,
+      vatType: VAT_INCLUDED,
+    });
+  }
+  const total = products.reduce((a, p) => a + p.quantity * p.price, 0);
+
   return {
     issuedDate: day,
     dueDate: day, // ขายปลีกเก็บเงินทันที ไม่มีเครดิต
     contactCode: contactCode(order),
     description: `${order?.channel ?? ""} ${order?.number ?? ""}`.trim(),
-    products: (items ?? []).map((it) => ({
-      code: String(it.sku ?? "").slice(0, 60) || undefined,
-      name: String(it.name ?? "").slice(0, 200) || undefined,
-      quantity: Number(it.qty) || 0,
-      price: Number(it.qty) ? Number(it.amount) / Number(it.qty) : Number(it.amount) || 0,
-      vatType: VAT_INCLUDED,
-    })),
+    products,
+    /* ⚠️ ตัวตรวจของตัวเอง — ยอดเอกสารต้องเท่ากับยอดหัวใบเสมอ
+        ไม่เท่า = ห้ามส่ง (sendInvoices จะโยนเข้ากอง bad) */
+    _check: {
+      orderNumber: order?.number ?? null,
+      header,
+      lines: Math.round(lines * 100) / 100,
+      shippingLine: diff > 0.009 ? diff : 0,
+      total: Math.round(total * 100) / 100,
+      matchesHeader: Math.abs(total - header) < 0.01,
+      // ติดลบ = ยอดหัวใบน้อยกว่าบรรทัด ⇒ ยังไม่รู้สาเหตุ ห้ามส่งจนกว่าจะรู้
+      headerBelowLines: diff < -0.009 ? diff : 0,
+    },
   };
 }
 
@@ -175,8 +218,15 @@ export async function sendInvoices(invoices, { dryRun = true } = {}) {
   //    เป็นส่วนที่ผิดง่ายที่สุด (ราคาต่อหน่วย · ประเภทภาษี · รหัสลูกค้า) และตรวจได้
   //    โดยไม่ต้องแตะ PEAK เลย · ให้บัญชีของร้านตรวจก่อนซื้อแพ็กเกจได้ด้วย
   if (dryRun || !peakLive() || !peakReady()) {
+    /* ⚠️ **เพิ่มเงื่อนไข: ยอดเอกสารต้องเท่ากับยอดหัวใบ**
+        เดิมตรวจแค่ว่ามีวันที่ · มีบรรทัด · จำนวนมากกว่า 0
+        ⇒ ใบที่ยอดน้อยกว่าที่เก็บเงินจริง **ผ่านฉลุย** เพราะไม่มีใครเทียบกับหัวใบ */
     const bad = invoices.filter(
-      (v) => !v.issuedDate || !v.products?.length || v.products.some((p) => !(p.quantity > 0))
+      (v) =>
+        !v.issuedDate ||
+        !v.products?.length ||
+        v.products.some((p) => !(p.quantity > 0)) ||
+        !v._check?.matchesHeader
     );
     return {
       dryRun: true,
