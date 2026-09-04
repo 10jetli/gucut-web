@@ -258,12 +258,21 @@ export async function getOrder(id) {
 }
 
 /** รายชื่อช่องทางทั้งหมดที่เคยเห็น — ไว้ทำตัวเลือกในกล่องกรอง */
-export async function listChannels() {
+export async function listChannels(source = null) {
   if (!coreReady()) return [];
+  /* ⚠️ **รายชื่อช่องทางต้องเคารพตัวกรองร้านด้วย** (ฝั่งจอชี้ 4 ก.ย. 2569)
+      ถ้าไม่กรอง เลือกร้าน ceojet แล้วกล่องช่องทางยังขึ้น Lazada-gucut · Shopee-gucut ·
+      Shopify ครบ ทั้งที่ร้านนั้นเลิกขายออนไลน์ไปตั้งแต่ 22 ก.พ. 2569
+      ⇒ คนกดเลือกได้แล้วได้ 0 ใบ โดยไม่มีอะไรบอกว่า "ร้านนี้ไม่มีช่องทางนี้"
+      ซึ่งหน้าตาเหมือนระบบพังทุกประการ
+      ⚠️ ตัวกรองที่ครอบคลุมไม่เท่ากันระหว่าง "ตัวเลือก" กับ "ผลลัพธ์" คือกับดักประจำ —
+         ตัวเลือกต้องมาจากขอบเขตเดียวกับที่ผลลัพธ์จะถูกกรอง */
+  const src = ["z1", "z2"].includes(String(source)) ? String(source) : null;
   const rows = await coreQuery(
     `SELECT channel, COUNT(*) AS orders FROM orders
-     WHERE channel IS NOT NULL AND channel <> ''
-     GROUP BY channel ORDER BY orders DESC LIMIT 40`
+     WHERE channel IS NOT NULL AND channel <> ''${src ? " AND source = ?" : ""}
+     GROUP BY channel ORDER BY orders DESC LIMIT 40`,
+    src ? [src] : []
   );
   return rows.map((r) => r.channel);
 }

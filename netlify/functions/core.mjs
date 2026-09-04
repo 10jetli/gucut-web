@@ -1117,7 +1117,8 @@ export default async function handler(req, context) {
           offset: p.get("offset"),
           includeCancelled: p.get("cancelled") === "1",
         })),
-        channels: await listChannels(),
+        // รายชื่อช่องทางต้องมาจากขอบเขตเดียวกับผลลัพธ์ ไม่งั้นเลือกได้แต่ได้ 0 ใบ
+        channels: await listChannels(p.get("store")),
       });
     }
 
