@@ -1600,6 +1600,22 @@ export default async function handler(req, context) {
         saleschannel: hit.saleschannel ?? null,
         // ⚠️ ZORT มีสถานะ "การจัดส่งฝั่งมาร์เก็ตเพลส" แยกอีกตัว — คนละเรื่องกับ integrationStatus
         marketplaceshippingstatus: hit.marketplaceshippingstatus ?? null,
+        /* ── บรรทัดสินค้าดิบจาก ZORT ── (5 ก.ย. 2569)
+           ⚠️ **ต้องมีเพื่อแยกสองสมมติฐาน** ว่าบรรทัดราคา 0 เกิดที่ต้นทางหรือที่ตัวอ่านของเรา
+              ถ้า pricepernumber ที่ ZORT เป็น 0 → ราคาถูกทับก่อนถึง ZORT
+              ถ้า pricepernumber ไม่เป็น 0 แต่ totalprice เป็น 0 → **เราอ่านผิดช่อง**
+           ⚠️ **รายชื่อฟิลด์ตรงตัวเท่านั้น ห้าม regex** — บทเรียน 4 ก.ย. ที่ /ship/ ไปจับ
+              shippingname · shippingaddress · shippingphone แล้วข้อมูลลูกค้าหลุดออก API
+           ⚠️ บรรทัดสินค้าไม่มีข้อมูลลูกค้าก็จริง แต่กติกาเดียวกันต้องใช้ทุกที่ ไม่ใช่เลือกใช้ */
+        lines: (Array.isArray(hit.list) ? hit.list : []).map((it) => ({
+          sku: it?.sku ?? null,
+          name: String(it?.name ?? it?.productname ?? "").slice(0, 120),
+          number: it?.number ?? null, // ZORT เรียกจำนวนว่า number
+          quantity: it?.quantity ?? null,
+          pricepernumber: it?.pricepernumber ?? null,
+          totalprice: it?.totalprice ?? null,
+          discount: it?.discount ?? null,
+        })),
         verdict: ourVal
           ? "integrationStatus มีค่าจริง ⇒ ชื่อคีย์ถูกแล้ว ปัญหาไม่ได้อยู่ตรงนี้"
           : Object.prototype.hasOwnProperty.call(hit, "integrationStatus")
