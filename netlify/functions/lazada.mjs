@@ -5,12 +5,13 @@
 //   GET /api/lazada/status    (ต้องมี x-admin-key) → เชื่อมร้านแล้วหรือยัง
 //   GET /api/lazada/products  (ต้องมี x-admin-key) → ลองดึงสินค้าที่ลงขายจริงมาดู
 //   GET /api/lazada/fields    (ต้องมี x-admin-key) → ชื่อฟิลด์จริงที่ Lazada ส่งมาต่อ SKU
+//   GET /api/lazada/stock     (ต้องมี x-admin-key) → เทียบสต็อก Lazada กับคลังเรา (อ่านอย่างเดียว)
 //
 // ⚠️ /callback ต้องเปิดโล่ง คนเรียกคือเซิร์ฟเวอร์ Lazada ไม่ใช่เบราว์เซอร์ของร้าน
 //    ปลอดภัยเพราะ code ใช้ได้ครั้งเดียวและต้องคู่กับ app_secret
 // ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็ค gate.ok เองเสมอ
 import { adminGate } from "../lib/admin-gate.mjs";
-import { lazadaReady, authLink, exchangeCode, loadToken, validToken, listedSkus, lazadaSkuFields } from "../lib/lazada.mjs";
+import { lazadaReady, authLink, exchangeCode, loadToken, validToken, listedSkus, lazadaSkuFields, lazadaStockCompare } from "../lib/lazada.mjs";
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
@@ -78,7 +79,19 @@ export default async function handler(req, context) {
     }
   }
 
-  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · products · fields" }, 404);
+  /* เทียบสต็อกกับคลังเรา — ด่านที่ต้องผ่านก่อนจะกล้าเลิกใช้ตัวซิงก์สต็อกของ ZORT
+     ⚠️ อ่านอย่างเดียว **ไม่เขียนอะไรกลับไปที่ Lazada** */
+  if (step === "stock") {
+    const t = await validToken();
+    if (!t) return json({ error: "ยังไม่ได้เชื่อมร้าน — เปิด /api/lazada/auth ก่อน" }, 400);
+    try {
+      return json({ ok: true, ...(await lazadaStockCompare()) });
+    } catch (e) {
+      return json({ error: String(e?.message || e) }, 400);
+    }
+  }
+
+  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · products · fields · stock" }, 404);
 }
 
 export const config = { path: "/api/lazada/*" };

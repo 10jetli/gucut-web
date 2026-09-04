@@ -213,3 +213,118 @@ export async function lazadaSkuFields(sample = 3) {
       "sampleSkus = คืนเฉพาะฟิลด์ในรายชื่อปลอดภัย (SKU_SAFE) ไม่ดัมพ์ทั้งก้อน",
   };
 }
+
+/* ── เทียบสต็อก Lazada กับคลังเรา ── (5 ก.ย. 2569)
+   ⚠️ **นี่คือด่านที่ต้องผ่านก่อนจะกล้าเลิกใช้ตัวซิงก์สต็อกของ ZORT**
+      ถ้าตัวเลขสองฝั่งไม่ตรงและเราอธิบายไม่ได้ ⇒ ยังตัด ZORT ไม่ได้
+
+   ⚠️ **ชื่อฟิลด์ไม่ได้เดา** — ยิง /api/lazada/fields ดูของจริงก่อน พบว่า Lazada
+      ส่ง `quantity` กับ `Available` มาต่อ SKU (ค่าเท่ากันในตัวอย่างที่ดู)
+      ⇒ ใช้ `Available` เป็นหลัก (คือของที่ขายได้จริง) และเก็บ `quantity` ไว้เทียบด้วย
+      **ถ้าวันไหนสองค่านี้ไม่เท่ากัน ต้องเห็น ไม่ใช่เลือกมาตัวเดียวเงียบ ๆ**
+
+   ⚠️ SellerSku ของ Lazada มีทั้งรหัสล้วน ("01412") และรหัส+คำต่อท้าย
+      ("01929 set ลูกสูบ") ⇒ ต้องผ่านตัวจับคู่กลาง ไม่ใช่เทียบตรงตัวอย่างเดียว */
+export async function lazadaStockCompare() {
+  const { coreReady, coreQuery } = await import("./coredb.mjs");
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const t = await validToken();
+  if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Lazada" };
+
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const { expandSku } = await import("./sku-match.mjs");
+
+  // ── ดึงสินค้าทั้งหมดจาก Lazada ──
+  const rows = [];
+  const eat = (items) => {
+    for (const p of items) {
+      for (const sk of p?.skus || []) {
+        const code = String(sk?.SellerSku ?? "").trim();
+        if (!code) continue;
+        rows.push({
+          sku: code,
+          available: num(sk?.Available),
+          quantity: num(sk?.quantity),
+          status: String(sk?.Status ?? ""),
+        });
+      }
+    }
+  };
+  const first = await pageSkus(0);
+  eat(first.items);
+  if (first.total && first.items.length >= PAGE) {
+    const pages = Math.ceil(first.total / PAGE);
+    const rest = [];
+    for (let i = 1; i < pages; i++) rest.push(i * PAGE);
+    for (let i = 0; i < rest.length; i += CONCURRENCY) {
+      const got = await Promise.all(rest.slice(i, i + CONCURRENCY).map((o) => pageSkus(o)));
+      for (const g of got) eat(g.items);
+    }
+  }
+
+  // ── ภาพถ่ายสต็อกล่าสุดของเรา ──
+  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
+  const day = latest?.d;
+  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", lazadaSkus: rows.length };
+  const snap = new Map(
+    (await coreQuery(`SELECT sku, qty FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [
+      String(r.sku).trim(),
+      num(r.qty),
+    ])
+  );
+
+  const diff = [];
+  const missingSample = [];
+  const availVsQty = [];
+  let same = 0;
+  let missing = 0;
+  let matchedByBase = 0;
+  for (const r of rows) {
+    // ⚠️ Available กับ quantity ต่างกันเมื่อไหร่ ต้องเห็น ไม่ใช่เงียบ
+    if (r.available !== r.quantity && availVsQty.length < 20) {
+      availVsQty.push({ sku: r.sku, available: r.available, quantity: r.quantity });
+    }
+    let key = null;
+    for (const cand of expandSku(r.sku)) {
+      if (snap.has(cand)) {
+        key = cand;
+        if (cand !== r.sku) matchedByBase += 1;
+        break;
+      }
+    }
+    if (!key) {
+      missing += 1;
+      if (missingSample.length < 20) missingSample.push({ sku: r.sku, lazada: r.available });
+      continue;
+    }
+    const ours = snap.get(key);
+    if (ours === r.available) same += 1;
+    else
+      diff.push({
+        sku: r.sku,
+        matchedAs: key === r.sku ? "ตรงตัว" : `ตัดท้ายเป็น ${key}`,
+        lazada: r.available,
+        core: ours,
+        gap: ours - r.available,
+      });
+  }
+  diff.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
+  return {
+    day,
+    snapshotRows: snap.size,
+    lazadaSkus: rows.length,
+    same,
+    diffCount: diff.length,
+    missing,
+    matchedByBase,
+    negativeInCore: [...snap.values()].filter((v) => v < 0).length,
+    diff: diff.slice(0, 50),
+    missingSample,
+    // ⚠️ ว่าง = สองค่านี้ตรงกันทุกตัวในรอบนี้ · ไม่ว่าง = ต้องตัดสินใจว่าจะยึดตัวไหน
+    availableNotEqualQuantity: availVsQty,
+    note:
+      "same = ตัวเลขตรงกัน · diff = ไม่ตรง (gap = ของเรา ลบ ของ Lazada) · " +
+      "missing = Lazada มีรหัสนี้แต่คลังเราไม่รู้จัก **คนละเรื่องกับตัวเลขไม่ตรง** · " +
+      "matchedByBase = จับคู่ได้ด้วยการตัดคำต่อท้าย ไม่ใช่ตรงตัว ⇒ เป็นการเดา ดูให้ดี",
+  };
+}
