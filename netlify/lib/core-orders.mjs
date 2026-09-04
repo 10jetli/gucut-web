@@ -101,7 +101,9 @@ export async function listOrders(o = {}) {
     w.params
   );
   const rows = await coreQuery(
-    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status
+    /* ⚠️ เพิ่มคอลัมน์ในตารางแล้วต้องเพิ่มใน SELECT นี้ด้วย ไม่งั้นจอไม่มีวันเห็น
+        (ฝั่งจอทักมา 4 ก.ย. 2569 — เก็บ integration_status เข้าฐานแล้วแต่แถวไม่มีฟิลด์นี้) */
+    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus
      FROM orders WHERE ${w.sql}
      ORDER BY order_date DESC, number DESC
      LIMIT ${limit} OFFSET ${offset}`,
