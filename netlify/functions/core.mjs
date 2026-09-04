@@ -7,6 +7,7 @@
 //   GET /api/core?monthly=1&months=6  ยอดขายรายเดือน (คิดที่ฐาน · จอไม่ต้องดึงแถวมานับเอง)
 //   GET /api/core?daily=1&days=90      ยอดขายรายวัน · ?bycustomer=1  ยอดรายลูกค้า
 //   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
+//   GET /api/core?noitems=1&days=N ออเดอร์ที่ไม่มีบรรทัดสินค้า — ต้องเป็น 0 ก่อนเปิดสะพาน PEAK
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
@@ -519,6 +520,62 @@ export default async function handler(req, context) {
     //   GET /api/core?peak=dry&day=YYYY-MM-DD  ซ้อมแปลงออเดอร์วันนั้นเป็นใบแจ้งหนี้ ไม่ส่งจริง
     // ⚠️ ยังไม่มีทางส่งจริงผ่าน URL โดยตั้งใจ — ต้องตั้ง PEAK_LIVE แล้วเพิ่มตัวสั่งอีกชั้น
     //    เอกสารขายผูกกับบัญชีและภาษี ยิงผิดต้องตามยกเลิกทีละใบ
+    /* ── ออเดอร์ที่ไม่มีบรรทัดสินค้า ── (5 ก.ย. 2569)
+       ⚠️ **ตรวจก่อนเปิดสะพาน PEAK** — ใบกำกับภาษีต้องมีรายการสินค้า
+          ถ้าใบไหนไม่มีบรรทัด แล้วเราส่งเข้า PEAK ⇒ ได้เอกสารภาษีที่มีแต่ยอดรวม ไม่มีรายการ
+          ซึ่งผิดกฎหมายและแก้ย้อนหลังยาก
+       ⚠️ **หัวใบซิงก์แยกจากบรรทัด** — ตัวซิงก์เขียนหัวใบก่อน แล้วค่อยเขียนบรรทัด
+          ถ้าขาดกลางทาง (ชนเวลา 26 วิ · D1 เต็มโควตา) จะได้ใบที่มีหัวแต่ไม่มีบรรทัด
+          **และไม่มีอะไรฟ้อง** เพราะจอรายการขายไม่ได้อ่านบรรทัด
+       ⚠️ นับเฉพาะใบที่ไม่ถูกยกเลิก และแยกตามร้าน — ร้าน z2 ยังไม่เข้าภาษี */
+    if (url.searchParams.get("noitems")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const from = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
+      const CANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+      const rows = await coreQuery(
+        `SELECT o.source AS src,
+                COUNT(*) AS total,
+                SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id)
+                         THEN 1 ELSE 0 END) AS noItems,
+                SUM(CASE WHEN NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id)
+                         THEN o.amount ELSE 0 END) AS noItemsAmount
+         FROM orders o
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+         GROUP BY 1`,
+        [from, today]
+      );
+      const sample = await coreQuery(
+        `SELECT o.source AS src, o.number AS number, o.order_date AS day,
+                o.channel AS channel, o.amount AS amount, o.status AS status
+         FROM orders o
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND NOT EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id)
+         ORDER BY o.order_date DESC LIMIT 30`,
+        [from, today]
+      );
+      const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      return json({
+        ok: true,
+        from,
+        to: today,
+        days,
+        byStore: rows.map((r) => ({
+          store: r.src,
+          storeName: r.src === "z2" ? "ceojet (ยังไม่เข้าภาษี)" : "ศีตกาล เทรดดิ้ง (เข้าภาษี)",
+          total: num2(r.total),
+          noItems: num2(r.noItems),
+          noItemsAmount: Math.round(num2(r.noItemsAmount)),
+          percent: num2(r.total) ? Math.round((num2(r.noItems) * 1000) / num2(r.total)) / 10 : 0,
+        })),
+        sample,
+        note:
+          "ใบที่ไม่มีบรรทัดสินค้า ⇒ ส่งเข้า PEAK แล้วจะได้ใบกำกับที่มีแต่ยอดรวม ไม่มีรายการ · " +
+          "ต้องเป็น 0 ของร้าน z1 ก่อนเปิดสะพานภาษี",
+      });
+    }
+
     if (url.searchParams.get("peak")) {
       const mode = url.searchParams.get("peak");
       if (mode === "status") return json({ ok: true, peak: await peakStatus() });
