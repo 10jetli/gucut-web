@@ -12,6 +12,19 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { readStatus, groupsFromCounts } from "./order-status.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/* ชื่อร้านสำหรับโชว์ — ท่อเป็นคนบอก ไม่ใช่ให้จอแปลรหัส z1/z2 เอง
+   ⚠️ ยังมีถ้อยคำแบบนี้เขียนซ้ำอยู่ใน core.mjs อีก 2 ที่ และ **สะกดไม่เหมือนกันสักที่**
+      ("ceojet (ยังไม่เข้าภาษี)" · "ceojet (หน้าร้าน POS)") ⇒ จอเดียวกันอาจเห็นสองชื่อ
+      ที่นี่คือตัวกลางตัวแรก · ย้ายอีกสองที่มาใช้ตัวนี้เมื่อไหร่ก็ได้ ยังไม่ย้ายเพราะนอกขอบเขตงานนี้
+   ⚠️ รหัสที่ไม่รู้จักต้องคืนรหัสนั้นกลับไป **ห้ามคืน null หรือชื่อร้านใดร้านหนึ่ง**
+      ร้านที่สามโผล่มาแล้วได้ชื่อร้านแรก = เลขไปกองผิดร้านโดยไม่มีอะไรฟ้อง */
+export const STORES = {
+  z1: { name: "ศีตกาล เทรดดิ้ง", note: "ตัวที่คิดภาษี" },
+  z2: { name: "ceojet", note: "หน้าร้าน POS · ยังไม่เข้าภาษี" },
+};
+export const storeName = (src) => STORES[String(src)]?.name ?? String(src ?? "-");
+
 const CANCEL_SQL =
   `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
 
@@ -202,6 +215,21 @@ export async function listOrders(o = {}) {
     w.params
   );
 
+  /* ── ยอดแยก "ร้าน" ของช่วงที่กรองอยู่ ── (ฝั่งจอขอ 5 ก.ย. 2569)
+      เดิมท่อส่งแต่ `source` ติดมากับแต่ละแถว แต่ไม่บอก **ขอบเขต** ว่าตัวเลขรวมนับกี่ร้าน
+      ⇒ จอต้องเขียนเองว่า "รวมทั้ง 2 ร้าน" ซึ่งถูกวันนี้ แต่เป็นข้อความแช่แข็ง
+         วันที่มีร้านที่สาม มันจะโกหกเงียบ ๆ โดยไม่มีอะไรฟ้อง (computed-now-goes-stale)
+      ⚠️ **ส่งรายการร้านที่มีอยู่จริงในช่วงนั้น ไม่ใช่ส่งประโยคสำเร็จรูป**
+         จอนับ stores.length เอง ⇒ ร้านที่สามโผล่มาเมื่อไหร่ ป้ายเปลี่ยนตามเองทันที
+      ⚠️ นับจากช่วงที่กรองอยู่ ไม่ใช่ทั้งฐาน — ช่วงที่ ceojet ไม่มีบิลเลย ต้องได้ 1 ร้าน ไม่ใช่ 2
+      ⚠️ ผลรวม stores[].orders ต้องเท่ากับ total เป๊ะ (กติกา "บวกทุกกองเทียบยอดรวม") */
+  const storeRows = await coreQuery(
+    `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+     FROM orders WHERE ${w.sql}
+     GROUP BY source ORDER BY source`,
+    w.params
+  );
+
   // ยอดแยก "สถานะ" ของช่วงที่กรองอยู่ — จอเอาไปทำแท็บพร้อมจำนวนในวงเล็บแบบ ZORT
   // ⚠️ ไม่กรองตามสถานะที่เลือกอยู่ ไม่งั้นแท็บอื่นจะกลายเป็นศูนย์หมดทันทีที่กดแท็บแรก
   //    (แท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ใบ ไม่งั้นมันไม่ใช่แท็บ เป็นแค่ปุ่มกรอง)
@@ -227,6 +255,20 @@ export async function listOrders(o = {}) {
     totalAmount: num(sum?.s),
     byChannel,
     byStatus,
+    /* ── ขอบเขต "ร้าน" ── จอใช้เขียนป้ายเองได้โดยไม่ต้องฮาร์ดโค้ดจำนวนร้าน
+        store  = ร้านที่ถูกกรองอยู่ (null = ไม่ได้กรอง คือรวมทุกร้านที่มีในช่วงนี้)
+        stores = ร้านที่มีบิลจริงในช่วงนี้ พร้อมยอดของแต่ละร้าน */
+    store: source,
+    stores: storeRows.map((r) => ({
+      source: r.source,
+      name: storeName(r.source),
+      note: STORES[String(r.source)]?.note ?? null,
+      orders: num(r.orders),
+      amount: num(r.amount),
+    })),
+    storeScope: source
+      ? `เฉพาะร้าน ${storeName(source)}`
+      : "ทุกร้านที่มีบิลในช่วงนี้ — จอนับจาก stores.length เอง ห้ามเขียนจำนวนร้านตายตัว",
     // ⚠️ มีค่า = จอต้องขึ้นแถบแดงบนหัวจอ · เป็น null = ไม่ต้องขึ้น (ห้ามฮาร์ดโค้ดฝั่งจอ)
     statusUnreliable: STATUS_UNRELIABLE,
     // ⚠️ ส่งค่าดิบมาคู่กันเสมอ (integrationStatus) + เหตุผลตอนว่าง (blankReason)
