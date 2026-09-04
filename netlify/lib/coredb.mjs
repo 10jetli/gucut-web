@@ -104,6 +104,12 @@ export async function coreInit() {
     `ALTER TABLE orders ADD COLUMN is_cod INTEGER`,
     // สถานะชำระเงินจาก ZORT (Paid · Unpaid …) — คนละอย่างกับ status ของใบ
     `ALTER TABLE orders ADD COLUMN pay_status TEXT`,
+    /* สถานะฝั่งมาร์เก็ตเพลสที่ ZORT ใช้แยกแท็บ "รอชำระ" กับ "รอโอนสินค้า"
+       (AWAITING_SHIPMENT · READY_TO_SHIP · pending …) — ยืนยันจากจอ ZORT 4 ก.ย. 2569
+       ⚠️ pay_status แยกสองกองนี้ไม่ได้ — มีใบที่ "ชำระครบ" แต่ยังอยู่กอง "รอโอนสินค้า"
+       ⚠️ **เพิ่มคอลัมน์ใหม่ต้องกวาดย้อนหลังด้วย** ไม่งั้นใบเก่าที่นิ่งแล้วจะว่างถาวร
+          (ตัวซิงก์เขียนเฉพาะใบที่เปลี่ยน — ดู core-sync.mjs รอบกวาดกว้างตี 2) */
+    `ALTER TABLE orders ADD COLUMN integration_status TEXT`,
     /* น้ำหนักสินค้า (กรัม) — ZORT ส่งมาใน Product/GetProducts อยู่แล้ว
        ⚠️ **มีค่าจริงแค่ 669 จาก 2,898 ตัว (23%)** ⇒ ส่วนใหญ่ยังไม่ได้กรอก
           ต้องคืน null ไม่ใช่ 0 — **0 กรัมแปลว่าของไม่มีน้ำหนัก ไม่ใช่ยังไม่รู้**

@@ -670,6 +670,17 @@ export default async function handler(req, context) {
            AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
          GROUP BY 1 ORDER BY c DESC`
       );
+      /* แยกตาม integration_status — ตัวที่ ZORT ใช้แยกแท็บจริง (ยืนยันจากจอ 4 ก.ย. 2569)
+         AWAITING_SHIPMENT = "รอโอนสินค้า" · ใบที่ชำระครบแล้วก็ยังอยู่กองนี้ได้
+         ⇒ เทียบกองนี้กับการ์ด "ค้างโอนสินค้า 132" ได้ตรง ๆ */
+      const byIntegration = await coreQuery(
+        `SELECT COALESCE(NULLIF(integration_status,''),'(ว่าง — ยังไม่ได้กวาดย้อนหลัง)') AS st,
+                COUNT(*) AS c
+         FROM orders
+         WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
+           AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
+         GROUP BY 1 ORDER BY c DESC`
+      );
       const bySource = await coreQuery(
         `SELECT source, COUNT(*) AS c FROM orders
          WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
@@ -686,6 +697,7 @@ export default async function handler(req, context) {
         ok: true,
         pendingTotal: Number(tot?.c || 0),
         byPayStatus: rows,
+        byIntegration, // ← ตัวที่ ZORT ใช้แยกแท็บจริง
         byPrefix, // แยกตามชนิดเอกสาร — การ์ด ZORT นับเฉพาะใบขาย
         bySource, // ⚠️ การ์ด ZORT เป็นของร้านเดียว ⇒ เทียบกับแถว z1 เท่านั้น
         mirrorCovers: span,
