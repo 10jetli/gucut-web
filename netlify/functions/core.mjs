@@ -659,18 +659,40 @@ export default async function handler(req, context) {
                 COUNT(*) AS c
          FROM orders GROUP BY 1,2 ORDER BY 1, c DESC`
       );
+      /* ⚠️ **ต้องตัดสินจากข้อมูล ไม่ใช่จากชื่อช่องทาง** (ฝั่งจอกำชับ — กฎ no-substring-classification)
+          เกณฑ์: ช่องทางนั้น **เคยมีค่าสักใบไหม**
+            เคยมี  ⇒ แถวที่ว่างคือของผิดปกติ (ต้นทางไม่ส่งมา / ร้านปิดไปแล้ว)
+            ไม่เคยมีเลย ⇒ ช่องทางนั้นไม่มีใครบอกสถานะ ว่างคือถูกต้อง
+          ⇒ ไม่ต้องรู้จักชื่อ "Shopee"/"POS" เลยสักตัวอักษร */
       const blankByChannel = await coreQuery(
-        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, COUNT(*) AS c
-         FROM orders WHERE COALESCE(integration_status,'') = ''
-         GROUP BY 1 ORDER BY c DESC`
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+                COUNT(*) AS blank,
+                (SELECT COUNT(*) FROM orders b
+                  WHERE COALESCE(NULLIF(b.channel,''),'(ไม่ระบุ)')
+                        = COALESCE(NULLIF(a.channel,''),'(ไม่ระบุ)')
+                    AND COALESCE(b.integration_status,'') <> '') AS everHadValue
+         FROM orders a WHERE COALESCE(a.integration_status,'') = ''
+         GROUP BY 1 ORDER BY blank DESC`
       );
+      /* ⚠️ **"ว่าง" มี 3 ความหมายที่ต่างกันจริง ๆ — จอแยกจากค่าว่างเปล่า ๆ ไม่ได้**
+          none_expected  = ช่องทางนี้ไม่เคยมีใครบอกสถานะเลย ว่างถาวรและถูกต้อง
+          source_empty   = ช่องทางนี้เคยมีค่า แต่ใบนี้ต้นทางไม่ส่งมา (ใบเก่า)
+                           **พิสูจน์แล้ว 4 ก.ย. 2569: ซิงก์ซ้ำ 7 เดือน เขียน 0 ทุกเดือน**
+                           ⇒ ไม่ใช่ "ยังไม่ได้กวาด" — กวาดแล้วก็ไม่มีให้
+          ⇒ ส่ง blankReason มาให้เลย จอจะได้แค่เอามาแสดง ไม่ต้องเดาจากชื่อช่องทาง */
+      const withReason = blankByChannel.map((r) => ({
+        channel: r.ch,
+        blank: Number(r.blank),
+        blankReason: Number(r.everHadValue) > 0 ? "source_empty" : "none_expected",
+        everHadValue: Number(r.everHadValue),
+      }));
       return json({
         ok: true,
         note:
-          "ทั้งตาราง ไม่จำกัดช่วงวัน · แถวช่องทางมาร์เก็ตเพลสที่ว่าง = backfill หายจริง · " +
-          "แถว POS/แชท/เว็บเราที่ว่าง = ปกติ ไม่มีแพลตฟอร์มไหนบอกสถานะ",
+          "ทั้งตาราง ไม่จำกัดช่วงวัน · blankReason คิดจากข้อมูล (ช่องทางนั้นเคยมีค่าไหม) " +
+          "ไม่ได้เดาจากชื่อช่องทาง · none_expected = ว่างถูกต้อง · source_empty = ต้นทางไม่ส่งมา",
         cross: rows,
-        blankByChannel,
+        blankByChannel: withReason,
       });
     }
 
