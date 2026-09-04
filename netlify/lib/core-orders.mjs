@@ -54,9 +54,18 @@ const daysAgo = (n) =>
   new Date(Date.now() + 7 * 3600e3 - n * 864e5).toISOString().slice(0, 10);
 
 /** ตัวกรองที่ใช้ร่วมกันทั้งตัวนับและตัวดึงแถว */
-function buildWhere({ from, to, channel, status, q, includeCancelled }) {
+function buildWhere({ from, to, channel, status, q, includeCancelled, source }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
+  /* ⚠️ **ต้องกรองร้านได้** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
+      และ **ชื่อช่องทางซ้ำกันข้ามร้าน** เช่น "TIKTOK" มีทั้งใน z1 (737 ใบ) และ z2 (58 ใบ)
+      ถามด้วยชื่อช่องทางเฉย ๆ จึงได้ของสองร้านปนกันมาโดยไม่มีอะไรบอก
+      (เจอจริง 4 ก.ย. 2569 ตอนไล่ว่าร้าน ceojet เลิกขายออนไลน์เมื่อไหร่ —
+       ได้ใบล่าสุดเป็นวันนี้ ทั้งที่ใบนั้นเป็นของอีกร้าน) */
+  if (source) {
+    where.push("source = ?");
+    params.push(source);
+  }
   if (channel) {
     where.push("channel = ?");
     params.push(channel);
@@ -79,7 +88,7 @@ function buildWhere({ from, to, channel, status, q, includeCancelled }) {
 /**
  * รายการขายจากคลังเงา
  * @param {object} o from · to (YYYY-MM-DD) · channel · status · q (เลขที่/ชื่อลูกค้า) ·
- *                   limit · offset · includeCancelled
+ *                   source (z1|z2) · limit · offset · includeCancelled
  */
 export async function listOrders(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
@@ -93,8 +102,10 @@ export async function listOrders(o = {}) {
   const status = String(o.status ?? "").slice(0, 60) || null;
   const q = String(o.q ?? "").trim().slice(0, 60) || null;
   const includeCancelled = !!o.includeCancelled;
+  // รับเฉพาะค่าที่รู้จัก — ค่าแปลกปลอมให้เป็น null (ไม่กรอง) ดีกว่าเอาไปยัดลง SQL
+  const source = ["z1", "z2"].includes(String(o.source)) ? String(o.source) : null;
 
-  const w = buildWhere({ from, to, channel, status, q, includeCancelled });
+  const w = buildWhere({ from, to, channel, status, q, includeCancelled, source });
 
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s

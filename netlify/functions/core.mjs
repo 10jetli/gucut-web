@@ -1109,6 +1109,8 @@ export default async function handler(req, context) {
           from: p.get("from"),
           to: p.get("to"),
           channel: p.get("channel"),
+          // ชื่อช่องทางซ้ำกันข้ามร้านได้ (เช่น TIKTOK มีทั้ง z1 และ z2) ⇒ ต้องกรองร้านได้ด้วย
+          source: p.get("store"),
           status: p.get("status"),
           q: p.get("q"),
           limit: p.get("limit"),
