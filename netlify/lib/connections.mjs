@@ -7,7 +7,8 @@
 // ⚠️ **สี่สถานะ ไม่ใช่สอง** — ต่างกันคนละความหมาย ห้ามยุบรวม
 //    connected: true  = ยิงแล้วตอบกลับจริง
 //    connected: false = มีตัวตรวจ แต่ยังไม่ได้เชื่อม (งานที่ยังไม่ได้ทำ)
-//    connected: null  = **ยังไม่มีตัวตรวจ** (เราไม่รู้ ไม่ใช่ไม่มี)
+//    connected: null  = **เราไม่รู้** — แยกได้อีกสองแบบด้วยธง timedOut
+//                       timedOut ไม่มี = ยังไม่มีตัวตรวจ · timedOut: true = มีตัวตรวจแต่ปลายทางช้าจนไม่ทัน
 //    retired: true    = **เลิกใช้แล้ว** (งานที่จบไปแล้ว ไม่ใช่งานค้าง)
 //    ฝั่งจอทักมาถูก: ยัด "เลิกใช้แล้ว" ลงใน false = จอบอกว่าเป็นงานค้างที่ต้องไปต่อ
 //
@@ -41,13 +42,45 @@ function tokenExpiry(t) {
   };
 }
 
-async function timed(fn) {
+/* งบเวลารวมของทั้งหน้า — ต้องต่ำกว่าเพดานของ Netlify (26 วิ) แบบมีที่เหลือ
+   ⚠️ **วัดจริงแล้วตอนแคชเย็นใช้ 12.7 วินาที** (ตัวช้าสุดคือ Shopee ที่ต้องไล่ดึงรายการสินค้า)
+      ตอนแคชอุ่นเหลือ 1.2–1.5 วิ ⇒ ตอนนี้ยังห่างเพดานครึ่งหนึ่ง
+      แต่วันที่ Shopee ช้ากว่าปกติสองเท่า ทั้งหน้าจะ 502 โดยที่เราไม่ได้แก้อะไรเลย
+      **และ 502 บอกอะไรไม่ได้เลย** — คนอ่านจะแยกไม่ออกว่า "Shopee ช้า" หรือ "ระบบเราพัง"
+      ⇒ ตัดจบเองที่ 18 วิ แล้วตอบ "ช่องนี้ไม่ทัน" แทนการปล่อยให้ทั้งหน้าตาย
+      คำตอบบางส่วนที่บอกว่าส่วนไหนไม่ครบ ดีกว่าไม่มีคำตอบเลย */
+const BUDGET = 18000;
+
+async function timed(fn, label = "") {
   const t0 = Date.now();
   try {
-    const r = await fn();
+    /* ⚠️ ตัวตรวจแต่ละตัวมี timeout ของตัวเองอยู่แล้ว (T) **แต่ไม่ใช่ทุกตัว**
+        เช่นตัว Shopee ไปเรียก marketplaceListings() ต่อ ซึ่งยิงหลายรอบและไม่ผูกกับ T
+        ⇒ ต้องมีเส้นตายรวมอีกชั้น ไม่งั้นตัวที่ไม่มีเพดานจะลากทั้งหน้าไปตาย */
+    const r = await Promise.race([
+      fn(),
+      new Promise((_, rej) =>
+        setTimeout(() => rej(new Error("__TIMEOUT__")), BUDGET)
+      ),
+    ]);
     return { ...r, ms: Date.now() - t0 };
   } catch (e) {
-    return { connected: false, detail: String(e?.message || e).slice(0, 120), ms: Date.now() - t0 };
+    const ms = Date.now() - t0;
+    const msg = String(e?.message || e);
+    const isTimeout = msg === "__TIMEOUT__" || /timeout|aborted/i.test(msg);
+    if (isTimeout) {
+      /* ⚠️ **ไม่ทัน ≠ ไม่ได้เชื่อม** — ต้องเป็น null (เราไม่รู้) ไม่ใช่ false (ไม่ได้เชื่อม)
+          ตอบ false = จอจะขึ้นว่าเป็นงานค้างที่ต้องไปเชื่อม ทั้งที่อาจเชื่อมอยู่ดี ๆ
+          และติดธง timedOut ไว้ต่างหาก เพราะ null เดิมแปลว่า "ยังไม่มีตัวตรวจ"
+          สองอย่างนี้คนละเรื่อง ห้ามให้จอเดาเอาจาก null เฉย ๆ */
+      return {
+        connected: null,
+        timedOut: true,
+        detail: `ตรวจไม่ทันใน ${Math.round(BUDGET / 1000)} วินาที — ปลายทางช้า ไม่ได้แปลว่าไม่ได้เชื่อม`,
+        ms,
+      };
+    }
+    return { connected: false, detail: msg.slice(0, 120), ms };
   }
 }
 
@@ -124,12 +157,12 @@ async function line() {
 
 export async function connectionsStatus() {
   const [z1, z2, sp, tt, lz, ln] = await Promise.all([
-    timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET")),
-    timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2")),
-    timed(shopee),
-    timed(tiktok),
-    timed(lazada),
-    timed(line),
+    timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"), "ZORT z1"),
+    timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2"), "ZORT z2"),
+    timed(shopee, "Shopee"),
+    timed(tiktok, "TikTok"),
+    timed(lazada, "Lazada"),
+    timed(line, "LINE"),
   ]);
   const at = new Date().toISOString();
   const stamp = (o) => ({ ...o, lastChecked: at });
@@ -179,12 +212,16 @@ export async function connectionsStatus() {
     checkedAt: at,
     connected: all.filter((x) => x.connected === true).length,
     notConnected: all.filter((x) => x.connected === false && !x.retired).length,
-    unchecked: all.filter((x) => x.connected === null).length,
+    unchecked: all.filter((x) => x.connected === null && !x.timedOut).length,
+    // ⚠️ นับแยกจาก unchecked — "ไม่ทัน" คือปัญหาที่ต้องดู ส่วน "ยังไม่มีตัวตรวจ" คืองานที่ยังไม่ได้ทำ
+    timedOut: all.filter((x) => x.timedOut).length,
+    budgetMs: BUDGET,
     retired: all.filter((x) => x.retired).length,
     // ⚠️ ข้อความนี้ต้องขึ้นบนจอ — เลขนี้คือ "เท่าที่ตรวจได้" ไม่ใช่ความจริงทั้งหมด
     note:
       "ทุกช่องมาจากการยิงของจริงตอนเปิดหน้านี้ ไม่มีค่าเขียนตายตัว · " +
-      "ช่องที่ยังไม่มีตัวตรวจไม่ได้แปลว่าไม่ได้เชื่อม แปลว่าเรายังตรวจไม่ได้",
+      "ช่องที่ยังไม่มีตัวตรวจไม่ได้แปลว่าไม่ได้เชื่อม แปลว่าเรายังตรวจไม่ได้ · " +
+      "ช่องที่ติดธง timedOut = ปลายทางช้าจนตรวจไม่ทัน ไม่ใช่ไม่ได้เชื่อม",
     groups,
   };
 }
