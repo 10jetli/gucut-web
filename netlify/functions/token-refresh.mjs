@@ -45,12 +45,22 @@ export async function refreshAllTokens() {
         out[p.key] = { ok: true, connected: false, why: "ยังไม่ได้กดอนุญาต" };
         continue;
       }
-      const left = Number(t.expiresAt || 0) - Date.now();
+      /* ⚠️ **แต่ละเจ้าเก็บวันหมดอายุคนละชื่อ คนละหน่วย** — อย่าเดาว่าเหมือนกัน
+          Lazada · TikTok : `expiresAt` เป็น **มิลลิวินาที**
+          Shopee          : `expireAt`  เป็น **วินาที**  (ไม่มี s และคนละหน่วย)
+          รอบแรกผมอ่าน expiresAt ตัวเดียว ⇒ Shopee ได้ undefined → 0
+          แล้วรายงานว่า "เหลือ -496,817 ชั่วโมง" ซึ่งอ่านแล้วเหมือนระบบพัง
+          ทั้งที่ token ของ Shopee ปกติดีทุกอย่าง (ตรรกะในไฟล์ของมันเองถูกต้องอยู่แล้ว)
+          ⇒ ตัวรายงานผิด อันตรายกว่าไม่มีตัวรายงาน เพราะมันชี้ไปผิดที่ */
+      const ms = Number(t.expiresAt || 0);
+      const sec = Number(t.expireAt || 0);
+      const expiresMs = ms > 0 ? ms : sec > 0 ? sec * 1000 : 0;
       out[p.key] = {
         ok: true,
         connected: true,
-        // ชั่วโมงที่เหลือ — ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1
-        hoursLeft: Math.floor(left / 3600e3),
+        // ชั่วโมงที่เหลือ — ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1 · ไม่รู้วันหมดอายุ = null ไม่ใช่ 0
+        hoursLeft: expiresMs ? Math.floor((expiresMs - Date.now()) / 3600e3) : null,
+        expiresAtUtc: expiresMs ? new Date(expiresMs).toISOString() : null,
         account: t.account || null,
       };
     } catch (e) {
