@@ -688,6 +688,14 @@ export default async function handler(req, context) {
            AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
          GROUP BY 1 ORDER BY c DESC`
       );
+      /* ⚠️ **ต้องดูทั้งตาราง ไม่ใช่เฉพาะใบที่ยังไม่จบ** (ฝั่งจอถามมา 4 ก.ย. 2569)
+          จะทำการ์ด "สถานะการจัดส่ง" ต้องรู้ก่อนว่า integration_status มีค่าอะไรบ้าง
+          และ **ค้างว่างกี่เปอร์เซ็นต์** ไม่งั้นจะได้การ์ดที่นับจากช่องว่างแล้วดูเหมือนถูก */
+      const integrationAll = await coreQuery(
+        `SELECT COALESCE(NULLIF(integration_status,''),'(ว่าง)') AS st, COUNT(*) AS c
+         FROM orders GROUP BY 1 ORDER BY c DESC`
+      );
+      const [allRows] = await coreQuery(`SELECT COUNT(*) AS c FROM orders`);
       const bySource = await coreQuery(
         `SELECT source, COUNT(*) AS c FROM orders
          WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
@@ -704,6 +712,8 @@ export default async function handler(req, context) {
         ok: true,
         pendingTotal: Number(tot?.c || 0),
         byPayStatus: rows,
+        integrationAll, // ทั้งตาราง — ใช้ตอบว่าค้างว่างกี่ % ก่อนเอาไปทำการ์ด
+        ordersTotal: Number(allRows?.c || 0),
         byIntegration, // ← ตัวที่ ZORT ใช้แยกแท็บจริง
         byPrefix, // แยกตามชนิดเอกสาร — การ์ด ZORT นับเฉพาะใบขาย
         bySource, // ⚠️ การ์ด ZORT เป็นของร้านเดียว ⇒ เทียบกับแถว z1 เท่านั้น
