@@ -827,20 +827,27 @@ export default async function handler(req, context) {
              จอจะแตกชื่อเดียวเป็นสองช่องทางแบบเงียบ ๆ
              ⇒ จัดกลุ่ม (ลูกค้า × ช่องทาง) ที่ฐาน แล้วประกอบเป็นอาร์เรย์ฝั่งนี้ ไม่มีตัวคั่นให้พลาด
           ⚠️ ดึงเฉพาะชื่อที่จะส่งกลับจริง ไม่ใช่ทั้ง 1,036 ชื่อ */
-      const wantNames = named.map((r) => String(r.name));
+      /* ⚠️ **ห้ามยัดรายชื่อเข้า IN (?,?,?…) ตามจำนวน limit** — พังจริงแล้ว 5 ก.ย. 2569
+          limit=500 ⇒ ผูกตัวแปร 500 ตัว ⇒ D1 ตอบ
+          `too many SQL variables at offset 530: SQLITE_ERROR` แล้วจอขึ้นแดงทั้งหน้า
+          (ขึ้นจริงภายใน 4 นาทีหลัง deploy — เจอเพราะถ่ายจอทันที ไม่ได้เชื่อว่าผ่าน)
+          **จำนวนตัวแปรที่ผูกได้มีเพดาน และเพดานนั้นไม่โผล่ตอนทดสอบด้วย limit น้อย ๆ**
+          ⇒ จัดกลุ่มทั้งช่วงในคำสั่งเดียว (ไม่มี IN) แล้วค่อยกรองด้วยชื่อฝั่งนี้
+             จำนวนแถวถูกจำกัดด้วย distinct(ลูกค้า × ช่องทาง) ในช่วงอยู่แล้ว */
+      const wantNames = new Set(named.map((r) => String(r.name)));
       const chMap = new Map();
-      if (wantNames.length) {
-        const holes = wantNames.map(() => "?").join(",");
+      if (wantNames.size) {
         const chRows = await coreQuery(
           `SELECT TRIM(customer) AS name,
                   COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
                   COUNT(*) AS c
-           FROM orders WHERE ${w} AND TRIM(customer) IN (${holes})
+           FROM orders WHERE ${w} AND TRIM(COALESCE(customer,'')) <> ''
            GROUP BY 1,2 ORDER BY c DESC`,
-          [...params, ...wantNames]
+          params
         );
         for (const r of chRows) {
           const k = String(r.name);
+          if (!wantNames.has(k)) continue;
           if (!chMap.has(k)) chMap.set(k, []);
           chMap.get(k).push({ channel: String(r.ch), orders: num2(r.c) });
         }
