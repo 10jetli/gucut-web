@@ -615,6 +615,9 @@ export default async function handler(req, context) {
             number: String(o.number ?? ""),
             status: String(o.status ?? ""),
             pay: String(o.paymentstatus ?? ""),
+            // ⚠️ คอลัมน์ที่เพิ่งเพิ่มต้องเข้ามาอยู่ในตัวเทียบด้วย ไม่งั้นกระจกเพี้ยนได้เงียบ ๆ
+            //    ตลอดไป — ตัวเทียบที่ไม่ครอบคลุมคอลัมน์ใหม่ = ตาข่ายที่หยุดอัปเดต
+            integ: String(o.integrationStatus ?? ""),
           });
         }
         if (chunk.length < 200) break;
@@ -625,7 +628,8 @@ export default async function handler(req, context) {
       /* ⚠️ **ต้องกรองเฉพาะร้านที่ยิงถามด้วย** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
           ไม่กรอง = ใบของอีกร้านโผล่มาเป็น "กระจกมี แต่ ZORT ไม่มี" ทั้งกอง */
       const mine = await coreQuery(
-        `SELECT number, status, COALESCE(pay_status,'') AS pay FROM orders
+        `SELECT number, status, COALESCE(pay_status,'') AS pay,
+                COALESCE(integration_status,'') AS integ FROM orders
          WHERE source = ? AND order_date >= ? AND order_date <= ?`,
         [store, from, to]
       );
@@ -634,6 +638,7 @@ export default async function handler(req, context) {
       const missingInMirror = []; // ZORT มี · กระจกไม่มี  ← ทางที่ 2 จับได้ทางเดียว
       const staleStatus = []; // มีทั้งคู่ · สถานะไม่ตรง
       const stalePay = []; // มีทั้งคู่ · สถานะจ่ายเงินไม่ตรง
+      const staleInteg = []; // มีทั้งคู่ · สถานะฝั่งมาร์เก็ตเพลสไม่ตรง
       for (const [key, z] of zort) {
         const m = mirror.get(key);
         if (!m) {
@@ -645,6 +650,13 @@ export default async function handler(req, context) {
         }
         if (String(m.pay) !== z.pay) {
           stalePay.push({ number: z.number, mirror: String(m.pay) || "(ว่าง)", zort: z.pay || "(ว่าง)" });
+        }
+        if (String(m.integ ?? "") !== z.integ) {
+          staleInteg.push({
+            number: z.number,
+            mirror: String(m.integ ?? "") || "(ว่าง)",
+            zort: z.integ || "(ว่าง)",
+          });
         }
       }
       const extraInMirror = mine
@@ -664,12 +676,14 @@ export default async function handler(req, context) {
           missingInMirror: missingInMirror.length,
           staleStatus: staleStatus.length,
           stalePay: stalePay.length,
+          staleInteg: staleInteg.length,
           extraInMirror: extraInMirror.length,
         },
         sample: {
           missingInMirror: missingInMirror.slice(0, 15),
           staleStatus: staleStatus.slice(0, 15),
           stalePay: stalePay.slice(0, 15),
+          staleInteg: staleInteg.slice(0, 15),
           extraInMirror: extraInMirror.slice(0, 15),
         },
         note:
