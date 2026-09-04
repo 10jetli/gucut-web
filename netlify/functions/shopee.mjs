@@ -75,6 +75,35 @@ export default async function handler(req, context) {
   }
 
   // ── สั่งดึงรีวิวผ่าน API เข้าคิวเดี๋ยวนั้น (ตัวจริงวิ่งเองทุกคืน 00:20 ไทย) ──
+  /* นับสินค้าแยกตามสถานะบน Shopee — ไว้ตอบคำถาม "ลงขายอยู่กี่รายการกันแน่"
+     ⚠️ ZORT โชว์ "จำนวนสินค้าที่เชื่อมต่อ" ซึ่ง**ไม่เท่ากับ**จำนวนที่ลงขายอยู่จริง
+        ของที่ถอดออกจากหน้าร้านแล้วยังนับเป็น "เชื่อมต่อ" อยู่ ⇒ สองเลขนี้ห้ามเอามาเทียบกันตรง ๆ */
+  if (step === "counts") {
+    const t = await validToken();
+    if (!t) return json({ error: "ยังไม่ได้เชื่อมร้าน Shopee" }, 400);
+    const out = {};
+    for (const st of ["NORMAL", "UNLIST", "BANNED", "REVIEWING"]) {
+      let n = 0;
+      let offset = 0;
+      try {
+        for (let p = 0; p < 40; p++) {
+          const d = await shopCall("/api/v2/product/get_item_list", {
+            offset: String(offset),
+            page_size: "100",
+            item_status: st,
+          });
+          n += (d?.response?.item ?? []).length;
+          if (!d?.response?.has_next_page) break;
+          offset += 100;
+        }
+        out[st] = n;
+      } catch (e) {
+        out[st] = `ผิดพลาด: ${String(e?.message || e).slice(0, 80)}`;
+      }
+    }
+    return json({ ok: true, itemsByStatus: out });
+  }
+
   if (step === "pull") {
     try {
       const result = await pullShopeeReviews(url.origin);
