@@ -221,6 +221,33 @@ export async function connectionsStatus(opts = {}) {
     ],
   };
 
+  /* ชีพจรของตัวต่ออายุ token — ตัวมันวิ่งวันละครั้งตี 3 ครึ่ง
+     ⚠️ **เขียนชีพจรไว้แล้วแต่ไม่มีใครอ่าน = ไม่ต่างจากไม่มี** (5 ก.ย. 2569)
+        token-refresh.mjs บันทึกลง core_meta ตั้งแต่ตอนสร้าง แต่ไม่มี endpoint ไหนคืนมันเลย
+        ⇒ เช้ามาถ้าอยากรู้ว่ารอบแรกวิ่งจริงไหม ต้องไปเปิดฐานเอง ซึ่งไม่มีใครทำ
+        คืนมาที่หน้านี้ เพราะนี่คือหน้าที่คนจะเปิดดูอยู่แล้วเมื่อสงสัยเรื่องการเชื่อมต่อ
+     ⚠️ อ่านไม่ได้ = คืน null **ห้ามเงียบ** — "ไม่รู้" กับ "ไม่เคยวิ่ง" คนละเรื่อง */
+  let tokenRefresh = { atUtc: null, note: "อ่านชีพจรไม่ได้ — ไม่ได้แปลว่าไม่เคยวิ่ง" };
+  try {
+    const { coreQuery } = await import("./coredb.mjs");
+    const [row] = await coreQuery(`SELECT at, v FROM core_meta WHERE k = 'token_refresh'`);
+    tokenRefresh = row
+      ? {
+          atUtc: row.at ?? null,
+          result: (() => {
+            try {
+              return JSON.parse(row.v || "{}");
+            } catch {
+              return null;
+            }
+          })(),
+          note: "เวลาเป็น UTC · ตัวต่ออายุวิ่งวันละครั้ง 03:30 น. เวลาไทย",
+        }
+      : { atUtc: null, note: "ยังไม่เคยวิ่งสักครั้ง (หรือยังไม่ถึงรอบแรก)" };
+  } catch {
+    // คงค่าตั้งต้นไว้ — บอกว่าอ่านไม่ได้ ดีกว่าบอกว่าไม่เคยวิ่ง
+  }
+
   const all = Object.values(groups).flat();
   return {
     checkedAt: at,
@@ -230,6 +257,7 @@ export async function connectionsStatus(opts = {}) {
     // ⚠️ นับแยกจาก unchecked — "ไม่ทัน" คือปัญหาที่ต้องดู ส่วน "ยังไม่มีตัวตรวจ" คืองานที่ยังไม่ได้ทำ
     timedOut: all.filter((x) => x.timedOut).length,
     budgetMs: budget,
+    tokenRefresh,
     retired: all.filter((x) => x.retired).length,
     // ⚠️ ข้อความนี้ต้องขึ้นบนจอ — เลขนี้คือ "เท่าที่ตรวจได้" ไม่ใช่ความจริงทั้งหมด
     note:
