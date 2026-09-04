@@ -212,6 +212,11 @@ export async function listStock(o = {}) {
   const only =
     {
       out: "cur.qty <= 0",
+      /* ⚠️ **"ของหมด" กับ "ติดลบ" คนละความหมาย ห้ามอยู่ถังเดียวกัน** (ฝั่งจอชี้ 5 ก.ย. 2569)
+          ของหมด (= 0) = เรื่องปกติของการขาย ไม่ต้องทำอะไร
+          ติดลบ (< 0) = **ข้อมูลผิด** ขายออกมากกว่าที่บันทึกรับเข้า ต้องตามหา
+          รวมกันเมื่อไหร่ ของที่ต้องตามจะจมอยู่ในกองของที่ปกติ (564 ของหมด · 15 ติดลบ) */
+      neg: "cur.qty < 0",
       low: "cur.qty > 0 AND cur.qty <= 3",
       // แท็บ เปิด/ปิดใช้งาน แบบ ZORT — ต้องกรองที่ฐานข้อมูล ไม่ใช่ที่จอ
       // ⚠️ กรองฝั่งจอจากข้อมูลที่แบ่งหน้ามาแล้ว = เลขหน้าผิดและตัวนับผิดทันทีที่มีของจริง
@@ -256,6 +261,10 @@ export async function listStock(o = {}) {
      SELECT COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
             SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
+            /* ติดลบ — นับตาม kind ที่เลือกอยู่ (goods/service) เหมือน outOfStock
+               ⚠️ แถบเตือนต้องใช้ตัวนี้ **ห้ามนับจาก rows** เพราะ rows ชน limit ได้
+                  แล้ววันที่ติดลบเกิน 200 รหัส แถบจะเขียน 200 แล้วหยุด โดยไม่มีอะไรฟ้อง */
+            SUM(CASE WHEN cur.qty < 0 THEN 1 ELSE 0 END) AS negative,
             ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value,
             /* ⚠️ **ZORT คิดมูลค่าสต็อกจาก "ราคาทุน" ไม่ใช่ราคาขาย** (วัดเทียบแล้ว 3 ก.ย. 2569)
                 ราคาขายรวมได้ ฿26.7 ล้าน · ZORT โชว์ ฿16.4 ล้าน — ต่างกันสิบล้าน
@@ -370,6 +379,8 @@ export async function listStock(o = {}) {
     total: num(sum?.skus),
     outOfStock: num(sum?.out_of_stock),
     low: num(sum?.low),
+    negative: num(sum?.negative), // ติดลบ = ข้อมูลผิด ไม่ใช่ของหมด · นับตาม kind ที่เลือก
+
     // ⬇️ สองตัวนี้นับข้าม kind เสมอ (ดูเหตุผลที่ตัวแปร aside)
     services: num(aside?.services), // จำนวน "บริการ" — จอเอาไปบอกว่าซ่อนไปกี่ตัว
     inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
