@@ -565,12 +565,25 @@ export default async function handler(req, context) {
           (เคสจริง: ใบโอนสินค้าหาย 581 ใบ เมื่อ 3 ก.ย. เพราะใช้เลขที่ใบเป็นกุญแจ)
        ⚠️ **คืนเฉพาะเลขที่ใบกับสถานะ ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้า** */
     if (url.searchParams.get("ordercheck")) {
-      const st = {
-        storename: process.env.ZORT_STORENAME,
-        apikey: process.env.ZORT_APIKEY,
-        apisecret: process.env.ZORT_APISECRET,
-      };
-      if (!st.storename) return json({ error: "ยังไม่ได้ตั้งรหัส ZORT" }, 503);
+      /* ⚠️ **รหัส ZORT กับตัวกรอง source ต้องมาจากตัวแปรตัวเดียวกัน**
+          เดิมเขียนแยกกัน (env ของร้าน 1 · WHERE source='z1' คนละที่)
+          ถ้าวันไหนแก้ที่หนึ่งลืมอีกที่ = ยิงถาม ZORT ร้าน A แล้วเทียบกับกระจกร้าน B
+          ⇒ "ไม่ตรงกันทั้งหมด" ทั้งที่ข้อมูลอาจถูกทุกใบ (เจอมาแล้วตอนเทียบผิดคีย์) */
+      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      const st =
+        store === "z2"
+          ? {
+              storename: process.env.ZORT_STORENAME_2,
+              apikey: process.env.ZORT_APIKEY_2,
+              apisecret: process.env.ZORT_APISECRET_2,
+            }
+          : {
+              storename: process.env.ZORT_STORENAME,
+              apikey: process.env.ZORT_APIKEY,
+              apisecret: process.env.ZORT_APISECRET,
+            };
+      if (!st.storename)
+        return json({ error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` }, 503);
       /* รับ from/to ตรง ๆ ด้วย — ต้องตรวจช่วงเก่า ๆ ได้ ไม่ใช่แค่ "ย้อน N วันจากวันนี้"
          ⚠️ ขอทีเดียวยาว ๆ จะเกิน 26 วินาที ⇒ ไล่ทีละเดือนเอง (กติกาเดียวกับ sync) */
       const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : null);
@@ -612,8 +625,8 @@ export default async function handler(req, context) {
           ไม่กรอง = ใบของอีกร้านโผล่มาเป็น "กระจกมี แต่ ZORT ไม่มี" ทั้งกอง */
       const mine = await coreQuery(
         `SELECT number, status, COALESCE(pay_status,'') AS pay FROM orders
-         WHERE source = 'z1' AND order_date >= ? AND order_date <= ?`,
-        [from, to]
+         WHERE source = ? AND order_date >= ? AND order_date <= ?`,
+        [store, from, to]
       );
       const mirror = new Map(mine.map((r) => [String(r.number), r]));
 
@@ -639,6 +652,9 @@ export default async function handler(req, context) {
 
       return json({
         ok: true,
+        // ⚠️ ต้องบอกว่าตรวจร้านไหน ไม่งั้นผลของสองร้านหน้าตาเหมือนกันเป๊ะ แยกไม่ออก
+        store,
+        storeName: store === "z2" ? "ceojet (หน้าร้าน POS)" : "ศีตกาล เทรดดิ้ง (ตัวที่คิดภาษี)",
         window: { from, to, days: back },
         truncated, // ⚠️ ชนเพดานหน้า = ตัวเลขไม่ครบ ห้ามเงียบ
         counts: {
