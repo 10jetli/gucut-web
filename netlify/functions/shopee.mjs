@@ -101,7 +101,49 @@ export default async function handler(req, context) {
         out[st] = `ผิดพลาด: ${String(e?.message || e).slice(0, 80)}`;
       }
     }
-    return json({ ok: true, itemsByStatus: out });
+    /* นับต่อว่าในสินค้าที่ลงขายอยู่ มีการกรอกรหัส (SKU) ไว้กี่ตัว
+       ⚠️ ตอบคำถามที่ค้างอยู่: "ได้ 15 รหัสจาก 37 สินค้า" เป็นบั๊กหรือเป็นความจริง
+          ถ้าร้านไม่ได้กรอก SKU ไว้บน Shopee เลขน้อยก็ถูกแล้ว ไม่ใช่ของหาย */
+    let items = 0, models = 0, withSku = 0, blank = 0, errs = 0;
+    const uniq = new Set();
+    try {
+      let offset = 0;
+      const ids = [];
+      for (let p = 0; p < 40; p++) {
+        const d = await shopCall("/api/v2/product/get_item_list", {
+          offset: String(offset), page_size: "100", item_status: "NORMAL",
+        });
+        for (const it of d?.response?.item ?? []) ids.push(it.item_id);
+        if (!d?.response?.has_next_page) break;
+        offset += 100;
+      }
+      items = ids.length;
+      for (let i = 0; i < ids.length; i += 8) {
+        const got = await Promise.all(ids.slice(i, i + 8).map(async (id) => {
+          try { return await shopCall("/api/v2/product/get_model_list", { item_id: String(id) }); }
+          catch { errs += 1; return null; }
+        }));
+        for (const d of got) {
+          for (const m of d?.response?.model ?? []) {
+            models += 1;
+            const k = String(m.model_sku || "").trim();
+            if (k) { withSku += 1; uniq.add(k); } else blank += 1;
+          }
+        }
+      }
+    } catch (e) {
+      errs += 1;
+    }
+    return json({
+      ok: true,
+      itemsByStatus: out,
+      listedItems: items,
+      models,
+      modelsWithSku: withSku,
+      modelsBlankSku: blank,
+      uniqueSkus: uniq.size,
+      failedCalls: errs,
+    });
   }
 
   if (step === "pull") {
