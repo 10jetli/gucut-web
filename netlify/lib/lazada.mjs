@@ -320,8 +320,13 @@ export async function lazadaStockCompare() {
     /* หลายตัวชี้มารหัสเดียว = เทียบตัวต่อตัวไม่ได้ **แยกกองออกไป ห้ามนับเป็นไม่ตรง**
        (เทียบได้เฉพาะยอดรวม ซึ่งก็ยังไม่ตรงอยู่ดีเพราะหน่วยคนละอย่าง — ม้วน vs เส้น) */
     if ((fanIn.get(key) || 0) > 1) {
-      if (!oneToMany.has(key)) oneToMany.set(key, { core: snap.get(key), skus: [] });
+      if (!oneToMany.has(key)) oneToMany.set(key, { core: snap.get(key), n: 0, skus: [] });
       const g = oneToMany.get(key);
+      /* ⚠️ **นับแยกจากตัวอย่าง** — เดิมนับจากความยาวของ skus ซึ่งถูกตัดที่ 12 ตัวต่อรหัส
+          ⇒ oneToManySkus ได้ 327 ทั้งที่ของจริง 406 · ผลรวมทุกกองเลยไม่เท่ากับ 1,967
+          จับได้เพราะบวกทุกกองแล้วเทียบกับยอดรวม (ตัวเลขที่บวกกลับไม่ได้ = มีของหาย)
+          **การตัดตัวอย่างเป็นเรื่องของการแสดงผล ห้ามให้มันไปลดตัวนับ** */
+      g.n += 1;
       if (g.skus.length < 12) g.skus.push({ sku: r.sku, lazada: r.available });
       continue;
     }
@@ -352,6 +357,12 @@ export async function lazadaStockCompare() {
     day,
     snapshotRows: snap.size,
     lazadaSkus: rows.length,
+    /* ⚠️ **ตัวตรวจตัวเอง** — ทุกรหัสต้องตกอยู่กองใดกองหนึ่งพอดี
+        ผลรวมไม่เท่ากับ lazadaSkus เมื่อไหร่ = มีของหายระหว่างทาง (เจอมาแล้ว) */
+    bucketsAddUp:
+      sameExact + sameBase + diff.length +
+        [...oneToMany.values()].reduce((a, g) => a + g.n, 0) + missing ===
+      rows.length,
     same,
     /* ⚠️ **ตัวเลขที่เชื่อได้จริงคือกอง exact เท่านั้น** — กอง base คือของที่เดาว่าเป็นตัวเดียวกัน */
     sameExact,
@@ -364,11 +375,17 @@ export async function lazadaStockCompare() {
     /* ⚠️ กองนี้ **ไม่ได้แปลว่าสต็อกผิด** — แปลว่าเทียบตัวต่อตัวไม่ได้
         เพราะหลายรหัสบน Lazada ชี้มาที่รหัสเดียวในคลัง (เช่นโซ่ขายเป็นม้วนแล้วตัดขาย) */
     oneToManyKeys: oneToMany.size,
-    oneToManySkus: [...oneToMany.values()].reduce((a, g) => a + g.skus.length, 0),
+    oneToManySkus: [...oneToMany.values()].reduce((a, g) => a + g.n, 0),
     oneToMany: [...oneToMany.entries()]
       .sort((a, b) => b[1].skus.length - a[1].skus.length)
       .slice(0, 10)
-      .map(([k, v]) => ({ coreSku: k, coreQty: v.core, lazadaSkus: v.skus })),
+      .map(([k, v]) => ({
+        coreSku: k,
+        coreQty: v.core,
+        total: v.n, // จำนวนจริง
+        shown: v.skus.length, // ตัวอย่างที่ส่งมา — น้อยกว่า total ได้ ห้ามเอาไปนับ
+        lazadaSkus: v.skus,
+      })),
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
     diff: diff.slice(0, 50),
     missingSample,
