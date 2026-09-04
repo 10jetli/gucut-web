@@ -345,6 +345,8 @@ export async function listStock(o = {}) {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
         marketplacesNotConnected: ml.notConnected,
+        // ⚠️ ช่องทางที่ตอบมาแล้วแต่เลขยังผิด — จอต้องขึ้นเตือนคร่อมโลโก้ ห้ามปล่อยให้ดูปกติ
+        marketplacesUnreliable: ml.unreliable,
         marketplacesFailed: ml.failed,
       };
     } catch (e) {
