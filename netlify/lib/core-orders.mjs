@@ -195,12 +195,17 @@ export async function listLogistics(o = {}) {
      FROM orders WHERE ${whereNoTab}`,
     params
   );
+  /* ⚠️ **ห้าม LIMIT ตรงนี้ถ้าจะเอาไปจัดกลุ่มต่อ** — ตัด 20 ชื่อแรกแล้วค่อยรวม
+      = ชื่อสะกดแปลก ๆ ที่มีไม่กี่ใบหลุดออกไปเงียบ ๆ แล้วยอดรวมของเจ้านั้นขาดหายโดยไม่มีใครรู้
+      ชื่อขนส่งมีไม่กี่สิบแบบ ดึงมาทั้งหมดไม่หนัก */
   const byChannel = await coreQuery(
     `SELECT COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') AS channel, COUNT(*) AS c
      FROM orders WHERE ${whereNoTab}
-     GROUP BY COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') ORDER BY c DESC LIMIT 20`,
+     GROUP BY COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') ORDER BY c DESC`,
     params
   );
+  const { groupCarriers } = await import("./carriers.mjs");
+  const carrierGroups = groupCarriers(byChannel);
   const rows = await coreQuery(
     `SELECT o.id AS id, o.number AS number, o.tracking_no AS trackingNo,
             COALESCE(NULLIF(o.ship_date,''), o.order_date) AS date,
@@ -229,7 +234,11 @@ export async function listLogistics(o = {}) {
     only: usedOnly,
     applied: { only: usedOnly, limit, offset, q: q || null },
     ...(known ? {} : { ignored: { only: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — แสดงทั้งหมดแทน` }),
-    byChannel,
+    byChannel, // ชื่อดิบ — ห้ามถอด กลุ่มเป็นของสำหรับอ่าน ไม่ใช่ของแทนความจริง
+    carrierGroups: carrierGroups.groups,
+    // ⚠️ ตาข่าย: ขนส่งเจ้าใหม่ที่ยังไม่รู้จักจะโผล่ตรงนี้ ไม่ถูกยัดเข้ากลุ่มอื่นมั่ว ๆ
+    carrierUngrouped: carrierGroups.ungrouped,
+    carrierUngroupedNames: carrierGroups.ungroupedNames,
     // ⚠️ **จอต้องบอกขอบเขตให้ชัด** ตัวเลขนี้ยังน้อยกว่าที่ ZORT แสดง (1,644 ใบ)
     //    เพราะเราเพิ่งเริ่มเก็บเลขพัสดุ ใบเก่าที่หัวใบไม่เปลี่ยนแล้วจึงยังไม่มีค่า
     //    ⇒ เขียนว่า "เท่าที่เก็บได้" ห้ามเขียนว่าเป็นทั้งหมด
