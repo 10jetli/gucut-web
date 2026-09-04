@@ -60,10 +60,10 @@ async function lazadaSkus() {
 /** map รหัส → รายชื่อช่องทางที่กำลังลงขาย + บอกว่ารอบนี้ถามใครได้บ้าง
  *  ⚠️ แพลตฟอร์มไหนล่ม = **ไม่นับว่าเช็คแล้ว** ห้ามตีเป็น "ไม่ได้ลงขาย"
  *     ยอมให้จอบอกว่า "เช็คไม่ได้" ดีกว่าบอกผิดว่าไม่มีของลงขาย */
-export async function marketplaceListings() {
+export async function marketplaceListings({ fresh = false } = {}) {
   const store = getStore("gucut-coupon");
   const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
-  if (cached?.at && Date.now() - cached.at < TTL_MS) return { ...cached, cached: true };
+  if (!fresh && cached?.at && Date.now() - cached.at < TTL_MS) return { ...cached, cached: true };
 
   const checked = [];
   const failed = {};

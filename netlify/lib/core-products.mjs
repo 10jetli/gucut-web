@@ -325,7 +325,7 @@ export async function listBundles(o = {}) {
   if (o.marketplaces && rows.length) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
-      const ml = await marketplaceListings();
+      const ml = await marketplaceListings({ fresh: Boolean(o.fresh) });
       const byKey = new Map();
       const put = (k, tags) => {
         if (!k) return;

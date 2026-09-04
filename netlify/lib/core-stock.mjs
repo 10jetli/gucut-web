@@ -330,7 +330,7 @@ export async function listStock(o = {}) {
   if (o.marketplaces) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
-      const ml = await marketplaceListings();
+      const ml = await marketplaceListings({ fresh: Boolean(o.fresh) });
       /* ⚠️ **รหัสบนแพลตฟอร์มเป็นระดับตัวเลือก แต่คลังเราเก็บรหัสฐาน**
           Shopee ขาย `00369-54T` `00369-25T` … ส่วนคลังมีแค่ `00369`
           จับคู่ตรง ๆ = ไม่ขึ้นโลโก้สักแถวเดียว (เจอจริงตอนยิงรอบแรก 3 ก.ย. 2569
