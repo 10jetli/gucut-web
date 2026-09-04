@@ -177,7 +177,23 @@ export async function syncOrders(days = 3, range = {}) {
         const list = Array.isArray(o.list) ? o.list : [];
         list.forEach((it, idx) => {
           const qty = num(it.number ?? it.quantity);
-          const amount = num(it.totalprice ?? num(it.pricepernumber) * qty);
+          /* ⚠️ **`??` ตกหลุม 0** — ZORT ส่ง `totalprice: 0` มาได้ทั้งที่ `pricepernumber` ไม่เป็น 0
+              `??` ถอยกลับเฉพาะตอน null/undefined **ไม่ถอยตอนเป็น 0**
+              ⇒ เราเก็บ 0 ทั้งที่ของจริงคือ 1,400 × 1
+
+              เจอของจริง 5 ก.ย. 2569 — ใบ GCMTA4XJF47TK (เว็บเรา · 26 ส.ค.)
+                ZORT: sku 01387 · number 1 · **pricepernumber 1400 · totalprice 0**
+                กระจกเก็บ: amount 0  ⇒ รายงานยอดขายรายสินค้าขาดไป
+                และถ้าส่งเข้า PEAK จะได้ใบกำกับที่มีสินค้าราคา 0 ซึ่งออกไม่ได้
+              ทั้งปีมี 3 ใบแบบนี้ (26–28 ส.ค.) · อีก 3 ใบของเว็บในช่วงเดียวกันปกติ
+              ⇒ ไม่ใช่ทุกใบ แปลว่า ZORT ส่ง totalprice ว่างมาเป็นบางใบ ไม่ใช่ทุกใบ
+
+              ⚠️ **ห้ามแทน 0 ทุกกรณี** — ของแถม/ของฟรีมี totalprice 0 จริงและถูกต้อง
+                 แทนเฉพาะตอน `pricepernumber > 0` เท่านั้น (มีราคาต่อชิ้นแต่ยอดรวมหาย)
+              (คลาสเดียวกับกฎ "0 ไม่เท่ากับ null" ที่เขียนไว้ในพจนานุกรมฟิลด์) */
+          const per = num(it.pricepernumber);
+          const totalRaw = num(it.totalprice);
+          const amount = totalRaw > 0 || per <= 0 ? totalRaw : per * qty;
           rows.push(
             `(${esc(`${st.tag}/${o.number}`)},${idx},${esc(it.sku)},` +
             `${esc(String(it.name ?? it.productname ?? "").slice(0, 200))},${qty},${amount})`
