@@ -5,6 +5,7 @@
 //   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
 //   GET /api/core?pending=1        งานค้างจริง vs ใบผี (ช่องทางที่ปิดไปแล้ว) · store=z1|z2
 //   GET /api/core?monthly=1&months=6  ยอดขายรายเดือน (คิดที่ฐาน · จอไม่ต้องดึงแถวมานับเอง)
+//   GET /api/core?daily=1&days=90      ยอดขายรายวัน · ?bycustomer=1  ยอดรายลูกค้า
 //   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
@@ -751,6 +752,99 @@ export default async function handler(req, context) {
        ⚠️ **นี่คือคลาสเดียวกับกฎที่ตกลงกันไว้แล้ว** — ค่าที่ต้องเห็นข้อมูลทั้งชุด
           ต้องคิดที่ท่อ ห้ามให้จอดึงแถวมานับเอง (computed-now-goes-stale ด้านกลับ)
           จอที่ดึงมานับเองไม่ได้แค่ช้า มันยัง **เงียบ ๆ ตกหล่น** เมื่อชนเพดานหน้าด้วย */
+    /* ── สรุปรายวัน / รายลูกค้า ── (5 ก.ย. 2569)
+       ⚠️ ทำเพราะฝั่งจอไล่ตามเบาะแส "จอไหนมี while คู่กับ offset ให้สงสัยไว้ก่อน"
+          แล้วเจออีก 2 จอที่ดึงแถวมานับเองในเบราว์เซอร์ (รายงานลูกค้า · ยอดขาย)
+          สองจอนี้โหลดจบ **แต่จะเริ่มตกหล่นเงียบ ๆ ตอนข้อมูลโตเกินเพดานหน้า**
+          ⇒ แก้ตอนที่ยังไม่พัง ดีกว่ารอให้พังแล้วค่อยรู้
+
+       ⚠️ ทั้งสองตัวใช้ตัวกรองชุดเดียวกับจอรายการขาย (ตัดใบยกเลิก) และบอกขอบเขตร้านกลับไป
+          ไม่งั้นตัวเลขคนละจอไม่ตรงกัน แล้วจะเถียงกันไม่จบว่าใครถูก */
+    if (url.searchParams.get("daily") || url.searchParams.get("bycustomer")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
+        ? url.searchParams.get("store")
+        : null;
+      const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const from = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
+      const CANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+      const where = [`order_date >= ?`, `order_date <= ?`, CANCEL];
+      const params = [from, today];
+      if (store) {
+        where.push("source = ?");
+        params.push(store);
+      }
+      const w = where.join(" AND ");
+      const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const scope = {
+        store: store || "ทั้ง 2 ร้าน",
+        from,
+        to: today,
+        days,
+        excludes: "ตัดใบยกเลิกออกแล้ว (เงื่อนไขเดียวกับจอรายการขาย)",
+      };
+
+      if (url.searchParams.get("daily")) {
+        const rows = await coreQuery(
+          `SELECT order_date AS day, COUNT(*) AS orders, SUM(amount) AS sales
+           FROM orders WHERE ${w} GROUP BY 1 ORDER BY 1 DESC`,
+          params
+        );
+        return json({
+          ok: true,
+          ...scope,
+          days: rows.map((r) => ({ day: r.day, orders: num2(r.orders), sales: num2(r.sales) })),
+          totalOrders: rows.reduce((a, r) => a + num2(r.orders), 0),
+          totalSales: rows.reduce((a, r) => a + num2(r.sales), 0),
+          /* ⚠️ **วันที่ไม่มีออเดอร์จะไม่มีแถว** — กราฟต้องเติมวันว่างเอง
+              ไม่งั้นเส้นจะลากข้ามวันที่ขายไม่ได้ แล้วดูเหมือนขายได้ทุกวัน */
+          note: "วันที่ไม่มีออเดอร์จะไม่มีแถวคืนมา ⇒ ฝั่งกราฟต้องเติมวันว่างเป็น 0 เอง",
+        });
+      }
+
+      /* รายลูกค้า — ⚠️ **ชื่อว่างต้องแยกออกมา ห้ามยุบรวมเป็นคนเดียว**
+          ออเดอร์ POS ส่วนใหญ่ไม่มีชื่อลูกค้า ถ้าปล่อยให้ GROUP BY รวมกันหมด
+          จะได้ "ลูกค้าอันดับ 1" ที่ซื้อ 800 ใบ ซึ่งไม่ใช่คน แต่เป็นกองของคนที่ไม่ได้ระบุชื่อ */
+      const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "100", 10) || 100));
+      const rows = await coreQuery(
+        `SELECT COALESCE(NULLIF(TRIM(customer),''),'') AS name,
+                COUNT(*) AS orders, SUM(amount) AS sales, MAX(order_date) AS lastDay
+         FROM orders WHERE ${w} GROUP BY 1 ORDER BY sales DESC LIMIT ${limit + 1}`,
+        params
+      );
+      const named = rows.filter((r) => String(r.name || "") !== "").slice(0, limit);
+      const blank = rows.find((r) => String(r.name || "") === "");
+      const [tot] = await coreQuery(
+        `SELECT COUNT(*) AS orders, SUM(amount) AS sales,
+                COUNT(DISTINCT COALESCE(NULLIF(TRIM(customer),''),'(ไม่ระบุ)')) AS names
+         FROM orders WHERE ${w}`,
+        params
+      );
+      return json({
+        ok: true,
+        ...scope,
+        customers: named.map((r) => ({
+          name: r.name,
+          orders: num2(r.orders),
+          sales: num2(r.sales),
+          lastDay: r.lastDay,
+        })),
+        // ⚠️ กองไม่ระบุชื่อแยกไว้ต่างหาก **ห้ามเอาไปวางปนในตารางอันดับ**
+        unnamed: blank
+          ? { orders: num2(blank.orders), sales: num2(blank.sales), lastDay: blank.lastDay }
+          : null,
+        totalOrders: num2(tot?.orders),
+        totalSales: num2(tot?.sales),
+        distinctNames: num2(tot?.names),
+        truncated: named.length >= limit,
+        note:
+          "customers = เฉพาะใบที่มีชื่อลูกค้า เรียงตามยอด · " +
+          "unnamed = ใบที่ไม่ได้ระบุชื่อ (ส่วนใหญ่คือ POS) **แยกไว้ ห้ามนับเป็นลูกค้าคนเดียว** · " +
+          "truncated = ยังมีชื่ออื่นอีกนอกเหนือจาก limit",
+      });
+    }
+
     if (url.searchParams.get("monthly")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const store = ["z1", "z2"].includes(url.searchParams.get("store"))
