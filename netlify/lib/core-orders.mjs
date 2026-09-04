@@ -9,6 +9,7 @@
 // ⚠️ ค่าจากผู้ใช้ผูกด้วย ? เสมอ (ไม่ใช่ esc()) — ตัวเลขน้อย ไม่ชนเพดาน ~100 params ของ D1
 //    ต่างจากตัว sync ที่ยัดทีละร้อยแถวจนต้องฝังค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { readStatus, groupStatuses } from "./order-status.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const CANCEL_SQL =
@@ -165,12 +166,25 @@ export async function listOrders(o = {}) {
     statusUnreliable: STATUS_UNRELIABLE,
     // ⚠️ ส่งค่าดิบมาคู่กันเสมอ (integrationStatus) + เหตุผลตอนว่าง (blankReason)
     //    จอจะได้โชว์ของจริงตอนไล่ปัญหาได้ ไม่ต้องเดาอะไรเลย
-    rows: rows.map((r) => ({
-      ...r,
-      ...(String(r.integrationStatus ?? "") === ""
-        ? { blankReason: chanMap.get(String(r.channel || "(ไม่ระบุ)")) || "none_expected" }
-        : {}),
-    })),
+    /* ⚠️ ส่ง **ค่าที่แปลแล้ว + ค่าดิบ** คู่กันเสมอ (ฝั่งจอขอ 4 ก.ย. 2569)
+        จอโชว์ shipStatus ให้คนอ่าน · เก็บ integrationStatus ไว้ตอนไล่ปัญหา
+        ค่าที่ตัวแปลไม่รู้จักจะได้ group "unknown" ⇒ **จอต้องโชว์ถังนี้ ห้ามซ่อน** */
+    rows: rows.map((r) => {
+      const s = readStatus(r.integrationStatus);
+      return {
+        ...r,
+        shipStatus: s.th,
+        shipStatusGroup: s.group,
+        shipStatusKnown: s.known,
+        ...(s.platform ? { shipStatusFrom: s.platform } : {}),
+        ...(s.unverified ? { shipStatusUnverified: true } : {}),
+        ...(String(r.integrationStatus ?? "") === ""
+          ? { blankReason: chanMap.get(String(r.channel || "(ไม่ระบุ)")) || "none_expected" }
+          : {}),
+      };
+    }),
+    // สรุปเป็นกองของ "ช่วงที่กรองอยู่" — จอเอาไปทำการ์ด/แท็บได้เลย ไม่ต้องรู้จักรหัสดิบ
+    shipStatusGroups: groupStatuses(rows),
   };
 }
 
