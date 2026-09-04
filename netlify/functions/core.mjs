@@ -555,9 +555,16 @@ export default async function handler(req, context) {
         apisecret: process.env.ZORT_APISECRET,
       };
       if (!st.storename) return json({ error: "ยังไม่ได้ตั้งรหัส ZORT" }, 503);
+      /* รับ from/to ตรง ๆ ด้วย — ต้องตรวจช่วงเก่า ๆ ได้ ไม่ใช่แค่ "ย้อน N วันจากวันนี้"
+         ⚠️ ขอทีเดียวยาว ๆ จะเกิน 26 วินาที ⇒ ไล่ทีละเดือนเอง (กติกาเดียวกับ sync) */
+      const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : null);
       const back = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days") ?? "14", 10) || 14));
-      const from = new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
-      const to = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const from =
+        ymd(url.searchParams.get("from")) ||
+        new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
+      const to =
+        ymd(url.searchParams.get("to")) ||
+        new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 
       const zort = new Map();
       let truncated = false;
