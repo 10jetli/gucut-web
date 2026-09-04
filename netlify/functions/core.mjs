@@ -641,12 +641,22 @@ export default async function handler(req, context) {
 
     if (url.searchParams.get("pendingsplit")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
+      /* ⚠️ **ต้องแยกตามร้านด้วย** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
+          แต่การ์ดหน้าแรก ZORT ที่เอามาเทียบ เป็นของร้านที่ล็อกอินอยู่ร้านเดียว
+          รอบแรกผมนับรวมสองร้านแล้วเอาไปเทียบกับการ์ดร้านเดียว = เทียบผิดขอบเขต
+          (กับดักเดียวกับ 1,926 vs 319 และ 187 vs 17 — ครั้งที่ 4 ของวัน) */
       const rows = await coreQuery(
-        `SELECT COALESCE(NULLIF(pay_status,''),'(ว่าง)') AS pay, COUNT(*) AS c
+        `SELECT source, COALESCE(NULLIF(pay_status,''),'(ว่าง)') AS pay, COUNT(*) AS c
          FROM orders
          WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
            AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
-         GROUP BY 1 ORDER BY c DESC`
+         GROUP BY source, 2 ORDER BY c DESC`
+      );
+      const bySource = await coreQuery(
+        `SELECT source, COUNT(*) AS c FROM orders
+         WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
+           AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
+         GROUP BY source ORDER BY c DESC`
       );
       const [tot] = await coreQuery(
         `SELECT COUNT(*) AS c FROM orders
@@ -658,6 +668,7 @@ export default async function handler(req, context) {
         ok: true,
         pendingTotal: Number(tot?.c || 0),
         byPayStatus: rows,
+        bySource, // ⚠️ การ์ด ZORT เป็นของร้านเดียว ⇒ เทียบกับแถว z1 เท่านั้น
         mirrorCovers: span,
         compareWith: { "การ์ด ZORT ค้างชำระเงิน": 24, "การ์ด ZORT ค้างโอนสินค้า": 132 },
         note: "นับจากกระจกใน D1 ทั้งหมด ไม่จำกัดช่วงวัน · ยังเป็นสมมติฐาน ต้องเทียบก่อนใช้",
