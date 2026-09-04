@@ -1640,6 +1640,20 @@ export default async function handler(req, context) {
         saleschannel: hit.saleschannel ?? null,
         // ⚠️ ZORT มีสถานะ "การจัดส่งฝั่งมาร์เก็ตเพลส" แยกอีกตัว — คนละเรื่องกับ integrationStatus
         marketplaceshippingstatus: hit.marketplaceshippingstatus ?? null,
+        /* ช่องส่วนลด/ค่าส่งระดับใบ — ไว้หาว่าส่วนต่างที่เหลือมาจากช่องไหน
+           ⚠️ รายชื่อตรงตัวเท่านั้น ห้าม regex (บทเรียน 4 ก.ย. ที่ /ship/ ทำข้อมูลลูกค้าหลุด) */
+        billFields: {
+          discount: hit.discount ?? null,
+          discountamount: hit.discountamount ?? null,
+          buyerDiscountAmount: hit.buyerDiscountAmount ?? null,
+          platformdiscount: hit.platformdiscount ?? null,
+          sellerdiscount: hit.sellerdiscount ?? null,
+          voucheramount: hit.voucheramount ?? null,
+          shippingamount: hit.shippingamount ?? null,
+          shippingVoucher: hit.shippingVoucher ?? null,
+          roundingAmount: hit.roundingAmount ?? null,
+          amount: hit.amount ?? null,
+        },
         /* ── บรรทัดสินค้าดิบจาก ZORT ── (5 ก.ย. 2569)
            ⚠️ **ต้องมีเพื่อแยกสองสมมติฐาน** ว่าบรรทัดราคา 0 เกิดที่ต้นทางหรือที่ตัวอ่านของเรา
               ถ้า pricepernumber ที่ ZORT เป็น 0 → ราคาถูกทับก่อนถึง ZORT
