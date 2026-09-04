@@ -4,6 +4,7 @@
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
 //   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
 //   GET /api/core?pending=1        งานค้างจริง vs ใบผี (ช่องทางที่ปิดไปแล้ว) · store=z1|z2
+//   GET /api/core?monthly=1&months=6  ยอดขายรายเดือน (คิดที่ฐาน · จอไม่ต้องดึงแถวมานับเอง)
 //   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
@@ -739,6 +740,53 @@ export default async function handler(req, context) {
     if (url.searchParams.get("tokens")) {
       const { refreshAllTokens } = await import("./token-refresh.mjs");
       return json({ ok: true, tokens: await refreshAllTokens() });
+    }
+
+    /* ── ยอดขายรายเดือน ── (5 ก.ย. 2569)
+       ⚠️ **สร้างเพราะจอการเงินโหลดไม่จบสักที** — ยิงของจริงแล้วพบว่ามันดึงออเดอร์
+          **ทั้ง 180 วันมาทีละ 200 ใบ เรียงกันไปเรื่อย ๆ** (~3,300 ใบ = 17 รอบ)
+          เพื่อเอามาบวกเป็น "ยอดขายรายเดือน" ซึ่งเป็นงานที่ SQL ทำได้ในคำสั่งเดียว
+          ผลคือหน้าค้างที่ "กำลังโหลด..." เกิน 30 วินาที และกิน D1 ฟรี ๆ 17 เท่า
+
+       ⚠️ **นี่คือคลาสเดียวกับกฎที่ตกลงกันไว้แล้ว** — ค่าที่ต้องเห็นข้อมูลทั้งชุด
+          ต้องคิดที่ท่อ ห้ามให้จอดึงแถวมานับเอง (computed-now-goes-stale ด้านกลับ)
+          จอที่ดึงมานับเองไม่ได้แค่ช้า มันยัง **เงียบ ๆ ตกหล่น** เมื่อชนเพดานหน้าด้วย */
+    if (url.searchParams.get("monthly")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
+        ? url.searchParams.get("store")
+        : null;
+      const months = Math.max(1, Math.min(36, parseInt(url.searchParams.get("months") ?? "6", 10) || 6));
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const from = new Date(Date.now() + 7 * 3600e3 - months * 31 * 864e5)
+        .toISOString()
+        .slice(0, 10);
+      // ⚠️ ต้องตัดใบยกเลิกออกให้ตรงกับจออื่น ไม่งั้นยอดรายเดือนไม่ตรงกับหน้ารายการขาย
+      const CANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+      const where = [`order_date >= ?`, `order_date <= ?`, CANCEL];
+      const params = [from, today];
+      if (store) {
+        where.push("source = ?");
+        params.push(store);
+      }
+      const rows = await coreQuery(
+        `SELECT substr(order_date,1,7) AS ym, COUNT(*) AS orders, SUM(amount) AS sales
+         FROM orders WHERE ${where.join(" AND ")} GROUP BY 1 ORDER BY 1 DESC`,
+        params
+      );
+      const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      return json({
+        ok: true,
+        store: store || "ทั้ง 2 ร้าน",
+        from,
+        to: today,
+        months: rows.map((r) => ({ ym: r.ym, orders: num2(r.orders), sales: num2(r.sales) })),
+        totalOrders: rows.reduce((a, r) => a + num2(r.orders), 0),
+        totalSales: rows.reduce((a, r) => a + num2(r.sales), 0),
+        note:
+          "นับที่ฐานทั้งช่วง ไม่ตัดหน้า ⇒ ไม่มีทางตกหล่น · ตัดใบยกเลิกออกแล้ว " +
+          "ให้ตรงกับจอรายการขาย · ไม่ระบุ store = รวมสองร้าน",
+      });
     }
 
     if (url.searchParams.get("pending")) {
