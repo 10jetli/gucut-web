@@ -328,7 +328,12 @@ export default async function handler(req, context) {
     // ทะเบียนการเชื่อมต่อ — ยิงของจริงทุกเจ้า ไม่มีค่าเขียนตายตัว
     if (url.searchParams.get("connections")) {
       const { connectionsStatus } = await import("../lib/connections.mjs");
-      return json({ ok: true, ...(await connectionsStatus()) });
+      /* ?budget=N (50–30000 มิลลิวินาที) มีไว้บังคับให้ทางเดิน timeout ทำงานเพื่อทดสอบ
+         ⚠️ ไม่ใส่ = ใช้ค่าตั้งต้น 18 วิ · ทางเดินที่ไม่เคยถูกเรียกใช้ ไม่ต่างจากไม่มี */
+      return json({
+        ok: true,
+        ...(await connectionsStatus({ budget: url.searchParams.get("budget") })),
+      });
     }
     /* ลูกค้า/ผู้ติดต่อ — เจ้าของร้านสั่งดึง 3 ก.ย. 2569
        🔒 ข้อมูลส่วนบุคคลจริง 28,250 ราย · ผ่าน adminGate เหมือนทุกเส้นทางในไฟล์นี้

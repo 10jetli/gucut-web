@@ -51,7 +51,18 @@ function tokenExpiry(t) {
       คำตอบบางส่วนที่บอกว่าส่วนไหนไม่ครบ ดีกว่าไม่มีคำตอบเลย */
 const BUDGET = 18000;
 
-async function timed(fn, label = "") {
+/* ⚠️ **ทางเดินที่ไม่เคยถูกเรียกใช้ ไม่ต่างจากทางเดินที่ไม่มี** — และมันจะดูปกติทุกประการ
+    จนถึงวันที่ต้องใช้จริง ซึ่งเป็นวันที่แย่ที่สุดที่จะมาพบว่ามันพัง
+    ตอนยิงทดสอบจริง 5 ก.ย. 2569 แคชอุ่นหมด ทุกช่องตอบใน 0.3–1.2 วิ
+    ⇒ **ทางเดิน timeout ไม่เคยถูกวิ่งเลยสักครั้ง** พิสูจน์ไม่ได้ว่ามันทำงาน
+    ⇒ เปิดให้ย่องบเวลาลงได้ตอนเรียก (?budget=50) เพื่อบังคับให้ทางนั้นทำงาน
+       ค่าตั้งต้นไม่เปลี่ยน · จำกัดช่วง 50–30000 กันตั้งค่าเพี้ยนจนหน้าใช้ไม่ได้ */
+export function budgetFrom(raw) {
+  const n = parseInt(String(raw ?? ""), 10);
+  return Number.isFinite(n) && n >= 50 && n <= 30000 ? n : BUDGET;
+}
+
+async function timed(fn, label = "", budget = BUDGET) {
   const t0 = Date.now();
   try {
     /* ⚠️ ตัวตรวจแต่ละตัวมี timeout ของตัวเองอยู่แล้ว (T) **แต่ไม่ใช่ทุกตัว**
@@ -60,7 +71,7 @@ async function timed(fn, label = "") {
     const r = await Promise.race([
       fn(),
       new Promise((_, rej) =>
-        setTimeout(() => rej(new Error("__TIMEOUT__")), BUDGET)
+        setTimeout(() => rej(new Error("__TIMEOUT__")), budget)
       ),
     ]);
     return { ...r, ms: Date.now() - t0 };
@@ -76,7 +87,9 @@ async function timed(fn, label = "") {
       return {
         connected: null,
         timedOut: true,
-        detail: `ตรวจไม่ทันใน ${Math.round(BUDGET / 1000)} วินาที — ปลายทางช้า ไม่ได้แปลว่าไม่ได้เชื่อม`,
+        detail:
+          `ตรวจไม่ทันใน ${budget >= 1000 ? Math.round(budget / 1000) + " วินาที" : budget + " มิลลิวินาที"}` +
+          ` — ปลายทางช้า ไม่ได้แปลว่าไม่ได้เชื่อม`,
         ms,
       };
     }
@@ -155,14 +168,15 @@ async function line() {
   return { connected: true, detail: `${d.displayName || "LINE OA"} (${d.basicId || "@gucut1"})` };
 }
 
-export async function connectionsStatus() {
+export async function connectionsStatus(opts = {}) {
+  const budget = budgetFrom(opts.budget);
   const [z1, z2, sp, tt, lz, ln] = await Promise.all([
-    timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"), "ZORT z1"),
-    timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2"), "ZORT z2"),
-    timed(shopee, "Shopee"),
-    timed(tiktok, "TikTok"),
-    timed(lazada, "Lazada"),
-    timed(line, "LINE"),
+    timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"), "ZORT z1", budget),
+    timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2"), "ZORT z2", budget),
+    timed(shopee, "Shopee", budget),
+    timed(tiktok, "TikTok", budget),
+    timed(lazada, "Lazada", budget),
+    timed(line, "LINE", budget),
   ]);
   const at = new Date().toISOString();
   const stamp = (o) => ({ ...o, lastChecked: at });
@@ -215,7 +229,7 @@ export async function connectionsStatus() {
     unchecked: all.filter((x) => x.connected === null && !x.timedOut).length,
     // ⚠️ นับแยกจาก unchecked — "ไม่ทัน" คือปัญหาที่ต้องดู ส่วน "ยังไม่มีตัวตรวจ" คืองานที่ยังไม่ได้ทำ
     timedOut: all.filter((x) => x.timedOut).length,
-    budgetMs: BUDGET,
+    budgetMs: budget,
     retired: all.filter((x) => x.retired).length,
     // ⚠️ ข้อความนี้ต้องขึ้นบนจอ — เลขนี้คือ "เท่าที่ตรวจได้" ไม่ใช่ความจริงทั้งหมด
     note:
