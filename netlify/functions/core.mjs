@@ -84,8 +84,44 @@ export default async function handler(req, context) {
   }
 
   const url = new URL(req.url);
-  const json = (obj, status = 200) =>
-    new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
+  /* ⚠️ **ถ้าเราตัดค่าที่ผู้เรียกขอมา ต้องบอกทุกครั้ง — ที่เดียว ใช้ได้ทุก endpoint**
+      (ฝั่งจอชี้ 5 ก.ย. 2569: ขอ list=topproducts&limit=200 ได้กลับมา 100
+       มี applied.limit บอกอยู่ แต่จอไม่ได้อ่าน ⇒ ถ้าใครนึกว่าได้ 200 ก็เข้าใจผิดเงียบ ๆ)
+
+      ทำที่ตัวห่อคำตอบตัวเดียว แทนการไล่เติมทีละ endpoint (มี 16 จุด)
+      — ไล่เติมทีละจุดคือของที่ตกหล่นแน่นอนเมื่อมี endpoint ใหม่
+
+      ⚠️ **ตั้งชื่อว่า limitClamped ไม่ใช่ truncated โดยตั้งใจ** — สองอย่างนี้คนละคำถาม
+         `limitClamped` = เราให้น้อยกว่าที่คุณขอ (เพราะชนเพดานของ endpoint)
+         `truncated`    = ยังมีข้อมูลเหลืออีกนอกเหนือจากที่ส่งไป
+         ขอ 200 · เพดาน 100 · มีของจริง 30 ⇒ clamped จริง แต่ truncated ไม่จริง
+         ยุบสองอันเป็นชื่อเดียวเมื่อไหร่ จะมีคนอ่านผิดสักวัน */
+  const askedLimit = (() => {
+    const raw = url.searchParams.get("limit");
+    const n = parseInt(raw ?? "", 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  const json = (obj, status = 200) => {
+    let out = obj;
+    if (askedLimit && obj && typeof obj === "object" && !Array.isArray(obj)) {
+      const applied = Number(obj.limit ?? obj.applied?.limit);
+      if (Number.isFinite(applied) && applied > 0) {
+        out = {
+          ...obj,
+          limitRequested: askedLimit,
+          limitApplied: applied,
+          limitClamped: applied < askedLimit,
+          ...(applied < askedLimit
+            ? { limitNote: `ขอ ${askedLimit} แต่ endpoint นี้ให้ได้สูงสุด ${applied}` }
+            : {}),
+        };
+      }
+    }
+    return new Response(JSON.stringify(out), {
+      status,
+      headers: { "content-type": "application/json" },
+    });
+  };
 
   try {
     if (!coreReady()) {
