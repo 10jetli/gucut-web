@@ -11,7 +11,10 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
 
-const CACHE_SKUS = "shopee-item-skus"; // จำรหัสตัวเลือกรายสินค้า ไล่เก็บทีละรอบจนครบ
+/* ⚠️ **แก้ตรรกะที่เขียนลงแคชเมื่อไหร่ ต้องเปลี่ยนชื่อคีย์ด้วยทุกครั้ง**
+    ของเสียที่ถูกจำไว้แล้วจะไม่ถูกถามใหม่ ⇒ แก้โค้ดแล้วผลยังผิดเหมือนเดิม
+    แล้วเราจะไปไล่หาบั๊กที่ไม่มีอยู่ (v2 = รอบที่ '?? []' จำค่าว่างถาวร) */
+const CACHE_SKUS = "shopee-item-skus-v2"; // จำรหัสตัวเลือกรายสินค้า ไล่เก็บทีละรอบจนครบ
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** ยิงหลายงานพร้อมกันทีละก้อน — Netlify ให้ฟังก์ชันรอผลได้ 26 วินาที */
