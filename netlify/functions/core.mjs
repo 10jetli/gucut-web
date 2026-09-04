@@ -728,6 +728,9 @@ export default async function handler(req, context) {
       const noShipDate = `COALESCE(ship_date,'') = ''`;
       const notPaid = `COALESCE(pay_status,'') NOT LIKE '%Paid%'`;
 
+      /* ⚠️ **การ์ดอาจไม่ได้นับทั้งประวัติ** — ZORT โชว์ "งานค้างที่ต้องทำ" ซึ่งมักตัดของเก่าทิ้ง
+          ⇒ นับซ้ำหลายช่วงเวลาด้วย ถ้าเลขไปตรงที่ช่วงใดช่วงหนึ่ง = การ์ดมีขอบเขตเวลา
+             ไม่ใช่นับทั้งตาราง (numbers-need-scope — แหล่งของเลขไม่ใช่ขอบเขตของเลข) */
       const [r] = await coreQuery(
         `SELECT
            COUNT(*) AS ordersAll,
@@ -752,11 +755,41 @@ export default async function handler(req, context) {
         [store]
       );
 
+      /* นับ "ยังไม่จบ" แยกตามอายุใบ — การ์ดตัดของเก่าทิ้งหรือเปล่า */
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const since = (n) =>
+        new Date(Date.now() + 7 * 3600e3 - n * 864e5).toISOString().slice(0, 10);
+      const windows = {};
+      for (const days of [30, 60, 90, 180, 365]) {
+        const [w] = await coreQuery(
+          `SELECT
+             SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} THEN 1 ELSE 0 END) AS notDone,
+             SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND ${notPaid} THEN 1 ELSE 0 END) AS unpaid,
+             SUM(CASE WHEN ${NOTDONE} AND ${NOTCANCEL} AND NOT (${notPaid}) THEN 1 ELSE 0 END) AS paid
+           FROM orders WHERE source = ? AND order_date >= ? AND order_date <= ?`,
+          [store, since(days), today]
+        );
+        windows[`ย้อน ${days} วัน`] = w;
+      }
+
+      // แยกตามช่องทางด้วย — การ์ดอาจนับเฉพาะบางช่องทาง (เช่น ไม่นับ POS)
+      const byChannel = await coreQuery(
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+                SUM(CASE WHEN ${notPaid} THEN 1 ELSE 0 END) AS unpaid,
+                SUM(CASE WHEN NOT (${notPaid}) THEN 1 ELSE 0 END) AS paid,
+                COUNT(*) AS c
+         FROM orders WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
+         GROUP BY 1 ORDER BY c DESC`,
+        [store]
+      );
+
       return json({
         ok: true,
         store,
-        target: { คงค้างชำระเงิน: 24, ค้างโอนสินค้า: 132, รวม: 156 },
+        target: { ค้างชำระเงิน: 24, ค้างโอนสินค้า: 132, รวม: 156 },
         candidates: r,
+        windows,
+        byChannel,
         byStatus,
         note:
           "เทียบเลขในนี้กับ target · ตรงกับคู่ไหน = นิยามนั้นคือของการ์ด · " +
