@@ -34,11 +34,28 @@ function tokenExpiry(t) {
   /* ⚠️ ชื่อฟิลด์ตกลงกับฝั่งจอไว้ว่า **tokenExpiresAtUtc** (ไม่ใช่ expiresAtUtc เฉย ๆ)
       เพราะในคำตอบเดียวกันมีเวลาอย่างอื่นอยู่ด้วย ชื่อกว้างเกินจะสับสนกันเอง
       และลงท้าย Utc เสมอ กันเดาหน่วยผิด (กติกาเดียวกับ freshness) */
-  if (!at) return { tokenExpiresAtUtc: null, tokenHoursLeft: null };
+  if (!at)
+    return {
+      tokenExpiresAtUtc: null,
+      tokenHoursLeft: null,
+      tokenMinutesLeft: null,
+      tokenExpired: null, // ไม่รู้ ≠ ไม่หมดอายุ
+    };
+  const leftMs = at - Date.now();
+  /* ⚠️ **`tokenHoursLeft: 0` แปลว่า "เหลือไม่ถึงชั่วโมง" ไม่ใช่ "หมดอายุแล้ว"**
+      เจอของจริง 5 ก.ย. 2569 ตี 1:26 — จอขึ้นว่า "token หมดอายุแล้ว · ถึง 05/09 01:43 น."
+      **ประโยคเดียวขัดกันเอง** (บอกว่าหมดแล้ว แต่บอกเวลาหมดเป็นอนาคต 17 นาทีข้างหน้า)
+      เพราะ Math.floor ทำให้ 0.28 ชม. กลายเป็น 0 แล้วฝั่งจออ่าน <= 0 ว่าหมดอายุ
+      ⇒ **อย่าให้ปลายทางต้องเดาจากเลขที่ปัดแล้ว** — ส่งคำตอบตรง ๆ ไปเลย
+         (คลาสเดียวกับ 0 vs null ที่เจอมาแล้ว แค่ขยับมาอยู่ที่ "ปัดเศษทำให้ความหมายหาย") */
   return {
     tokenExpiresAtUtc: new Date(at).toISOString(),
-    // ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1 · ติดลบได้ = หมดอายุไปแล้วจริง ๆ
-    tokenHoursLeft: Math.floor((at - Date.now()) / 3600e3),
+    // ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1 · ติดลบ = หมดอายุไปแล้วจริง
+    tokenHoursLeft: Math.floor(leftMs / 3600e3),
+    // มีไว้ให้ใช้ตอนเหลือน้อยกว่าชั่วโมง จะได้ไม่ต้องโชว์ "เหลือ 0 ชม." ซึ่งอ่านเหมือนหมดแล้ว
+    tokenMinutesLeft: Math.floor(leftMs / 60e3),
+    // ⚠️ ตัวนี้คือคำตอบจริง ห้ามคำนวณเองจาก tokenHoursLeft
+    tokenExpired: leftMs <= 0,
   };
 }
 
