@@ -1,12 +1,12 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-03T08:34:27.542Z",
+  "generatedAt": "2026-09-04T02:33:01.269Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
   "functions": {
-    "count": 47,
+    "count": 48,
     "scheduled": [
       {
         "name": "backup-run",
@@ -231,6 +231,8 @@ export const ARCH = {
     }
   ],
   "unlabelled": [
+    "LAZADA_APP_KEY",
+    "LAZADA_APP_SECRET",
     "NETLIFY_API_TOKEN",
     "NETLIFY_AUTH_TOKEN"
   ],

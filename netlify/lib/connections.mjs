@@ -65,6 +65,16 @@ async function tiktok() {
     : { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/tiktok/auth)" };
 }
 
+async function lazada() {
+  const { lazadaReady, validToken } = await import("./lazada.mjs");
+  if (!lazadaReady()) return { connected: false, detail: "ยังไม่ได้ตั้ง LAZADA_APP_KEY / LAZADA_APP_SECRET" };
+  const t = await validToken();
+  if (!t) return { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/lazada/auth)" };
+  // ⚠️ token อายุแค่ 7 วัน — ต้องบอกวันหมดอายุบนจอ ไม่งั้นวันที่มันหลุดจะดูเหมือนระบบพังเฉย ๆ
+  const left = Math.floor((t.expiresAt - Date.now()) / 86400e3);
+  return { connected: true, detail: `เชื่อมแล้ว · ${t.account || "ร้าน"} · token เหลือ ${left} วัน` };
+}
+
 async function line() {
   const tok = process.env.LINE_MESSAGING_TOKEN;
   if (!tok) return { connected: false, detail: "ยังไม่ได้ตั้ง token" };
@@ -78,11 +88,12 @@ async function line() {
 }
 
 export async function connectionsStatus() {
-  const [z1, z2, sp, tt, ln] = await Promise.all([
+  const [z1, z2, sp, tt, lz, ln] = await Promise.all([
     timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET")),
     timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2")),
     timed(shopee),
     timed(tiktok),
+    timed(lazada),
     timed(line),
   ]);
   const at = new Date().toISOString();
@@ -91,12 +102,7 @@ export async function connectionsStatus() {
   const groups = {
     marketplace: [
       stamp({ name: "Shopee", ...sp }),
-      stamp({
-        name: "Lazada",
-        connected: false,
-        // ⚠️ **ต้องแยก "ยังไม่ได้สิทธิ์" ออกจาก "ยังไม่ได้กด"** — คนละงานคนละคน
-        detail: "ยังรอ Lazada อนุมัติสิทธิ์ใช้ API — ยังกดเชื่อมเองไม่ได้",
-      }),
+      stamp({ name: "Lazada", ...lz }),
       stamp({ name: "TikTok Shop", ...tt }),
     ],
     website: [

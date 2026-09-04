@@ -9,9 +9,13 @@
 //    ⇒ ต้องถามแพลตฟอร์มเอง ไม่มีทางลัดจากต้นทาง
 //
 // ⚠️ **"ไม่มีโลโก้" กับ "เช็คไม่ได้" ต้องแยกออกจากกันเสมอ**
-//    Lazada ยังรอ review ⇒ ไม่เคยอยู่ใน checked เลย · ถ้าจอไม่แยก คนจะอ่านว่า
-//    "ไม่ได้ลงขายที่ Lazada" ทั้งที่ความจริงคือเรายังไม่มีสิทธิ์ถาม
+//    เจ้าที่ยังไม่ได้เชื่อม ⇒ ไม่เคยอยู่ใน checked เลย · ถ้าจอไม่แยก คนจะอ่านว่า
+//    "ไม่ได้ลงขายที่นั่น" ทั้งที่ความจริงคือเรายังถามไม่ได้
 //    สองอย่างนี้หน้าตาเหมือนกันบนจอ แต่คนละความหมายโดยสิ้นเชิง
+//
+// ⚠️ **`notConnected` ต้องคิดจากของจริงทุกรอบ ห้ามเขียนตายตัว** — พลาดมาแล้ว 4 ก.ย. 2569
+//    เดิมเขียนตายตัวว่า "Lazada ยังรอ review" ทั้งที่ Lazada อนุมัติไปตั้งแต่ 30 ส.ค.
+//    ข้อความที่แช่ไว้จะกลายเป็นคำโกหกเงียบ ๆ ในวันที่สถานะจริงเปลี่ยน และไม่มีอะไรฟ้อง
 import { getStore } from "@netlify/blobs";
 
 const CACHE_KEY = "marketplace-listings";
@@ -47,6 +51,12 @@ async function tiktokSkus() {
   return out;
 }
 
+/** รหัสที่กำลังลงขายบน Lazada */
+async function lazadaSkus() {
+  const { listedSkus } = await import("./lazada.mjs");
+  return await listedSkus();
+}
+
 /** map รหัส → รายชื่อช่องทางที่กำลังลงขาย + บอกว่ารอบนี้ถามใครได้บ้าง
  *  ⚠️ แพลตฟอร์มไหนล่ม = **ไม่นับว่าเช็คแล้ว** ห้ามตีเป็น "ไม่ได้ลงขาย"
  *     ยอมให้จอบอกว่า "เช็คไม่ได้" ดีกว่าบอกผิดว่าไม่มีของลงขาย */
@@ -67,10 +77,20 @@ export async function marketplaceListings() {
     }
   };
 
-  for (const [tag, fn] of [
+  // เจ้าที่ยัง "เชื่อมไม่ได้" ต้องไม่เข้าลูป — ไม่งั้นมันจะไปโผล่ใน failed
+  // ซึ่งอ่านว่า "ล่ม" ทั้งที่ความจริงคือยังไม่ได้กดอนุญาต คนละเรื่องกัน
+  const notConnected = {};
+  const { validToken: lzToken } = await import("./lazada.mjs");
+  const lzOk = await lzToken().catch(() => null);
+  if (!lzOk) notConnected.lazada = "ยังไม่ได้กดอนุญาตให้เว็บเข้าถึงร้าน Lazada (ที่ /api/lazada/auth)";
+
+  const sources = [
     ["shopee", shopeeSkus],
     ["tiktok", tiktokSkus],
-  ]) {
+  ];
+  if (lzOk) sources.push(["lazada", lazadaSkus]);
+
+  for (const [tag, fn] of sources) {
     try {
       const set = await fn();
       if (set && set.size) {
@@ -87,8 +107,7 @@ export async function marketplaceListings() {
   const out = {
     at: Date.now(),
     checked, // ถามได้จริงรอบนี้
-    // ⚠️ Lazada ไม่เคยอยู่ใน checked — ยังรอ review อยู่ ไม่ใช่ว่าไม่มีของลงขาย
-    notConnected: { lazada: "ยังรอ Lazada อนุมัติสิทธิ์ใช้ API" },
+    notConnected, // ยังเชื่อมไม่ได้ = ยังไม่รู้ ไม่ใช่ "ไม่มีของลงขาย"
     failed,
     listings: Object.fromEntries([...bySku].map(([k, v]) => [k, v])),
   };
