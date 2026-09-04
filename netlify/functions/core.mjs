@@ -533,6 +533,46 @@ export default async function handler(req, context) {
     /* เทียบรายการที่ลงขายบนแพลตฟอร์ม กับของที่มีในคลัง
        ⚠️ ต่างจาก stockcompare (เทียบ "จำนวน" กับ Shopee) — อันนี้เทียบ "ลงขายหรือยัง"
        ⚠️ ต่างจาก channelGaps (ดูจากประวัติการขาย) — อันนี้ดูจากรายการที่ลงขายอยู่จริง */
+    /* ดูว่า ZORT ส่งฟิลด์อะไรมาบ้างสำหรับใบที่ยัง Pending — ตอบคำถามว่ากระจกกลืนอะไรทิ้งไหม
+       ⚠️ **คืนเฉพาะ "ชื่อฟิลด์" กับค่าของฟิลด์ที่เกี่ยวกับสถานะเท่านั้น**
+          ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้าออกมาเด็ดขาด แม้จะอยู่หลังรหัสหลังร้านก็ตาม
+          (กติกาเดียวกับ core-contacts: ไม่มีทางดึงข้อมูลลูกค้าออกทั้งก้อน) */
+    if (url.searchParams.get("zortfields")) {
+      const st = {
+        storename: process.env.ZORT_STORENAME,
+        apikey: process.env.ZORT_APIKEY,
+        apisecret: process.env.ZORT_APISECRET,
+      };
+      if (!st.storename) return json({ error: "ยังไม่ได้ตั้งรหัส ZORT" }, 503);
+      const day = new Date(Date.now() + 7 * 3600e3 - 30 * 864e5).toISOString().slice(0, 10);
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const r = await fetch(
+        `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${today}&limit=200&page=1`,
+        { headers: st, signal: AbortSignal.timeout(20000) }
+      );
+      const d = await r.json().catch(() => ({}));
+      const list = Array.isArray(d.list) ? d.list : [];
+      const SAFE = /status|type|channel|flag|express|urgent|paid|transfer|ship|deliver|cod/i;
+      const rows = list.filter((o) => !/success|void|cancel/i.test(String(o.status || "")));
+      const seen = {};
+      for (const o of rows) {
+        for (const [k, v] of Object.entries(o)) {
+          if (!SAFE.test(k)) continue;
+          const key = `${k}`;
+          (seen[key] ||= new Set()).add(typeof v === "object" ? "(object)" : String(v).slice(0, 40));
+        }
+      }
+      return json({
+        ok: true,
+        note: "เฉพาะใบที่ยังไม่ success/void ใน 30 วันล่าสุด · คืนแค่ฟิลด์ที่เกี่ยวกับสถานะ",
+        pendingRows: rows.length,
+        allFieldNames: Object.keys(list[0] || {}),
+        statusFields: Object.fromEntries(
+          Object.entries(seen).map(([k, v]) => [k, [...v].slice(0, 12)])
+        ),
+      });
+    }
+
     if (url.searchParams.get("channelcompare")) {
       const { channelCompare } = await import("../lib/channel-compare.mjs");
       return json({
