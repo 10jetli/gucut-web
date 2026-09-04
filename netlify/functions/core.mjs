@@ -568,8 +568,13 @@ export default async function handler(req, context) {
         );
         const d = await r.json().catch(() => ({}));
         const chunk = Array.isArray(d.list) ? d.list : [];
+        /* ⚠️ **กุญแจต้องเป็น `number` ไม่ใช่ `id` ของ ZORT** — รอบแรกผมใช้ `o.id`
+            แล้วได้ผลว่า "ไม่ตรงกันทั้ง 768 ใบ" ซึ่งดูเหมือนหายนะ แต่ความจริงคือ
+            **กระจกเก็บกุญแจเป็น `<ร้าน>/<เลขที่ใบ>` ไม่เคยเก็บ id ของ ZORT เลย**
+            ⇒ เทียบคนละกุญแจ = ไม่ตรงกัน 100% โดยที่ข้อมูลอาจตรงกันทุกใบ
+            **ผลที่ผิดแบบสุดขั้ว (0% หรือ 100%) มักแปลว่าเทียบผิดคีย์ ไม่ใช่ข้อมูลพัง** */
         for (const o of chunk) {
-          zort.set(String(o.id), {
+          zort.set(String(o.number ?? ""), {
             number: String(o.number ?? ""),
             status: String(o.status ?? ""),
             pay: String(o.paymentstatus ?? ""),
@@ -580,18 +585,20 @@ export default async function handler(req, context) {
       }
 
       const { coreQuery } = await import("../lib/coredb.mjs");
+      /* ⚠️ **ต้องกรองเฉพาะร้านที่ยิงถามด้วย** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
+          ไม่กรอง = ใบของอีกร้านโผล่มาเป็น "กระจกมี แต่ ZORT ไม่มี" ทั้งกอง */
       const mine = await coreQuery(
-        `SELECT id, number, status, COALESCE(pay_status,'') AS pay FROM orders
-         WHERE order_date >= ? AND order_date <= ?`,
+        `SELECT number, status, COALESCE(pay_status,'') AS pay FROM orders
+         WHERE source = 'z1' AND order_date >= ? AND order_date <= ?`,
         [from, to]
       );
-      const mirror = new Map(mine.map((r) => [String(r.id), r]));
+      const mirror = new Map(mine.map((r) => [String(r.number), r]));
 
       const missingInMirror = []; // ZORT มี · กระจกไม่มี  ← ทางที่ 2 จับได้ทางเดียว
       const staleStatus = []; // มีทั้งคู่ · สถานะไม่ตรง
       const stalePay = []; // มีทั้งคู่ · สถานะจ่ายเงินไม่ตรง
-      for (const [id, z] of zort) {
-        const m = mirror.get(id);
+      for (const [key, z] of zort) {
+        const m = mirror.get(key);
         if (!m) {
           missingInMirror.push({ number: z.number, zortStatus: z.status });
           continue;
@@ -604,7 +611,7 @@ export default async function handler(req, context) {
         }
       }
       const extraInMirror = mine
-        .filter((r) => !zort.has(String(r.id)))
+        .filter((r) => !zort.has(String(r.number)))
         .map((r) => ({ number: String(r.number), mirrorStatus: String(r.status) }));
 
       return json({
