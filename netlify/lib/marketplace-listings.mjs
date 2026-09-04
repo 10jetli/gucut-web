@@ -51,6 +51,25 @@ async function tiktokSkus() {
   return out;
 }
 
+/** รหัสที่กำลังลงขายบน "หน้าร้านของเราเอง" (gucut.com)
+ *  ⚠️ **คอลัมน์นี้เคยตรวจแค่ 3 มาร์เก็ตเพลส แล้วเว้นขีดให้ของที่ลงเว็บอยู่จริง**
+ *     (ฝั่งจอจับได้ 4 ก.ย. 2569 — 00313 อยู่ในฟีดเว็บ เหลือ 728 ราคา 120 แต่ขึ้นขีด)
+ *     คอลัมน์พูดความจริงเท่าที่มันตรวจ แต่หัวคอลัมน์เขียนว่า "ช่องทางที่ลงขาย"
+ *     คนอ่านจึงอ่านว่า "ไม่ได้ขายที่ไหนเลย" ⇒ ต้องนับเว็บตัวเองด้วยเสมอ
+ *  ⚠️ อ่านจากไฟล์ที่สร้างตอน build ไม่ยิงออกนอก — เร็วและไม่มีวันล่มเพราะแพลตฟอร์มอื่น */
+async function webSkus() {
+  const { SITE_URL } = await import("./site.mjs");
+  const r = await fetch(`${SITE_URL}/feed-base.json`, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) throw new Error(`ฟีดเว็บตอบ ${r.status}`);
+  const base = await r.json();
+  const out = new Set();
+  for (const p of base?.list ?? []) {
+    const code = String(p?.sku ?? "").trim();
+    if (code) out.add(code);
+  }
+  return out;
+}
+
 /** รหัสที่กำลังลงขายบน Lazada */
 async function lazadaSkus() {
   const { listedSkus } = await import("./lazada.mjs");
@@ -85,6 +104,8 @@ export async function marketplaceListings({ fresh = false } = {}) {
   if (!lzOk) notConnected.lazada = "ยังไม่ได้กดอนุญาตให้เว็บเข้าถึงร้าน Lazada (ที่ /api/lazada/auth)";
 
   const sources = [
+    // เว็บของเราเองมาก่อน — ไม่ต้องเชื่อมอะไร ไม่มีวันติดโควตาใคร
+    ["gucut", webSkus],
     ["shopee", shopeeSkus],
     ["tiktok", tiktokSkus],
   ];
