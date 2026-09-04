@@ -530,6 +530,18 @@ export default async function handler(req, context) {
       return json({ ok: true, shopee: await syncShopeeOrders(days) });
     }
     // เทียบสต็อกบน Shopee กับคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ Shopee
+    /* เทียบรายการที่ลงขายบนแพลตฟอร์ม กับของที่มีในคลัง
+       ⚠️ ต่างจาก stockcompare (เทียบ "จำนวน" กับ Shopee) — อันนี้เทียบ "ลงขายหรือยัง"
+       ⚠️ ต่างจาก channelGaps (ดูจากประวัติการขาย) — อันนี้ดูจากรายการที่ลงขายอยู่จริง */
+    if (url.searchParams.get("channelcompare")) {
+      const { channelCompare } = await import("../lib/channel-compare.mjs");
+      return json({
+        ok: true,
+        ...(await channelCompare(url.searchParams.get("channelcompare"), {
+          limit: Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "200", 10) || 200)),
+        })),
+      });
+    }
     if (url.searchParams.get("stockcompare")) {
       return json({ ok: true, stock: await shopeeStockCompare() });
     }

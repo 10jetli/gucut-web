@@ -167,8 +167,22 @@ export async function listLogistics(o = {}) {
       ⇒ นับเฉพาะใบที่มีร่องรอยการส่งจริง (มีเลขพัสดุ หรือระบุขนส่งไว้) */
   const SCOPE = `(COALESCE(tracking_no,'') <> '' OR COALESCE(ship_channel,'') <> '')`;
   parts.push(SCOPE);
-  // แท็บ: ส่งแล้ว / ยังไม่ได้ส่ง — ตัดสินจาก "มีเลขพัสดุหรือยัง"
-  const only = { shipped: `COALESCE(tracking_no,'') <> ''`, unshipped: `COALESCE(tracking_no,'') = ''` }[o.only];
+  /* แท็บ: ส่งแล้ว / ยังไม่ได้ส่ง — ตัดสินจาก "มีเลขพัสดุหรือยัง" · เก็บเงินปลายทางดูที่ is_cod
+     ⚠️ **แท็บ `cod` เคยหายไปจากรายการนี้ ทั้งที่จอมีแท็บนั้นและมีป้ายตัวเลขกำกับ**
+        (เจอ 4 ก.ย. 2569) ⇒ `only=cod` ตกลงมาเป็น undefined = ไม่กรองอะไรเลย
+        แต่ยังสะท้อน `only:"cod"` กลับไป **จอเลยขึ้นแถวชุดเดียวกับแท็บ "ทั้งหมด"**
+        รวมใบที่ไม่ใช่ COD ด้วย โดยที่ทุกอย่างดูเหมือนทำงานปกติทุกประการ
+     ⚠️ **ค่าที่สะท้อนกลับต้องเป็น "ค่าที่ใช้จริง" เสมอ ห้ามสะท้อนค่าที่ส่งมาดิบ ๆ**
+        (โรคเดียวกับ stockcard — จอที่ใช้ `applied` เป็นด่านจะผ่านทั้งที่ข้อมูลไม่ตรงตัวกรอง) */
+  const ONLY = {
+    shipped: `COALESCE(tracking_no,'') <> ''`,
+    unshipped: `COALESCE(tracking_no,'') = ''`,
+    cod: `COALESCE(is_cod,0) = 1`,
+  };
+  const asked = o.only == null || o.only === "" ? null : String(o.only);
+  const known = asked === null || Object.prototype.hasOwnProperty.call(ONLY, asked);
+  const usedOnly = known ? asked : null;
+  const only = usedOnly ? ONLY[usedOnly] : null;
   const where = [...parts, ...(only ? [only] : [])].join(" AND ") || "1=1";
   const whereNoTab = parts.join(" AND ") || "1=1";
 
@@ -198,14 +212,23 @@ export async function listLogistics(o = {}) {
      LIMIT ${limit} OFFSET ${offset}`,
     params
   );
+  /* ⚠️ **`total` กับ `shown` คนละตัว ห้ามเอา `total` ไปทำเลขหน้า** (กติกาเดียวกับจอสต็อก)
+      `total` = ทั้งขอบเขต ใช้ทำป้ายตัวเลขบนแท็บ (ต้องนับข้ามตัวกรองแท็บเสมอ)
+      `shown` = จำนวนแถวของแท็บที่เลือกอยู่ ⇒ **ตัวนี้เท่านั้นที่เอาไปทำเลขหน้า/ปุ่มถัดไป**
+      เดิมจอใช้ `total` ทำเลขหน้า ⇒ แท็บ "ยังไม่ได้ส่ง" มี 10 ใบ แต่เขียนว่า "แสดง 10 จาก 558"
+      และปุ่มถัดไปยังกดได้ กดแล้วได้หน้าว่าง (เจอ 4 ก.ย. 2569) */
+  const [shownRow] = await coreQuery(`SELECT COUNT(*) AS c FROM orders WHERE ${where}`, params);
   return {
     total: num(sum?.c),
+    shown: num(shownRow?.c),
     shipped: num(sum?.shipped),
     unshipped: num(sum?.unshipped),
     cod: num(sum?.cod),
     limit,
     offset,
-    only: o.only || null,
+    only: usedOnly,
+    applied: { only: usedOnly, limit, offset, q: q || null },
+    ...(known ? {} : { ignored: { only: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — แสดงทั้งหมดแทน` }),
     byChannel,
     // ⚠️ **จอต้องบอกขอบเขตให้ชัด** ตัวเลขนี้ยังน้อยกว่าที่ ZORT แสดง (1,644 ใบ)
     //    เพราะเราเพิ่งเริ่มเก็บเลขพัสดุ ใบเก่าที่หัวใบไม่เปลี่ยนแล้วจึงยังไม่มีค่า
