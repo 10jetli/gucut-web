@@ -173,3 +173,43 @@ export async function listedSkus() {
   }
   return out;
 }
+
+/* ── ดูว่า Lazada ส่งฟิลด์อะไรมาบ้างต่อ SKU ── (5 ก.ย. 2569)
+   ⚠️ **สร้างเพื่อไม่ต้องเดา** — ก่อนจะทำตัวเทียบสต็อกกับ Lazada
+      ต้องรู้ก่อนว่าเขาส่ง "จำนวนคงเหลือ" มาในชื่ออะไร และมีจริงไหม
+      (บทเรียนคืนก่อน: จอเดาชื่อฟิลด์เอง แล้วได้ขีดกลางทั้งคอลัมน์)
+
+   ⚠️ **คืนแค่ชื่อฟิลด์ + ค่าของฟิลด์ที่ปลอดภัยเท่านั้น ห้ามดัมพ์ทั้งก้อน**
+      บทเรียน 4 ก.ย.: ตัวดัมพ์ฟิลด์ของ ZORT เคยรั่วชื่อ/ที่อยู่/เบอร์ลูกค้าออกมา
+      เพราะใช้ regex จับชื่อฟิลด์ · รอบนี้ใช้รายชื่อตรงตัว (Set) ตั้งแต่แรก
+      สินค้าไม่มีข้อมูลลูกค้าก็จริง แต่กติกาเดียวกันต้องใช้ทุกที่ ไม่ใช่เลือกใช้ */
+const SKU_SAFE = new Set([
+  "SellerSku", "ShopSku", "quantity", "Available", "SkuId", "Status", "price", "special_price",
+]);
+
+export async function lazadaSkuFields(sample = 3) {
+  const first = await pageSkus(0);
+  const items = first.items.slice(0, Math.max(1, Math.min(10, sample)));
+  const keysProduct = new Set();
+  const keysSku = new Set();
+  const rows = [];
+  for (const p of items) {
+    for (const k of Object.keys(p || {})) keysProduct.add(k);
+    for (const sk of p?.skus || []) {
+      for (const k of Object.keys(sk || {})) keysSku.add(k);
+      rows.push(
+        Object.fromEntries(Object.entries(sk).filter(([k]) => SKU_SAFE.has(k)))
+      );
+    }
+  }
+  return {
+    totalProducts: first.total,
+    productKeys: [...keysProduct].sort(),
+    skuKeys: [...keysSku].sort(),
+    // ⚠️ เฉพาะฟิลด์ในรายชื่อปลอดภัย · ไม่ใช่ทั้งก้อน
+    sampleSkus: rows.slice(0, 10),
+    note:
+      "productKeys/skuKeys = ชื่อฟิลด์ทั้งหมดที่ Lazada ส่งมาจริง · " +
+      "sampleSkus = คืนเฉพาะฟิลด์ในรายชื่อปลอดภัย (SKU_SAFE) ไม่ดัมพ์ทั้งก้อน",
+  };
+}
