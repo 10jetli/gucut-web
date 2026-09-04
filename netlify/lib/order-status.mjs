@@ -64,6 +64,11 @@ export const GROUP_TH = {
   returning: "ตีกลับ/คืนสินค้า",
   problem: "มีปัญหา",
   unknown: "ไม่รู้จัก", // ⚠️ ถังนี้ต้องเห็นบนจอเสมอ ห้ามซ่อน
+  /* ⚠️ **ต้องมีคำไทยของ blank ด้วย** — ฝั่งจอเจอว่ากองนี้ได้ th = "blank"
+      คำอังกฤษดิบโผล่บนจอไทย · จอมีตาข่ายแปลให้แล้วแต่ควรอยู่ที่ท่อ ไม่ใช่ที่จอ */
+  blank: "ไม่มีสถานะจากช่องทาง",
+  blank_none_expected: "ไม่มีสถานะ (ช่องทางนี้ไม่มีใครบอก)",
+  blank_source_empty: "ไม่มีสถานะ (ต้นทางไม่ส่งมา)",
 };
 
 /**
@@ -96,12 +101,20 @@ export function groupsFromCounts(rows = []) {
   const acc = new Map();
   for (const r of rows) {
     const s = readStatus(r?.st);
+    /* ⚠️ **"ไม่มีสถานะ" ต้องแยกสองแบบ** (ฝั่งจอขอ 4 ก.ย. 2569)
+        ปกติ (ช่องทางนี้ไม่มีใครบอกสถานะ) กับ ต้นทางไม่ส่งมา — คนละเรื่องกันโดยสิ้นเชิง
+        รวมกันเมื่อไหร่ ของที่ผิดปกติจะซ่อนอยู่ในกองของที่ปกติ */
+    const key =
+      s.group === "blank" && r?.blankReason ? `blank_${r.blankReason}` : s.group;
     const g =
-      acc.get(s.group) ||
-      { group: s.group, th: GROUP_TH[s.group] || s.group, count: 0, raws: new Set() };
+      acc.get(key) ||
+      { group: key, th: GROUP_TH[key] || key, count: 0, raws: new Set(), unverified: false };
     g.count += Number(r?.c) || 0;
     if (s.raw) g.raws.add(s.raw);
-    acc.set(s.group, g);
+    // ⚠️ ธง unverified ต้องอยู่ที่ตัวกองด้วย ไม่ใช่ให้จอไปดูจากแถวในหน้าปัจจุบัน
+    //    ไม่งั้นจะพลาดเมื่อใบที่ยังไม่ยืนยันไม่ได้อยู่ในหน้าที่เปิดอยู่
+    if (s.unverified) g.unverified = true;
+    acc.set(key, g);
   }
   // ⚠️ ถัง unknown ต้องมีเสมอแม้เป็น 0 — จะได้รู้ว่ามีถังนี้อยู่ (ฝั่งจอทำแล้วเช่นกัน)
   if (!acc.has("unknown")) {

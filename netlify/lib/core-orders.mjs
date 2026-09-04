@@ -130,9 +130,11 @@ export async function listOrders(o = {}) {
   );
 
   // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
-  const statusCounts = await coreQuery(
-    `SELECT COALESCE(integration_status,'') AS st, COUNT(*) AS c
-     FROM orders WHERE ${w.sql} GROUP BY 1`,
+  const statusCountsRaw = await coreQuery(
+    `SELECT COALESCE(integration_status,'') AS st,
+            COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+            COUNT(*) AS c
+     FROM orders WHERE ${w.sql} GROUP BY 1,2`,
     w.params
   );
 
@@ -197,7 +199,13 @@ export async function listOrders(o = {}) {
         ตัวเลขจะเปลี่ยนทั้งใบ ดูเหมือนบั๊กทั้งที่ของจริงคือขอบเขตไม่ตรงกับป้าย
         (กับดักเดิมของวันนี้ ครั้งที่ 4 — ดู numbers-need-scope)
       ⚠️ **เกณฑ์ตรวจ: ผลรวม count ทุกกอง ต้องเท่ากับ total ของช่วงนั้นเป๊ะ** */
-    shipStatusGroups: groupsFromCounts(statusCounts),
+    shipStatusGroups: groupsFromCounts(
+      statusCountsRaw.map((r) => ({
+        ...r,
+        blankReason:
+          String(r.st ?? "") === "" ? chanMap.get(String(r.ch)) || "none_expected" : null,
+      }))
+    ),
     shipStatusScope: "ทั้งช่วงที่กรองอยู่ (ไม่ใช่เฉพาะหน้าที่แสดง)",
   };
 }
