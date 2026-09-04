@@ -300,6 +300,8 @@ export async function lazadaStockCompare() {
   const missingSample = [];
   const availVsQty = [];
   let same = 0;
+  let sameExact = 0;
+  let sameBase = 0;
   let missing = 0;
   let matchedByBase = 0;
   for (const r of rows) {
@@ -324,9 +326,19 @@ export async function lazadaStockCompare() {
       continue;
     }
 
+    /* ⚠️ **แยกตามวิธีจับคู่เสมอ** (ฝั่งจอชี้ 5 ก.ย. 2569)
+        "ตรงตัว" = รหัส Lazada ตรงกับรหัสคลังเป๊ะ ⇒ เชื่อได้
+        "ตัดท้าย" = **เป็นการเดา ต่อให้ fan-in เป็น 1 ก็ยังเดาอยู่ดี**
+        ยุบรวมเป็นเปอร์เซ็นต์เดียว = ตัวที่เดาแล้วบังเอิญเลขใกล้กัน
+        จะไปเพิ่มเปอร์เซ็นต์ให้ดูดีขึ้นเงียบ ๆ ซึ่งอันตรายกว่าตัวที่เดาแล้วเลขต่างเยอะ
+        (ตัวหลังเราเห็น ตัวแรกเราไม่เห็น) */
+    const exact = key === r.sku;
     const ours = snap.get(key);
-    if (ours === r.available) same += 1;
-    else
+    if (ours === r.available) {
+      same += 1;
+      if (exact) sameExact += 1;
+      else sameBase += 1;
+    } else
       diff.push({
         sku: r.sku,
         matchedAs: key === r.sku ? "ตรงตัว" : `ตัดท้ายเป็น ${key}`,
@@ -341,6 +353,11 @@ export async function lazadaStockCompare() {
     snapshotRows: snap.size,
     lazadaSkus: rows.length,
     same,
+    /* ⚠️ **ตัวเลขที่เชื่อได้จริงคือกอง exact เท่านั้น** — กอง base คือของที่เดาว่าเป็นตัวเดียวกัน */
+    sameExact,
+    sameBase,
+    diffExact: diff.filter((x) => x.matchedAs === "ตรงตัว").length,
+    diffBase: diff.filter((x) => x.matchedAs !== "ตรงตัว").length,
     diffCount: diff.length,
     missing,
     matchedByBase,
@@ -362,6 +379,8 @@ export async function lazadaStockCompare() {
       "missing = Lazada มีรหัสนี้แต่คลังเราไม่รู้จัก **คนละเรื่องกับตัวเลขไม่ตรง** · " +
       "matchedByBase = จับคู่ได้ด้วยการตัดคำต่อท้าย ไม่ใช่ตรงตัว ⇒ เป็นการเดา ดูให้ดี · " +
       "oneToMany = หลายรหัส Lazada ชี้มารหัสเดียวในคลัง (เช่นโซ่ตัดขายตามความยาว) " +
-      "**เทียบตัวต่อตัวไม่ได้ ไม่ใช่สต็อกผิด** ⇒ แยกกองไว้ ไม่นับรวมใน diffCount",
+      "**เทียบตัวต่อตัวไม่ได้ ไม่ใช่สต็อกผิด** ⇒ แยกกองไว้ ไม่นับรวมใน diffCount · " +
+      "⚠️ **คิดเปอร์เซ็นต์จาก sameExact/(sameExact+diffExact) เท่านั้น** " +
+      "กอง base คือการเดา เอาไปรวมแล้วเปอร์เซ็นต์จะดูดีเกินจริง",
   };
 }
