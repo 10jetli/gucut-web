@@ -8,6 +8,7 @@
 //   GET /api/core?daily=1&days=90      ยอดขายรายวัน · ?bycustomer=1  ยอดรายลูกค้า
 //   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
 //   GET /api/core?noitems=1&days=N ออเดอร์ที่ไม่มีบรรทัดสินค้า — ต้องเป็น 0 ก่อนเปิดสะพาน PEAK
+//   GET /api/core?orderitems=<เลขที่ใบ>  ดูบรรทัดสินค้าของใบเดียว
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
@@ -528,6 +529,38 @@ export default async function handler(req, context) {
           ถ้าขาดกลางทาง (ชนเวลา 26 วิ · D1 เต็มโควตา) จะได้ใบที่มีหัวแต่ไม่มีบรรทัด
           **และไม่มีอะไรฟ้อง** เพราะจอรายการขายไม่ได้อ่านบรรทัด
        ⚠️ นับเฉพาะใบที่ไม่ถูกยกเลิก และแยกตามร้าน — ร้าน z2 ยังไม่เข้าภาษี */
+    /* ดูบรรทัดสินค้าของใบเดียว — ไว้ไล่ใบที่ยอดผิดปกติ
+       ⚠️ ใช้ `number` ไม่ใช่ `id` — กระจกเก็บ id เป็น `<ร้าน>/<เลขที่ใบ>` (เคยเทียบผิดคีย์มาแล้ว) */
+    if (url.searchParams.get("orderitems")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const numArg = String(url.searchParams.get("orderitems")).slice(0, 60);
+      const head = await coreQuery(
+        `SELECT id, source, number, channel, status, amount, order_date, pay_status,
+                bill_discount, is_cod
+         FROM orders WHERE number = ? LIMIT 5`,
+        [numArg]
+      );
+      if (!head.length) return json({ ok: true, found: false, number: numArg });
+      const lines = await coreQuery(
+        `SELECT order_id, line, sku, name, qty, amount, discount
+         FROM order_items WHERE order_id IN (${head.map(() => "?").join(",")})
+         ORDER BY order_id, line`,
+        head.map((h) => h.id)
+      );
+      const num3 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      return json({
+        ok: true,
+        found: true,
+        orders: head.map((h) => ({
+          ...h,
+          lines: lines.filter((l) => l.order_id === h.id),
+          linesTotal: lines
+            .filter((l) => l.order_id === h.id)
+            .reduce((a, l) => a + num3(l.amount), 0),
+        })),
+      });
+    }
+
     if (url.searchParams.get("noitems")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
@@ -587,12 +620,56 @@ export default async function handler(req, context) {
         [from, today]
       );
 
+      /* ── ส่วนต่างตกอยู่ใน 12 ค่าของค่าส่งไหม ── (ฝั่งจอเสนอ 5 ก.ย. 2569)
+         ⚠️ **นี่คือการทดสอบที่แยกแยะได้จริง** — ค่าส่งของร้านเป็นขั้นบันได
+            มีค่าที่เป็นไปได้แค่ 12 ค่า ถ้าสมมติฐาน "ส่วนต่าง = ค่าส่ง" ผิด
+            ส่วนต่างจะกระจายเป็นเลขอะไรก็ได้ **ไม่ใช่ตกอยู่ใน 12 ค่านี้พอดี**
+            ⇒ ต่างจากการเดาสูตรแล้วประกาศว่าไม่ตรง ซึ่งพิสูจน์อะไรไม่ได้เลย
+         ⚠️ อ่านตารางจาก `shipping.mjs` ตัวจริง **ห้ามพิมพ์เลข 12 ตัวซ้ำที่นี่**
+            (ร้านแก้ค่าส่งเมื่อไหร่ ตัวตรวจต้องขยับตาม ไม่ใช่ค้างอยู่กับเลขเก่า) */
+      const { SHIPPING_TIERS } = await import("../lib/shipping.mjs");
+      const FEES = [...new Set(SHIPPING_TIERS.map((t) => t.fee))];
+      const feeList = FEES.join(",");
+      const [ship] = await coreQuery(
+        `SELECT COUNT(*) AS higher,
+                SUM(CASE WHEN ROUND(o.amount - li.s, 2) IN (${feeList}) THEN 1 ELSE 0 END) AS isTier
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND o.amount > li.s`,
+        [from, today]
+      );
+      const gapTop = await coreQuery(
+        `SELECT ROUND(o.amount - li.s, 2) AS gap, COUNT(*) AS n
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND o.amount > li.s
+         GROUP BY 1 ORDER BY n DESC LIMIT 25`,
+        [from, today]
+      );
+
       const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       return json({
         ok: true,
         from,
         to: today,
         days,
+        /* ค่าส่งอธิบายส่วนต่างได้กี่ใบ — ถ้าเกือบทั้งหมด ปิดกอง "หัวใบมากกว่า" ได้เลย */
+        shippingExplains: {
+          headerHigher: num2(ship?.higher),
+          matchesShippingTier: num2(ship?.isTier),
+          tiers: FEES,
+          percent: num2(ship?.higher)
+            ? Math.round((num2(ship?.isTier) * 1000) / num2(ship?.higher)) / 10
+            : 0,
+          note:
+            "ส่วนต่างที่ตรงกับค่าส่งขั้นบันไดพอดี ⇒ อธิบายได้ ไม่ต้องดูต่อ · " +
+            "ที่เหลือคือของที่ต้องไล่ทีละใบ · ตารางค่าส่งอ่านจาก shipping.mjs ตัวจริง",
+        },
+        gapTop,
         /* ⚠️ ตัวเลขชุดนี้ **ยังไม่ใช่ "ผิด"** — เป็นการวัดว่ายอดหัวใบกับผลรวมบรรทัดต่างกันแค่ไหน
             ค่าส่งกับส่วนลดยังไม่ถูกนำมาคิด ⇒ ต่างกันเป็นเรื่องปกติ ต้องหาสูตรก่อน */
         lineVsHeader: gaps.map((g) => ({
