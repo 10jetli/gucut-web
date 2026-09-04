@@ -640,6 +640,23 @@ export default async function handler(req, context) {
            AND o.amount > li.s`,
         [from, today]
       );
+      /* ⚠️ **ส่วนต่างเดียวกันอาจมาจากคนละสาเหตุ ถ้าอยู่คนละช่องทาง**
+          29 บนออเดอร์ Shopee = ค่าธรรมเนียมมาร์เก็ตเพลส
+          29 บนออเดอร์เว็บ COD = ค่าธรรมเนียมปลายทาง — คนละเรื่องกันสิ้นเชิง
+          ⇒ ต้องแยกตามช่องทางก่อน ไม่งั้นจะสรุปสาเหตุเดียวให้ของที่มีหลายสาเหตุ */
+      const gapByChannel = await coreQuery(
+        `SELECT ROUND(o.amount - li.s, 2) AS gap,
+                COALESCE(NULLIF(o.channel,''),'(ไม่ระบุ)') AS ch,
+                o.is_cod AS cod,
+                COUNT(*) AS n
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND o.amount > li.s
+         GROUP BY 1,2,3 ORDER BY n DESC LIMIT 40`,
+        [from, today]
+      );
       const gapTop = await coreQuery(
         `SELECT ROUND(o.amount - li.s, 2) AS gap, COUNT(*) AS n
          FROM orders o
@@ -705,6 +722,7 @@ export default async function handler(req, context) {
             "ที่เหลือคือของที่ต้องไล่ทีละใบ · ตารางค่าส่งอ่านจาก shipping.mjs ตัวจริง",
         },
         gapTop,
+        gapByChannel,
         /* ⚠️ ตัวเลขชุดนี้ **ยังไม่ใช่ "ผิด"** — เป็นการวัดว่ายอดหัวใบกับผลรวมบรรทัดต่างกันแค่ไหน
             ค่าส่งกับส่วนลดยังไม่ถูกนำมาคิด ⇒ ต่างกันเป็นเรื่องปกติ ต้องหาสูตรก่อน */
         lineVsHeader: gaps.map((g) => ({
