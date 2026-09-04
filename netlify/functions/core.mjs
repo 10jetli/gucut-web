@@ -552,12 +552,29 @@ export default async function handler(req, context) {
       );
       const d = await r.json().catch(() => ({}));
       const list = Array.isArray(d.list) ? d.list : [];
-      const SAFE = /status|type|channel|flag|express|urgent|paid|transfer|ship|deliver|cod/i;
+      /* ⚠️ **ตัวกรองรอบแรกรั่ว — คืนชื่อ/ที่อยู่/เบอร์ลูกค้าจริงออกมา** (4 ก.ย. 2569)
+          เขียน /ship/ ไว้เพื่อจับ shippingstatus แต่มันไปจับ shippingname ·
+          shippingaddress · shippingphone ด้วย ⇒ ข้อมูลลูกค้าหลุดออกมาทาง API
+          **เขียนรายชื่อฟิลด์ตรงตัวเท่านั้น ห้ามใช้ regex จับชื่อฟิลด์**
+          (โรคเดียวกับ no-substring-classification — ชื่อที่คนตั้งเองมีคำของอย่างอื่นปนเสมอ) */
+      const SAFE = new Set([
+        "status",
+        "paymentstatus",
+        "integrationStatus",
+        "marketplaceshippingstatus",
+        "shippingstatus",
+        "ordertype",
+        "vattype",
+        "saleschannel",
+        "shippingchannel",
+        "warehousecode",
+        "isCOD",
+      ]);
       const rows = list.filter((o) => !/success|void|cancel/i.test(String(o.status || "")));
       const seen = {};
       for (const o of rows) {
         for (const [k, v] of Object.entries(o)) {
-          if (!SAFE.test(k)) continue;
+          if (!SAFE.has(k)) continue;
           const key = `${k}`;
           (seen[key] ||= new Set()).add(typeof v === "object" ? "(object)" : String(v).slice(0, 40));
         }
