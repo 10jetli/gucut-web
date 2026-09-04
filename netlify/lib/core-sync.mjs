@@ -200,7 +200,15 @@ export async function syncOrders(days = 3, range = {}) {
               (คลาสเดียวกับกฎ "0 ไม่เท่ากับ null" ที่เขียนไว้ในพจนานุกรมฟิลด์) */
           const per = num(it.pricepernumber);
           const totalRaw = num(it.totalprice);
-          const amount = totalRaw > 0 || per <= 0 ? totalRaw : per * qty;
+          /* ⚠️ **`totalprice: 0` ถูกต้องได้ ถ้ามีส่วนลดเท่ากับราคา** — ฝั่งจอจับได้ 5 ก.ย. 2569
+              ใบ SO-202607034: `00747 ค่าบริการซ่อม` per 10 · **discount 10** · total 0
+              ⇒ ของจริงคือ 0 (ลดเต็มจำนวน) **ตัวแก้รอบแรกของผมไป "กู้" มันเป็น 10 ซึ่งผิด**
+              ⇒ ต้องหักส่วนลดก่อนเสมอ ไม่ใช่เอา per × qty ดิบ ๆ
+           ⚠️ **ZORT ส่ง discount มาเป็นข้อความได้** ("10" ไม่ใช่ 10) ⇒ ต้องผ่าน num() เสมอ
+              (เจอตอนคำนวณด้วย Python แล้ว TypeError — ถ้าเป็น JS จะได้ผลเพี้ยนเงียบ ๆ แทน) */
+          const disc = num(it.discount);
+          const computed = Math.max(0, per * qty - disc);
+          const amount = totalRaw > 0 || per <= 0 ? totalRaw : computed;
           rows.push(
             `(${esc(`${st.tag}/${o.number}`)},${idx},${esc(it.sku)},` +
             `${esc(String(it.name ?? it.productname ?? "").slice(0, 200))},${qty},${amount})`
