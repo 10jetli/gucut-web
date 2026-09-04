@@ -657,6 +657,25 @@ export default async function handler(req, context) {
          GROUP BY 1,2,3 ORDER BY n DESC LIMIT 40`,
         [from, today]
       );
+      /* ── ทดสอบสมมติฐาน "ค่าส่งจริงของพัสดุเก็บเงินปลายทาง" ── (ฝั่งจอเสนอ 5 ก.ย. 2569)
+          ถ้าใบที่ส่วนต่าง **ไม่ตรงขั้น** เป็น COD เกือบทั้งหมด
+          และใบที่ส่วนต่าง **ตรงขั้น** เป็น COD น้อยกว่ามาก ⇒ ยืนยันสมมติฐาน
+          ถ้าไม่แยกกันชัด ⇒ สมมติฐานยังไม่พอ ต้องถามเจ้าของร้านจริง ๆ
+          ⚠️ **นี่คือการทดสอบที่แยกแยะได้** — ถ้าสมมติฐานผิด สัดส่วน COD จะใกล้เคียงกันทั้งสองกอง */
+      const codSplit = await coreQuery(
+        `SELECT COALESCE(NULLIF(o.channel,''),'(ไม่ระบุ)') AS ch,
+                CASE WHEN ROUND(o.amount - li.s, 2) IN (${feeList}) THEN 1 ELSE 0 END AS tierMatch,
+                SUM(CASE WHEN COALESCE(o.is_cod,0) = 1 THEN 1 ELSE 0 END) AS cod,
+                SUM(CASE WHEN COALESCE(o.is_cod,0) = 0 THEN 1 ELSE 0 END) AS notCod,
+                COUNT(*) AS n
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND o.amount > li.s
+         GROUP BY 1,2 ORDER BY n DESC`,
+        [from, today]
+      );
       const gapTop = await coreQuery(
         `SELECT ROUND(o.amount - li.s, 2) AS gap, COUNT(*) AS n
          FROM orders o
@@ -723,6 +742,7 @@ export default async function handler(req, context) {
         },
         gapTop,
         gapByChannel,
+        codSplit,
         /* ⚠️ ตัวเลขชุดนี้ **ยังไม่ใช่ "ผิด"** — เป็นการวัดว่ายอดหัวใบกับผลรวมบรรทัดต่างกันแค่ไหน
             ค่าส่งกับส่วนลดยังไม่ถูกนำมาคิด ⇒ ต่างกันเป็นเรื่องปกติ ต้องหาสูตรก่อน */
         lineVsHeader: gaps.map((g) => ({
