@@ -821,6 +821,31 @@ export default async function handler(req, context) {
          FROM orders WHERE ${w}`,
         params
       );
+      /* ช่องทางที่ลูกค้าแต่ละคนซื้อ — ฝั่งจอขอ 5 ก.ย. 2569
+          ⚠️ **ห้ามใช้ GROUP_CONCAT แล้วให้จอ split ด้วยลูกน้ำ** — ชื่อช่องทางคนตั้งเอง
+             วันไหนมีลูกน้ำในชื่อ ("Drop-off: X, Delivery: Y" ก็เคยมีในคอลัมน์ขนส่ง)
+             จอจะแตกชื่อเดียวเป็นสองช่องทางแบบเงียบ ๆ
+             ⇒ จัดกลุ่ม (ลูกค้า × ช่องทาง) ที่ฐาน แล้วประกอบเป็นอาร์เรย์ฝั่งนี้ ไม่มีตัวคั่นให้พลาด
+          ⚠️ ดึงเฉพาะชื่อที่จะส่งกลับจริง ไม่ใช่ทั้ง 1,036 ชื่อ */
+      const wantNames = named.map((r) => String(r.name));
+      const chMap = new Map();
+      if (wantNames.length) {
+        const holes = wantNames.map(() => "?").join(",");
+        const chRows = await coreQuery(
+          `SELECT TRIM(customer) AS name,
+                  COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+                  COUNT(*) AS c
+           FROM orders WHERE ${w} AND TRIM(customer) IN (${holes})
+           GROUP BY 1,2 ORDER BY c DESC`,
+          [...params, ...wantNames]
+        );
+        for (const r of chRows) {
+          const k = String(r.name);
+          if (!chMap.has(k)) chMap.set(k, []);
+          chMap.get(k).push({ channel: String(r.ch), orders: num2(r.c) });
+        }
+      }
+
       return json({
         ok: true,
         ...scope,
@@ -829,6 +854,8 @@ export default async function handler(req, context) {
           orders: num2(r.orders),
           sales: num2(r.sales),
           lastDay: r.lastDay,
+          // เรียงจากช่องทางที่ซื้อบ่อยสุด · คนเดียวซื้อหลายช่องทางได้ ⇒ เป็นอาร์เรย์เสมอ
+          channels: chMap.get(String(r.name)) || [],
         })),
         // ⚠️ กองไม่ระบุชื่อแยกไว้ต่างหาก **ห้ามเอาไปวางปนในตารางอันดับ**
         unnamed: blank
@@ -841,7 +868,9 @@ export default async function handler(req, context) {
         note:
           "customers = เฉพาะใบที่มีชื่อลูกค้า เรียงตามยอด · " +
           "unnamed = ใบที่ไม่ได้ระบุชื่อ (ส่วนใหญ่คือ POS) **แยกไว้ ห้ามนับเป็นลูกค้าคนเดียว** · " +
-          "truncated = ยังมีชื่ออื่นอีกนอกเหนือจาก limit",
+          "truncated = ยังมีชื่ออื่นอีกนอกเหนือจาก limit " +
+          "(**ยอดของแต่ละรายที่ส่งมาถูกต้องครบ** ไม่ใช่ตัวเลขไม่ครบ) · " +
+          "channels = ช่องทางที่คนนั้นซื้อ เรียงตามจำนวนใบ · คนเดียวมีได้หลายช่องทาง",
       });
     }
 
