@@ -4,6 +4,7 @@
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
 //   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
 //   GET /api/core?pending=1        งานค้างจริง vs ใบผี (ช่องทางที่ปิดไปแล้ว) · store=z1|z2
+//   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
@@ -732,6 +733,14 @@ export default async function handler(req, context) {
 
        ⚠️ **ไม่ซ่อนอะไรทั้งนั้น** — คืนทุกกองพร้อมเหตุผล ให้จอเลือกเองว่าจะโชว์อะไร
           การเงียบ ๆ ตัดใบออกจากตัวนับ คือวิธีที่ทำให้ยอดขายหายโดยไม่มีใครรู้ */
+    /* สั่งต่ออายุ token เดี๋ยวนั้น — ตัวจริงวิ่งวันละครั้งที่ token-refresh.mjs
+       ⚠️ ต้องมีทางสั่งเอง ไม่งั้นทดสอบไม่ได้เลยจนกว่าจะถึงตี 3 ครึ่ง
+          และงานตามเวลาที่ทดสอบไม่ได้ = งานที่ไม่มีใครรู้ว่าพังตั้งแต่เมื่อไหร่ */
+    if (url.searchParams.get("tokens")) {
+      const { refreshAllTokens } = await import("./token-refresh.mjs");
+      return json({ ok: true, tokens: await refreshAllTokens() });
+    }
+
     if (url.searchParams.get("pending")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
