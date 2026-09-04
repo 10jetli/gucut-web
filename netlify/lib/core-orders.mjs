@@ -9,7 +9,7 @@
 // ⚠️ ค่าจากผู้ใช้ผูกด้วย ? เสมอ (ไม่ใช่ esc()) — ตัวเลขน้อย ไม่ชนเพดาน ~100 params ของ D1
 //    ต่างจากตัว sync ที่ยัดทีละร้อยแถวจนต้องฝังค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
-import { readStatus, groupStatuses } from "./order-status.mjs";
+import { readStatus, groupsFromCounts } from "./order-status.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const CANCEL_SQL =
@@ -129,6 +129,13 @@ export async function listOrders(o = {}) {
     ])
   );
 
+  // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
+  const statusCounts = await coreQuery(
+    `SELECT COALESCE(integration_status,'') AS st, COUNT(*) AS c
+     FROM orders WHERE ${w.sql} GROUP BY 1`,
+    w.params
+  );
+
   // ยอดแยกช่องทางของ "ช่วงที่กรองอยู่" — ZORT ไม่มีให้ดูในจอเดียว แต่ร้านถามบ่อย
   const byChannel = await coreQuery(
     `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
@@ -183,8 +190,15 @@ export async function listOrders(o = {}) {
           : {}),
       };
     }),
-    // สรุปเป็นกองของ "ช่วงที่กรองอยู่" — จอเอาไปทำการ์ด/แท็บได้เลย ไม่ต้องรู้จักรหัสดิบ
-    shipStatusGroups: groupStatuses(rows),
+    /* ⚠️ **ต้องนับที่ฐานข้อมูล ไม่ใช่จากแถวที่ตัดหน้ามาแล้ว** — ฝั่งจอจับได้ 4 ก.ย. 2569
+        เดิมเขียน groupStatuses(rows) ซึ่ง rows ผ่าน LIMIT/OFFSET มาแล้ว = หน้าละ 50 ใบ
+        แต่คอมเมนต์เขียนว่า "ของช่วงที่กรองอยู่" ⇒ **ป้ายผิดขอบเขต**
+        การ์ดจะเขียนว่า "ช่วง 3 เดือน" ทั้งที่เป็นเลขของ 50 ใบแรก และพอกดหน้า 2
+        ตัวเลขจะเปลี่ยนทั้งใบ ดูเหมือนบั๊กทั้งที่ของจริงคือขอบเขตไม่ตรงกับป้าย
+        (กับดักเดิมของวันนี้ ครั้งที่ 4 — ดู numbers-need-scope)
+      ⚠️ **เกณฑ์ตรวจ: ผลรวม count ทุกกอง ต้องเท่ากับ total ของช่วงนั้นเป๊ะ** */
+    shipStatusGroups: groupsFromCounts(statusCounts),
+    shipStatusScope: "ทั้งช่วงที่กรองอยู่ (ไม่ใช่เฉพาะหน้าที่แสดง)",
   };
 }
 

@@ -89,17 +89,31 @@ export function readStatus(raw) {
   };
 }
 
-/** สรุปเป็นกอง — ไว้ทำการ์ด/แท็บ · คืนค่าดิบที่อยู่ในแต่ละกองมาด้วย */
-export function groupStatuses(rows = []) {
+/** สรุปเป็นกองจาก "ผลนับที่ฐานข้อมูล" — [{st, c}] ที่ได้จาก GROUP BY
+ *  ⚠️ ใช้ตัวนี้เสมอเมื่อจะทำการ์ด/แท็บ **ห้ามนับจากแถวที่ตัดหน้ามาแล้ว**
+ *     ไม่งั้นการ์ดจะเขียนขอบเขตหนึ่ง แต่เลขเป็นของอีกขอบเขตหนึ่ง */
+export function groupsFromCounts(rows = []) {
   const acc = new Map();
   for (const r of rows) {
-    const s = readStatus(r?.integrationStatus ?? r?.integration_status);
-    const g = acc.get(s.group) || { group: s.group, th: GROUP_TH[s.group] || s.group, count: 0, raws: new Set() };
-    g.count += 1;
+    const s = readStatus(r?.st);
+    const g =
+      acc.get(s.group) ||
+      { group: s.group, th: GROUP_TH[s.group] || s.group, count: 0, raws: new Set() };
+    g.count += Number(r?.c) || 0;
     if (s.raw) g.raws.add(s.raw);
     acc.set(s.group, g);
+  }
+  // ⚠️ ถัง unknown ต้องมีเสมอแม้เป็น 0 — จะได้รู้ว่ามีถังนี้อยู่ (ฝั่งจอทำแล้วเช่นกัน)
+  if (!acc.has("unknown")) {
+    acc.set("unknown", { group: "unknown", th: GROUP_TH.unknown, count: 0, raws: new Set() });
   }
   return [...acc.values()]
     .map((g) => ({ ...g, raws: [...g.raws] }))
     .sort((a, b) => b.count - a.count);
 }
+
+/* ⚠️ **ตัวที่นับจากแถวถูกลบทิ้งแล้ว 4 ก.ย. 2569 โดยตั้งใจ**
+    เดิมมี groupStatuses(rows) ที่นับจากแถวที่ผ่าน LIMIT มาแล้ว ⇒ ได้เลขของ "หน้านี้"
+    แต่ถูกเอาไปติดป้ายว่า "ทั้งช่วงที่กรอง" ⇒ ป้ายผิดขอบเขต
+    ปล่อยฟังก์ชันไว้ = มีคนหยิบไปใช้ผิดซ้ำแน่นอน เพราะชื่อมันดูใช้ได้
+    ⇒ เหลือทางเดียวคือ groupsFromCounts() ที่รับผลนับจากฐาน */
