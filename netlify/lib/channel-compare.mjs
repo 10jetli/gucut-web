@@ -17,13 +17,22 @@ const CANCEL = `o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND 
 
 /** รหัสฐาน: `00369-54T` → `00369-54T` · `00369` · (ไล่ตัดท้ายทีละขีด)
  *  ⚠️ รหัสบนแพลตฟอร์มเป็นระดับ "ตัวเลือก" แต่คลังเราเก็บรหัสฐาน
- *     ไม่ตัดท้าย = จับคู่ไม่ติดสักตัว แล้วผลลัพธ์จะดูเหมือน "ไม่ได้ลงขายอะไรเลย" */
+ *     ไม่ตัดท้าย = จับคู่ไม่ติดสักตัว แล้วผลลัพธ์จะดูเหมือน "ไม่ได้ลงขายอะไรเลย"
+ *
+ *  ⚠️ **การตัดท้ายคือ "การเดา" ไม่ใช่ความจริง** (ฝั่งจอชี้ไว้ 4 ก.ย. 2569 ว่า
+ *     ในบรรดาการตีความทั้งหมดในคลังเงา อันนี้ไล่กลับยากที่สุดและเดาผิดแล้วเจ็บสุด
+ *     เพราะผลไปจับคู่กับสินค้าจริง ⇒ กลายเป็นสต็อกของตัวอื่นได้)
+ *     ⇒ ① ห้ามตัดจนสั้นกว่า MIN_BASE — เศษสั้น ๆ อย่าง `SET` `A` ชนของจริงได้ง่ายมาก
+ *       ② ต้องรายงานเสมอว่าแต่ละแถวจับคู่ได้ด้วยวิธีไหน (ตรงตัว / ตัดท้าย)
+ *          จอจะได้พาคนไปดูของดิบได้ ไม่ใช่ให้เชื่อเลขเปล่า ๆ */
+const MIN_BASE = 4;
+
 function expand(code) {
   const out = [code];
   let b = code;
   while (b.includes("-")) {
     b = b.slice(0, b.lastIndexOf("-"));
-    if (b) out.push(b);
+    if (b.length >= MIN_BASE) out.push(b);
   }
   return out;
 }
@@ -52,8 +61,18 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
       .filter(([, tags]) => tags.includes(ch))
       .map(([code]) => code)
   );
-  const listedKeys = new Set();
-  for (const c of listedRaw) for (const k of expand(c)) listedKeys.add(k);
+  /* แยกให้ชัดว่าคีย์ไหนมาจาก "ชื่อตรงตัวบนแพลตฟอร์ม" กับคีย์ไหนมาจาก "การตัดท้าย"
+     ตรงตัวมาก่อนเสมอ — ถ้ารหัสหนึ่งเข้าได้ทั้งสองทาง ให้ถือว่าเป็นตรงตัว */
+  const exactKeys = new Set(listedRaw);
+  const baseKeys = new Map(); // รหัสฐาน → รหัสเต็มบนแพลตฟอร์มที่ตัดมา (ไว้ไล่กลับ)
+  for (const c of listedRaw) {
+    for (const k of expand(c)) {
+      if (k === c || exactKeys.has(k)) continue;
+      if (!baseKeys.has(k)) baseKeys.set(k, []);
+      baseKeys.get(k).push(c);
+    }
+  }
+  const listedKeys = new Set([...exactKeys, ...baseKeys.keys()]);
 
   /* สต็อกปัจจุบัน = ภาพถ่ายวันล่าสุด (แหล่งเดียวกับจอสต็อก ห้ามคิดเอง)
      ⚠️ ตัด "บริการ" ออก (product_type=1 · ค่าส่ง ค่าซ่อม ค่าน้ำมัน)
@@ -87,8 +106,14 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
   for (const r of rows) {
     const sku = String(r.sku).trim();
     const qty = num(r.qty);
-    const isListed = listedKeys.has(sku);
+    const exact = exactKeys.has(sku);
+    const isListed = exact || baseKeys.has(sku);
     const item = { sku, name: r.name || "", qty, soldYear: num(r.soldYear) };
+    if (isListed) {
+      // ⚠️ ติดไปกับแถวเสมอว่า "จับคู่ด้วยวิธีไหน" และถ้าเป็นการเดา ให้บอกด้วยว่าเดามาจากรหัสไหน
+      item.matchedBy = exact ? "exact" : "base";
+      if (!exact) item.matchedFrom = baseKeys.get(sku).slice(0, 5);
+    }
     if (isListed && qty > 0) listedInStock.push(item);
     else if (isListed) listedNoStock.push(item);
     else if (qty > 0) hidden.push(item);
@@ -101,6 +126,17 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
 
   /* เรียงตาม "เคยขายได้" ก่อน ไม่ใช่ตามจำนวนที่ค้าง
      ของค้าง 3,039 ตัวที่ไม่เคยขายเลย ไม่ใช่โอกาส แต่ของค้าง 5 ตัวที่ขายได้ 200 ชิ้น/ปี คือโอกาส */
+  let listedExact = 0;
+  let listedByBase = 0;
+  const baseSample = [];
+  for (const x of [...listedInStock, ...listedNoStock]) {
+    if (x.matchedBy === "exact") listedExact += 1;
+    else {
+      listedByBase += 1;
+      baseSample.push({ sku: x.sku, name: x.name, from: x.matchedFrom });
+    }
+  }
+
   hidden.sort((a, b) => b.soldYear - a.soldYear || b.qty - a.qty);
   const hiddenSold = hidden.filter((x) => x.soldYear > 0);
 
@@ -118,7 +154,13 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
       listedNoStock: listedNoStock.length,
       noStockNotListed: noStockNotListed.length,
       unknownOnChannel: unknownOnChannel.length,
+      /* ⚠️ **สองตัวนี้คือ "เชื่อได้แค่ไหน"** — listedByBase คือกองที่เรา**เดา**ว่าเป็นตัวเดียวกัน
+          จอควรโชว์ให้เห็น ไม่ใช่ซ่อนไว้ · เดาเยอะ = ตัวเลขทั้งหน้าเชื่อได้น้อยลงตามส่วน */
+      listedExact: listedExact,
+      listedByBase: listedByBase,
     },
+    // ตัวอย่างของที่จับคู่ด้วยการเดา — ไว้ให้คนไล่กลับไปดูของดิบได้ใน 1 คลิก
+    baseMatchSample: baseSample.slice(0, 20),
     // ⚠️ ตัดให้สั้นเพื่อไม่ให้คำตอบบวม — ต้องบอกด้วยว่าตัดไป ห้ามเงียบ
     hidden: hidden.slice(0, limit),
     hiddenTruncated: Math.max(0, hidden.length - limit),
