@@ -537,6 +537,36 @@ export default async function handler(req, context) {
        ⚠️ **คืนเฉพาะ "ชื่อฟิลด์" กับค่าของฟิลด์ที่เกี่ยวกับสถานะเท่านั้น**
           ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้าออกมาเด็ดขาด แม้จะอยู่หลังรหัสหลังร้านก็ตาม
           (กติกาเดียวกับ core-contacts: ไม่มีทางดึงข้อมูลลูกค้าออกทั้งก้อน) */
+    /* แยกกอง pending จาก **กระจกใน D1** (เร็ว ไม่ต้องยิง ZORT ทีละหน้า)
+       ⚠️ ยิง ZORT ย้อนทั้งปีแล้วตอบ 502 ที่ 40 วินาที — ไล่หน้าไม่ทัน 26 วิของ Netlify
+          แต่คำถามนี้ตอบได้จากของที่กระจกเก็บไว้แล้ว (status + pay_status) โดยไม่ต้องยิงออกนอก
+       ⇒ ถ้าเลขออกมาใกล้การ์ด ZORT (ค้างชำระเงิน 24 · ค้างโอนสินค้า 132)
+          แปลว่า **pay_status อย่างเดียวก็แยกสองกองนี้ได้** ไม่ต้องเก็บ integrationStatus เพิ่ม */
+    if (url.searchParams.get("pendingsplit")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const rows = await coreQuery(
+        `SELECT COALESCE(NULLIF(pay_status,''),'(ว่าง)') AS pay, COUNT(*) AS c
+         FROM orders
+         WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
+           AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
+         GROUP BY 1 ORDER BY c DESC`
+      );
+      const [tot] = await coreQuery(
+        `SELECT COUNT(*) AS c FROM orders
+         WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
+           AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'`
+      );
+      const [span] = await coreQuery(`SELECT MIN(order_date) a, MAX(order_date) b FROM orders`);
+      return json({
+        ok: true,
+        pendingTotal: Number(tot?.c || 0),
+        byPayStatus: rows,
+        mirrorCovers: span,
+        compareWith: { "การ์ด ZORT ค้างชำระเงิน": 24, "การ์ด ZORT ค้างโอนสินค้า": 132 },
+        note: "นับจากกระจกใน D1 ทั้งหมด ไม่จำกัดช่วงวัน · ยังเป็นสมมติฐาน ต้องเทียบก่อนใช้",
+      });
+    }
+
     if (url.searchParams.get("zortfields")) {
       const st = {
         storename: process.env.ZORT_STORENAME,
