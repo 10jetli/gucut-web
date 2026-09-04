@@ -15,17 +15,26 @@
 //
 // ⚠️ **ล้มแล้วต้องส่งเสียง** — token ตายเงียบคือของที่ดูปกติทุกประการจนถึงวันที่ต้องใช้
 
+/* ⚠️ **ต้องเขียนเส้นทางเป็นข้อความตรง ๆ ในคำสั่ง import ห้ามใส่ตัวแปร**
+    เดิมเก็บเส้นทางไว้ในอาร์เรย์แล้ววน `await import(p.mod)` ⇒ ตัวรวมไฟล์ของ Netlify
+    **มองไม่เห็นว่าต้องเอาโมดูลพวกนี้ไปด้วย** เพราะมันอ่านได้เฉพาะ import ที่เป็นข้อความคงที่
+    ผลคือขึ้นจริงแล้วตอบ "Cannot find module .../lib/lazada.mjs" ทั้งสามเจ้า
+    และเส้นทางที่ฟ้องเป็นของ core.mjs ไม่ใช่ของไฟล์นี้ เพราะหลังรวมไฟล์แล้วมันอยู่คนละที่
+
+    ⚠️ **จับได้เพราะมีทางสั่งเดี๋ยวนั้น (/api/core?tokens=1)** — ถ้ามีแต่งานตามเวลา
+       มันจะล้มเงียบทุกคืนตี 3 ครึ่ง แล้ว token จะตายจริงในอีก 30 วัน
+       โดยไม่มีใครรู้ว่าตัวกันตายไม่เคยทำงานเลยสักครั้ง */
 const PROVIDERS = [
-  { key: "shopee", mod: "../lib/shopee.mjs" },
-  { key: "lazada", mod: "../lib/lazada.mjs" },
-  { key: "tiktok", mod: "../lib/tiktok.mjs" },
+  { key: "shopee", load: () => import("../lib/shopee.mjs") },
+  { key: "lazada", load: () => import("../lib/lazada.mjs") },
+  { key: "tiktok", load: () => import("../lib/tiktok.mjs") },
 ];
 
 export async function refreshAllTokens() {
   const out = {};
   for (const p of PROVIDERS) {
     try {
-      const m = await import(p.mod);
+      const m = await p.load();
       if (typeof m.validToken !== "function") {
         out[p.key] = { ok: false, why: "ไม่มี validToken" };
         continue;
