@@ -3,6 +3,7 @@
 //   GET /api/core                 สถานะ: จำนวนแถว · เทียบยอดล่าสุด · ช่องทางที่เห็น
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
 //   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
+//   GET /api/core?pending=1        งานค้างจริง vs ใบผี (ช่องทางที่ปิดไปแล้ว) · store=z1|z2
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
@@ -719,6 +720,100 @@ export default async function handler(req, context) {
           แล้วให้คนดูว่าอันไหนตรงกับ 24/132 · อันไหนไม่ตรงก็ตัดทิ้งได้ทันที
           ทดสอบแบบนี้ถึงจะแยกแยะได้ (test-must-discriminate)
        ⚠️ อ่านจากกระจกอย่างเดียว ไม่ยิง ZORT — เร็ว และไม่กินโควตา */
+    /* ── งานค้างจริง vs ใบผี ── (4 ก.ย. 2569)
+       ร้านศีตกาลมีใบ "ยังไม่จบ" 195 ใบ แต่ **171 ใบเป็นใบที่ลูกค้าไม่เคยจ่าย
+       จากช่องทางที่ปิดไปแล้ว** (Shopify ปิดถาวร 28 ส.ค. 2569) ⇒ ไม่มีวันมีใครมาจ่าย
+       ปล่อยรวมไว้ = ตัวเลข "งานค้าง" บวมเกินจริง 8 เท่า แล้วคนเลิกดู
+
+       ⚠️ **ห้ามตัดสินจากชื่อช่องทาง** (no-substring-classification) — ชื่อคนตั้งเอง
+          เปลี่ยนได้ สะกดได้หลายแบบ และร้านอื่นที่เอา repo นี้ไป clone ไม่มีคำว่า Shopify
+          ⇒ ตัดสินจาก **ข้อมูล**: ช่องทางนั้นมีใบใหม่ล่าสุดเมื่อไหร่ (ช่องทางที่เงียบ = ปิดแล้ว)
+             และใบนั้นเองอายุเท่าไหร่
+
+       ⚠️ **ไม่ซ่อนอะไรทั้งนั้น** — คืนทุกกองพร้อมเหตุผล ให้จอเลือกเองว่าจะโชว์อะไร
+          การเงียบ ๆ ตัดใบออกจากตัวนับ คือวิธีที่ทำให้ยอดขายหายโดยไม่มีใครรู้ */
+    if (url.searchParams.get("pending")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      const dormantDays = Math.max(
+        7,
+        Math.min(365, parseInt(url.searchParams.get("dormant") ?? "30", 10) || 30)
+      );
+      const NOTDONE = `status NOT LIKE '%Success%' AND status NOT LIKE '%สำเร็จ%'`;
+      const NOTCANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+      const notPaid = `COALESCE(pay_status,'') NOT LIKE '%Paid%'`;
+      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const cut = new Date(Date.now() + 7 * 3600e3 - dormantDays * 864e5)
+        .toISOString()
+        .slice(0, 10);
+
+      // ช่องทางไหน "ยังมีชีวิต" — ดูจากใบล่าสุดของช่องทางนั้น ไม่ใช่จากชื่อ
+      const chans = await coreQuery(
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+                MAX(order_date) AS lastOrder, COUNT(*) AS orders
+         FROM orders WHERE source = ? GROUP BY 1`,
+        [store]
+      );
+      const alive = new Map(chans.map((c) => [String(c.ch), String(c.lastOrder ?? "") >= cut]));
+
+      const rows = await coreQuery(
+        `SELECT number, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, order_date, amount,
+                status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track
+         FROM orders
+         WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
+         ORDER BY order_date DESC`,
+        [store]
+      );
+
+      const buckets = { ต้องส่งของ: [], รอจ่ายอยู่: [], ใบผี: [] };
+      for (const r of rows) {
+        const unpaid = !/paid/i.test(String(r.pay));
+        const chAlive = alive.get(String(r.ch)) !== false;
+        const item = {
+          number: r.number, channel: r.ch, day: r.order_date,
+          amount: r.amount, status: r.status, pay: r.pay || "(ว่าง)",
+          channelLastOrder: chans.find((c) => String(c.ch) === String(r.ch))?.lastOrder ?? null,
+        };
+        if (!unpaid) buckets["ต้องส่งของ"].push(item);
+        else if (chAlive) buckets["รอจ่ายอยู่"].push(item);
+        else buckets["ใบผี"].push(item);
+      }
+
+      const money = (a) => Math.round(a.reduce((s, x) => s + (Number(x.amount) || 0), 0));
+      return json({
+        ok: true,
+        store,
+        today,
+        dormantDays,
+        dormantCutoff: cut,
+        เกณฑ์:
+          `ช่องทางที่ไม่มีใบใหม่ตั้งแต่ ${cut} ถือว่า "เงียบ" (ปิดไปแล้ว) — ` +
+          `ตัดสินจากวันที่ของใบล่าสุด ไม่ใช่จากชื่อช่องทาง`,
+        counts: {
+          ต้องส่งของ: buckets["ต้องส่งของ"].length,
+          รอจ่ายอยู่: buckets["รอจ่ายอยู่"].length,
+          ใบผี: buckets["ใบผี"].length,
+          รวม: rows.length,
+        },
+        amounts: {
+          ต้องส่งของ: money(buckets["ต้องส่งของ"]),
+          รอจ่ายอยู่: money(buckets["รอจ่ายอยู่"]),
+          ใบผี: money(buckets["ใบผี"]),
+        },
+        channels: chans
+          .map((c) => ({ ...c, alive: alive.get(String(c.ch)) }))
+          .sort((a, b) => String(b.lastOrder).localeCompare(String(a.lastOrder))),
+        ต้องส่งของ: buckets["ต้องส่งของ"],
+        รอจ่ายอยู่: buckets["รอจ่ายอยู่"].slice(0, 50),
+        ใบผี: buckets["ใบผี"].slice(0, 50),
+        note:
+          "ต้องส่งของ = จ่ายแล้วแต่ใบยังไม่จบ ⇒ งานจริงของร้าน · " +
+          "รอจ่ายอยู่ = ยังไม่จ่าย แต่ช่องทางยังขายอยู่ ⇒ ยังมีโอกาสได้เงิน · " +
+          "ใบผี = ยังไม่จ่าย และช่องทางเงียบไปแล้ว ⇒ ไม่มีวันได้เงิน " +
+          "**ยังไม่ได้ลบหรือยกเลิกอะไรทั้งนั้น แค่แยกกองให้เห็น**",
+      });
+    }
+
     if (url.searchParams.get("cardguess")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
