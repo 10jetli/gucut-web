@@ -670,7 +670,10 @@ export default async function handler(req, context) {
                 (SELECT COUNT(*) FROM orders b
                   WHERE COALESCE(NULLIF(b.channel,''),'(ไม่ระบุ)')
                         = COALESCE(NULLIF(a.channel,''),'(ไม่ระบุ)')
-                    AND COALESCE(b.integration_status,'') <> '') AS everHadValue
+                    AND COALESCE(b.integration_status,'') <> '') AS everHadValue,
+                (SELECT COUNT(*) FROM orders t
+                  WHERE COALESCE(NULLIF(t.channel,''),'(ไม่ระบุ)')
+                        = COALESCE(NULLIF(a.channel,''),'(ไม่ระบุ)')) AS chanTotal
          FROM orders a WHERE COALESCE(a.integration_status,'') = ''
          GROUP BY 1 ORDER BY blank DESC`
       );
@@ -683,8 +686,16 @@ export default async function handler(req, context) {
       const withReason = blankByChannel.map((r) => ({
         channel: r.ch,
         blank: Number(r.blank),
-        blankReason: Number(r.everHadValue) > 0 ? "source_empty" : "none_expected",
+        /* ⚠️ **ห้ามใช้ "เคยมีสักใบ" เป็นเกณฑ์** (ฝั่งจอชี้ 4 ก.ย. 2569)
+            ค่าหลุดมาใบเดียวจะพลิกทั้งกอง — POS 4,256 ใบกลายเป็น source_empty ทันที
+            ทั้งที่ตัวใบไม่มีอะไรเปลี่ยนเลย ⇒ ต้องมีเกณฑ์ที่ทนต่อค่าหลุด
+            ใช้ **อย่างน้อย 5 ใบ และอย่างน้อย 1% ของช่องทางนั้น** */
+        blankReason:
+          Number(r.everHadValue) >= 5 && Number(r.everHadValue) * 100 >= Number(r.chanTotal)
+            ? "source_empty"
+            : "none_expected",
         everHadValue: Number(r.everHadValue),
+        channelTotal: Number(r.chanTotal),
       }));
       return json({
         ok: true,
@@ -770,6 +781,42 @@ export default async function handler(req, context) {
         mirrorCovers: span,
         compareWith: { "การ์ด ZORT ค้างชำระเงิน": 24, "การ์ด ZORT ค้างโอนสินค้า": 132 },
         note: "นับจากกระจกใน D1 ทั้งหมด ไม่จำกัดช่วงวัน · ยังเป็นสมมติฐาน ต้องเทียบก่อนใช้",
+      });
+    }
+
+    /* ยิงถาม ZORT **รายใบ** แล้วบอกว่า JSON ดิบมีช่อง integrationStatus ไหม
+       ⚠️ มีไว้แยกสองคำอธิบายที่ผลลัพธ์ออกมาเหมือนกันเป๊ะ (ฝั่งจอชี้ 4 ก.ย. 2569):
+          "ZORT ไม่มีค่าให้" กับ "ตัวเขียนข้ามแถวที่ไม่เปลี่ยน" — ทั้งคู่ให้ 'เขียน 0'
+       ⇒ ดู JSON ดิบของใบเดียวก็ตัดสินได้ · ไม่คืนข้อมูลลูกค้าเด็ดขาด */
+    if (url.searchParams.get("zortone")) {
+      const st = {
+        storename: process.env.ZORT_STORENAME,
+        apikey: process.env.ZORT_APIKEY,
+        apisecret: process.env.ZORT_APISECRET,
+      };
+      const want = String(url.searchParams.get("zortone")).slice(0, 60);
+      const day = String(url.searchParams.get("day") ?? "").slice(0, 10);
+      if (!st.storename || !day) return json({ error: "ต้องระบุ zortone=<เลขที่ใบ> และ day=YYYY-MM-DD" }, 400);
+      const r = await fetch(
+        `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${day}&limit=200&page=1`,
+        { headers: st, signal: AbortSignal.timeout(20000) }
+      );
+      const d = await r.json().catch(() => ({}));
+      const hit = (Array.isArray(d.list) ? d.list : []).find((o) => String(o.number) === want);
+      if (!hit) return json({ ok: true, found: false, note: "ไม่เจอใบนี้ในวันนั้น" });
+      return json({
+        ok: true,
+        found: true,
+        number: want,
+        hasIntegrationStatusKey: Object.prototype.hasOwnProperty.call(hit, "integrationStatus"),
+        integrationStatus: hit.integrationStatus ?? null,
+        status: hit.status ?? null,
+        paymentstatus: hit.paymentstatus ?? null,
+        saleschannel: hit.saleschannel ?? null,
+        verdict:
+          hit.integrationStatus
+            ? "ZORT มีค่าให้ ⇒ ตัวเขียนของเราข้าม (แก้ได้)"
+            : "ZORT ไม่มีค่าให้ใบนี้ ⇒ ต้นทางไม่มีจริง (ไม่ต้องแก้)",
       });
     }
 

@@ -110,6 +110,24 @@ export async function listOrders(o = {}) {
     w.params
   );
 
+  /* ⚠️ **เหตุผลที่ช่องนี้ว่าง ต้องติดมากับแถว ไม่ใช่ให้จอไปจับคู่ชื่อช่องทางเอง**
+      (ฝั่งจอชี้ 4 ก.ย. 2569 — ถ้าให้จอจับคู่เอง = กลับไปตัดสินประเภทจากชื่อ ซึ่งเราแบนแล้ว)
+      เกณฑ์: ช่องทางนั้นมีค่าอยู่ **อย่างน้อย 5 ใบ และอย่างน้อย 1%** ⇒ ควรมีค่า แต่ใบนี้ไม่มี
+      ⇒ source_empty (ต้นทางไม่ส่งมา) · ไม่ถึงเกณฑ์ ⇒ none_expected (ช่องทางนี้ไม่มีใครบอกสถานะ)
+      ⚠️ ใช้เกณฑ์มีขั้นต่ำ ไม่ใช่ "เคยมีสักใบ" — ค่าหลุดใบเดียวจะพลิกทั้งกองทันที */
+  const chanStats = await coreQuery(
+    `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+            COUNT(*) AS total,
+            SUM(CASE WHEN COALESCE(integration_status,'') <> '' THEN 1 ELSE 0 END) AS withVal
+     FROM orders GROUP BY 1`
+  );
+  const chanMap = new Map(
+    chanStats.map((r) => [
+      String(r.ch),
+      num(r.withVal) >= 5 && num(r.withVal) * 100 >= num(r.total) ? "source_empty" : "none_expected",
+    ])
+  );
+
   // ยอดแยกช่องทางของ "ช่วงที่กรองอยู่" — ZORT ไม่มีให้ดูในจอเดียว แต่ร้านถามบ่อย
   const byChannel = await coreQuery(
     `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
@@ -145,7 +163,14 @@ export async function listOrders(o = {}) {
     byStatus,
     // ⚠️ มีค่า = จอต้องขึ้นแถบแดงบนหัวจอ · เป็น null = ไม่ต้องขึ้น (ห้ามฮาร์ดโค้ดฝั่งจอ)
     statusUnreliable: STATUS_UNRELIABLE,
-    rows,
+    // ⚠️ ส่งค่าดิบมาคู่กันเสมอ (integrationStatus) + เหตุผลตอนว่าง (blankReason)
+    //    จอจะได้โชว์ของจริงตอนไล่ปัญหาได้ ไม่ต้องเดาอะไรเลย
+    rows: rows.map((r) => ({
+      ...r,
+      ...(String(r.integrationStatus ?? "") === ""
+        ? { blankReason: chanMap.get(String(r.channel || "(ไม่ระบุ)")) || "none_expected" }
+        : {}),
+    })),
   };
 }
 
