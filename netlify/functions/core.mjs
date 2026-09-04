@@ -542,6 +542,96 @@ export default async function handler(req, context) {
           แต่คำถามนี้ตอบได้จากของที่กระจกเก็บไว้แล้ว (status + pay_status) โดยไม่ต้องยิงออกนอก
        ⇒ ถ้าเลขออกมาใกล้การ์ด ZORT (ค้างชำระเงิน 24 · ค้างโอนสินค้า 132)
           แปลว่า **pay_status อย่างเดียวก็แยกสองกองนี้ได้** ไม่ต้องเก็บ integrationStatus เพิ่ม */
+    /* เทียบกระจกกับ ZORT **สองทาง** — งานที่ค้างจาก 4 ก.ย. 2569
+       ⚠️ **ทางเดียวไม่พอ** (ฝั่งจอทักไว้) — ถ้าหยิบเฉพาะใบที่กระจกมีไปถาม ZORT
+          จะจับได้แค่ "สถานะค้างเก่า" แต่ **ใบที่ ZORT มีแล้วกระจกไม่เคยดึงมาเลย
+          จะไม่โผล่ในรายการที่หยิบมาเทียบตั้งแต่แรก** ⇒ มองไม่เห็นทั้งใบ
+          (เคสจริง: ใบโอนสินค้าหาย 581 ใบ เมื่อ 3 ก.ย. เพราะใช้เลขที่ใบเป็นกุญแจ)
+       ⚠️ **คืนเฉพาะเลขที่ใบกับสถานะ ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้า** */
+    if (url.searchParams.get("ordercheck")) {
+      const st = {
+        storename: process.env.ZORT_STORENAME,
+        apikey: process.env.ZORT_APIKEY,
+        apisecret: process.env.ZORT_APISECRET,
+      };
+      if (!st.storename) return json({ error: "ยังไม่ได้ตั้งรหัส ZORT" }, 503);
+      const back = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days") ?? "14", 10) || 14));
+      const from = new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
+      const to = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+
+      const zort = new Map();
+      let truncated = false;
+      for (let page = 1; page <= 10; page++) {
+        const r = await fetch(
+          `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${from}&orderdatebefore=${to}&limit=200&page=${page}`,
+          { headers: st, signal: AbortSignal.timeout(15000) }
+        );
+        const d = await r.json().catch(() => ({}));
+        const chunk = Array.isArray(d.list) ? d.list : [];
+        for (const o of chunk) {
+          zort.set(String(o.id), {
+            number: String(o.number ?? ""),
+            status: String(o.status ?? ""),
+            pay: String(o.paymentstatus ?? ""),
+          });
+        }
+        if (chunk.length < 200) break;
+        if (page === 10) truncated = true;
+      }
+
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const mine = await coreQuery(
+        `SELECT id, number, status, COALESCE(pay_status,'') AS pay FROM orders
+         WHERE order_date >= ? AND order_date <= ?`,
+        [from, to]
+      );
+      const mirror = new Map(mine.map((r) => [String(r.id), r]));
+
+      const missingInMirror = []; // ZORT มี · กระจกไม่มี  ← ทางที่ 2 จับได้ทางเดียว
+      const staleStatus = []; // มีทั้งคู่ · สถานะไม่ตรง
+      const stalePay = []; // มีทั้งคู่ · สถานะจ่ายเงินไม่ตรง
+      for (const [id, z] of zort) {
+        const m = mirror.get(id);
+        if (!m) {
+          missingInMirror.push({ number: z.number, zortStatus: z.status });
+          continue;
+        }
+        if (String(m.status) !== z.status) {
+          staleStatus.push({ number: z.number, mirror: String(m.status), zort: z.status });
+        }
+        if (String(m.pay) !== z.pay) {
+          stalePay.push({ number: z.number, mirror: String(m.pay) || "(ว่าง)", zort: z.pay || "(ว่าง)" });
+        }
+      }
+      const extraInMirror = mine
+        .filter((r) => !zort.has(String(r.id)))
+        .map((r) => ({ number: String(r.number), mirrorStatus: String(r.status) }));
+
+      return json({
+        ok: true,
+        window: { from, to, days: back },
+        truncated, // ⚠️ ชนเพดานหน้า = ตัวเลขไม่ครบ ห้ามเงียบ
+        counts: {
+          zortOrders: zort.size,
+          mirrorOrders: mine.length,
+          missingInMirror: missingInMirror.length,
+          staleStatus: staleStatus.length,
+          stalePay: stalePay.length,
+          extraInMirror: extraInMirror.length,
+        },
+        sample: {
+          missingInMirror: missingInMirror.slice(0, 15),
+          staleStatus: staleStatus.slice(0, 15),
+          stalePay: stalePay.slice(0, 15),
+          extraInMirror: extraInMirror.slice(0, 15),
+        },
+        note:
+          "เทียบสองทาง: ZORT→กระจก (missingInMirror = ใบหายทั้งใบ) และ " +
+          "กระจก↔ZORT (staleStatus/stalePay = มีใบแต่ค่าเก่า) · " +
+          "ไม่เจออะไรในช่วงนี้ ไม่ได้แปลว่ากระจกดี ต้องขยายช่วงวันและอธิบายส่วนต่างให้ได้",
+      });
+    }
+
     if (url.searchParams.get("pendingsplit")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const rows = await coreQuery(
