@@ -318,14 +318,28 @@ export async function shopeeListedSkus() {
   const todo = ids.filter((id) => !known.has(String(id)));
   const deadline = Date.now() + 16000; // เหลือเวลาให้ช่องทางอื่นและตัวเรียกด้วย
   let done = 0;
-  for (let i = 0; i < todo.length && Date.now() < deadline; i += 16) {
-    const chunk = todo.slice(i, i + 16);
+  for (let i = 0; i < todo.length && Date.now() < deadline; i += 8) {
+    const chunk = todo.slice(i, i + 8); // 8 พร้อมกัน — มากกว่านี้ Shopee เริ่มตอบ error
     const got = await Promise.all(
       chunk.map(async (id) => {
         try {
           const d = await shopCall("/api/v2/product/get_model_list", { item_id: String(id) });
-          const models = d?.response?.model ?? [];
-          return [String(id), models.map((m) => String(m.model_sku || "").trim()).filter(Boolean)];
+          /* ⚠️ **ต้องเช็คว่า `model` เป็น array จริง ๆ ก่อนจำผล** — พลาดมาแล้ว 4 ก.ย. 2569
+              Shopee ตอบ 200 พร้อมช่อง error ได้ (โดนจำกัดอัตรา / สินค้าอ่านไม่ได้)
+              เขียน `?? []` = ตีความว่า "สินค้าตัวนี้ไม่มีตัวเลือกเลย" แล้ว**จำค่าว่างถาวร**
+              ⇒ ตัวนับบอกว่าเก็บครบแล้ว ทั้งที่รหัสหายไปเกือบหมด (ได้ 15 จาก ~300 รหัส)
+              โรคเดียวกับ `catch {}` ที่เพิ่งแก้ไป แค่เปลี่ยนหน้ากาก */
+          const models = d?.response?.model;
+          if (!Array.isArray(models)) return null; // ไม่จำ = รอบหน้ามาเก็บต่อ
+          const skus = models.map((m) => String(m.model_sku || "").trim()).filter(Boolean);
+          // สินค้าไม่มีตัวเลือก ⇒ รหัสอยู่ระดับสินค้า ต้องไม่ทิ้ง
+          if (!models.length) {
+            const b = await shopCall("/api/v2/product/get_item_base_info", { item_id_list: String(id) });
+            const one = b?.response?.item_list?.[0];
+            const k = String(one?.item_sku ?? "").trim();
+            return [String(id), k ? [k] : []];
+          }
+          return [String(id), skus];
         } catch {
           return null; // ไม่กลืน — แค่ยังไม่จำ รอบหน้ามาเก็บต่อ
         }
