@@ -273,7 +273,30 @@ export async function lazadaStockCompare() {
     ])
   );
 
+  /* ⚠️ **หลายรหัสบน Lazada ชี้มาที่รหัสเดียวในคลังได้** — เจอของจริงรอบแรก 5 ก.ย. 2569
+      โซ่ขายเป็นม้วน รหัสคลังคือ `03793` มีอยู่ 38,598.5 (เป็นข้อ/เมตร)
+      แต่บน Lazada แตกเป็นความยาว: 03793-42T · 03793-57T · 03793-69T · 03793-roll …
+      ตัวจับคู่ตัดท้ายทำให้ทุกตัวไปชนรหัสเดียวกัน ⇒ **แต่ละตัวถูกเทียบกับ 38,598.5**
+      แล้วรายงานว่า "ต่างกัน +38,000" ทุกบรรทัด
+
+      ⇒ **นี่ไม่ใช่สต็อกไม่ตรง มันคือผลข้างเคียงของการเดา** ถ้าปล่อยไว้
+         จะได้เลข "ไม่ตรง 278 รายการ" ที่ดูน่ากลัวและไม่มีความหมาย
+         แล้วคนจะเลิกดูตัวเลขนี้ไปเลย ซึ่งแย่กว่าไม่มีตัวเลข
+      ⇒ นับ "กี่รหัส Lazada ชี้มาที่รหัสคลังเดียวกัน" ก่อน แล้วแยกกองออกไปต่างหาก */
+  const keyOf = new Map(); // sku ของ Lazada → รหัสในคลังที่จับคู่ได้
+  const fanIn = new Map(); // รหัสในคลัง → จำนวน sku ของ Lazada ที่ชี้มา
+  for (const r of rows) {
+    for (const cand of expandSku(r.sku)) {
+      if (snap.has(cand)) {
+        keyOf.set(r.sku, cand);
+        fanIn.set(cand, (fanIn.get(cand) || 0) + 1);
+        break;
+      }
+    }
+  }
+
   const diff = [];
+  const oneToMany = new Map(); // รหัสคลัง → รายการ sku ของ Lazada ที่ชี้มา
   const missingSample = [];
   const availVsQty = [];
   let same = 0;
@@ -284,19 +307,23 @@ export async function lazadaStockCompare() {
     if (r.available !== r.quantity && availVsQty.length < 20) {
       availVsQty.push({ sku: r.sku, available: r.available, quantity: r.quantity });
     }
-    let key = null;
-    for (const cand of expandSku(r.sku)) {
-      if (snap.has(cand)) {
-        key = cand;
-        if (cand !== r.sku) matchedByBase += 1;
-        break;
-      }
-    }
+    const key = keyOf.get(r.sku) || null;
     if (!key) {
       missing += 1;
       if (missingSample.length < 20) missingSample.push({ sku: r.sku, lazada: r.available });
       continue;
     }
+    if (key !== r.sku) matchedByBase += 1;
+
+    /* หลายตัวชี้มารหัสเดียว = เทียบตัวต่อตัวไม่ได้ **แยกกองออกไป ห้ามนับเป็นไม่ตรง**
+       (เทียบได้เฉพาะยอดรวม ซึ่งก็ยังไม่ตรงอยู่ดีเพราะหน่วยคนละอย่าง — ม้วน vs เส้น) */
+    if ((fanIn.get(key) || 0) > 1) {
+      if (!oneToMany.has(key)) oneToMany.set(key, { core: snap.get(key), skus: [] });
+      const g = oneToMany.get(key);
+      if (g.skus.length < 12) g.skus.push({ sku: r.sku, lazada: r.available });
+      continue;
+    }
+
     const ours = snap.get(key);
     if (ours === r.available) same += 1;
     else
@@ -317,6 +344,14 @@ export async function lazadaStockCompare() {
     diffCount: diff.length,
     missing,
     matchedByBase,
+    /* ⚠️ กองนี้ **ไม่ได้แปลว่าสต็อกผิด** — แปลว่าเทียบตัวต่อตัวไม่ได้
+        เพราะหลายรหัสบน Lazada ชี้มาที่รหัสเดียวในคลัง (เช่นโซ่ขายเป็นม้วนแล้วตัดขาย) */
+    oneToManyKeys: oneToMany.size,
+    oneToManySkus: [...oneToMany.values()].reduce((a, g) => a + g.skus.length, 0),
+    oneToMany: [...oneToMany.entries()]
+      .sort((a, b) => b[1].skus.length - a[1].skus.length)
+      .slice(0, 10)
+      .map(([k, v]) => ({ coreSku: k, coreQty: v.core, lazadaSkus: v.skus })),
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
     diff: diff.slice(0, 50),
     missingSample,
@@ -325,6 +360,8 @@ export async function lazadaStockCompare() {
     note:
       "same = ตัวเลขตรงกัน · diff = ไม่ตรง (gap = ของเรา ลบ ของ Lazada) · " +
       "missing = Lazada มีรหัสนี้แต่คลังเราไม่รู้จัก **คนละเรื่องกับตัวเลขไม่ตรง** · " +
-      "matchedByBase = จับคู่ได้ด้วยการตัดคำต่อท้าย ไม่ใช่ตรงตัว ⇒ เป็นการเดา ดูให้ดี",
+      "matchedByBase = จับคู่ได้ด้วยการตัดคำต่อท้าย ไม่ใช่ตรงตัว ⇒ เป็นการเดา ดูให้ดี · " +
+      "oneToMany = หลายรหัส Lazada ชี้มารหัสเดียวในคลัง (เช่นโซ่ตัดขายตามความยาว) " +
+      "**เทียบตัวต่อตัวไม่ได้ ไม่ใช่สต็อกผิด** ⇒ แยกกองไว้ ไม่นับรวมใน diffCount",
   };
 }
