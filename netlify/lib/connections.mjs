@@ -14,6 +14,33 @@
 // ⚠️ ห้ามส่งคีย์ออกไปแม้แต่ตัวเดียว — บอกได้แค่ "มีคีย์ไหม" กับ "ยิงแล้วผ่านไหม"
 const T = 8000;
 
+/* ⚠️ **แต่ละเจ้าเก็บวันหมดอายุ token คนละชื่อ คนละหน่วย — อย่าเดาว่าเหมือนกัน**
+    Lazada · TikTok : `expiresAt` เป็น **มิลลิวินาที**
+    Shopee          : `expireAt`  เป็น **วินาที** (ไม่มี s ท้ายชื่อ และคนละหน่วย)
+    อ่านชื่อเดียวแล้วอีกเจ้าจะได้ undefined → 0 → "เหลือ -496,817 ชั่วโมง"
+    (เจอจริง 4 ก.ย. 2569) · **ชื่อคล้ายกันแต่หน่วยคนละอย่าง อันตรายกว่าชื่อไม่ตรงกันเลย**
+    เพราะโค้ดวิ่งผ่านและให้ตัวเลขออกมาด้วย ถ้าบังเอิญได้เลขที่ดูสมเหตุสมผล จะไม่มีใครทันสังเกต
+
+    ⚠️ **ไม่รู้วันหมดอายุ ต้องคืน null ไม่ใช่ 0** — 0 อ่านได้ว่า "หมดอายุแล้ว"
+       ซึ่งคนละเรื่องกับ "เราไม่รู้" (กติกาเดียวกับ connected: null)
+
+    ⚠️ **จอต้องได้เลขนี้เป็นฟิลด์ ห้ามให้จอไปแกะจากประโยค `detail`**
+       แกะเมื่อไหร่ วันที่เราแก้คำในประโยค จอจะพังเงียบทันที (ฝั่งจอชี้เอง 4 ก.ย. 2569) */
+function tokenExpiry(t) {
+  const ms = Number(t?.expiresAt || 0);
+  const sec = Number(t?.expireAt || 0);
+  const at = ms > 0 ? ms : sec > 0 ? sec * 1000 : 0;
+  /* ⚠️ ชื่อฟิลด์ตกลงกับฝั่งจอไว้ว่า **tokenExpiresAtUtc** (ไม่ใช่ expiresAtUtc เฉย ๆ)
+      เพราะในคำตอบเดียวกันมีเวลาอย่างอื่นอยู่ด้วย ชื่อกว้างเกินจะสับสนกันเอง
+      และลงท้าย Utc เสมอ กันเดาหน่วยผิด (กติกาเดียวกับ freshness) */
+  if (!at) return { tokenExpiresAtUtc: null, tokenHoursLeft: null };
+  return {
+    tokenExpiresAtUtc: new Date(at).toISOString(),
+    // ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1 · ติดลบได้ = หมดอายุไปแล้วจริง ๆ
+    tokenHoursLeft: Math.floor((at - Date.now()) / 3600e3),
+  };
+}
+
 async function timed(fn) {
   const t0 = Date.now();
   try {
@@ -53,6 +80,7 @@ async function shopee() {
   const n = ml ? Object.values(ml.listings).filter((v) => v.includes("shopee")).length : null;
   return {
     connected: true,
+    ...tokenExpiry(t),
     detail: n === null ? "เชื่อมแล้ว" : `เชื่อมแล้ว · สินค้าที่ลงขาย ${n.toLocaleString("th-TH")} รหัส`,
   };
 }
@@ -61,7 +89,7 @@ async function tiktok() {
   const { validToken } = await import("./tiktok.mjs");
   const t = await validToken();
   return t
-    ? { connected: true, detail: "เชื่อมแล้ว" }
+    ? { connected: true, ...tokenExpiry(t), detail: "เชื่อมแล้ว" }
     : { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/tiktok/auth)" };
 }
 
@@ -71,8 +99,15 @@ async function lazada() {
   const t = await validToken();
   if (!t) return { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/lazada/auth)" };
   // ⚠️ token อายุแค่ 7 วัน — ต้องบอกวันหมดอายุบนจอ ไม่งั้นวันที่มันหลุดจะดูเหมือนระบบพังเฉย ๆ
-  const left = Math.floor((t.expiresAt - Date.now()) / 86400e3);
-  return { connected: true, detail: `เชื่อมแล้ว · ${t.account || "ร้าน"} · token เหลือ ${left} วัน` };
+  const exp = tokenExpiry(t);
+  const left = exp.tokenHoursLeft === null ? null : Math.floor(exp.tokenHoursLeft / 24);
+  return {
+    connected: true,
+    ...exp,
+    detail:
+      `เชื่อมแล้ว · ${t.account || "ร้าน"}` +
+      (left === null ? "" : ` · token เหลือ ${left} วัน`),
+  };
 }
 
 async function line() {
