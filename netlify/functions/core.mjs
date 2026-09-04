@@ -843,19 +843,38 @@ export default async function handler(req, context) {
       const d = await r.json().catch(() => ({}));
       const hit = (Array.isArray(d.list) ? d.list : []).find((o) => String(o.number) === want);
       if (!hit) return json({ ok: true, found: false, note: "ไม่เจอใบนี้ในวันนั้น" });
+      /* ⚠️ **ห้ามถามหาแค่ชื่อคีย์ที่เราเดาไว้** — เดิมเช็คแต่ `integrationStatus`
+          ซึ่งเป็นชื่อเดียวกับที่ตัวเขียนใช้ ⇒ ถ้าเราสะกดผิดตั้งแต่แรก
+          ตัวตรวจจะตอบว่า "ZORT ไม่มีค่า" ทุกใบ **ยืนยันความผิดของตัวเอง**
+          (ฟิลด์อื่นของ ZORT เป็นตัวพิมพ์เล็กล้วนหมด: saleschannel · customername ·
+           trackingno · paymentstatus ⇒ มีเหตุให้สงสัยว่าตัวจริงคือ integrationstatus)
+          ⇒ กวาดคีย์ทุกตัวที่มีคำว่า integration/status แล้วเอาของจริงมาโชว์
+          กติกาเดียวกับ test-must-discriminate */
+      const keys = Object.keys(hit);
+      const related = Object.fromEntries(
+        keys.filter((k) => /integration/i.test(k)).map((k) => [k, hit[k] ?? null])
+      );
+      const anyStatusKeys = keys.filter((k) => /status/i.test(k));
+      const realKey = Object.keys(related).find((k) => String(related[k] ?? "") !== "");
       return json({
         ok: true,
         found: true,
         number: want,
-        hasIntegrationStatusKey: Object.prototype.hasOwnProperty.call(hit, "integrationStatus"),
-        integrationStatus: hit.integrationStatus ?? null,
+        // คีย์ที่เกี่ยวกับ integration ทั้งหมดที่ ZORT ส่งมาจริง พร้อมค่า
+        integrationKeys: related,
+        // เผื่อชื่อไม่มีคำว่า integration เลย — จะได้เห็นว่ามีคีย์สถานะอะไรบ้าง
+        statusKeys: anyStatusKeys,
+        weRead: "integrationStatus", // ชื่อที่ตัวเขียนของเราใช้อยู่
         status: hit.status ?? null,
         paymentstatus: hit.paymentstatus ?? null,
         saleschannel: hit.saleschannel ?? null,
-        verdict:
-          hit.integrationStatus
-            ? "ZORT มีค่าให้ ⇒ ตัวเขียนของเราข้าม (แก้ได้)"
-            : "ZORT ไม่มีค่าให้ใบนี้ ⇒ ต้นทางไม่มีจริง (ไม่ต้องแก้)",
+        verdict: realKey
+          ? realKey === "integrationStatus"
+            ? "ZORT มีค่าให้ ⇒ ตัวเขียนของเราข้าม (แก้ตัวเขียน)"
+            : `ZORT มีค่า แต่คีย์ชื่อ "${realKey}" ไม่ใช่ "integrationStatus" ⇒ **เราอ่านผิดชื่อ**`
+          : Object.keys(related).length
+            ? "มีคีย์แต่ค่าว่าง ⇒ ต้นทางไม่มีค่าให้ใบนี้จริง"
+            : "ZORT ไม่ส่งคีย์ integration มาเลยสำหรับใบนี้",
       });
     }
 
