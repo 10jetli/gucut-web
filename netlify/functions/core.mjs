@@ -544,14 +544,24 @@ export default async function handler(req, context) {
         apisecret: process.env.ZORT_APISECRET,
       };
       if (!st.storename) return json({ error: "ยังไม่ได้ตั้งรหัส ZORT" }, 503);
-      const day = new Date(Date.now() + 7 * 3600e3 - 30 * 864e5).toISOString().slice(0, 10);
+      const back = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "30", 10) || 30));
+      const day = new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
       const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-      const r = await fetch(
-        `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${today}&limit=200&page=1`,
-        { headers: st, signal: AbortSignal.timeout(20000) }
-      );
-      const d = await r.json().catch(() => ({}));
-      const list = Array.isArray(d.list) ? d.list : [];
+      /* ⚠️ ต้องไล่หน้าให้ครบ ไม่งั้นนับได้ไม่ครบแล้วเทียบกับการ์ดของ ZORT ไม่ได้
+          และต้องบอกด้วยถ้าชนเพดานหน้า — ตัวเลขที่ไม่ครบห้ามเงียบ */
+      const list = [];
+      let truncated = false;
+      for (let page = 1; page <= 14; page++) {
+        const r = await fetch(
+          `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${today}&limit=200&page=${page}`,
+          { headers: st, signal: AbortSignal.timeout(15000) }
+        );
+        const d = await r.json().catch(() => ({}));
+        const chunk = Array.isArray(d.list) ? d.list : [];
+        list.push(...chunk);
+        if (chunk.length < 200) break;
+        if (page === 14) truncated = true;
+      }
       /* ⚠️ **ตัวกรองรอบแรกรั่ว — คืนชื่อ/ที่อยู่/เบอร์ลูกค้าจริงออกมา** (4 ก.ย. 2569)
           เขียน /ship/ ไว้เพื่อจับ shippingstatus แต่มันไปจับ shippingname ·
           shippingaddress · shippingphone ด้วย ⇒ ข้อมูลลูกค้าหลุดออกมาทาง API
@@ -579,9 +589,24 @@ export default async function handler(req, context) {
           (seen[key] ||= new Set()).add(typeof v === "object" ? "(object)" : String(v).slice(0, 40));
         }
       }
+      /* นับสองกองที่ ZORT โชว์บนหน้าแรก — 'ค้างชำระเงิน' กับ 'ค้างโอนสินค้า'
+         สมมติฐาน: integrationStatus=READY_TO_SHIP คือ 'ค้างโอนสินค้า' (จ่ายแล้ว รอส่ง)
+         ⚠️ ยังเป็นสมมติฐาน — ต้องเทียบตัวเลขกับการ์ดจริงก่อนถึงจะเอาไปใช้ */
+      const cnt = { waitPay: 0, readyToShip: 0, otherPending: 0 };
+      for (const o of rows) {
+        const isPaid = /paid/i.test(String(o.paymentstatus || ""));
+        const ig = String(o.integrationStatus || "");
+        if (/READY_TO_SHIP/i.test(ig)) cnt.readyToShip += 1;
+        else if (!isPaid) cnt.waitPay += 1;
+        else cnt.otherPending += 1;
+      }
       return json({
         ok: true,
-        note: "เฉพาะใบที่ยังไม่ success/void ใน 30 วันล่าสุด · คืนแค่ฟิลด์ที่เกี่ยวกับสถานะ",
+        note: `เฉพาะใบที่ยังไม่ success/void ย้อน ${back} วัน · คืนแค่ฟิลด์ที่เกี่ยวกับสถานะ`,
+        daysBack: back,
+        ordersScanned: list.length,
+        truncated,
+        guess: cnt, // เทียบกับการ์ดหน้าแรก ZORT: ค้างชำระเงิน 24 · ค้างโอนสินค้า 132
         pendingRows: rows.length,
         allFieldNames: Object.keys(list[0] || {}),
         statusFields: Object.fromEntries(
