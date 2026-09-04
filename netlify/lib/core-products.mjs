@@ -326,22 +326,16 @@ export async function listBundles(o = {}) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
       const ml = await marketplaceListings({ fresh: Boolean(o.fresh) });
-      const byKey = new Map();
-      const put = (k, tags) => {
-        if (!k) return;
-        const cur = byKey.get(k) || new Set();
-        for (const t of tags) cur.add(t);
-        byKey.set(k, cur);
-      };
-      for (const [code, tags] of Object.entries(ml.listings)) {
-        put(code, tags);
-        let b = code;
-        while (b.includes("-")) {
-          b = b.slice(0, b.lastIndexOf("-"));
-          put(b, tags);
-        }
+      // ⚠️ ตรรกะจับคู่อยู่ที่ sku-match.mjs ที่เดียว — ห้ามก๊อปมาวางซ้ำ (เคยมี 3 ชุดที่ไม่ตรงกัน)
+      const { buildSkuIndex } = await import("./sku-match.mjs");
+      const idx = buildSkuIndex(ml.listings);
+      for (const r of rows) {
+        const sku = String(r.sku);
+        r.marketplaces = idx.tagsOf(sku);
+        r.marketplacesBy = idx.methodOf(sku); // บอกด้วยว่าโลโก้ไหนมาจากการเดา
+        const from = idx.fromOf(sku);
+        if (Object.keys(from).length) r.marketplacesFrom = from;
       }
-      for (const r of rows) r.marketplaces = [...(byKey.get(String(r.sku)) || [])];
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),

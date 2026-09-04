@@ -336,22 +336,11 @@ export async function listStock(o = {}) {
           จับคู่ตรง ๆ = ไม่ขึ้นโลโก้สักแถวเดียว (เจอจริงตอนยิงรอบแรก 3 ก.ย. 2569
           เช็ค Shopee สำเร็จ แต่ผลลัพธ์ว่างเปล่า ซึ่งดูเหมือน "ไม่ได้ลงขายอะไรเลย")
           ⇒ ตัดท้ายทีละขีดแล้วติดโลโก้ให้รหัสฐานด้วย (กติกาเดียวกับ missing-sku) */
-      const byKey = new Map();
-      const put = (k, tags) => {
-        if (!k) return;
-        const cur = byKey.get(k) || new Set();
-        for (const t of tags) cur.add(t);
-        byKey.set(k, cur);
-      };
-      for (const [code, tags] of Object.entries(ml.listings)) {
-        put(code, tags);
-        let b = code;
-        while (b.includes("-")) {
-          b = b.slice(0, b.lastIndexOf("-"));
-          put(b, tags);
-        }
-      }
-      mkKey = byKey;
+      /* ⚠️ **ตรรกะจับคู่อยู่ที่ `sku-match.mjs` ที่เดียว ห้ามเขียนซ้ำที่นี่**
+          เดิมไฟล์นี้กับ channel-compare มีตรรกะคนละชุด แล้วชุดหนึ่งมีเพดานความยาว
+          อีกชุดไม่มี ⇒ สองจอตอบเรื่องเดียวกันไม่ตรงกันได้โดยไม่มีอะไรฟ้อง */
+      const { buildSkuIndex } = await import("./sku-match.mjs");
+      mkKey = buildSkuIndex(ml.listings);
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
@@ -409,7 +398,19 @@ export async function listStock(o = {}) {
       //    ค่าที่แปะไว้ก่อนหน้าจะหลุดหายเงียบ ๆ ทั้งที่โค้ดข้างบนทำงานสำเร็จทุกบรรทัด
       //    (เจอจริง 3 ก.ย. 2569 — checkedMarketplaces มาถูก แต่ทุกแถวไม่มีฟิลด์เลย
       //     ดูเหมือน "ร้านไม่ได้ลงขายอะไรเลย" ทั้งที่ของจริงลงขายเกือบทุกตัว)
-      ...(mkKey ? { marketplaces: [...(mkKey.get(String(r.sku)) || [])] } : {}),
+      /* ⚠️ **ต้องบอกด้วยว่าโลโก้แต่ละอันมาจากการจับคู่แบบไหน** (ฝั่งจอชี้ไว้ 4 ก.ย. 2569)
+          ของดิบมีอยู่ที่ `?channelcompare=` ก็จริง **แต่ไม่ได้อยู่ในเส้นทางที่คนเดินผ่าน**
+          คนเปิดจอสินค้าเห็นโลโก้ Lazada บน 00073 โดยไม่มีอะไรบอกว่าแถวนี้มาจากการเดา
+          ⇒ "ไล่กลับได้" ต้องนับจากจอที่คนใช้จริง ไม่ใช่จากจุดที่ข้อมูลมีอยู่ */
+      ...(mkKey
+        ? {
+            marketplaces: mkKey.tagsOf(String(r.sku)),
+            marketplacesBy: mkKey.methodOf(String(r.sku)), // {lazada:"base", shopee:"exact"}
+            ...(Object.keys(mkKey.fromOf(String(r.sku))).length
+              ? { marketplacesFrom: mkKey.fromOf(String(r.sku)) } // รหัสเต็มที่ตัดมา
+              : {}),
+          }
+        : {}),
     })),
   };
 }
