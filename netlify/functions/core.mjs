@@ -479,17 +479,26 @@ export default async function handler(req, context) {
       if (mode === "dry") {
         const day = url.searchParams.get("day") ||
           new Date(Date.now() + 7 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
+        /* 🔴 **ต้องส่งเข้า PEAK เฉพาะร้าน z1 (ศีตกาล · gucut@icloud.com) เท่านั้น**
+            เจ้าของร้านยืนยัน 4 ก.ย. 2569: **ร้านที่สอง (ceojet) ยังไม่ได้เอามาคิดภาษี**
+            ⚠️ เดิมตรงนี้ดึงออเดอร์ของวันนั้น **ทั้งสองร้าน** ⇒ ถ้าเปิดส่งจริงเมื่อไหร่
+               ยอดของ ceojet จะไหลเข้าบัญชีภาษีไปด้วยโดยไม่มีใครสังเกต
+               นี่ไม่ใช่บั๊กบนจอ — เป็นการยื่นภาษีด้วยตัวเลขที่เจ้าของร้านไม่ได้ตั้งใจให้ยื่น
+            ⚠️ **ห้ามถอดตัวกรองนี้** จนกว่าเจ้าของร้านจะสั่งเองว่าให้รวมร้านที่สองด้วย
+               (การตัดสินใจว่า z2 เข้าภาษีเมื่อไหร่ เป็นเรื่องของเขากับผู้ทำบัญชี ไม่ใช่ของระบบ) */
+        const TAX_STORE = "z1";
         const orders = await coreQuery(
           `SELECT id, number, channel, customer, order_date, amount FROM orders
-           WHERE order_date = ? AND status NOT LIKE '%cancel%' AND status NOT LIKE '%void%'
+           WHERE order_date = ? AND source = ?
+             AND status NOT LIKE '%cancel%' AND status NOT LIKE '%void%'
              AND status NOT LIKE '%ยกเลิก%' LIMIT 200`,
-          [day]
+          [day, TAX_STORE]
         );
         const items = await coreQuery(
           `SELECT oi.order_id, oi.sku, oi.name, oi.qty, oi.amount
            FROM order_items oi JOIN orders o ON o.id = oi.order_id
-           WHERE o.order_date = ?`,
-          [day]
+           WHERE o.order_date = ? AND o.source = ?`,
+          [day, TAX_STORE]
         );
         const byOrder = new Map();
         for (const it of items) {
@@ -497,7 +506,14 @@ export default async function handler(req, context) {
           byOrder.get(it.order_id).push(it);
         }
         const invoices = orders.map((o) => toInvoice(o, byOrder.get(o.id) ?? []));
-        return json({ ok: true, day, orders: orders.length, peak: await sendInvoices(invoices) });
+        return json({
+          ok: true,
+          day,
+          taxStore: TAX_STORE, // ⚠️ บอกขอบเขตเสมอ — เลขนี้นับเฉพาะร้านที่เข้าภาษี
+          scopeNote: "เฉพาะร้าน ศีตกาล เทรดดิ้ง (gucut@icloud.com) — ร้าน ceojet ยังไม่ได้เอามาคิดภาษี",
+          orders: orders.length,
+          peak: await sendInvoices(invoices),
+        });
       }
       return json({ error: "peak รับได้เฉพาะ status หรือ dry" }, 400);
     }
