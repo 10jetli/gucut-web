@@ -938,7 +938,14 @@ export default async function handler(req, context) {
         keys.filter((k) => /integration/i.test(k)).map((k) => [k, hit[k] ?? null])
       );
       const anyStatusKeys = keys.filter((k) => /status/i.test(k));
-      const realKey = Object.keys(related).find((k) => String(related[k] ?? "") !== "");
+      /* ⚠️ **ต้องเทียบกับชื่อที่เราใช้ ไม่ใช่ "คีย์แรกที่มีค่า"** — เขียนครั้งแรกใช้ find()
+          เอาคีย์แรกที่ไม่ว่าง แล้วมันไปเจอ integrationName ("Lazada") ก่อน
+          ⇒ ตัดสินว่า "เราอ่านผิดชื่อ" ทั้งที่ integrationStatus ถูกต้องและมีค่าอยู่
+          ตัวตรวจตอบผิดในทิศที่ทำให้เราไปแก้ของที่ไม่ได้เสีย ซึ่งอันตรายพอกัน */
+      const ourVal = String(hit.integrationStatus ?? "");
+      const otherWithVal = Object.keys(related).filter(
+        (k) => k !== "integrationStatus" && String(related[k] ?? "") !== ""
+      );
       return json({
         ok: true,
         found: true,
@@ -951,13 +958,15 @@ export default async function handler(req, context) {
         status: hit.status ?? null,
         paymentstatus: hit.paymentstatus ?? null,
         saleschannel: hit.saleschannel ?? null,
-        verdict: realKey
-          ? realKey === "integrationStatus"
-            ? "ZORT มีค่าให้ ⇒ ตัวเขียนของเราข้าม (แก้ตัวเขียน)"
-            : `ZORT มีค่า แต่คีย์ชื่อ "${realKey}" ไม่ใช่ "integrationStatus" ⇒ **เราอ่านผิดชื่อ**`
-          : Object.keys(related).length
-            ? "มีคีย์แต่ค่าว่าง ⇒ ต้นทางไม่มีค่าให้ใบนี้จริง"
-            : "ZORT ไม่ส่งคีย์ integration มาเลยสำหรับใบนี้",
+        // ⚠️ ZORT มีสถานะ "การจัดส่งฝั่งมาร์เก็ตเพลส" แยกอีกตัว — คนละเรื่องกับ integrationStatus
+        marketplaceshippingstatus: hit.marketplaceshippingstatus ?? null,
+        verdict: ourVal
+          ? "integrationStatus มีค่าจริง ⇒ ชื่อคีย์ถูกแล้ว ปัญหาไม่ได้อยู่ตรงนี้"
+          : Object.prototype.hasOwnProperty.call(hit, "integrationStatus")
+            ? `integrationStatus มีคีย์แต่ค่าว่าง${
+                otherWithVal.length ? ` (คีย์ที่มีค่า: ${otherWithVal.join(", ")})` : ""
+              } ⇒ ต้นทางไม่มีค่าให้ใบนี้จริง`
+            : "ZORT ไม่ส่งคีย์ integrationStatus มาเลยสำหรับใบนี้",
       });
     }
 
