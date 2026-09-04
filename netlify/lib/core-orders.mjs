@@ -122,12 +122,29 @@ export async function listOrders(o = {}) {
             SUM(CASE WHEN COALESCE(integration_status,'') <> '' THEN 1 ELSE 0 END) AS withVal
      FROM orders GROUP BY 1`
   );
-  const chanMap = new Map(
-    chanStats.map((r) => [
-      String(r.ch),
-      num(r.withVal) >= 5 && num(r.withVal) * 100 >= num(r.total) ? "source_empty" : "none_expected",
-    ])
-  );
+  /* ⚠️ **ต้องรวมชื่อช่องทางที่สะกดต่างกันก่อนคิดเกณฑ์** (ฝั่งจอชี้ 4 ก.ย. 2569)
+      ในฐานมี "Line OA @gucut1" (177 ใบ) กับ "LINE OA @gucut1" (66 ใบ) ซึ่งเป็นช่องทางเดียวกัน
+      ถูกนับแยกกัน ⇒ ถ้าวันหนึ่งก้อนหนึ่งข้ามเกณฑ์แต่อีกก้อนไม่ข้าม
+      **ใบที่มาจากช่องทางเดียวกันจะได้ blankReason คนละอย่าง** โดยไม่มีอะไรฟ้อง
+      ⚠️ รวมเฉพาะตอนคิดเกณฑ์เท่านั้น **ห้ามไปแก้ค่าที่เก็บในฐาน**
+         ชื่อในฐานต้องตรงกับที่ ZORT ส่งมาจริง ไม่งั้นเทียบกลับกับต้นทางไม่ได้ (ordercheck จะพัง)
+      ⚠️ รวมด้วย "ตัวพิมพ์ + ช่องว่าง" เท่านั้น ห้ามรวมด้วยการดูว่าชื่อมีคำไหนอยู่
+         (no-substring-classification — "Shopee-gucut" กับ "ZAMA Shopee" คนละร้าน) */
+  const chanKey = (v) => String(v ?? "").trim().toLowerCase().replace(/\s+/g, " ");
+  const merged = new Map(); // คีย์ที่รวมแล้ว → { total, withVal }
+  for (const r of chanStats) {
+    const k = chanKey(r.ch);
+    const acc = merged.get(k) || { total: 0, withVal: 0 };
+    acc.total += num(r.total);
+    acc.withVal += num(r.withVal);
+    merged.set(k, acc);
+  }
+  const reasonOf = (ch) => {
+    const acc = merged.get(chanKey(ch));
+    if (!acc) return "none_expected";
+    return acc.withVal >= 5 && acc.withVal * 100 >= acc.total ? "source_empty" : "none_expected";
+  };
+  const chanMap = { get: (ch) => reasonOf(ch) };
 
   // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
   const statusCountsRaw = await coreQuery(
