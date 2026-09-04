@@ -12,6 +12,9 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
+// ต้องตรงกับที่ใช้ในจออื่นเสมอ ไม่งั้นตัวเลขคนละจอไม่ตรงกันโดยไม่มีใครรู้
+const CANCEL = `o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'`;
+
 /** รหัสฐาน: `00369-54T` → `00369-54T` · `00369` · (ไล่ตัดท้ายทีละขีด)
  *  ⚠️ รหัสบนแพลตฟอร์มเป็นระดับ "ตัวเลือก" แต่คลังเราเก็บรหัสฐาน
  *     ไม่ตัดท้าย = จับคู่ไม่ติดสักตัว แล้วผลลัพธ์จะดูเหมือน "ไม่ได้ลงขายอะไรเลย" */
@@ -58,11 +61,22 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
   if (!day) return { channel: ch, checked: false, why: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
+  /* ⚠️ **ตัวเลข "มีของแต่ไม่ได้ลงขาย" เฉย ๆ ใช้ตัดสินใจไม่ได้** — เจอ 4 ก.ย. 2569
+      กองบนสุดของ Lazada คือ สกรูหัวจม · กล่องไดคัท · ใบรับประกัน
+      ของพวกนี้เป็นวัสดุใช้ในร้าน ไม่มีวันลงขายอยู่แล้ว การนับรวมเข้าไปทำให้เลขบวม
+      แล้วอ่านเหมือน "เสียโอกาสขาย 476 รายการ" ซึ่งไม่จริง
+      ⇒ ติด "เคยขายได้กี่ชิ้นในรอบปี" ไปกับทุกแถว **จอต้องแยกกองที่เคยขายออกมาเสมอ** */
+  const since = new Date(new Date(`${day}T00:00:00Z`).getTime() - 365 * 864e5)
+    .toISOString()
+    .slice(0, 10);
   const rows = await coreQuery(
-    `SELECT c.sku AS sku, COALESCE(p.name,'') AS name, c.qty AS qty
+    `SELECT c.sku AS sku, COALESCE(p.name,'') AS name, c.qty AS qty,
+            COALESCE((SELECT SUM(oi.qty) FROM order_items oi
+                      JOIN orders o ON o.id = oi.order_id
+                      WHERE oi.sku = c.sku AND o.order_date >= ? AND ${CANCEL}),0) AS soldYear
      FROM stock_snapshots c LEFT JOIN products p ON p.sku = c.sku
      WHERE c.day = ? AND COALESCE(c.sku,'') <> '' AND COALESCE(p.product_type,0) = 0`,
-    [day]
+    [since, day]
   );
 
   const hidden = []; // มีของในคลัง แต่ไม่ได้ลงขายที่ช่องทางนี้
@@ -74,7 +88,7 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
     const sku = String(r.sku).trim();
     const qty = num(r.qty);
     const isListed = listedKeys.has(sku);
-    const item = { sku, name: r.name || "", qty };
+    const item = { sku, name: r.name || "", qty, soldYear: num(r.soldYear) };
     if (isListed && qty > 0) listedInStock.push(item);
     else if (isListed) listedNoStock.push(item);
     else if (qty > 0) hidden.push(item);
@@ -85,7 +99,10 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
   const known = new Set(rows.map((r) => String(r.sku).trim()));
   const unknownOnChannel = [...listedRaw].filter((c) => !expand(c).some((k) => known.has(k)));
 
-  hidden.sort((a, b) => b.qty - a.qty); // ของค้างเยอะสุดขึ้นก่อน — เสียโอกาสมากสุด
+  /* เรียงตาม "เคยขายได้" ก่อน ไม่ใช่ตามจำนวนที่ค้าง
+     ของค้าง 3,039 ตัวที่ไม่เคยขายเลย ไม่ใช่โอกาส แต่ของค้าง 5 ตัวที่ขายได้ 200 ชิ้น/ปี คือโอกาส */
+  hidden.sort((a, b) => b.soldYear - a.soldYear || b.qty - a.qty);
+  const hiddenSold = hidden.filter((x) => x.soldYear > 0);
 
   return {
     channel: ch,
@@ -96,6 +113,7 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
     skusInWarehouse: rows.length,
     counts: {
       hidden: hidden.length,
+      hiddenEverSold: hiddenSold.length, // ← ตัวนี้คือ "โอกาสจริง" ไม่ใช่ hidden เฉย ๆ
       listedInStock: listedInStock.length,
       listedNoStock: listedNoStock.length,
       noStockNotListed: noStockNotListed.length,
@@ -110,6 +128,7 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
     unknownOnChannelTruncated: Math.max(0, unknownOnChannel.length - limit),
     note:
       "hidden = มีของในคลังแต่ไม่ได้ลงขายที่ช่องทางนี้ (อาจตั้งใจซ่อนไว้ก็ได้) · " +
+      "**hiddenEverSold = กองที่เคยขายได้จริงในรอบปี ⇒ ใช้ตัวนี้ตัดสินใจ ไม่ใช่ hidden** · " +
       "listedNoStock = ลงขายอยู่แต่ของหมด · " +
       "unknownOnChannel = รหัสบนแพลตฟอร์มที่คลังเราไม่รู้จัก",
   };
