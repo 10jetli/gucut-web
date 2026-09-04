@@ -268,13 +268,70 @@ export async function shopeeStockCompare() {
 
 /** รหัสสินค้าที่กำลังลงขายอยู่บน Shopee (สถานะ NORMAL เท่านั้น)
  *  ⚠️ ใช้รายการสินค้าจริง ไม่ใช่ประวัติการขาย — ของที่ถอดออกไปแล้วต้องไม่ติดมาด้วย */
+/** รหัสสินค้าที่ "ลงขายอยู่จริง" บน Shopee — สำหรับคอลัมน์ Marketplace
+ *
+ *  ⚠️ **ห้ามใช้ `shopeeStock()` ตอบคำถามนี้** — พลาดมาแล้ว 4 ก.ย. 2569 (ฝั่งจอจับได้)
+ *     `shopeeStock()` ต้องยิง `get_model_list` **ทีละสินค้า** เพื่ออ่านสต็อกระดับตัวเลือก
+ *     ร้านมีเกือบ 2,000 รายการ = เกือบ 2,000 คำขอ ทำไม่ทันใน 26 วินาทีของ Netlify
+ *     และตัวมันมี `catch {}` กลืน error รายตัวไว้เงียบ ๆ (เจตนาเดิมคือ "อย่าล้มทั้งรอบ")
+ *     ⇒ ผลลัพธ์คือได้มาแค่ **319 จาก 1,926** แล้วส่งต่อเหมือนเป็นคำตอบที่ครบถ้วน
+ *     ⇒ สินค้าที่ขายบน Shopee อยู่จริงเป็นพันขึ้นจอว่า **"ไม่ได้ลงขายบน Shopee"**
+ *        ซึ่งอันตรายกว่าขีดเปล่า เพราะหน้าตาเหมือนคำตอบที่ตรวจมาแล้ว
+ *
+ *  ⇒ คำถาม "ลงขายอยู่ไหม" **ไม่ต้องรู้จำนวนสต็อก** ⇒ ใช้แค่ get_item_list + base_info
+ *     (~2,000 รายการ = 20 หน้า + 40 คำขอ) เร็วพอและได้ครบ
+ *  ⚠️ **ดึงไม่ครบให้โยน error** ห้ามคืนของบางส่วน — ปลายทางแยกไม่ออกว่าเป็น
+ *     "ไม่ได้ลงขาย" กับ "เราถามไม่ครบ" (marketplace-listings จะจับไปลง failed ให้เอง)
+ */
 export async function shopeeListedSkus() {
   const t = await validToken();
   if (!t) throw new Error("ยังไม่ได้เชื่อมร้าน Shopee");
+
+  // ① เก็บรหัสสินค้าทั้งหมดที่สถานะปกติ
+  const ids = [];
+  let offset = 0;
+  let more = true;
+  for (let p = 0; p < 40 && more; p++) {
+    const d = await shopCall("/api/v2/product/get_item_list", {
+      offset: String(offset),
+      page_size: "100",
+      item_status: "NORMAL",
+    });
+    const page = d?.response?.item ?? [];
+    for (const it of page) ids.push(it.item_id);
+    more = Boolean(d?.response?.has_next_page);
+    offset += 100;
+  }
+  if (more) throw new Error(`รายการสินค้า Shopee ยาวเกิน 4,000 รายการ — ดึงไม่ครบ`);
+  if (!ids.length) return new Set();
+
+  // ② ขอ SKU ทีละ 50 (เพดานของ Shopee) — ยิงพร้อมกันทีละ 6 ก้อนให้ทันเวลา
   const out = new Set();
-  for (const r of await shopeeStock()) {
-    const k = String(r?.sku ?? "").trim();
-    if (k) out.add(k);
+  let failed = 0;
+  const batches = [];
+  for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
+  for (let i = 0; i < batches.length; i += 6) {
+    const got = await Promise.all(
+      batches.slice(i, i + 6).map(async (b) => {
+        try {
+          return await shopCall("/api/v2/product/get_item_base_info", {
+            item_id_list: b.join(","),
+          });
+        } catch {
+          failed += 1; // นับไว้ ไม่กลืน — ท้ายรอบจะโยนทิ้งทั้งชุด
+          return null;
+        }
+      })
+    );
+    for (const d of got) {
+      for (const it of d?.response?.item_list ?? []) {
+        const k = String(it?.item_sku ?? "").trim();
+        if (k) out.add(k);
+      }
+    }
+  }
+  if (failed) {
+    throw new Error(`ถาม Shopee ไม่สำเร็จ ${failed} ก้อนจาก ${batches.length} — ผลไม่ครบ จึงไม่ใช้`);
   }
   return out;
 }
