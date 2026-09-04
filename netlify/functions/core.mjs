@@ -646,6 +646,34 @@ export default async function handler(req, context) {
       });
     }
 
+    /* ไขว้ช่องทาง × integration_status ทั้งตาราง — ตอบว่าช่องว่างเป็น "ไม่มีวันมีค่า"
+       หรือ "backfill หาย" (ฝั่งจอไขว้ 845 ใบล่าสุดแล้วพบว่าแถวมาร์เก็ตเพลสไม่ว่างเลย
+       แต่ยิงได้ทีละ 200 ⇒ ต้องดูทั้ง 12,175 ใบถึงจะสรุปได้)
+       ⚠️ **แถวมาร์เก็ตเพลสที่ว่าง = backfill หายจริง ต้องกวาด**
+          แถว POS/แชท/เว็บเราที่ว่าง = ปกติ ไม่มีแพลตฟอร์มไหนเป็นคนบอกสถานะ */
+    if (url.searchParams.get("statuscross")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const rows = await coreQuery(
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+                COALESCE(NULLIF(integration_status,''),'(ว่าง)') AS st,
+                COUNT(*) AS c
+         FROM orders GROUP BY 1,2 ORDER BY 1, c DESC`
+      );
+      const blankByChannel = await coreQuery(
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, COUNT(*) AS c
+         FROM orders WHERE COALESCE(integration_status,'') = ''
+         GROUP BY 1 ORDER BY c DESC`
+      );
+      return json({
+        ok: true,
+        note:
+          "ทั้งตาราง ไม่จำกัดช่วงวัน · แถวช่องทางมาร์เก็ตเพลสที่ว่าง = backfill หายจริง · " +
+          "แถว POS/แชท/เว็บเราที่ว่าง = ปกติ ไม่มีแพลตฟอร์มไหนบอกสถานะ",
+        cross: rows,
+        blankByChannel,
+      });
+    }
+
     if (url.searchParams.get("pendingsplit")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       /* ⚠️ **ต้องแยกตามร้านด้วย** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
