@@ -35,6 +35,10 @@ const UNRELIABLE = {
      ⇒ ไม่มีของหายเป็นพันอย่างที่กลัวกัน เราเทียบผิดคู่กันเอง */
 };
 
+/** ธงเตือนของ "ตอนนี้" — คิดจากโค้ดชุดปัจจุบันเสมอ ไม่ได้มาจากแคช */
+const flagsFor = (checked = []) =>
+  Object.fromEntries(Object.entries(UNRELIABLE).filter(([k]) => checked.includes(k)));
+
 const CACHE_KEY = "marketplace-listings";
 const TTL_MS = 30 * 60e3; // ครึ่งชั่วโมง — จอนี้เปิดบ่อย ไม่ควรยิงแพลตฟอร์มทุกครั้ง
 
@@ -99,7 +103,14 @@ async function lazadaSkus() {
 export async function marketplaceListings({ fresh = false } = {}) {
   const store = getStore("gucut-coupon");
   const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
-  if (!fresh && cached?.at && Date.now() - cached.at < TTL_MS) return { ...cached, cached: true };
+  /* ⚠️ **ธง unreliable ต้องคิดใหม่ทุกครั้ง ห้ามอ่านจากก้อนที่แคชไว้** — เจอ 4 ก.ย. 2569
+      รอบแรกผมใส่ธงไว้ในก้อนเดียวกับข้อมูล ⇒ พอแก้ปัญหาเสร็จและลบธงออกจากโค้ดแล้ว
+      **ก้อนที่แคชไว้ยังพกธงเก่าอยู่อีกครึ่งชั่วโมง จอจึงเตือนต่อทั้งที่เรื่องจบแล้ว**
+      = nets-expire-silently กลับด้าน: ตาข่ายที่ค้างอยู่หลังปัญหาหายไปแล้ว
+      ⇒ ของที่เป็น "สถานะตอนนี้" ห้ามอยู่ในก้อนที่แคชนาน ๆ ต้องประกบตอนอ่านเสมอ */
+  if (!fresh && cached?.at && Date.now() - cached.at < TTL_MS) {
+    return { ...cached, unreliable: flagsFor(cached.checked || []), cached: true };
+  }
 
   const checked = [];
   const failed = {};
@@ -159,9 +170,7 @@ export async function marketplaceListings({ fresh = false } = {}) {
     checked, // ถามได้จริงรอบนี้
     notConnected, // ยังเชื่อมไม่ได้ = ยังไม่รู้ ไม่ใช่ "ไม่มีของลงขาย"
     // ได้คำตอบมาแล้วแต่รู้ว่าผิด — ส่งเฉพาะช่องทางที่ถามได้จริงในรอบนี้
-    unreliable: Object.fromEntries(
-      Object.entries(UNRELIABLE).filter(([k]) => checked.includes(k))
-    ),
+    unreliable: flagsFor(checked),
     failed,
     listings: Object.fromEntries([...bySku].map(([k, v]) => [k, v])),
   };
