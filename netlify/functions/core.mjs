@@ -2,6 +2,7 @@
 //
 //   GET /api/core                 สถานะ: จำนวนแถว · เทียบยอดล่าสุด · ช่องทางที่เห็น
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
+//   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
 //   GET /api/core?recon=1         สั่งเทียบยอดเมื่อวานเดี๋ยวนี้
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
@@ -683,6 +684,88 @@ export default async function handler(req, context) {
        แต่ยิงได้ทีละ 200 ⇒ ต้องดูทั้ง 12,175 ใบถึงจะสรุปได้)
        ⚠️ **แถวมาร์เก็ตเพลสที่ว่าง = backfill หายจริง ต้องกวาด**
           แถว POS/แชท/เว็บเราที่ว่าง = ปกติ ไม่มีแพลตฟอร์มไหนเป็นคนบอกสถานะ */
+    /* ── ใบที่ integration_status ว่าง อยู่ตรงไหนกันแน่ ── (4 ก.ย. 2569)
+       ⚠️ **สร้างขึ้นเพราะการไล่ทีละเดือนให้คำตอบที่ไม่ลงตัว** — รวมทั้งปีได้ 617 ใบ
+          แต่ไล่ทีละเดือนแล้วบวกกันได้ 560 ⇒ ขาดไป 57 ใบที่ไม่มีเดือนไหนรับ
+          และเลขของเดือนเดียวกันยังพลิกฝั่งเองระหว่างสองรอบที่ห่างกันไม่ถึงชั่วโมง
+          ⇒ **ห้ามตอบด้วยการไล่ถามทีละช่วงอีก** ต้องนับทั้งตารางในคำสั่งเดียว
+             ไม่งั้นเศษที่ตกหล่นจะไม่มีใครเห็น (กติกา mirror-needs-outside-check)
+
+       ⚠️ **ตัวนี้ไม่แตะ chanMap เลยโดยตั้งใจ** — เกณฑ์ ≥5 ใบ/≥1% คิดจากทั้งตาราง
+          ทุกครั้งที่เรียก ช่องทางที่อยู่ริมเส้นจึงพลิกไปมาได้เอง
+          ที่นี่คืน **ตัวเลขดิบ** (ว่างกี่ใบ · มีค่ากี่ใบ) ให้คนตัดสินเอง
+          ป้ายที่พลิกได้เองแย่กว่าไม่มีป้าย */
+    if (url.searchParams.get("blankwhere")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const blank = `COALESCE(integration_status,'') = ''`;
+
+      // ① ยอดรวมทั้งตาราง — ตัวตั้งที่ทุกการแบ่งต้องบวกกลับมาได้เท่านี้
+      const [tot] = await coreQuery(
+        `SELECT COUNT(*) AS total,
+                SUM(CASE WHEN ${blank} THEN 1 ELSE 0 END) AS blanks
+         FROM orders`
+      );
+
+      // ② แยกตาม ช่องทาง × ร้าน — ตอบว่า ZAMA/z2 หลุดจากการไล่รายเดือนหรือไม่
+      const byChannelStore = await coreQuery(
+        `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, source,
+                COUNT(*) AS total,
+                SUM(CASE WHEN ${blank} THEN 1 ELSE 0 END) AS blanks
+         FROM orders GROUP BY 1,2 HAVING blanks > 0 ORDER BY blanks DESC`
+      );
+
+      /* ③ แยกตามเดือน — **ต้องเอาใบที่ order_date พังมารวมด้วย**
+            ใบที่วันว่างหรือรูปแบบเพี้ยนจะไม่ตกเดือนไหนเลย = หายจากทุกการไล่รายเดือน
+            ⇒ ยัดไว้ในถัง '(วันที่ใช้ไม่ได้)' ให้เห็น ห้ามปล่อยหาย */
+      const byMonth = await coreQuery(
+        `SELECT CASE WHEN order_date GLOB '[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]'
+                     THEN substr(order_date,1,7) ELSE '(วันที่ใช้ไม่ได้)' END AS ym,
+                COUNT(*) AS total,
+                SUM(CASE WHEN ${blank} THEN 1 ELSE 0 END) AS blanks
+         FROM orders GROUP BY 1 ORDER BY 1`
+      );
+
+      /* ④ updated_at ของใบที่ว่าง — ตัวแยกสมมติฐานที่เร็วที่สุด (ฝั่งจอเสนอมา)
+            กระจุกอยู่เวลาเดียวกันเกือบทุกใบ = มาจากการเขียนก้อนเดียว (นำเข้าครั้งแรก)
+            กระจายทั่ว = ผ่านซิงก์ปกติมาแล้วหลายรอบ แต่ยังว่าง ⇒ ต้นทางไม่มีค่าจริง
+            ⚠️ updated_at เก็บเป็น UTC (datetime('now')) — บวก 7 ให้เป็นเวลาไทยก่อนโชว์ */
+      const byWrite = await coreQuery(
+        `SELECT substr(datetime(updated_at,'+7 hours'),1,13) AS hr, COUNT(*) AS c
+         FROM orders WHERE ${blank} GROUP BY 1 ORDER BY c DESC LIMIT 15`
+      );
+      const byWriteAll = await coreQuery(
+        `SELECT substr(datetime(updated_at,'+7 hours'),1,13) AS hr, COUNT(*) AS c
+         FROM orders GROUP BY 1 ORDER BY c DESC LIMIT 15`
+      );
+
+      const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const sumCh = byChannelStore.reduce((a, r) => a + num2(r.blanks), 0);
+      const sumMo = byMonth.reduce((a, r) => a + num2(r.blanks), 0);
+      const totalBlanks = num2(tot?.blanks);
+
+      return json({
+        ok: true,
+        ordersTotal: num2(tot?.total),
+        blanksTotal: totalBlanks,
+        // ⚠️ ทุกการแบ่งต้องบวกกลับได้เท่ากับ blanksTotal — ไม่เท่า = การแบ่งนั้นทำใบหาย
+        crosscheck: {
+          byChannelStoreSum: sumCh,
+          byMonthSum: sumMo,
+          channelOk: sumCh === totalBlanks,
+          monthOk: sumMo === totalBlanks,
+        },
+        byChannelStore,
+        byMonth: byMonth.filter((r) => num2(r.blanks) > 0),
+        byMonthAll: byMonth,
+        blankWriteTimesThai: byWrite,
+        allWriteTimesThai: byWriteAll,
+        note:
+          "ตัวเลขดิบล้วน ไม่ผ่านเกณฑ์ none_expected/source_empty · " +
+          "blankWriteTimesThai กระจุกชั่วโมงเดียว = เขียนก้อนเดียวตอนนำเข้าครั้งแรก · " +
+          "เทียบกับ allWriteTimesThai เสมอ ถ้าทั้งตารางก็กระจุกเหมือนกัน แปลว่าไม่ได้บอกอะไรเลย",
+      });
+    }
+
     if (url.searchParams.get("statuscross")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const rows = await coreQuery(
