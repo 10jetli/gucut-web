@@ -111,17 +111,29 @@ export async function marketplaceListings({ fresh = false } = {}) {
   ];
   if (lzOk) sources.push(["lazada", lazadaSkus]);
 
-  for (const [tag, fn] of sources) {
-    try {
-      const set = await fn();
-      if (set && set.size) {
-        add(set, tag);
-        checked.push(tag);
-      } else {
-        failed[tag] = "เชื่อมต่อได้แต่ไม่พบสินค้าที่ลงขายอยู่";
+  /* ⚠️ **ต้องถามทุกเจ้าพร้อมกัน ห้ามไล่ทีละเจ้า** — Netlify ให้ฟังก์ชันรอผลแค่ 26 วินาที
+      เจ้าเดียวก็กินหลายวินาทีแล้ว (Lazada ต้องไล่หลายหน้า · ฟีดเว็บ 90KB ~2 วิ)
+      ไล่ทีละเจ้า = เวลารวมกันแล้วเกินเพดาน ⇒ ตอบ 502 เปล่า ๆ ไม่บอกสาเหตุ
+      และยิ่งเพิ่มช่องทางใหม่ยิ่งใกล้ระเบิด โดยไม่มีอะไรเตือนจนกว่าจะพังจริง
+      ⚠️ เจ้าหนึ่งล่มต้องไม่ลากเจ้าอื่นตาย ⇒ ดัก error รายเจ้าไว้ข้างใน ไม่ใช่ครอบทั้ง Promise.all */
+  const results = await Promise.all(
+    sources.map(async ([tag, fn]) => {
+      try {
+        const set = await fn();
+        if (set && set.size) return { tag, set };
+        return { tag, err: "เชื่อมต่อได้แต่ไม่พบสินค้าที่ลงขายอยู่" };
+      } catch (e) {
+        return { tag, err: String(e?.message || e).slice(0, 160) };
       }
-    } catch (e) {
-      failed[tag] = String(e?.message || e).slice(0, 160);
+    })
+  );
+  // เรียงผลตามลำดับใน sources เสมอ จะได้ไม่สลับกันไปมาแต่ละรอบ
+  for (const r of results) {
+    if (r.set) {
+      add(r.set, r.tag);
+      checked.push(r.tag);
+    } else {
+      failed[r.tag] = r.err;
     }
   }
 
