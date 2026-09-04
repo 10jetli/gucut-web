@@ -555,12 +555,57 @@ export default async function handler(req, context) {
          ORDER BY o.order_date DESC LIMIT 30`,
         [from, today]
       );
+      /* ── บรรทัดรวมแล้วตรงกับหัวใบไหม ── ด่านที่สองของสะพาน PEAK
+         ⚠️ **ยังไม่รู้สูตรที่ ZORT ใช้ประกอบยอดหัวใบ** (มีค่าส่ง · ส่วนลดท้ายบิล · ส่วนลดต่อชิ้น · VAT)
+            ⇒ **ห้ามเดาสูตรแล้วรายงานว่า "ไม่ตรง"** เพราะจะได้ตัวเลขน่ากลัวที่ไม่มีความหมาย
+               (บทเรียนจากตัวเทียบ Lazada เมื่อเช้า ที่รายงาน "ไม่ตรง 278" ทั้งที่เป็นผลของการเดา)
+         ⇒ รอบนี้ **วัดอย่างเดียว ไม่ตัดสิน** — แจกแจงว่าผลต่างเป็นเท่าไหร่บ้าง
+            ให้คนดูแล้วบอกได้ว่าสูตรคืออะไร ค่อยเขียนตัวตรวจจริงทีหลัง */
+      const gaps = await coreQuery(
+        `SELECT o.source AS src,
+                COUNT(*) AS n,
+                SUM(CASE WHEN ABS(o.amount - li.s) < 0.01 THEN 1 ELSE 0 END) AS exact,
+                SUM(CASE WHEN o.amount > li.s THEN 1 ELSE 0 END) AS headerHigher,
+                SUM(CASE WHEN o.amount < li.s THEN 1 ELSE 0 END) AS headerLower
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+         GROUP BY 1`,
+        [from, today]
+      );
+      const gapSample = await coreQuery(
+        `SELECT o.source AS src, o.number AS number, o.order_date AS day,
+                o.amount AS header, ROUND(li.s,2) AS lines,
+                ROUND(o.amount - li.s, 2) AS gap
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+           AND ABS(o.amount - li.s) >= 0.01
+         ORDER BY ABS(o.amount - li.s) DESC LIMIT 20`,
+        [from, today]
+      );
+
       const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       return json({
         ok: true,
         from,
         to: today,
         days,
+        /* ⚠️ ตัวเลขชุดนี้ **ยังไม่ใช่ "ผิด"** — เป็นการวัดว่ายอดหัวใบกับผลรวมบรรทัดต่างกันแค่ไหน
+            ค่าส่งกับส่วนลดยังไม่ถูกนำมาคิด ⇒ ต่างกันเป็นเรื่องปกติ ต้องหาสูตรก่อน */
+        lineVsHeader: gaps.map((g) => ({
+          store: g.src,
+          orders: num2(g.n),
+          exactMatch: num2(g.exact),
+          headerHigher: num2(g.headerHigher), // หัวใบมากกว่า — น่าจะเป็นค่าส่ง
+          headerLower: num2(g.headerLower), // หัวใบน้อยกว่า — น่าจะเป็นส่วนลด
+        })),
+        lineVsHeaderSample: gapSample,
+        lineVsHeaderNote:
+          "**ยังไม่ใช่ตัวตรวจ เป็นการวัด** — ยังไม่รู้สูตรที่ ZORT ใช้ประกอบยอดหัวใบ " +
+          "(ค่าส่ง · ส่วนลดท้ายบิล · ส่วนลดต่อชิ้น · VAT) ⇒ ห้ามอ่านว่า 'ไม่ตรง = ผิด'",
         byStore: rows.map((r) => ({
           store: r.src,
           storeName: r.src === "z2" ? "ceojet (ยังไม่เข้าภาษี)" : "ศีตกาล เทรดดิ้ง (เข้าภาษี)",
