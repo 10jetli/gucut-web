@@ -196,6 +196,21 @@ export async function syncOrders(days = 3, range = {}) {
 
     result.stores[st.tag] = { orders: orders.length, written: changed.length, skipped, items: itemRows };
   }
+
+  /* ⚠️ **บันทึกชีพจรทุกครั้งที่วิ่งจบ ไม่ว่าจะเขียนกี่แถว** — รวมทั้งรอบที่เขียน 0
+      นี่คือจุดสำคัญทั้งหมดของตัวนี้: จอต้องแยก "ข้อมูลไม่เปลี่ยนเพราะไม่มีอะไรขยับ"
+      ออกจาก "ข้อมูลไม่เปลี่ยนเพราะซิงก์ตายไปแล้ว" ซึ่งหน้าตาเหมือนกันเป๊ะถ้าดูแต่ตัวเลข
+      ⚠️ ห้าม await แบบที่ทำให้ทั้งรอบล้มถ้าตารางยังไม่ถูกสร้าง (ต้องยิง ?init=1 ก่อน)
+         ⇒ กลืน error ทิ้ง · ชีพจรหายดีกว่าซิงก์ล้ม แต่ **ต้องกลืนแบบตั้งใจ ไม่ใช่ปล่อยลอย** */
+  try {
+    await coreQuery(
+      `INSERT INTO core_meta (k,v,at) VALUES ('sync_orders', ?, datetime('now'))
+       ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`,
+      [JSON.stringify({ after, before, stores: result.stores })]
+    );
+  } catch {
+    // ไม่ทำอะไร — ดูคำอธิบายข้างบน
+  }
   return result;
 }
 

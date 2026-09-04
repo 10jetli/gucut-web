@@ -157,6 +157,34 @@ export async function listOrders(o = {}) {
   };
   const chanMap = { get: (ch) => reasonOf(ch) };
 
+  /* ── อายุของข้อมูล ── (ฝั่งจอขอ 4 ก.ย. 2569)
+      ทุกการ์ด/แท็บบนจอนี้นับจากกระจกล้วน ๆ ไม่ได้ยิง ZORT สด
+      ถ้าซิงก์ตายเงียบไปหนึ่งวัน จอจะยังโชว์เลขเดิมสวยงามโดยไม่มีอะไรฟ้อง
+
+      ⚠️ **ต้องส่งสองเวลา ห้ามส่งอันเดียว** — มันตอบคนละคำถาม
+         syncedAt   = ครั้งสุดท้ายที่ "เราไปดู ZORT" (ชีพจร · มีทุกรอบแม้เขียน 0 แถว)
+         changedAt  = ครั้งสุดท้ายที่ "ข้อมูลเปลี่ยนจริง" (MAX updated_at)
+      ส่งแต่ changedAt อย่างเดียวจะหลอกตา: คืนที่ไม่มีออเดอร์ขยับเลย มันจะเก่าเป็นชั่วโมง
+      ทั้งที่ซิงก์ทำงานปกติ ⇒ จอจะเตือนผิด แล้วคนจะเลิกเชื่อคำเตือน (warning-placement)
+      ⚠️ ทุกเวลาเป็น **UTC** ตามที่ SQLite เก็บ — ชื่อฟิลด์ลงท้าย Utc เพื่อไม่ให้เดาผิด
+         (กติกาเวลาใน CLAUDE.md: เก็บ UTC · คิดเป็นวันไทย · โชว์ต้องบวก 7 แล้วเขียนกำกับ) */
+  let freshness = { syncedAtUtc: null, changedAtUtc: null, rangeChangedAtUtc: null };
+  try {
+    const [beat] = await coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`);
+    const [chg] = await coreQuery(`SELECT MAX(updated_at) AS at FROM orders`);
+    const [rng] = await coreQuery(
+      `SELECT MAX(updated_at) AS at FROM orders WHERE ${w.sql}`,
+      w.params
+    );
+    freshness = {
+      syncedAtUtc: beat?.at ?? null,
+      changedAtUtc: chg?.at ?? null,
+      rangeChangedAtUtc: rng?.at ?? null,
+    };
+  } catch {
+    // ตารางชีพจรยังไม่ถูกสร้าง (ต้องยิง ?init=1) — คืน null ดีกว่าทำทั้งจอล้ม
+  }
+
   // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
   const statusCountsRaw = await coreQuery(
     `SELECT COALESCE(integration_status,'') AS st,
@@ -227,6 +255,13 @@ export async function listOrders(o = {}) {
         ตัวเลขจะเปลี่ยนทั้งใบ ดูเหมือนบั๊กทั้งที่ของจริงคือขอบเขตไม่ตรงกับป้าย
         (กับดักเดิมของวันนี้ ครั้งที่ 4 — ดู numbers-need-scope)
       ⚠️ **เกณฑ์ตรวจ: ผลรวม count ทุกกอง ต้องเท่ากับ total ของช่วงนั้นเป๊ะ** */
+    /* ⚠️ ชื่อฟิลด์บอกไว้แล้วว่าเป็น UTC — จอบวก 7 เอง
+        และ **ต้องโชว์ syncedAt เป็นหลัก** ไม่ใช่ changedAt (เหตุผลอยู่ที่คำอธิบายด้านบน) */
+    freshness,
+    freshnessNote:
+      "syncedAtUtc = ครั้งสุดท้ายที่ไปดู ZORT (มีทุกรอบแม้ไม่มีอะไรเปลี่ยน) · " +
+      "changedAtUtc = ครั้งสุดท้ายที่ข้อมูลเปลี่ยนจริง · " +
+      "rangeChangedAtUtc = เฉพาะช่วงที่กรองอยู่ · ทุกค่าเป็น UTC ต้องบวก 7 ก่อนโชว์",
     shipStatusGroups: groupsFromCounts(
       statusCountsRaw.map((r) => ({
         ...r,

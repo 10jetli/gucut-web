@@ -83,6 +83,15 @@ export async function coreInit() {
     `CREATE INDEX IF NOT EXISTS idx_sp_items_sku ON shopee_order_items(sku)`,
     // สมุดเทียบสต็อกรายวัน (คลังเราคำนวณเอง vs ZORT) — แบบเดียวกับ recon_log ฝั่งออเดอร์
     // เก็บไว้ดูแนวโน้ม: ส่วนต่างต้องนิ่งและเข้าใจได้ทุกตัวก่อนถึงจะกล้าให้คลังเราเป็นตัวจริง
+    /* ⚠️ **ตัวจับชีพจรของงานตามเวลา** (4 ก.ย. 2569)
+        ฝั่งจอชี้ว่าทุกการ์ด/แท็บนับจากกระจกล้วน ๆ ถ้าซิงก์ตายเงียบไปหนึ่งวัน
+        จอจะยังโชว์เลขเดิมสวยงามโดยไม่มีอะไรฟ้อง
+        ⚠️ **ห้ามใช้ MAX(updated_at) แทนตัวนี้** — ตัวซิงก์เขียนเฉพาะแถวที่เปลี่ยน
+           คืนไหนไม่มีออเดอร์ขยับเลย MAX(updated_at) จะเก่าทั้งที่ซิงก์ทำงานปกติ
+           ⇒ "ครั้งสุดท้ายที่ข้อมูลเปลี่ยน" กับ "ครั้งสุดท้ายที่เราไปดู" คนละคำถาม
+        เก็บเป็นคีย์-ค่า อัปทับคีย์เดิม ⇒ ไม่โตตามเวลา (48 รอบ/วันเขียนแถวเดิม) */
+    `CREATE TABLE IF NOT EXISTS core_meta (
+      k TEXT PRIMARY KEY, v TEXT, at TEXT DEFAULT (datetime('now')))`,
     `CREATE TABLE IF NOT EXISTS stock_recon_log (
       day TEXT PRIMARY KEY, base_day TEXT, skus INTEGER, matched INTEGER,
       mismatched INTEGER, abs_diff REAL, notes TEXT,
