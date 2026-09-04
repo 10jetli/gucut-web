@@ -14,6 +14,15 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const CANCEL_SQL =
   `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
 
+/* ⚠️ **ธงเตือน "เลขบนจอนี้ยังเชื่อไม่ได้"** — กลไกเดียวกับ marketplacesUnreliable
+    ที่พิสูจน์แล้ววันนี้ว่าใช้ได้ (ใส่ตอนไม่แน่ใจ · ปลดตอนยืนยันได้ · จอไม่ต้องรู้จักอะไรเลย)
+    **ตั้งเป็น null เมื่อยืนยันเสร็จ แล้วจอหยุดเตือนเองโดยไม่ต้องมีใครจำ**
+    ห้ามให้ฝั่งจอเขียนข้อความนี้ตายตัว ไม่งั้นจะกลายเป็นข้อความค้างอีกใบ */
+const STATUS_UNRELIABLE =
+  "กำลังตรวจว่ากระจกค้างสถานะเก่าหรือไม่ — กระจกนับใบที่ยังไม่จบได้ 187 " +
+  "แต่การ์ดหน้าแรก ZORT รวมได้ 156 (ค้างชำระเงิน 24 + ค้างโอนสินค้า 132) ยังไม่ตรงกัน " +
+  "· ตรวจเมื่อ 4 ก.ย. 2569 · ระหว่างนี้อย่าใช้ตัวเลขบนแท็บตัดสินใจ";
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const thaiToday = () => new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
 const daysAgo = (n) =>
@@ -108,6 +117,8 @@ export async function listOrders(o = {}) {
     totalAmount: num(sum?.s),
     byChannel,
     byStatus,
+    // ⚠️ มีค่า = จอต้องขึ้นแถบแดงบนหัวจอ · เป็น null = ไม่ต้องขึ้น (ห้ามฮาร์ดโค้ดฝั่งจอ)
+    statusUnreliable: STATUS_UNRELIABLE,
     rows,
   };
 }
