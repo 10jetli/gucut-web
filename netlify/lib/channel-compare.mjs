@@ -148,7 +148,7 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
     unknownOnChannelTruncated: Math.max(0, unknownOnChannel.length - limit),
     note:
       "hidden = มีของในคลังแต่ไม่ได้ลงขายที่ช่องทางนี้ (อาจตั้งใจซ่อนไว้ก็ได้) · " +
-      "**hiddenEverSold = กองที่เคยขายได้จริงในรอบปี ⇒ ใช้ตัวนี้ตัดสินใจ ไม่ใช่ hidden** · " +
+      "hiddenEverSold = กองที่เคยขายได้จริงในรอบปี ⇒ ใช้ตัวนี้ตัดสินใจ ไม่ใช่ hidden · " +
       "listedNoStock = ลงขายอยู่แต่ของหมด · " +
       "unknownOnChannel = รหัสบนแพลตฟอร์มที่คลังเราไม่รู้จัก",
   };
