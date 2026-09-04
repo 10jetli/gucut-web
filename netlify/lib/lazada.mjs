@@ -281,16 +281,33 @@ export async function lazadaStockCompare() {
         ใช้ตัวนั้นเทียบตรงตัวได้เลย ไม่ต้องเดาด้วยการตัดท้ายอีก
      ⚠️ ใช้เฉพาะ `available` **ห้ามแตะ sellprice** — ราคาชุดกับราคาเว็บต่างกัน 100 จาก 146 รหัส
         เรื่องราคายังรอเจ้าของร้านตัดสิน (ดู netlify/functions/stock.mjs) */
-  let bundleMap = new Map();
+  /* ⚠️ **ห้ามใช้ `bundles.available` เป็นตัวเลขจริง** — พิสูจน์แล้ว 5 ก.ย. 2569 ว่ามันไม่ตรง
+      ZORT มีตัวเลขของโซ่ม้วนเดียวกันอยู่ **สามค่า** และไม่ตรงกันเอง (ตระกูล 00894):
+        ชุด onhand    ⇒ สื่อถึงม้วน ≈ 14,580
+        ชุด available ⇒ สื่อถึงม้วน ≈ 14,175
+        ม้วนแม่ availablestock (ที่ /api/stock ใช้) = **13,978.5**
+      และ **Lazada ตรงกับตัวสุดท้าย** (ตัวเลขที่ลงขายสื่อถึงม้วน 13,970–13,978)
+      ⇒ ใช้ชุดเพื่อ **ระบุตัว** (รหัสนี้คือโซ่ตัดจากม้วนไหน ยาวเท่าไหร่) เท่านั้น
+        ส่วน **จำนวน** ให้คิดจากม้วนแม่ตัวจริง ÷ สูตร — ตรงกับที่หน้าเว็บทำ
+      ⇒ ถ้าเอา available ของชุดมาใช้ จะได้ตัวเลขสูงกว่าความจริง ~1.4% ⇒ **ขายเกิน** */
+  let recipe = new Map(); // sku ของชุด → { base, per }
   try {
-    bundleMap = new Map(
-      (await coreQuery(`SELECT sku, available FROM bundles WHERE active = 1`)).map((r) => [
-        String(r.sku).trim(),
-        num(r.available),
-      ])
+    const rows2 = await coreQuery(
+      `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
+       FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
+       WHERE b.active = 1`
     );
+    // ⚠️ เอาเฉพาะชุดที่มีส่วนประกอบตัวเดียว — ชุดหลายชิ้นคิดแบบนี้ไม่ได้
+    const count = new Map();
+    for (const r of rows2) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
+    for (const r of rows2) {
+      const k = String(r.sku).trim();
+      if (count.get(k) !== 1) continue;
+      const per = num(r.per);
+      if (per > 0 && r.base) recipe.set(k, { base: String(r.base).trim(), per });
+    }
   } catch {
-    // ยังไม่มีตาราง bundles = ถอยไปใช้วิธีเดิม ห้ามล้ม
+    // ยังไม่มีตารางสูตร = ถอยไปใช้วิธีเดิม ห้ามล้ม
   }
 
   /* ⚠️ **หลายรหัสบน Lazada ชี้มาที่รหัสเดียวในคลังได้** — เจอของจริงรอบแรก 5 ก.ย. 2569
@@ -307,8 +324,10 @@ export async function lazadaStockCompare() {
   const fanIn = new Map(); // รหัสในคลัง → จำนวน sku ของ Lazada ที่ชี้มา
   const viaBundle = new Set(); // sku ที่จับคู่ได้เพราะเป็นสินค้าเป็นชุด (ตรงตัว ไม่ใช่เดา)
   for (const r of rows) {
-    // ① ชุดก่อน — ตรงตัว 100% ไม่ต้องเดา
-    if (bundleMap.has(r.sku)) {
+    /* ① มีสูตรชุด = รู้แน่ว่าตัดจากม้วนไหน ยาวเท่าไหร่ — **ระบุตัวได้ตรงตัว ไม่ต้องเดา**
+        แล้วคิดจำนวนจากม้วนแม่ตัวจริง (snap) ไม่ใช่จาก available ของชุด */
+    const rec = recipe.get(r.sku);
+    if (rec && snap.has(rec.base)) {
       keyOf.set(r.sku, r.sku);
       viaBundle.add(r.sku);
       fanIn.set(r.sku, (fanIn.get(r.sku) || 0) + 1);
@@ -367,8 +386,12 @@ export async function lazadaStockCompare() {
         จะไปเพิ่มเปอร์เซ็นต์ให้ดูดีขึ้นเงียบ ๆ ซึ่งอันตรายกว่าตัวที่เดาแล้วเลขต่างเยอะ
         (ตัวหลังเราเห็น ตัวแรกเราไม่เห็น) */
     const exact = key === r.sku;
-    // ⚠️ ของชุดอ่านจาก bundles ไม่ใช่ stock_snapshots — คนละตาราง
-    const ours = viaBundle.has(r.sku) ? bundleMap.get(r.sku) : snap.get(key);
+    /* ⚠️ ของชุด: คิดจาก **ม้วนแม่จริง ÷ สูตร** ปัดลง — วิธีเดียวกับที่หน้าเว็บใช้
+        และตรงกับตัวเลขที่ Lazada ลงขายจริง (พิสูจน์แล้วกับตระกูล 00894 · 03793) */
+    const rc = recipe.get(r.sku);
+    const ours = viaBundle.has(r.sku)
+      ? Math.floor(num(snap.get(rc.base)) / rc.per)
+      : snap.get(key);
     if (ours === r.available) {
       same += 1;
       if (exact) sameExact += 1;
@@ -399,7 +422,7 @@ export async function lazadaStockCompare() {
     sameBase,
     // จับคู่ได้เพราะเป็นสินค้าเป็นชุดของ ZORT — ตรงตัว ไม่ใช่การเดา
     matchedByBundle: viaBundle.size,
-    bundlesKnown: bundleMap.size,
+    bundlesWithRecipe: recipe.size,
     diffExact: diff.filter((x) => x.matchedAs === "ตรงตัว").length,
     diffBase: diff.filter((x) => x.matchedAs !== "ตรงตัว").length,
     diffCount: diff.length,
