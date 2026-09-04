@@ -8,8 +8,10 @@
 //    ต้องพิสูจน์ก่อนว่าเลขที่เราจะดันตรงกับที่ ZORT ดันอยู่ทุกวัน แล้วค่อยเปิดการเขียน
 //    ตัวเขียนจริงจะอยู่คนละไฟล์ และต้องมีสวิตช์ env แยก — ห้ามใส่รวมในนี้
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
 
+const CACHE_SKUS = "shopee-item-skus"; // จำรหัสตัวเลือกรายสินค้า ไล่เก็บทีละรอบจนครบ
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** ยิงหลายงานพร้อมกันทีละก้อน — Netlify ให้ฟังก์ชันรอผลได้ 26 วินาที */
@@ -287,7 +289,7 @@ export async function shopeeListedSkus() {
   const t = await validToken();
   if (!t) throw new Error("ยังไม่ได้เชื่อมร้าน Shopee");
 
-  // ① เก็บรหัสสินค้าทั้งหมดที่สถานะปกติ
+  // ① รายชื่อสินค้าทั้งหมดที่สถานะปกติ (เร็ว ~20 หน้า)
   const ids = [];
   let offset = 0;
   let more = true;
@@ -297,41 +299,54 @@ export async function shopeeListedSkus() {
       page_size: "100",
       item_status: "NORMAL",
     });
-    const page = d?.response?.item ?? [];
-    for (const it of page) ids.push(it.item_id);
+    for (const it of d?.response?.item ?? []) ids.push(it.item_id);
     more = Boolean(d?.response?.has_next_page);
     offset += 100;
   }
-  if (more) throw new Error(`รายการสินค้า Shopee ยาวเกิน 4,000 รายการ — ดึงไม่ครบ`);
+  if (more) throw new Error("รายการสินค้า Shopee ยาวเกิน 4,000 รายการ — ดึงไม่ครบ");
   if (!ids.length) return new Set();
 
-  // ② ขอ SKU ทีละ 50 (เพดานของ Shopee) — ยิงพร้อมกันทีละ 6 ก้อนให้ทันเวลา
-  const out = new Set();
-  let failed = 0;
-  const batches = [];
-  for (let i = 0; i < ids.length; i += 50) batches.push(ids.slice(i, i + 50));
-  for (let i = 0; i < batches.length; i += 6) {
+  /* ② รหัสจริงอยู่ระดับ "ตัวเลือก" ⇒ ต้องถาม get_model_list ทีละสินค้า (~2,000 คำขอ)
+     ทำครั้งเดียวไม่ทัน 26 วินาที ⇒ **จำผลรายสินค้าไว้ แล้วไล่เก็บทีละรอบจนครบ**
+     รอบต่อ ๆ ไปเหลือแค่สินค้าที่เพิ่งเพิ่มเข้ามา จึงเร็ว
+     ⚠️ ยังไม่ครบ = **โยน error** ห้ามคืนของบางส่วน ไม่งั้นจอจะบอกว่า "ไม่ได้ลงขาย"
+        ให้ของที่เรายังไม่ทันถาม (เจอของจริง 4 ก.ย. 2569 — ตอบ 319 จาก 1,926) */
+  const store = getStore("gucut-coupon");
+  const cached = (await store.get(CACHE_SKUS, { type: "json" }).catch(() => null)) || {};
+  const known = new Map(Object.entries(cached.byItem || {}));
+
+  const todo = ids.filter((id) => !known.has(String(id)));
+  const deadline = Date.now() + 16000; // เหลือเวลาให้ช่องทางอื่นและตัวเรียกด้วย
+  let done = 0;
+  for (let i = 0; i < todo.length && Date.now() < deadline; i += 16) {
+    const chunk = todo.slice(i, i + 16);
     const got = await Promise.all(
-      batches.slice(i, i + 6).map(async (b) => {
+      chunk.map(async (id) => {
         try {
-          return await shopCall("/api/v2/product/get_item_base_info", {
-            item_id_list: b.join(","),
-          });
+          const d = await shopCall("/api/v2/product/get_model_list", { item_id: String(id) });
+          const models = d?.response?.model ?? [];
+          return [String(id), models.map((m) => String(m.model_sku || "").trim()).filter(Boolean)];
         } catch {
-          failed += 1; // นับไว้ ไม่กลืน — ท้ายรอบจะโยนทิ้งทั้งชุด
-          return null;
+          return null; // ไม่กลืน — แค่ยังไม่จำ รอบหน้ามาเก็บต่อ
         }
       })
     );
-    for (const d of got) {
-      for (const it of d?.response?.item_list ?? []) {
-        const k = String(it?.item_sku ?? "").trim();
-        if (k) out.add(k);
-      }
-    }
+    for (const g of got) if (g) { known.set(g[0], g[1]); done += 1; }
   }
-  if (failed) {
-    throw new Error(`ถาม Shopee ไม่สำเร็จ ${failed} ก้อนจาก ${batches.length} — ผลไม่ครบ จึงไม่ใช้`);
+  if (done) {
+    await store.setJSON(CACHE_SKUS, { at: Date.now(), byItem: Object.fromEntries(known) });
   }
+
+  const missing = ids.filter((id) => !known.has(String(id))).length;
+  if (missing) {
+    throw new Error(
+      `กำลังไล่เก็บรหัสสินค้า Shopee — ได้แล้ว ${ids.length - missing}/${ids.length} รายการ ` +
+        `(เหลืออีก ${missing}) ยังไม่ครบจึงยังไม่ใช้ ลองใหม่อีกครั้ง`
+    );
+  }
+
+  const out = new Set();
+  for (const id of ids) for (const k of known.get(String(id)) || []) out.add(k);
   return out;
 }
+
