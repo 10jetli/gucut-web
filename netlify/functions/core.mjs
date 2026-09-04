@@ -652,6 +652,24 @@ export default async function handler(req, context) {
            AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
          GROUP BY source, 2 ORDER BY c DESC`
       );
+      /* ⚠️ **ตาราง orders มีเอกสารหลายชนิดปนกัน ไม่ใช่ใบขายล้วน**
+          เจอมาแล้วตอนทำจอขนส่ง: มีใบรับของ (RC-*) ปนอยู่ด้วย
+          ⇒ การ์ด "รายการขาย ค้างชำระเงิน/ค้างโอนสินค้า" ของ ZORT นับเฉพาะ**ใบขาย**
+             ถ้าเรานับทุกชนิดแล้วเอาไปเทียบ = เทียบผิดขอบเขต (กับดักเดิมของวันนี้)
+          ⇒ แยกตามคำขึ้นต้นของเลขที่เอกสารให้เห็นก่อน แล้วค่อยเลือกว่าจะเทียบกองไหน */
+      const byPrefix = await coreQuery(
+        `SELECT CASE
+                  WHEN number LIKE 'SO-%'  THEN 'SO- (ใบขาย)'
+                  WHEN number LIKE 'RC-%'  THEN 'RC- (ใบรับของ)'
+                  WHEN number LIKE 'RS-%'  THEN 'RS- (รับคืน)'
+                  WHEN number GLOB '[0-9]*' THEN 'ตัวเลขล้วน (มาร์เก็ตเพลส)'
+                  ELSE 'อื่น ๆ' END AS kind,
+                COUNT(*) AS c
+         FROM orders
+         WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
+           AND status NOT LIKE '%cancel%' AND status NOT LIKE '%ยกเลิก%'
+         GROUP BY 1 ORDER BY c DESC`
+      );
       const bySource = await coreQuery(
         `SELECT source, COUNT(*) AS c FROM orders
          WHERE status NOT LIKE '%success%' AND status NOT LIKE '%void%'
@@ -668,6 +686,7 @@ export default async function handler(req, context) {
         ok: true,
         pendingTotal: Number(tot?.c || 0),
         byPayStatus: rows,
+        byPrefix, // แยกตามชนิดเอกสาร — การ์ด ZORT นับเฉพาะใบขาย
         bySource, // ⚠️ การ์ด ZORT เป็นของร้านเดียว ⇒ เทียบกับแถว z1 เท่านั้น
         mirrorCovers: span,
         compareWith: { "การ์ด ZORT ค้างชำระเงิน": 24, "การ์ด ZORT ค้างโอนสินค้า": 132 },
