@@ -124,7 +124,13 @@ export async function coreInit() {
           ต้องคืน null ไม่ใช่ 0 — **0 กรัมแปลว่าของไม่มีน้ำหนัก ไม่ใช่ยังไม่รู้**
           (กติกาเดียวกับราคาซื้อที่ตัดสินไว้แล้ว) */
     `ALTER TABLE products ADD COLUMN weight REAL`,
-    `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท)
+    /* ⚠️ **คอลัมน์นี้ถูกเพิ่มไว้แล้วแต่ตัวซิงก์ไม่เคยเขียนลงไปเลย** (พบ 5 ก.ย. 2569)
+        เป็น new-columns-need-backfill อีกหน้าตาหนึ่ง — ไม่ใช่ลืมกวาดย้อนหลัง แต่ **ลืมต่อท่อ**
+        ⇒ เพิ่มคอลัมน์แล้วต้องตามไปแก้ core-sync ด้วยเสมอ ไม่งั้นมันว่างตลอดกาลอย่างเงียบ ๆ */
+    `ALTER TABLE orders ADD COLUMN bill_discount REAL`, // ส่วนลดท้ายบิล (บาท) = discountamount
+    /* ค่าส่งระดับใบ — ต้องมีเพื่อออกใบกำกับให้ยอดตรงกับที่เก็บเงินจริง
+       สูตรที่พิสูจน์แล้ว: หัวใบ = ผลรวมบรรทัด − ส่วนลดท้ายบิล + ค่าส่ง */
+    `ALTER TABLE orders ADD COLUMN ship_amount REAL`,
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
     // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)
     `ALTER TABLE orders ADD COLUMN client_ref TEXT`,

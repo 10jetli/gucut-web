@@ -108,7 +108,8 @@ export async function syncOrders(days = 3, range = {}) {
     const prev = new Map(
       (
         await coreQuery(
-          `SELECT id, channel, status, amount, customer, order_date, tracking_no, pay_status, integration_status FROM orders
+          `SELECT id, channel, status, amount, customer, order_date, tracking_no, pay_status, integration_status,
+                  bill_discount, ship_amount FROM orders
            WHERE source = ? AND order_date >= ? AND order_date <= ?`,
           [st.tag, after, before]
         )
@@ -130,7 +131,10 @@ export async function syncOrders(days = 3, range = {}) {
         String(p.tracking_no ?? "") === String(o.trackingno ?? "").slice(0, 60) &&
         String(p.pay_status ?? "") === String(o.paymentstatus ?? "").slice(0, 40) &&
         // ⚠️ ต้องอยู่ในเงื่อนไขนี้ด้วย ไม่งั้นใบที่หัวใบไม่เปลี่ยนจะไม่เคยได้ค่าใหม่เลย
-        String(p.integration_status ?? "") === String(o.integrationStatus ?? "").slice(0, 40)
+        String(p.integration_status ?? "") === String(o.integrationStatus ?? "").slice(0, 40) &&
+        // ⚠️ ต้องอยู่ในตัวเทียบด้วย ไม่งั้นใบเก่าที่หัวใบไม่เปลี่ยนจะไม่เคยได้ค่าใหม่
+        num(p.bill_discount) === num(o.discountamount) &&
+        num(p.ship_amount) === num(o.shippingamount)
       );
     };
     const changed = orders.filter((o) => !same(o));
@@ -150,19 +154,22 @@ export async function syncOrders(days = 3, range = {}) {
           `${esc(String(o.shippingname ?? "").slice(0, 120))},` +
           `${esc(String(o.shippingdateString ?? o.shippingdate ?? "").slice(0, 10))},` +
           `${o.isCOD ? 1 : 0},${esc(String(o.paymentstatus ?? "").slice(0, 40))},` +
-          `${esc(String(o.integrationStatus ?? "").slice(0, 40))})`
+          `${esc(String(o.integrationStatus ?? "").slice(0, 40))},` +
+          `${num(o.discountamount)},${num(o.shippingamount)})`
         )
         .join(",");
       await coreQuery(
         `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at,
-                             tracking_no,ship_channel,ship_name,ship_date,is_cod,pay_status,integration_status)
+                             tracking_no,ship_channel,ship_name,ship_date,is_cod,pay_status,integration_status,
+                             bill_discount,ship_amount)
          VALUES ${values}
          ON CONFLICT(id) DO UPDATE SET
            channel=excluded.channel, status=excluded.status, amount=excluded.amount,
            customer=excluded.customer, order_date=excluded.order_date, updated_at=excluded.updated_at,
            tracking_no=excluded.tracking_no, ship_channel=excluded.ship_channel,
            ship_name=excluded.ship_name, ship_date=excluded.ship_date, is_cod=excluded.is_cod,
-           pay_status=excluded.pay_status, integration_status=excluded.integration_status`
+           pay_status=excluded.pay_status, integration_status=excluded.integration_status,
+           bill_discount=excluded.bill_discount, ship_amount=excluded.ship_amount`
       );
     }
 
