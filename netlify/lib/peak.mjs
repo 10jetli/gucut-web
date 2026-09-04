@@ -233,6 +233,20 @@ export async function sendInvoices(invoices, { dryRun = true } = {}) {
       ready: peakReady(),
       count: invoices.length,
       incomplete: bad.length,
+      /* ⚠️ **บอกด้วยว่าใบไหนและเพราะอะไร ห้ามบอกแค่จำนวน**
+          "ยังไม่ครบ 1 ใบ" โดยไม่บอกว่าใบไหน = คนต้องไปไล่เอง แล้วสุดท้ายก็ไม่ไล่
+          (กติกาเดียวกับ missingSample ในตัวเทียบสต็อก) */
+      badSample: bad.slice(0, 10).map((v) => ({
+        orderNumber: v._check?.orderNumber ?? null,
+        why: !v.issuedDate
+          ? "ไม่มีวันที่"
+          : !v.products?.length
+            ? "ไม่มีบรรทัดสินค้า"
+            : v.products.some((p) => !(p.quantity > 0))
+              ? "มีบรรทัดที่จำนวนไม่มากกว่า 0"
+              : "ยอดเอกสารไม่เท่ากับยอดหัวใบ",
+        check: v._check ?? null,
+      })),
       sample: invoices[0],
     };
   }
