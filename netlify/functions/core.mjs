@@ -793,6 +793,8 @@ export default async function handler(req, context) {
       return json({
         ok: true,
         sync: await syncOrders(days, {
+          // ?items=all บังคับเขียนบรรทัดใหม่ทุกใบในช่วง — ใช้ตอนแก้ตรรกะการแปลงบรรทัด
+          items: url.searchParams.get("items") === "all" ? "all" : undefined,
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
         }),

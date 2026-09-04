@@ -166,10 +166,17 @@ export async function syncOrders(days = 3, range = {}) {
       );
     }
 
-    // รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน (ใบเก่าที่นิ่งแล้วไม่ต้องแตะ)
+    /* รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน (ใบเก่าที่นิ่งแล้วไม่ต้องแตะ)
+       ⚠️ **แก้วิธีแปลงบรรทัดแล้ว ใบเก่าจะไม่ถูกแก้ตาม** เพราะหัวใบไม่เปลี่ยน ⇒ ไม่เข้ากอง changed
+          เจอจริง 5 ก.ย. 2569: แก้บั๊ก `??` ตกหลุม 0 แล้วซิงก์ใหม่ ได้ "เขียน 0 · ข้าม 99"
+          ใบเสียยังเสียเหมือนเดิม (new-columns-need-backfill ในอีกหน้าตาหนึ่ง)
+       ⇒ `range.items = "all"` บังคับเขียนบรรทัดใหม่ทุกใบในช่วง ไม่สนว่าหัวใบเปลี่ยนไหม
+          **ใช้ตอนแก้ตรรกะการแปลงบรรทัดเท่านั้น** งานประจำห้ามเปิด (เผาโควตาเขียนของ D1) */
+    const rewriteAll = range.items === "all";
+    const forItems = rewriteAll ? orders : changed;
     let itemRows = 0;
-    for (let i = 0; i < changed.length; i += 80) {
-      const chunk = changed.slice(i, i + 80);
+    for (let i = 0; i < forItems.length; i += 80) {
+      const chunk = forItems.slice(i, i + 80);
       const ids = chunk.map((o) => esc(`${st.tag}/${o.number}`)).join(",");
       await coreQuery(`DELETE FROM order_items WHERE order_id IN (${ids})`);
       const rows = [];
@@ -210,7 +217,14 @@ export async function syncOrders(days = 3, range = {}) {
       itemRows += rows.length;
     }
 
-    result.stores[st.tag] = { orders: orders.length, written: changed.length, skipped, items: itemRows };
+    result.stores[st.tag] = {
+      orders: orders.length,
+      written: changed.length,
+      skipped,
+      items: itemRows,
+      // บอกให้ชัดว่ารอบนี้เขียนบรรทัดใหม่ทุกใบ ไม่ใช่เฉพาะใบที่เปลี่ยน
+      ...(rewriteAll ? { itemsRewrittenForAll: true } : {}),
+    };
   }
 
   /* ⚠️ **บันทึกชีพจรทุกครั้งที่วิ่งจบ ไม่ว่าจะเขียนกี่แถว** — รวมทั้งรอบที่เขียน 0
