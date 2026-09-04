@@ -125,23 +125,51 @@ export async function shopCall(path, extra = {}) {
 /** รหัสสินค้าที่ "กำลังลงขายอยู่จริง" บน Lazada
  *  ⚠️ ใช้รายการสินค้าจริง ไม่ใช่ประวัติการขาย — ของที่ถอดออกแล้วต้องไม่ติดมาด้วย
  *  ⚠️ Lazada แยก active / inactive / deleted ⇒ ขอเฉพาะ active */
+/*  ⚠️ **ต้องดึงหลายหน้าพร้อมกัน ไม่งั้นฟังก์ชันตายก่อนดึงจบ** — พลาดมาแล้ว 4 ก.ย. 2569
+       Lazada จำกัดหน้าละ 50 (ขอมากกว่านี้ไม่ได้) ร้านมีสินค้าหลายร้อย ⇒ ไล่ทีละหน้า
+       ใช้เวลาเกิน 26 วินาทีที่ Netlify ให้ **ตอบ 502 เปล่า ๆ ไม่มีข้อความบอกสาเหตุ**
+    ⚠️ **ดึงไม่ครบต้องโยน error ห้ามคืนของที่ได้มาบางส่วน** — ปลายทางเอาไปตอบคำถาม
+       "รหัสนี้ลงขายอยู่ไหม" ของที่หายเพราะดึงไม่ทันจะกลายเป็น "ไม่ได้ลงขาย"
+       ซึ่งหน้าตาเหมือนคำตอบจริงทุกประการ · ยอมขึ้นว่า "เช็คไม่ได้" ดีกว่าตอบผิด  */
+const PAGE = 50;
+const CONCURRENCY = 6;
+
+async function pageSkus(offset) {
+  const d = await shopCall("/products/get", {
+    filter: "live",
+    limit: String(PAGE),
+    offset: String(offset),
+  });
+  return {
+    items: d?.data?.products || [],
+    total: Number(d?.data?.total_products ?? 0),
+  };
+}
+
 export async function listedSkus() {
   const out = new Set();
-  for (let offset = 0; offset < 5000; offset += 50) {
-    const d = await shopCall("/products/get", {
-      filter: "live",
-      limit: "50",
-      offset: String(offset),
-    });
-    const items = d?.data?.products || [];
-    if (!items.length) break;
+  const eat = (items) => {
     for (const p of items) {
       for (const s of p?.skus || []) {
         const code = String(s?.SellerSku ?? "").trim();
         if (code) out.add(code);
       }
     }
-    if (items.length < 50) break;
+  };
+
+  const first = await pageSkus(0);
+  eat(first.items);
+  // ไม่บอก total มา (หรือหน้าแรกไม่เต็ม) = จบแล้ว
+  if (!first.total || first.items.length < PAGE) return out;
+
+  const pages = Math.ceil(first.total / PAGE);
+  const rest = [];
+  for (let i = 1; i < pages; i++) rest.push(i * PAGE);
+
+  for (let i = 0; i < rest.length; i += CONCURRENCY) {
+    const batch = rest.slice(i, i + CONCURRENCY);
+    const got = await Promise.all(batch.map((o) => pageSkus(o)));
+    for (const g of got) eat(g.items);
   }
   return out;
 }
