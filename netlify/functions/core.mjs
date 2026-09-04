@@ -651,12 +651,47 @@ export default async function handler(req, context) {
         [from, today]
       );
 
+      /* ── บรรทัดที่ราคาเป็น 0 ── ด่านที่สามของสะพาน PEAK
+         ⚠️ **ใบกำกับที่มีรายการราคา 0 ออกไม่ได้** และเป็นของที่ตัวตรวจอื่นมองไม่เห็น
+            เพราะใบมีบรรทัดครบ (ด่าน 1 ผ่าน) และยอดหัวใบก็ปกติ
+         ⚠️ ต้องแยก "ทั้งใบเป็น 0" ออกจาก "บางบรรทัดเป็น 0" — คนละอาการ
+            ทั้งใบ 0 = ราคาหลุดตั้งแต่ตะกร้า · บางบรรทัด 0 = ของแถม/ของแลก ซึ่งอาจตั้งใจ */
+      const zero = await coreQuery(
+        `SELECT o.source AS src,
+                COUNT(DISTINCT o.id) AS ordersWithZeroLine,
+                SUM(CASE WHEN li.s = 0 THEN 1 ELSE 0 END) AS allZeroOrders
+         FROM orders o
+         JOIN (SELECT order_id, SUM(amount) AS s FROM order_items GROUP BY order_id) li
+           ON li.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL} AND o.amount > 0
+           AND EXISTS (SELECT 1 FROM order_items i WHERE i.order_id = o.id AND COALESCE(i.amount,0) = 0)
+         GROUP BY 1`,
+        [from, today]
+      );
+      const zeroSample = await coreQuery(
+        `SELECT o.source AS src, o.number AS number, o.order_date AS day, o.channel AS channel,
+                o.amount AS header, i.sku AS sku, i.name AS name, i.qty AS qty
+         FROM orders o
+         JOIN order_items i ON i.order_id = o.id
+         WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL} AND o.amount > 0
+           AND COALESCE(i.amount,0) = 0
+         ORDER BY o.order_date DESC LIMIT 25`,
+        [from, today]
+      );
+
       const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
       return json({
         ok: true,
         from,
         to: today,
         days,
+        /* ⚠️ บรรทัดราคา 0 — ตัวตรวจอื่นมองไม่เห็น เพราะใบมีบรรทัดครบและยอดหัวใบปกติ */
+        zeroPriceLines: zero.map((z) => ({
+          store: z.src,
+          ordersWithZeroLine: num2(z.ordersWithZeroLine),
+          allLinesZero: num2(z.allZeroOrders), // ทั้งใบเป็น 0 — หนักกว่า
+        })),
+        zeroPriceSample: zeroSample,
         /* ค่าส่งอธิบายส่วนต่างได้กี่ใบ — ถ้าเกือบทั้งหมด ปิดกอง "หัวใบมากกว่า" ได้เลย */
         shippingExplains: {
           headerHigher: num2(ship?.higher),
