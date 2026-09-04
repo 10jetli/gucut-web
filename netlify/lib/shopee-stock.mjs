@@ -238,11 +238,48 @@ export async function shopeeStockCompare() {
     ])
   );
 
+  /* ── สินค้าเป็นชุด (โซ่ตัดขาย · ชุดเครื่อง) ── (5 ก.ย. 2569)
+     ⚠️ **จุดบอดเดิมใหญ่มาก** — วัดแล้ว Shopee มี 320 รหัส แต่ "คลังไม่รู้จัก" ถึง **276**
+        ⇒ ตัวเทียบนี้ตรวจจริงแค่ 44 รหัส (14%) แล้วรายงาน "ตรงกัน 40"
+        ใครอ่านผ่าน ๆ จะเข้าใจว่าสต็อก Shopee ตรงกับคลัง ทั้งที่ 86% ไม่เคยถูกตรวจเลย
+     ⇒ ใช้สูตรชุดจาก ZORT (bundle_items) แบบเดียวกับฝั่ง Lazada
+        **ระบุตัวด้วยสูตร · คิดจำนวนจากม้วนแม่จริง**
+     ⚠️ ห้ามใช้ bundles.available เป็นตัวเลข — เพี้ยนจากม้วนจริง −1.8% ถึง +1.5%
+        และเพี้ยนไม่เท่ากันแต่ละตระกูล (ดู handoff หัวข้อกับดักแผนดันสต็อก) */
+  let recipe = new Map();
+  try {
+    const rec = await coreQuery(
+      `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
+       FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
+       WHERE b.active = 1`
+    );
+    const count = new Map();
+    for (const r of rec) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
+    for (const r of rec) {
+      const k = String(r.sku).trim();
+      if (count.get(k) !== 1) continue; // ชุดหลายชิ้นคิดแบบนี้ไม่ได้
+      const per = num(r.per);
+      if (per > 0 && r.base) recipe.set(k, { base: String(r.base).trim(), per });
+    }
+  } catch {
+    // ไม่มีตารางสูตร = ถอยไปใช้วิธีเดิม ห้ามล้ม
+  }
+
   const diff = [];
   const missingSample = [];
   let same = 0;
   let missing = 0;
+  let viaRecipe = 0;
   for (const r of withSku) {
+    // ชุดก่อน — ระบุตัวได้ตรงตัวจากสูตร แล้วคิดจำนวนจากม้วนแม่จริง
+    const rec = recipe.get(r.sku);
+    if (rec && snap.has(rec.base)) {
+      viaRecipe += 1;
+      const ours = Math.floor(num(snap.get(rec.base)) / rec.per);
+      if (ours === r.qty) same += 1;
+      else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, gap: ours - r.qty, via: "สูตรชุด" });
+      continue;
+    }
     if (!snap.has(r.sku)) {
       missing += 1;
       // Shopee มี SKU นี้ แต่คลังเราไม่รู้จัก — คนละเรื่องกับ "ตัวเลขไม่ตรง"
@@ -263,6 +300,9 @@ export async function shopeeStockCompare() {
     shopeeSkus: withSku.length,
     noSku: rows.length - withSku.length,
     same,
+    // จับคู่ได้เพราะมีสูตรชุด (ไม่ใช่การเดา) — เดิมตกอยู่ในกอง "คลังไม่รู้จัก" ทั้งหมด
+    matchedByRecipe: viaRecipe,
+    bundlesWithRecipe: recipe.size,
     missing,
     missingSample,
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
