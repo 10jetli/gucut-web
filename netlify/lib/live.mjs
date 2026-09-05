@@ -182,6 +182,7 @@ export async function stats() {
   // อ่านเฉพาะคนที่ออนไลน์อยู่ เพื่อรู้ว่ากำลังดูหน้าไหน (จำนวนน้อย ไม่หนัก)
   // ⚠️ ส่วนนี้ต้องรอ perBucket จริง ๆ จึงแยกออกมาอีกรอบ — เลี่ยงไม่ได้
   const pages = new Map();
+  const tPages = Date.now();
   await Promise.all(
     [...seen.values()].slice(0, 200).map(async (k) => {
       try {
@@ -191,6 +192,7 @@ export async function stats() {
       } catch { /* คีย์หายไประหว่างทาง ไม่เป็นไร */ }
     }),
   );
+  ms.pages = Date.now() - tPages;
 
   const days = weekDays.map((d, i) => ({ d, n: dayKeys[i].length }));
 
@@ -233,7 +235,11 @@ export async function stats() {
     at: now,
     /* เวลาที่แต่ละส่วนใช้ (มิลลิวินาที) — ทุกส่วนวิ่งพร้อมกัน **ห้ามบวกกัน**
        msTotal คือเวลาจริงทั้งหมด · ตัวที่ใกล้ msTotal ที่สุดคือตัวที่ถ่วงอยู่ */
-    ms: { ...ms, pages: Date.now() - t0 },
+    /* ⚠️ **ทุกตัวเป็น "เวลาที่ส่วนนั้นใช้จริง" ห้ามเอาไปบวกกัน**
+        ส่วนใหญ่วิ่งพร้อมกัน ⇒ ผลรวมจะเกิน msTotal เสมอ
+        ⚠️ `pages` เป็นขั้นที่ **ต้องรอ** ผลของ online ก่อน (เลี่ยงไม่ได้)
+           ⇒ ถ้า pages โตขึ้นเรื่อย ๆ แปลว่าคนออนไลน์เยอะขึ้น ไม่ใช่ระบบพัง */
+    ms: { ...ms },
     msTotal: Date.now() - t0,
   };
 }
