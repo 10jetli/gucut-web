@@ -730,6 +730,13 @@ const linksPerRoll = (teethPerRoll) =>
 export async function reorderPlan(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const days = Math.max(7, Math.min(365, num(o.days) || 90));
+  /* ⚠️ **ของเดิมครอบแค่ "ม้วนแม่" 92 รหัส จากสินค้าทั้งคลัง 2,672** (ฝั่งจอชี้ 5 ก.ย. 2569)
+      จอชื่อ "ของจะหมดเมื่อไหร่" แต่ตอบได้แค่ 3% ของคลัง ⇒ ฝั่งจอต้องไปเดาเองจากยอดขายบนจอ
+      ซึ่งติด limit ของหน้าจอ และคิดคนละวิธีกับท่อ ⇒ เลขสองที่ไม่ตรงกันโดยไม่มีใครรู้
+      ⇒ `scope=all` ครอบสินค้าทุกตัวที่มีการขายในช่วงนั้น
+      ⚠️ ค่าเริ่มต้นยังเป็น `parents` เพื่อไม่ให้จอที่ใช้อยู่เปลี่ยนพฤติกรรมกลางคัน
+         (จอฝั่ง gucut2 กำลังใช้อยู่ — เปลี่ยนเงียบ ๆ = ตัวเลขบนจอขยับโดยไม่มีใครสั่ง) */
+  const scopeAll = String(o.scope ?? "") === "all";
 
   // วันแบบไทย — order_date เก็บเป็นวันไทยอยู่แล้ว จึงเทียบสตริงตรง ๆ ได้
   const thai = (offset = 0) =>
@@ -788,11 +795,29 @@ export async function reorderPlan(o = {}) {
       .map((r) => [String(r.sku), { name: String(r.name ?? ""), have: num(r.available) }])
   );
 
+  /* รายชื่อที่จะคิด — ม้วนแม่เสมอ · เพิ่มสินค้าที่ขายจริงเมื่อขอ scope=all
+     ⚠️ สินค้าที่ **ไม่เคยขายเลย** ไม่ต้องใส่ ไม่งั้นได้พันกว่าแถวที่ daysLeft เป็น null ทั้งหมด
+        ซึ่งกลบของที่ต้องดูจริงจนหาไม่เจอ (ของที่ไม่มีข้อมูลไม่ใช่ของที่ต้องสั่ง) */
+  const soldDirect = new Map();
+  if (scopeAll) {
+    for (const s2 of sold) {
+      const sku = String(s2.sku ?? "");
+      const q = num(s2.qty);
+      if (!sku || !(q > 0)) continue;
+      if (parentOf.has(sku) || kidsOf.has(sku)) continue; // คิดไปแล้วในกองม้วนแม่
+      soldDirect.set(sku, (soldDirect.get(sku) ?? 0) + q);
+    }
+  }
+  const targets = [
+    ...[...kidsOf.keys()].map((k) => ({ sku: k, kids: kidsOf.get(k), isParent: true })),
+    ...[...soldDirect.keys()].map((k) => ({ sku: k, kids: [], isParent: false })),
+  ];
+
   const rows = [];
-  for (const [parent, kids] of kidsOf) {
+  for (const { sku: parent, kids, isParent } of targets) {
     const st = stock.get(parent);
     if (!st) continue;
-    const used = usedTeeth.get(parent) ?? 0;
+    const used = isParent ? (usedTeeth.get(parent) ?? 0) : (soldDirect.get(parent) ?? 0);
     const cut = chainsCut.get(parent) ?? 0;
     /* บันไดความยาวของม้วนนี้ — ใช้ตีกรอบว่า "ตัดได้อย่างน้อย/อย่างมากกี่เส้น"
        ⚠️ เอาเฉพาะ **รหัสความยาวของม้วนนี้เอง** (`<ม้วน>-…`) เท่านั้น
@@ -813,12 +838,21 @@ export async function reorderPlan(o = {}) {
     rows.push({
       sku: parent,
       name: st.name,
+      /* ⚠️ **ชื่อช่องเดิมคือ teeth/teethPerDay ซึ่งเป็นศัพท์ของโซ่**
+          พอครอบทั้งคลังแล้ว สินค้าทั่วไปหน่วยเป็น "ชิ้น" ไม่ใช่ "ฟัน"
+          ⇒ เพิ่มชื่อกลาง `onHand` / `perDay` / `unit` ให้จอใช้กับทุกสินค้าได้
+             และ **คงชื่อเดิมไว้ด้วย** เพราะจอฝั่ง gucut2 ใช้อยู่ ลบทันทีคือทำจอพัง */
+      kind: isParent ? "parent" : "item",
+      unit: isParent ? "ฟัน" : "ชิ้น",
+      onHand: st.have,
       teeth: st.have,
       teethPerRoll: tpr,
       // ⚠️ ไม่รู้ฟันต่อม้วน ⇒ null ห้ามเดา 820 · มีสามค่าแล้ว และวันหน้าอาจมีอีก
       rolls: tpr ? Math.round((st.have / tpr) * 100) / 100 : null,
       // จำนวนความยาวที่ลงขาย — เฉพาะรหัสของม้วนนี้เอง ไม่นับชุดเลื่อยที่มีม้วนนี้เป็นส่วนประกอบ
       listings: lens.length,
+      used: Math.round(used * 10) / 10,
+      perDay: Math.round(perDay * 100) / 100,
       teethUsed: Math.round(used * 10) / 10,
       teethPerDay: Math.round(perDay * 100) / 100,
       /* ── ข้อต่อ ── (เจ้าของร้านให้ตัวเลข 5 ก.ย. 2569: ม้วนหนึ่งแถมข้อต่อ 30 คู่)
@@ -869,7 +903,10 @@ export async function reorderPlan(o = {}) {
     from,
     to,
     days,
-    parents: rows.length,
+    scope: scopeAll ? "all" : "parents",
+    parents: rows.filter((r) => r.kind === "parent").length,
+    items: rows.filter((r) => r.kind === "item").length,
+    total: rows.length,
     neverSold: rows.filter((r) => r.daysLeft === null).length,
     scope:
       `ยอดใช้คิดจากใบขายจริงช่วง ${from} ถึง ${to} (${days} วัน) ไม่รวมใบยกเลิก · ` +
