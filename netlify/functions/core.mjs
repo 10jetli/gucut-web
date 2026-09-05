@@ -29,7 +29,7 @@ import {
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
-import { listOrders, getOrder, listChannels, listLogistics,
+import { listOrders, listOrderFacets, getOrder, listChannels, listLogistics,
 } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
@@ -1828,10 +1828,29 @@ export default async function handler(req, context) {
         })),
       });
     }
-    if (p.get("list") === "orders") {
+    /* ── เบา: เอาแค่ป้ายชื่อร้าน + ยอดแยกช่องทาง ──
+       ยิง D1 2 รอบ แทนที่จะเป็น 11 รอบของ list=orders
+       ⚠️ ตัวนี้ **ไม่มี rows** โดยตั้งใจ — จอที่ต้องการรายการออเดอร์ต้องใช้ list=orders */
+    if (p.get("list") === "orderfacets") {
       return json({
         ok: true,
-        ...(await listOrders({
+        ...(await listOrderFacets({
+          from: p.get("from"),
+          to: p.get("to"),
+          channel: p.get("channel"),
+          source: p.get("store"),
+          includeCancelled: p.get("cancelled") === "1",
+        })),
+      });
+    }
+
+    if (p.get("list") === "orders") {
+      /* ⚠️ **listChannels ต้องยิงพร้อมกับ listOrders ห้ามต่อท้าย** (แก้ 5 ก.ย. 2569)
+          ของเดิมเขียน `channels: await listChannels(...)` ในก้อน object
+          ซึ่งวิ่ง **หลัง** listOrders เสร็จ ⇒ เสียเวลาเดินทางเพิ่มอีกรอบฟรี ๆ
+          มันไม่ต้องรอผลของ listOrders เลยสักช่อง */
+      const [orders, channels] = await Promise.all([
+        listOrders({
           from: p.get("from"),
           to: p.get("to"),
           channel: p.get("channel"),
@@ -1842,10 +1861,11 @@ export default async function handler(req, context) {
           limit: p.get("limit"),
           offset: p.get("offset"),
           includeCancelled: p.get("cancelled") === "1",
-        })),
+        }),
         // รายชื่อช่องทางต้องมาจากขอบเขตเดียวกับผลลัพธ์ ไม่งั้นเลือกได้แต่ได้ 0 ใบ
-        channels: await listChannels(p.get("store")),
-      });
+        listChannels(p.get("store")),
+      ]);
+      return json({ ok: true, ...orders, channels });
     }
 
     // สถานะรวม

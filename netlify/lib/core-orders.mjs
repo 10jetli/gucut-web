@@ -103,6 +103,62 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source }) 
  * @param {object} o from · to (YYYY-MM-DD) · channel · status · q (เลขที่/ชื่อลูกค้า) ·
  *                   source (z1|z2) · limit · offset · includeCancelled
  */
+/** ── ป้ายชื่อร้าน + ยอดแยกช่องทาง แบบ "เบา" ──
+ *  ฝั่งจอขอ 5 ก.ย. 2569 หลังวัดเจอว่า `list=orders&limit=1` กับ `limit=200`
+ *  ใช้เวลา **เท่ากันเป๊ะ** (4.15 กับ 4.21 วิ) ⇒ ต้นทุนคือ "จำนวนรอบไป-กลับ D1" ล้วน ๆ
+ *  จอคลังกับจอช่องทางขอ `limit=1` เพื่อเอาแค่ป้ายชื่อร้าน แต่จ่ายเต็ม 4 วิทุกครั้ง
+ *  เพราะ listOrders ยิง 10 query เสมอไม่ว่าจะขอกี่แถว
+ *
+ *  ตัวนี้ยิงแค่ 2 query พร้อมกัน และ **ไม่ดึงแถวออเดอร์เลยสักแถว**
+ *  ⚠️ **ห้ามเติม query ลงตัวนี้เพื่อความสะดวก** — จุดขายทั้งหมดของมันคือ "รอบน้อย"
+ *     อยากได้อะไรเพิ่มให้ไปใช้ list=orders ตามเดิม ไม่งั้นอีกหน่อยมันจะช้าเท่ากันแล้วไม่มีใครรู้ว่าทำไม
+ *  ⚠️ ช่องที่คืนต้อง **ชื่อและรูปแบบเดียวกับใน listOrders เป๊ะ** (stores · byChannel · storeScope)
+ *     ไม่งั้นจอต้องเขียนโค้ดอ่านสองแบบ แล้ววันหนึ่งสองแบบจะเพี้ยนออกจากกันเงียบ ๆ
+ */
+export async function listOrderFacets(o = {}) {
+  const from = o.from || null;
+  const to = o.to || null;
+  const source = o.source || null;
+  const w = buildWhere({
+    from, to, channel: o.channel || null, q: null,
+    includeCancelled: o.includeCancelled === true, source,
+  });
+
+  const [storeRows, byChannel] = await Promise.all([
+    coreQuery(
+      `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${w.sql}
+       GROUP BY source ORDER BY source`,
+      w.params
+    ),
+    coreQuery(
+      `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${w.sql}
+       GROUP BY channel ORDER BY amount DESC`,
+      w.params
+    ),
+  ]);
+
+  return {
+    from, to,
+    store: source,
+    stores: storeRows.map((r) => ({
+      source: r.source,
+      name: storeName(r.source),
+      note: STORES[String(r.source)]?.note ?? null,
+      orders: num(r.orders),
+      amount: num(r.amount),
+    })),
+    storeScope: source
+      ? `เฉพาะร้าน ${storeName(source)}`
+      : "ทุกร้านที่มีบิลในช่วงนี้ — จอนับจาก stores.length เอง ห้ามเขียนจำนวนร้านตายตัว",
+    byChannel,
+    /* ⚠️ **บอกให้ชัดว่าตัวนี้ไม่มีอะไร** ไม่งั้นจอที่เผลอเรียกตัวนี้แทน list=orders
+        จะเห็น rows หายไปแล้วนึกว่า "ช่วงนี้ไม่มีออเดอร์" ซึ่งเป็นคนละเรื่องกันคนละขั้ว */
+    note: "ตัวนี้ตอบแค่ป้ายชื่อร้านกับยอดแยกช่องทาง — ไม่มี rows · total · byStatus โดยตั้งใจ (ต้องการของพวกนั้นให้ใช้ list=orders)",
+  };
+}
+
 export async function listOrders(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
 
