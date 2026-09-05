@@ -42,12 +42,22 @@ async function shopeeStock() {
   }
   if (!ids.length) return [];
 
-  // ชื่อ + SKU ระดับสินค้า (ทีละ 50 ตามเพดาน API)
+  /* ชื่อ + SKU ระดับสินค้า (ทีละ 50 ตามเพดาน API)
+     ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
+        ของเดิมวนทีละก้อนแบบ await ในลูป ⇒ สินค้า 320 ตัว = 7 รอบเรียงกัน
+        Shopee ตอบรอบละราว 0.3–0.5 วิ ⇒ เสียเวลาฟรี ๆ ราว 2–3 วิ ต่อการเปิดจอหนึ่งครั้ง
+        แต่ละก้อนขอคนละรายการสินค้า **ไม่มีก้อนไหนต้องรอผลของก้อนก่อนหน้า**
+     ⚠️ **จำกัดที่ 4 ก้อนพร้อมกัน ห้ามปล่อยทั้งหมด** — Shopee จำกัดอัตราคำขอ
+        ยิงรวดเดียว 7+ ก้อนเสี่ยงโดนตีกลับ แล้วจะกลายเป็น "ชื่อสินค้าหายไปเฉย ๆ"
+        ซึ่งมองไม่ออกว่าเป็นเพราะโดนจำกัดอัตรา
+     ⚠️ ก้อนที่ล้มต้องไม่ล้มทั้งรอบ — ได้ชื่อไม่ครบดีกว่าเทียบสต็อกไม่ได้เลย */
   const base = new Map();
-  for (let i = 0; i < ids.length; i += 50) {
-    const d = await shopCall("/api/v2/product/get_item_base_info", {
-      item_id_list: ids.slice(i, i + 50).join(","),
-    });
+  const chunks = [];
+  for (let i = 0; i < ids.length; i += 50) chunks.push(ids.slice(i, i + 50));
+  const baseParts = await inChunks(chunks, 4, (c) =>
+    shopCall("/api/v2/product/get_item_base_info", { item_id_list: c.join(",") }).catch(() => null)
+  );
+  for (const d of baseParts) {
     for (const it of d?.response?.item_list ?? []) base.set(it.item_id, it);
   }
 
