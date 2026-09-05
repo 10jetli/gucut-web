@@ -151,9 +151,19 @@ async function shopee() {
 async function tiktok() {
   const { validToken } = await import("./tiktok.mjs");
   const t = await validToken();
-  return t
-    ? { connected: true, ...tokenExpiry(t), detail: "เชื่อมแล้ว" }
-    : { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/tiktok/auth)" };
+  if (!t) return { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/tiktok/auth)" };
+  /* บอกชื่อร้านกับจำนวนรหัสที่ลงขาย เหมือนฝั่ง Shopee — "เชื่อมแล้ว" เฉย ๆ พิสูจน์อะไรไม่ได้
+     ⚠️ ใช้แคชตัวเดียวกับคอลัมน์ Marketplace (shopee() เรียกไปแล้ว) จึงไม่ยิงซ้ำ
+     ⚠️ นับไม่ได้ให้บอกว่าเชื่อมแล้วเฉย ๆ **ห้ามใส่ 0** — 0 อ่านว่า "ไม่มีของลงขายเลย" */
+  const { marketplaceListings } = await import("./marketplace-listings.mjs");
+  const ml = await marketplaceListings().catch(() => null);
+  const n = ml ? Object.values(ml.listings).filter((v) => v.includes("tiktok")).length : null;
+  const shop = t.shopName ? `ร้าน ${t.shopName}` : "เชื่อมแล้ว";
+  return {
+    connected: true,
+    ...tokenExpiry(t),
+    detail: n === null ? shop : `${shop} · สินค้าที่ลงขาย ${n.toLocaleString("th-TH")} รหัส`,
+  };
 }
 
 async function lazada() {
@@ -225,12 +235,27 @@ export async function connectionsStatus(opts = {}) {
         detail: "ยังไม่มีตัวตรวจ — แชท Facebook ตอบผ่านแอป ZORT Social อยู่",
       }),
     ],
+    /* ⚠️ **เคยเขียนตายตัวว่า "ยังไม่ได้ต่อ"** — วันที่ตั้ง env ครบ บรรทัดนี้จะโกหกทันที
+        โดยไม่มีอะไรฟ้อง (คลาสเดียวกับ TikTok ที่เขียนว่า "รอตรวจพาร์ทเนอร์" แล้วเชื่อมได้จริง
+        6 ก.ย. 2569 · และป้าย TikTok ในผังสถาปัตยกรรม — เจอ 3 จุดในวันเดียว)
+        ⇒ ถามของจริงจาก `peakReady()` ซึ่งเป็นตัวเดียวกับที่ตัวส่งข้อมูลใช้ตัดสินใจ
+        ⚠️ "ตั้งคีย์ครบ" ยังไม่เท่ากับ "ส่งข้อมูลได้จริง" — บอกให้ตรงตามที่ตรวจ ห้ามเคลมเกิน */
     accounting: [
-      stamp({
-        name: "PEAK",
-        connected: false,
-        detail: "ยังไม่ได้ต่อ — ตอนนี้ยอดขายเข้า PEAK ผ่าน ZORT",
-      }),
+      (() => {
+        // อ่านตัวแปรตรง ๆ ด้วยเงื่อนไขชุดเดียวกับ peakReady() ใน peak.mjs
+        // (ไฟล์นี้ใช้ await import ทั้งไฟล์ แต่ตรงนี้อยู่ในบล็อกสร้าง object ที่ไม่ใช่ async)
+        // ⚠️ **เงื่อนไขซ้ำสองที่แล้ว** — แก้ที่ peak.mjs เมื่อไหร่ต้องแก้ตรงนี้ด้วย
+        //    ไม่งั้นหน้าจอกับตัวส่งจริงจะตอบคนละอย่างโดยไม่มีอะไรฟ้อง
+        const { PEAK_CONNECT_ID, PEAK_CONNECT_KEY, PEAK_USER_TOKEN } = process.env;
+        const ready = !!(PEAK_CONNECT_ID && PEAK_CONNECT_KEY && PEAK_USER_TOKEN);
+        return stamp({
+          name: "PEAK",
+          connected: ready,
+          detail: ready
+            ? "ตั้งคีย์ครบแล้ว (ยังไม่ได้ยิงของจริงจากหน้านี้)"
+            : "ยังไม่ได้ใส่คีย์ — ตอนนี้ยอดขายเข้า PEAK ผ่าน ZORT",
+        });
+      })(),
     ],
     warehouse: [
       stamp({ name: "ZORT — ศีตกาล เทรดดิ้ง", ...z1 }),

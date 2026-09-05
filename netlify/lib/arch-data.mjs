@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-05T14:59:16.649Z",
+  "generatedAt": "2026-09-05T22:28:49.905Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
@@ -77,6 +77,8 @@ export const ARCH = {
       "stock_moves",
       "stock_recon_log",
       "stock_snapshots",
+      "tiktok_order_items",
+      "tiktok_orders",
       "transfers"
     ]
   },
@@ -126,10 +128,11 @@ export const ARCH = {
     {
       "id": "tiktok",
       "name": "TikTok Shop API",
-      "what": "ยังไม่ได้รับอนุมัติ",
+      "what": "ออเดอร์ · สินค้า/สต็อก · จัดส่ง",
       "envs": [
         "TIKTOK_APP_KEY",
-        "TIKTOK_APP_SECRET"
+        "TIKTOK_APP_SECRET",
+        "TIKTOK_SERVICE_ID"
       ],
       "inCode": true
     },

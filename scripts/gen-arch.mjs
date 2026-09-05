@@ -75,13 +75,18 @@ const oauth = read("netlify/lib/oauth.mjs");
 for (const m of oauth.matchAll(/env(?:Id|Secret):\s*"([A-Z0-9_]+)"/g)) envUsed.add(m[1]);
 const providers = [...oauth.matchAll(/^\s*id:\s*"([a-z]+)",/gm)].map((m) => m[1]);
 
-// ป้ายชื่อของแต่ละกลุ่มตัวแปร — เขียนเองส่วนนี้เพราะชื่อตัวแปรไม่ได้บอกว่ามันคือใคร
+/* ป้ายชื่อของแต่ละกลุ่มตัวแปร — เขียนเองส่วนนี้เพราะชื่อตัวแปรไม่ได้บอกว่ามันคือใคร
+   ⚠️ **ช่อง `what` ต้องบอกว่า "ของชิ้นนี้ทำอะไร" ห้ามบอก "สถานะตอนนี้เป็นยังไง"**
+      เจอของจริง 6 ก.ย. 2569: TikTok เขียนไว้ว่า "ยังไม่ได้รับอนุมัติ" ตั้งแต่ตอนยื่นเรื่อง
+      พอเชื่อมสำเร็จเช้า 6 ก.ย. ผังในหลังร้าน **ยังโกหกต่ออีกจนกว่าจะมีคนวนกลับมาอ่าน**
+      หน้าที่บอกสถานะจริงคือหน้า "สถานะระบบ" กับ "การเชื่อมต่อ" ซึ่งยิงของจริงทุกครั้ง
+      ⇒ ที่นี่บอกแค่บทบาท · สถานะให้ไปดูที่จอที่ตรวจของจริง (ดู [[stale-state-comments]]) */
 const LABELS = [
   { id: "zort", name: "ZORT V4", what: "สต็อก · ราคา · ออเดอร์ · ทะเบียนสินค้า", envs: ["ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"] },
   { id: "d1", name: "Cloudflare D1", what: "คลังเงา — ฐานข้อมูลของเราเอง", envs: ["CLOUDFLARE_D1_TOKEN"], prefix: "^(CLOUDFLARE|CORE_D1)" },
   { id: "r2", name: "Cloudflare R2", what: "คลิป HLS + รูปสินค้า (เบราว์เซอร์โหลดตรง)", envs: ["R2_ACCESS_KEY_ID", "R2_BUCKET", "R2_ENDPOINT"] },
   { id: "shopee", name: "Shopee Open API", what: "ออเดอร์ · สต็อก · รีวิว", envs: ["SHOPEE_PARTNER_ID", "SHOPEE_PARTNER_KEY"] },
-  { id: "tiktok", name: "TikTok Shop API", what: "ยังไม่ได้รับอนุมัติ", envs: ["TIKTOK_APP_KEY", "TIKTOK_APP_SECRET"] },
+  { id: "tiktok", name: "TikTok Shop API", what: "ออเดอร์ · สินค้า/สต็อก · จัดส่ง", envs: ["TIKTOK_APP_KEY", "TIKTOK_APP_SECRET", "TIKTOK_SERVICE_ID"] },
   { id: "beam", name: "Beam", what: "รับชำระเงิน + webhook แจ้งเงินเข้า", envs: ["BEAM_API_KEY", "BEAM_MERCHANT_ID"] },
   { id: "line", name: "LINE @gucut1", what: "แจ้งเตือนสถานะออเดอร์ถึงลูกค้า", envs: ["LINE_MESSAGING_TOKEN"] },
   { id: "telegram", name: "Telegram", what: "แจ้งเตือนเข้ากลุ่มร้าน + ปุ่มอนุมัติ", envs: ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"] },
