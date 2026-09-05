@@ -34,13 +34,41 @@ const d1Meter = new AsyncLocalStorage();
 
 /** ครอบตัวจัดการคำขอด้วยตัวนี้ แล้วเรียก `d1Stats()` ตอนจะตอบ */
 export function withD1Meter(fn) {
-  return d1Meter.run({ count: 0, ms: 0, max: 0 }, fn);
+  return d1Meter.run({ count: 0, ms: 0, max: 0, wrote: false }, fn);
 }
 
 /** ตัวเลขของคำขอปัจจุบัน — อยู่นอก withD1Meter จะได้ null (ไม่ throw) */
 export function d1Stats() {
   const m = d1Meter.getStore();
-  return m ? { count: m.count, ms: Math.round(m.ms), max: Math.round(m.max) } : null;
+  return m
+    ? { count: m.count, ms: Math.round(m.ms), max: Math.round(m.max), wrote: m.wrote }
+    : null;
+}
+
+/* ── "คำขอนี้เขียนฐานข้อมูลไปหรือเปล่า" ── (ฝั่งจอขอ 5 ก.ย. 2569)
+   ฝั่งจอเก็บคำตอบไว้ในหน่วยความจำ 60 วิ เพื่อให้กดสลับเมนูแล้วเห็นทันที
+   ⇒ ต้องล้างของเก่าทิ้งทุกครั้งที่มีการบันทึกข้อมูล ไม่งั้นคนกดบันทึกแล้วเห็นเลขเก่า **แล้วจะกดซ้ำ**
+
+   ⚠️ **ฝั่งเบราว์เซอร์แยกเองไม่ได้เด็ดขาด** — API ฝั่งนี้มี 10 ตัวที่เขียนข้อมูลแต่เรียกด้วย GET
+      (`?sync=1` `?recon=1` `?snapshot=1` `?init=1` …) หน้าตาเหมือน GET ที่อ่านอย่างเดียวเป๊ะ
+      ⇒ ให้จอจดรายชื่อเอาไว้เอง = **วันที่มีคนเพิ่มตัวที่ 11 จอจะโชว์เลขผิดเงียบ ๆ**
+      ที่เดียวที่รู้ความจริงคือตรงนี้ — ตอนที่ SQL วิ่งไปเขียนจริง ๆ
+
+   ⚠️ **ต้องไม่นับ DDL แบบ "สร้างถ้ายังไม่มี"** — จอที่อ่านอย่างเดียวหลายตัว
+      (listTransfers · listBundleItems) ยิง CREATE TABLE IF NOT EXISTS ทุกครั้งที่เปิด
+      นับด้วยเมื่อไหร่ = แทบทุกคำขอกลายเป็น "เขียนแล้ว" ⇒ แคชไม่เคยถูกใช้เลยสักครั้ง
+      แล้วจะดูเหมือนแคชพัง ทั้งที่มันถูกล้างทิ้งทุกวินาที */
+const WRITE_HEAD = /^\s*(?:\/\*[\s\S]*?\*\/|--[^\n]*\n|\s)*(INSERT|UPDATE|DELETE|REPLACE|DROP|CREATE|ALTER)\b/i;
+const SAFE_DDL = /\bIF\s+NOT\s+EXISTS\b/i;
+
+export function sqlWrites(sql) {
+  const m = WRITE_HEAD.exec(String(sql || ""));
+  if (!m) return false;
+  const verb = m[1].toUpperCase();
+  // ALTER TABLE ... ADD COLUMN = เปลี่ยนโครง ไม่ได้เปลี่ยนข้อมูล · ยิงซ้ำทุกครั้งที่ init
+  if (verb === "ALTER") return false;
+  if ((verb === "CREATE" || verb === "DROP") && SAFE_DDL.test(sql)) return false;
+  return true;
 }
 
 /** ยิง SQL หนึ่งประโยค (พารามิเตอร์ใช้ ? ตามลำดับ) — คืน rows */
@@ -58,6 +86,10 @@ export async function coreQuery(sql, params = []) {
     meter.count += 1;
     meter.ms += d;
     if (d > meter.max) meter.max = d;
+    /* ⚠️ ติดธงแม้ตอนล้ม — คำสั่งเขียนที่หมดเวลากลางทาง **อาจเขียนสำเร็จไปแล้ว**
+        แค่คำตอบไม่กลับมา ⇒ ต้องถือว่าเขียนแล้วเสมอ แล้วให้จอล้างของเก่าทิ้ง
+        (พลาดไปทางล้างเกิน ยอมได้ · พลาดไปทางไม่ล้าง = คนเห็นเลขก่อนบันทึกแล้วกดซ้ำ) */
+    if (sqlWrites(sql)) meter.wrote = true;
   };
   try {
     return await d1Fetch(token, sql, params);
