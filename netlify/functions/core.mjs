@@ -25,7 +25,7 @@ import {
 } from "../lib/pos.mjs";
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems, blockedByNegative,
-  reorderPlan,
+  reorderPlan, linkStatus,
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
@@ -284,6 +284,13 @@ export default async function handler(req, context) {
        ⚠️ หน่วยเป็น "ฟัน" ไม่ใช่ม้วน · ขายโซ่ 22 ฟันหนึ่งเส้น = ใช้ฟันไป 22
        ⚠️ เศษปลายม้วนต่อกับม้วนใหม่ได้ (เจ้าของร้านยืนยัน 5 ก.ย. 2569)
           ⇒ ม้วนเหลือน้อย = สัญญาณให้สั่งของ **ไม่ใช่เหตุให้ปิดขาย** */
+    /* ข้อต่อจะหมดก่อนโซ่ไหม — ม้วนเต็มแต่ไม่มีข้อต่อ = ตัดขายไม่ได้เลย
+         GET /api/core?links=1[&days=90]
+       ⚠️ 3/8 ใช้กับ 3623 และ 3652 · 3/8p ใช้กับ 3636 เท่านั้น ใส่ข้ามไม่ได้
+       ⚠️ ยังไม่รู้ว่าข้ามยี่ห้อได้ไหม ⇒ แยกกองไว้ก่อน · crossBrand ส่งมาให้ดูคู่กันเฉย ๆ */
+    if (url.searchParams.get("links")) {
+      return json({ ok: true, ...(await linkStatus({ days: url.searchParams.get("days") })) });
+    }
     if (url.searchParams.get("reorder")) {
       return json({ ok: true, ...(await reorderPlan({ days: url.searchParams.get("days") })) });
     }

@@ -889,3 +889,162 @@ export async function reorderPlan(o = {}) {
     rows,
   };
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ข้อต่อจะหมดก่อนโซ่ไหม — จับคู่ "ม้วนโซ่" กับ "ข้อต่อ" ที่ใช้ด้วยกันได้
+
+   ⚠️ **ทำไมสำคัญ** — ม้วนเต็มแต่ไม่มีข้อต่อ = **ตัดขายไม่ได้เลย**
+      ของจริง 5 ก.ย. 2569: KINGKONG 3623 มีม้วนอยู่ 34 ม้วน แต่ข้อต่อ 3/8 ติดลบ −20
+      ไม่มีจอไหนในระบบเดิม (รวม ZORT) ที่มองเห็นความสัมพันธ์นี้
+
+   ⚠️ **กติกาใส่แทนกัน — เจ้าของร้านยืนยันเอง ห้ามเดาเพิ่ม**
+      3/8   ⇒ ใช้กับ **3623 และ 3652** (ปิตช์เดียวกัน ใส่ร่วมกันได้)
+      3/8p  ⇒ ใช้กับ 3636 เท่านั้น · **ใส่กับ 3623/3652 ไม่ได้**
+      325   ⇒ 325 · 404 ⇒ 3860
+      ⚠️ อย่ารวม 3/8 กับ 3/8p เพราะ "วัดข้าม 3 หมุดได้ 19.05 เท่ากัน"
+         ระยะหมุดเท่ากันแต่ตัวข้อต่อคนละขนาด (เจ้าของร้านย้ำ + มีรูปของจริงยืนยัน)
+
+   ⚠️ **ยังไม่รู้ว่าข้ามยี่ห้อได้ไหม** (NEWWAVE ↔ KINGKONG ปิตช์เดียวกัน)
+      จึงแยกกองตามยี่ห้อไว้ก่อน = ฝั่งปลอดภัย (เตือนเร็วเกินดีกว่าเตือนช้าไป)
+      และส่ง `crossBrand` มาให้จอโชว์ยอดรวมข้ามยี่ห้อคู่กัน ให้คนตัดสินใจเอง
+      รู้คำตอบเมื่อไหร่ค่อยเลือกว่าจะรวมหรือแยก — **ห้ามรวมเองโดยไม่ถาม**
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/** เบอร์โซ่จากรุ่น — **เช็ครุ่น 4 หลักก่อนเสมอ** แล้วค่อยดู 325 / 1/4
+ *  ⚠️ ห้ามอ่านจากวงเล็บ `(3/8)` เพราะ `(3/8p)` มี `3/8` อยู่ข้างใน
+ *     รุ่นเป็นตัวเลขล้วนจึงไม่กำกวม — แต่ต้องมีขอบเขตตัวเลข ไม่งั้น `3652` จะไปชน `365` */
+function pitchOfName(name) {
+  const t = String(name ?? "");
+  const has = (n) => new RegExp(`(^|[^\\d])${n}([^\\d]|$)`).test(t);
+  if (has("3623") || has("3652")) return "3/8";
+  if (has("3636")) return "3/8p";
+  if (has("3860")) return "404";
+  if (has("325")) return "325";
+  if (t.includes("1/4")) return "1/4";
+  return null;
+}
+
+/** ยี่ห้อจากชื่อ — มีแค่สองยี่ห้อในคลัง ไม่เจอ ⇒ null ห้ามเดา */
+function brandOfName(name) {
+  const t = String(name ?? "").toUpperCase();
+  if (t.includes("KINGKONG")) return "KINGKONG";
+  if (t.includes("NEWWAVE")) return "NEWWAVE";
+  return null;
+}
+
+export async function linkStatus(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const days = Math.max(7, Math.min(365, num(o.days) || 90));
+  const plan = await reorderPlan({ days });
+  if (plan.skip || plan.error) return plan;
+
+  /* ข้อต่อในคลัง — **คัดด้วยชื่อขึ้นต้น "ข้อต่อโซ่" เท่านั้น**
+     ⚠️ ห้ามใช้แค่คำว่า "ข้อต่อ" — คลังมี "ข้อต่อคาร์บู" "ข้อต่อท่อไอดี" อีกเป็นสิบรหัส
+        (no-substring-classification — เคยโดนคลาสนี้มาแล้วหลายรอบ) */
+  const linkRows = await coreQuery(
+    `SELECT sku, name, available FROM products
+     WHERE name LIKE 'ข้อต่อโซ่%' AND available IS NOT NULL`
+  );
+
+  const links = linkRows
+    .map((r) => ({
+      sku: String(r.sku),
+      name: String(r.name ?? ""),
+      stock: num(r.available),
+      pitch: pitchOfName(r.name),
+      brand: brandOfName(r.name),
+    }))
+    // แพ็ค x10คู่ นับหน่วยคนละอย่าง ⇒ กันออกไว้ก่อน ไม่เอามาบวกมั่ว
+    .filter((l) => l.pitch && !l.sku.includes("-"));
+
+  // ม้วนโซ่ที่ขายจริง — จับคู่ด้วย ปิตช์ + ยี่ห้อ
+  const rolls = plan.rows
+    .filter((r) => r.teethPerRoll && r.teethUsed > 0)
+    .map((r) => ({ ...r, pitch: pitchOfName(r.name), brand: brandOfName(r.name) }))
+    .filter((r) => r.pitch && r.brand);
+
+  const key = (p, b) => `${p}|${b}`;
+  const byKey = new Map();
+  for (const l of links) {
+    if (!l.brand) continue;
+    const k = key(l.pitch, l.brand);
+    if (!byKey.has(k))
+      byKey.set(k, { pitch: l.pitch, brand: l.brand, linkSku: l.sku, linkName: l.name, stock: l.stock, rolls: [] });
+  }
+  for (const r of rolls) {
+    const k = key(r.pitch, r.brand);
+    if (!byKey.has(k))
+      byKey.set(k, { pitch: r.pitch, brand: r.brand, linkSku: null, linkName: null, stock: null, rolls: [] });
+    byKey.get(k).rolls.push(r);
+  }
+
+  const groups = [...byKey.values()].map((g) => {
+    /* ⚠️ จำนวนเส้นรู้ได้แค่ช่วง (ใบขายเก็บเป็นฟัน) ⇒ ข้อต่อที่ใช้ก็เป็นช่วง
+        **ห้ามยุบเป็นเลขเดียว** — ดู chainsNote ใน reorderPlan */
+    const needMin = g.rolls.reduce((s, r) => s + (r.chainsEstMin ?? 0), 0);
+    const needMax = g.rolls.reduce((s, r) => s + (r.chainsEstMax ?? 0), 0);
+    const perDayMin = needMin / days;
+    const perDayMax = needMax / days;
+    const st = g.stock;
+    /* พอไปอีกกี่วัน — ใช้อัตราสูงสุดให้ได้ค่าน้อยสุด (ฝั่งปลอดภัย)
+       ⚠️ ไม่มีข้อต่อรหัสนี้ในคลัง ⇒ null ไม่ใช่ 0 · 0 แปลว่า "มีแต่หมด" คนละเรื่องกับ "ไม่มีรหัส" */
+    const daysLeftMin = st === null || !(perDayMax > 0) ? null : Math.max(0, Math.round((st / perDayMax) * 10) / 10);
+    const daysLeftMax = st === null || !(perDayMin > 0) ? null : Math.max(0, Math.round((st / perDayMin) * 10) / 10);
+    let verdict = "ยังตอบไม่ได้";
+    if (st !== null && needMax > 0) {
+      if (st < 0) verdict = "ติดลบ — ตัดขายไม่ได้";
+      else if (st < needMin) verdict = "ขาดแน่นอน";
+      else if (st < needMax) verdict = "อาจไม่พอ";
+      else verdict = "พอ";
+    }
+    return {
+      pitch: g.pitch,
+      brand: g.brand,
+      linkSku: g.linkSku,
+      linkStock: st,
+      rollSkus: g.rolls.map((r) => r.sku),
+      rollTeeth: Math.round(g.rolls.reduce((s, r) => s + num(r.teeth), 0) * 10) / 10,
+      teethSold: Math.round(g.rolls.reduce((s, r) => s + num(r.teethUsed), 0) * 10) / 10,
+      pairsNeedMin: needMin,
+      pairsNeedMax: needMax,
+      daysLeftMin,
+      daysLeftMax,
+      verdict,
+    };
+  });
+
+  // เรียงของที่แย่ที่สุดขึ้นก่อน
+  const rank = { "ติดลบ — ตัดขายไม่ได้": 0, ขาดแน่นอน: 1, อาจไม่พอ: 2, พอ: 3, ยังตอบไม่ได้: 4 };
+  groups.sort((a, b) => (rank[a.verdict] ?? 9) - (rank[b.verdict] ?? 9) || a.pitch.localeCompare(b.pitch));
+
+  /* ยอดรวมข้ามยี่ห้อ — ส่งมาให้ดูคู่กัน **ไม่ได้เอาไปตัดสินแทน**
+     เพราะยังไม่รู้ว่าข้ามยี่ห้อได้ไหม (ดูคำเตือนหัวไฟล์) */
+  const crossBrand = [...new Set(groups.map((g) => g.pitch))].map((p) => {
+    const g = groups.filter((x) => x.pitch === p);
+    const known = g.filter((x) => x.linkStock !== null);
+    return {
+      pitch: p,
+      linkStockAllBrands: known.length ? known.reduce((s, x) => s + x.linkStock, 0) : null,
+      pairsNeedMin: g.reduce((s, x) => s + x.pairsNeedMin, 0),
+      pairsNeedMax: g.reduce((s, x) => s + x.pairsNeedMax, 0),
+    };
+  });
+
+  return {
+    days,
+    from: plan.from,
+    to: plan.to,
+    groups: groups.length,
+    scope:
+      `นับจากใบขายจริง ${plan.from} ถึง ${plan.to} · ข้อต่อที่ใช้ = จำนวนเส้นที่ตัด · ` +
+      "จำนวนเส้นรู้ได้แค่ช่วงเพราะใบขายเก็บเป็นฟัน ⇒ ตัวเลขข้อต่อจึงเป็นช่วง ไม่ใช่ค่าจริง",
+    compatNote:
+      "ข้อต่อ 3/8 ใช้กับม้วน 3623 และ 3652 ได้ · 3/8p ใช้กับ 3636 เท่านั้น ใส่กับ 3623/3652 ไม่ได้ · " +
+      "325 กับ 404 แยกของตัวเอง (เจ้าของร้านยืนยัน 5 ก.ย. 2569)",
+    crossBrandNote:
+      "ยังไม่รู้ว่าข้อต่อ NEWWAVE กับ KINGKONG ใส่แทนกันได้ไหม ⇒ แยกกองตามยี่ห้อไว้ก่อน · " +
+      "crossBrand คือยอดรวมข้ามยี่ห้อ ส่งมาให้ดูคู่กันเฉย ๆ ห้ามเอาไปตัดสินแทนจนกว่าจะรู้คำตอบ",
+    rows: groups,
+    crossBrand,
+  };
+}
