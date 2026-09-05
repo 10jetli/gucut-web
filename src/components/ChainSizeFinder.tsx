@@ -61,6 +61,20 @@ export function chainPitch(title: string): { code: string; mm: number } | null {
   return null;
 }
 
+/** โซ่ตัด (Full Chisel) หรือ โซ่ซอย (Semi Chisel) — ดูจากชื่อสินค้า
+ *  ⚠️ **ตรวจวงเล็บ `(แบบตัด)` / `(แบบซอย)` ก่อนเสมอ** แล้วค่อยดูคำขึ้นต้น
+ *     เพราะชื่อ URL ของหน้าซอยบางหน้ามีคำว่า "ตัด" ปนอยู่ (ของค้างจากตอนย้ายจาก Shopify)
+ *     ถ้าไล่ดู "ชื่อมีคำว่าตัดไหม" ก่อน จะจับหน้าซอยเป็นตัดทันที
+ *  ระบุไม่ได้ ⇒ null แล้ว **ไม่แสดงหัวข้อนี้เลย** (โซ่ 1/4 ไม่แบ่งตัด/ซอย) */
+export function chainStyle(title: string): "ตัด" | "ซอย" | null {
+  const t = String(title ?? "");
+  if (t.includes("(แบบตัด)")) return "ตัด";
+  if (t.includes("(แบบซอย)")) return "ซอย";
+  if (/^โซ่ซอย/.test(t)) return "ซอย";
+  if (/^โซ่ตัด/.test(t)) return "ตัด";
+  return null;
+}
+
 export default function ChainSizeFinder({
   title,
   variants,
@@ -71,6 +85,8 @@ export default function ChainSizeFinder({
   onPick: (v: Variant) => void;
 }) {
   const pitch = chainPitch(title);
+  const style = chainStyle(title);
+  const [more, setMore] = useState(false);
   const [open, setOpen] = useState(false);
   const [dl, setDl] = useState("");
   const [teeth, setTeeth] = useState("");
@@ -140,6 +156,51 @@ export default function ChainSizeFinder({
               <p className="mt-1.5 text-[11px] leading-relaxed text-steel-300">
                 วัดได้ไม่ตรง = คนละเบอร์ ใส่ไม่ได้ · 12.7 มม. = 1/4 · 16.51 = 325 · 19.05 = 3/8 และ
                 3/8p · 20.52 = 404
+              </p>
+
+              {/* อีก 2 ทางที่ไม่ต้องใช้ไม้บรรทัด — จากคู่มือของร้านเอง
+                  ⚠️ ทั้งสองทางแยก 3/8 กับ 3/8p ได้ไม่ขาด จึงเป็น "ตัวช่วยยืนยัน" ไม่ใช่ตัวตัดสิน
+                     ต้องเขียนบอกด้วย ไม่งั้นลูกค้าจะเชื่อทางเดียวแล้วเลือกผิด */}
+              <button
+                type="button"
+                onClick={() => setMore((m) => !m)}
+                aria-expanded={more}
+                className="mt-2 text-[11px] text-safety underline"
+              >
+                {more ? "ซ่อนวิธีอื่น" : "ไม่มีไม้บรรทัด? ดูอีก 2 วิธี"}
+              </button>
+              {more && (
+                <div className="mt-1.5 space-y-1.5 text-[11px] leading-relaxed text-steel-300">
+                  <p>
+                    <b className="text-[#1a1a1a]">นับฟันสเตอร์</b> (จานที่คลัตช์) — 6 ฟัน = 3/8 · 7 ฟัน
+                    = 325
+                  </p>
+                  <p>
+                    <b className="text-[#1a1a1a]">นับฟันหัวบาร์</b> (Z) — 7Z หรือ 9Z = 3/8p · 10Z =
+                    3/8 · 11Z หรือ 12Z = 325
+                  </p>
+                  <p className="text-[#8a4b00]">
+                    สองวิธีนี้แยก 3/8 กับ 3/8p ได้ไม่ชัดเท่าการวัด — ถ้าไม่แน่ใจให้ใช้ไม้บรรทัดยืนยัน
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ตัด vs ซอย — ดูรูปคมฟัน (จากคู่มือของร้าน)
+              ⚠️ เลือกผิดแบบก็คืนของเหมือนกัน แม้ขนาดจะถูกทุกอย่าง */}
+          {style && (
+            <div className="mt-2 rounded-md border border-steel-600 bg-white px-3 py-2.5">
+              <p className="text-[12px] text-[#1a1a1a]">
+                สินค้าตัวนี้เป็น <b className="text-safety">โซ่{style}</b>
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-steel-300">
+                ดูที่คมฟันของโซ่เดิม — <b className="text-[#1a1a1a]">โซ่ซอย</b> มุมคมมน{" "}
+                <b className="text-[#1a1a1a]">·</b> <b className="text-[#1a1a1a]">โซ่ตัด</b>{" "}
+                มุมคมเป็นเหลี่ยม
+                {style === "ตัด"
+                  ? " — ถ้าของเดิมมุมมน แสดงว่าเป็นโซ่ซอย คนละตัวกับหน้านี้"
+                  : " — ถ้าของเดิมมุมเหลี่ยม แสดงว่าเป็นโซ่ตัด คนละตัวกับหน้านี้"}
               </p>
             </div>
           )}
