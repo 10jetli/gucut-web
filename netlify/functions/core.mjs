@@ -1888,6 +1888,9 @@ async function route(req, context) {
           to: p.get("to"),
           channel: p.get("channel"),
           source: p.get("store"),
+          // ⚠️ ต้องรับครบเท่า list=orders ไม่งั้นตัวเลขตอบคนละคำถามเมื่อจอกรองอยู่
+          status: p.get("status"),
+          q: p.get("q"),
           includeCancelled: p.get("cancelled") === "1",
         })),
       });

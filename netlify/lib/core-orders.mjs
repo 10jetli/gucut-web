@@ -119,9 +119,19 @@ export async function listOrderFacets(o = {}) {
   const from = o.from || null;
   const to = o.to || null;
   const source = o.source || null;
+  /* ⚠️ **ต้องรับตัวกรองครบชุดเท่ากับ list=orders** (ฝั่งจอทักมา 5 ก.ย. 2569)
+      เดิมตัวนี้ทิ้ง `status` กับ `q` ไปเงียบ ๆ ⇒ จอที่กรองสถานะหรือค้นหาอยู่
+      จะได้ยอดของ "ทั้งช่วง" แทนที่จะเป็นยอดของสิ่งที่กรองไว้ **โดยไม่มีอะไรฟ้อง**
+      เป็นกับดักเดียวกับที่ไล่กันมาทั้งวัน: เร็วขึ้นจริง แต่ตัวเลขตอบคนละคำถาม
+      ⇒ ส่งต่อทุกตัวให้ตัวสร้างเงื่อนไขตัวเดียวกัน จะได้ไม่มีวันเพี้ยนออกจากกัน */
   const w = buildWhere({
-    from, to, channel: o.channel || null, q: null,
-    includeCancelled: o.includeCancelled === true, source,
+    from,
+    to,
+    channel: o.channel || null,
+    status: o.status || null,
+    q: o.q ? String(o.q).trim().slice(0, 60) : null,
+    includeCancelled: o.includeCancelled === true,
+    source,
   });
 
   const [storeRows, byChannel] = await Promise.all([
