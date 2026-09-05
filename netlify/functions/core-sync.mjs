@@ -6,6 +6,7 @@
 // ทุกรอบ: กระจกออเดอร์ 7 วันล่าสุด (กันสถานะยกเลิกย้อนหลังค้างเก่า) · รอบตี 1 (เวลาไทย): เทียบยอดเมื่อวาน + ถ่ายสต็อก
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders.mjs";
+import { syncTiktokOrders, tiktokReconYesterdayLine } from "../lib/tiktok-orders.mjs";
 import { shopeeStockLine } from "../lib/shopee-stock.mjs";
 import { syncProducts } from "../lib/core-products.mjs";
 import { stockReconDaily } from "../lib/core-stock.mjs";
@@ -51,6 +52,11 @@ export default async function handler() {
     }
     // ท่อที่สอง (แผนลับขั้น 3): ออเดอร์ตรงจาก Shopee API — พังไม่ล้มรอบ
     const shopee = await syncShopeeOrders(7).catch((e) => ({ error: String(e?.message || e) }));
+    // ท่อที่สาม: ออเดอร์ตรงจาก TikTok API (เชื่อมได้ 6 ก.ย. 2569) — พังไม่ล้มรอบเช่นกัน
+    // ⚠️ **งบเวลารวมของรอบนี้เพิ่มขึ้น** — ตอนนี้มี ZORT + Shopee + TikTok ในลูปเดียว
+    //    ถ้ารอบเริ่มหลุด 26 วินาทีเมื่อไหร่ ให้แยกท่อ TikTok ไปเป็นงานตามเวลาของตัวเอง
+    //    (ห้ามแก้ด้วยการลด days ของท่ออื่นเงียบ ๆ — ช่วงที่หายไปไม่มีอะไรฟ้อง)
+    const tiktok = await syncTiktokOrders(7).catch((e) => ({ error: String(e?.message || e) }));
 
     // ตี 1 เวลาไทย (18:00-18:29 UTC) — งานรายวัน
     let daily = null;
@@ -73,6 +79,7 @@ export default async function handler() {
       const lines = [
         await shopeeReconYesterdayLine().catch(() => null),
         await shopeeStockLine().catch(() => null),
+        await tiktokReconYesterdayLine().catch(() => null),
       ].filter(Boolean);
       const line = lines.length ? lines.join("\n") : null;
       const text = [line, stockCmp?.line].filter(Boolean).join("\n\n");
@@ -88,7 +95,7 @@ export default async function handler() {
       }
     }
 
-    return new Response(JSON.stringify({ ok: true, sync, shopee, daily }), {
+    return new Response(JSON.stringify({ ok: true, sync, shopee, tiktok, daily }), {
       headers: { "content-type": "application/json" },
     });
   } catch (e) {

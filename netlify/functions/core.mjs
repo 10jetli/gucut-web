@@ -17,6 +17,7 @@ import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "..
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
+import { syncTiktokOrders, tiktokRecon, tiktokOrderShape } from "../lib/tiktok-orders.mjs";
 import { shopeeStockCompare, shopeeMissingSkus } from "../lib/shopee-stock.mjs";
 import { applyMoves, listMoves, deleteMove } from "../lib/stock-moves.mjs";
 import { peakStatus, toInvoice, sendInvoices } from "../lib/peak.mjs";
@@ -939,6 +940,17 @@ async function route(req, context) {
     if (url.searchParams.get("shopeesync")) {
       const days = Math.min(15, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
       return json({ ok: true, shopee: await syncShopeeOrders(days) });
+    }
+    if (url.searchParams.get("tiktoksync")) {
+      const days = Math.min(60, Math.max(1, parseInt(url.searchParams.get("days") ?? "3", 10) || 3));
+      return json({ ok: true, tiktok: await syncTiktokOrders(days) });
+    }
+    /* ส่องว่าคำตอบจริงของ TikTok มีฟิลด์ชื่ออะไรบ้าง — **คืนเฉพาะชื่อ ไม่คืนค่า**
+       ⚠️ มีไว้ปิดช่อง "เดาชื่อฟิลด์" ของ tiktok-orders.mjs เท่านั้น
+          ห้ามแก้ให้คืนค่าจริง — คำตอบของ TikTok มีชื่อ/ที่อยู่/เบอร์ผู้รับอยู่ในนั้น
+          (กติกาเดียวกับ pendingfields ด้านล่าง) */
+    if (url.searchParams.get("tiktokshape")) {
+      return json({ ok: true, shape: await tiktokOrderShape() });
     }
     // เทียบสต็อกบน Shopee กับคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ Shopee
     /* เทียบรายการที่ลงขายบนแพลตฟอร์ม กับของที่มีในคลัง
@@ -2043,7 +2055,7 @@ async function route(req, context) {
           ห้าตัวนี้ไม่มีตัวไหนต้องรอผลของอีกตัวเลย
        ⚠️ สองตัวท้ายมี .catch เป็น [] เพราะตารางอาจยังไม่ถูกสร้าง — **ห้ามถอด**
           ล้มตัวเดียวจะลากทั้งหน้าแรกตาย */
-    const [countsRows, recon, channels, shopee, stock] = await Promise.all([
+    const [countsRows, recon, channels, shopee, stock, tiktok] = await Promise.all([
       coreQuery(
         `SELECT (SELECT COUNT(*) FROM orders) AS orders,
                 (SELECT COUNT(*) FROM order_items) AS items,
@@ -2061,11 +2073,13 @@ async function route(req, context) {
              อาร์เรย์ว่างธรรมดา = "ไม่มีจริง" · ตัวนี้ = "ยังไม่รู้" */
       shopeeRecon(7).catch(() => FAILED),
       stockReconLog(14).catch(() => FAILED),
+      tiktokRecon(7).catch(() => FAILED),
     ]);
     const counts = countsRows?.[0];
     const failed = [];
     if (shopee === FAILED) failed.push("shopee");
     if (stock === FAILED) failed.push("stock");
+    if (tiktok === FAILED) failed.push("tiktok");
     return json({
       ready: true,
       counts,
@@ -2073,6 +2087,7 @@ async function route(req, context) {
       channels,
       shopee: shopee === FAILED ? [] : shopee,
       stock: stock === FAILED ? [] : stock,
+      tiktok: tiktok === FAILED ? [] : tiktok,
       /* ⚠️ มีชื่ออยู่ในนี้ = ส่วนนั้นดึงไม่สำเร็จ **ไม่ใช่ว่าไม่มีข้อมูล**
           จอต้องเขียนว่า "ยังดูไม่ได้" ห้ามเขียนว่า "ยังไม่มี" */
       failed,
