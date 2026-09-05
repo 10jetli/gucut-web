@@ -513,6 +513,22 @@ export default async function handler(req, context) {
       return t ? { note: "เชื่อมร้านแล้ว ใช้งานได้" } : { warn: true, note: "ยังไม่ได้เชื่อมร้าน หรือ token หมดอายุ" };
     }),
 
+    /* ⚠️ **ตัวตรวจต้องยิงของจริง ห้ามดูแค่ว่ามี token ไหม** — ฝั่ง Shopee ข้างบนดูแค่ token
+        ซึ่งบอกได้แค่ "เคยกดอนุญาต" ไม่ได้บอกว่า "ตอนนี้เรียก API ได้"
+        ตัวนี้จึงถามชื่อร้านจาก TikTok จริง ๆ (เรียกเบา ไม่ไล่หน้า)
+        ⚠️ ห้ามใส่ข้อความสถานะภายนอกแบบตายตัวที่นี่ (เช่น "รออนุมัติ") — เขียนวันไหนก็จริงวันนั้น
+           แล้วโกหกวันที่ของจริงเปลี่ยน · ที่นี่ต้องได้คำตอบจากการยิงเสมอ */
+    check("ท่อ TikTok Shop (ออเดอร์ · สินค้า/สต็อก)", async () => {
+      if (!env.TIKTOK_APP_KEY) return { off: true, note: "ยังไม่ได้ตั้งคีย์ TikTok" };
+      const { validToken, ensureShop } = await import("../lib/tiktok.mjs");
+      const t = await validToken();
+      if (!t) return { warn: true, note: "ยังไม่ได้กดอนุญาต หรือ refresh token หมดอายุ" };
+      const s = await ensureShop().catch(() => null);
+      if (!s?.shopCipher) return { warn: true, note: "มี token แต่ขอข้อมูลร้านไม่ได้" };
+      const left = Math.round((Number(t.expireAt || 0) - Math.floor(Date.now() / 1000)) / 3600);
+      return { note: `ร้าน ${s.shopName ?? "-"} · token เหลือ ${left} ชม.` };
+    }),
+
     check("สะพานส่งบัญชีเข้า PEAK", async () => {
       const { peakStatus } = await import("../lib/peak.mjs");
       const r = await peakStatus();
