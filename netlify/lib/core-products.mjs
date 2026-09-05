@@ -946,16 +946,39 @@ export async function linkStatus(o = {}) {
      WHERE name LIKE 'ข้อต่อโซ่%' AND available IS NOT NULL`
   );
 
-  const links = linkRows
-    .map((r) => ({
-      sku: String(r.sku),
-      name: String(r.name ?? ""),
-      stock: num(r.available),
-      pitch: pitchOfName(r.name),
-      brand: brandOfName(r.name),
-    }))
-    // แพ็ค x10คู่ นับหน่วยคนละอย่าง ⇒ กันออกไว้ก่อน ไม่เอามาบวกมั่ว
-    .filter((l) => l.pitch && !l.sku.includes("-"));
+  const allLinks = linkRows.map((r) => ({
+    sku: String(r.sku),
+    name: String(r.name ?? ""),
+    stock: num(r.available),
+    pitch: pitchOfName(r.name),
+    brand: brandOfName(r.name),
+  }));
+
+  /* ⚠️ **ของที่นับเข้ากองไม่ได้ ต้องโผล่ให้เห็น ห้ามกรองทิ้งเงียบ ๆ**
+      เจอตอนไล่ตรวจ 5 ก.ย. 2569: โค้ดรอบแรกกรองแพ็ค `x10คู่` ทิ้งเพราะหน่วยคนละอย่าง
+      แต่ `01636-10pcs` มีอยู่ **36 แพ็ค** ซึ่งถ้าเป็น 10 คู่/แพ็ค = **360 คู่**
+      ⇒ รายงานสรุปว่า "ข้อต่อ 3/8 เหลือ 18 คู่ ขาดแน่นอน" ทั้งที่อาจมีอีก 360 คู่นอนอยู่
+        **และไม่มีอะไรฟ้องเลย** เพราะของที่ถูกกรองไม่ปรากฏที่ไหนในคำตอบ
+      (partial-coverage-reported-as-full — กฎที่ผมเขียนห้ามตัวเองไว้เอง แล้วก็พลาดเอง)
+
+      ทำไมนับเข้ากองไม่ได้:
+      ① ชื่อไม่มีเบอร์โซ่เลย ("ข้อต่อโซ่ NEWWAVE สเตนเลส อึดทน ไม่ยืด x10คู่ แบบใหม่")
+      ② ไม่มีสูตรชุด ⇒ ระบบไม่รู้ว่า 1 แพ็ค = กี่คู่
+      ③ ชื่อบอกยี่ห้อ NEWWAVE แต่รหัสฐาน (`01636` = KINGKONG 325) บอกอีกอย่าง
+      ⇒ **ห้ามเดา** ส่งออกไปใน `unmatched` ให้จอขึ้นเตือน แล้วรอเจ้าของร้านยืนยัน */
+  const links = allLinks.filter((l) => l.pitch && l.brand && !l.sku.includes("-"));
+  const unmatched = allLinks
+    .filter((l) => !links.includes(l))
+    .map((l) => ({
+      sku: l.sku,
+      name: l.name,
+      stock: l.stock,
+      why: !l.pitch
+        ? "ชื่อไม่บอกเบอร์โซ่"
+        : !l.brand
+          ? "ชื่อไม่บอกยี่ห้อ"
+          : "เป็นแพ็ค ไม่รู้ว่า 1 แพ็คกี่คู่",
+    }));
 
   // ม้วนโซ่ที่ขายจริง — จับคู่ด้วย ปิตช์ + ยี่ห้อ
   const rolls = plan.rows
@@ -1085,5 +1108,15 @@ export async function linkStatus(o = {}) {
       "crossBrand คือยอดรวมข้ามยี่ห้อ ส่งมาให้ดูคู่กันเฉย ๆ ห้ามเอาไปตัดสินแทนจนกว่าจะรู้คำตอบ",
     rows: groups,
     crossBrand,
+    /* ⚠️ **จอต้องโชว์กองนี้เสมอ ห้ามซ่อน** — เป็นของที่มีอยู่จริงแต่ยังนับเข้ากองไม่ได้
+        ตราบใดที่ยังมีของค้างในนี้ ตัวเลข "ขาด/พอ" ข้างบน **ยังสรุปไม่ได้ 100%** */
+    unmatchedLinks: unmatched.length,
+    unmatchedStock: unmatched.reduce((s2, u) => s2 + u.stock, 0),
+    unmatchedNote:
+      unmatched.length
+        ? "มีข้อต่อที่นับเข้ากองไม่ได้ — ตัวเลขขาด/พอข้างบนจึงยังสรุปไม่ได้เต็มร้อย " +
+          "ต้องให้เจ้าของร้านบอกก่อนว่าแต่ละตัวเป็นเบอร์อะไร และ 1 แพ็คกี่คู่"
+        : "",
+    unmatchedRows: unmatched,
   };
 }
