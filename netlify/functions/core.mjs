@@ -169,8 +169,8 @@ async function route(req, context) {
     if (url.searchParams.get("d1move")) {
       const step = String(url.searchParams.get("d1move"));
       const m = await import("../lib/d1move.mjs");
-      const fn = { plan: m.movePlan, create: m.moveCreate, schema: m.moveSchema, copy: m.moveCopy, verify: m.moveVerify }[step];
-      if (!fn) return json({ error: `ไม่รู้จัก d1move=${step}`, accepts: ["plan", "create", "schema", "copy", "verify"] }, 400);
+      const fn = { plan: m.movePlan, create: m.moveCreate, schema: m.moveSchema, copy: m.moveCopy, verify: m.moveVerify, ping: m.movePing }[step];
+      if (!fn) return json({ error: `ไม่รู้จัก d1move=${step}`, accepts: ["plan", "create", "schema", "copy", "verify", "ping"] }, 400);
       return json({
         ok: true,
         step,

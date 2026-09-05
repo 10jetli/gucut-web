@@ -276,3 +276,43 @@ export async function moveVerify() {
     switchHow: "เปลี่ยน env CORE_D1_ID ที่ Netlify เป็น id ของฐานใหม่ แล้ว deploy · ถอยกลับ = เปลี่ยนกลับค่าเดิม",
   };
 }
+
+/** ── ตัวชี้ขาด ── ฐานใหม่เร็วกว่าจริงไหม (ยิงจากในฟังก์ชัน วัดค่าเดินทางล้วน ๆ)
+ *
+ *  ⚠️ **ต้องวัดก่อนสับสวิตช์เสมอ** — "ย้ายสำเร็จ" กับ "ย้ายแล้วเร็วขึ้น" คนละเรื่องกัน
+ *     Cloudflare รับ location hint แบบ "ขอได้ แต่ไม่รับประกัน" ⇒ อาจไปตกโซนเดิม
+ *     แล้วเราจะสับสวิตช์ไปฐานที่ไกลเท่าเดิม โดยที่ทุกอย่างดูสำเร็จทุกประการ
+ *  ⚠️ ยิงสลับกันไป-มา ไม่ยิงเรียงเป็นชุด — กันผลเพี้ยนจากเน็ตช่วงนั้นเอนไปข้างใดข้างหนึ่ง
+ */
+export async function movePing(o = {}) {
+  const tgt = await findTarget();
+  if (!tgt) return { error: "ยังไม่มีฐานปลายทาง" };
+  const n = Math.max(3, Math.min(9, Number(o.n) || 5));
+  const src = [];
+  const dst = [];
+  for (let i = 0; i < n; i++) {
+    let t = Date.now();
+    await q(SRC, "SELECT 1 AS ok").catch(() => null);
+    src.push(Date.now() - t);
+    t = Date.now();
+    await q(tgt.id, "SELECT 1 AS ok").catch(() => null);
+    dst.push(Date.now() - t);
+  }
+  const med = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
+  const ms = med(src);
+  const md = med(dst);
+  return {
+    functionRegion: process.env.AWS_REGION || null,
+    source: { id: SRC, pings: src, median: ms },
+    target: { id: tgt.id, name: tgt.name, region: tgt.region, pings: dst, median: md },
+    fasterBy: `${(ms - md).toFixed(0)} ms ต่อคำขอ`,
+    timesFaster: ms && md ? Number((ms / md).toFixed(1)) : null,
+    /* ⚠️ เกณฑ์ตัดสิน — เขียนไว้ก่อนเห็นผล จะได้ไม่ตีความเข้าข้างตัวเองทีหลัง */
+    verdict:
+      md <= 60 && ms - md > 120
+        ? "✅ ฐานใหม่ใกล้ฟังก์ชันจริง — คุ้มที่จะสับสวิตช์"
+        : md > 150
+          ? "🔴 ฐานใหม่ยังไกลเท่าเดิม — location hint ไม่ได้ผล อย่าสับสวิตช์ ยังไม่ได้อะไร"
+          : "🟡 ดีขึ้นแต่ไม่มาก — วัดซ้ำหลายรอบก่อนตัดสิน",
+  };
+}

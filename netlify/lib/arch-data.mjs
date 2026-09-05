@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-05T11:12:52.934Z",
+  "generatedAt": "2026-09-05T14:59:16.649Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
@@ -240,6 +240,8 @@ export const ARCH = {
     }
   ],
   "unlabelled": [
+    "AWS_DEFAULT_REGION",
+    "AWS_REGION",
     "LAZADA_APP_KEY",
     "LAZADA_APP_SECRET",
     "NETLIFY_API_TOKEN",
