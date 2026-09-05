@@ -13,7 +13,7 @@
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
 import { adminGate } from "../lib/admin-gate.mjs";
-import { coreQuery, coreReady, coreInit } from "../lib/coredb.mjs";
+import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
@@ -36,7 +36,14 @@ import {
   syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers, listQuotations, listPurchaseItems,
 } from "../lib/core-purchases.mjs";
 
+/* ⚠️ **ตัวจัดการจริงต้องถูกครอบด้วย withD1Meter เสมอ** ไม่งั้น d1Stats() คืน null
+    แล้วหัวข้อมูล x-d1-* จะหายไปเงียบ ๆ โดยที่ทุกอย่างยังทำงานปกติ — ไม่มีอะไรฟ้อง
+    (ถ้าวันหนึ่งเปิด DevTools แล้วไม่เห็น x-d1-count ให้มาดูบรรทัดนี้ก่อน) */
 export default async function handler(req, context) {
+  return withD1Meter(() => route(req, context));
+}
+
+async function route(req, context) {
   // adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็คสองชั้น (บทเรียน 25 ส.ค.)
   // และ "ไม่ส่งรหัสมาเลย" gate จะไม่ deny ให้เอง (wants:false) — API หลังร้านล้วน
   // แบบตัวนี้ต้องบังคับ ok เท่านั้น (เจอจริงตอนยิงทดสอบ 30 ส.ค. — ไม่มีรหัสได้ 200)
@@ -120,9 +127,26 @@ export default async function handler(req, context) {
         };
       }
     }
+    /* ── ติดมาตรวัดไปกับทุกคำตอบ ── (5 ก.ย. 2569)
+       เจ้าของร้านสั่ง "ไม่ย้าย แต่หาทางทำให้เร็วสุด ๆ" ⇒ ต้องเลิกเดาว่าเวลาหายไปไหน
+       เปิด DevTools แท็บ Network ดูหัวข้อมูลได้ทันทีทุกคำขอ **ไม่ต้องรอ deploy รอบใหม่เพื่อวัด**
+       x-d1-count = คุยกับฐานกี่รอบ · x-d1-ms = ผลบวกเวลาทุกรอบ · x-d1-max = รอบที่ช้าสุด
+       ⚠️ ยิงพร้อมกันแล้ว x-d1-ms จะมากกว่าเวลาจริง ⇒ **อ่านคู่กับ x-d1-max เสมอ**
+          count สูงแต่ max ต่ำ = ยิงพร้อมกันอยู่แล้ว (ดี) · count สูงและ ms ≈ เวลาจริง = ยังเรียงกันอยู่
+       ⚠️ ไม่ใส่ค่าพวกนี้ลงใน body — จอบางตัวเอา body ไปเทียบตรง ๆ */
+    const d1 = d1Stats();
     return new Response(JSON.stringify(out), {
       status,
-      headers: { "content-type": "application/json" },
+      headers: {
+        "content-type": "application/json",
+        ...(d1
+          ? {
+              "x-d1-count": String(d1.count),
+              "x-d1-ms": String(d1.ms),
+              "x-d1-max": String(d1.max),
+            }
+          : {}),
+      },
     });
   };
 
@@ -131,6 +155,12 @@ export default async function handler(req, context) {
       return json({ ready: false, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN ที่ Netlify" });
     }
 
+    /* ฐานข้อมูลอยู่โซนไหน และไกลจากฟังก์ชันแค่ไหน — อ่านอย่างเดียว
+       ⚠️ **ถามของจริง ไม่ใช่เชื่อคอมเมนต์** หัวไฟล์ coredb.mjs เขียนว่า APAC มาตลอด
+          แต่ไม่เคยมีใครยิงถามสักครั้ง (stale-state-comments) */
+    if (url.searchParams.get("dbinfo")) {
+      return json({ ok: true, ...(await d1Info()) });
+    }
     if (url.searchParams.get("init")) {
       return json({ ok: true, init: await coreInit() });
     }

@@ -15,10 +15,58 @@ export function coreReady() {
   return !!process.env.CLOUDFLARE_D1_TOKEN;
 }
 
+/* ── มาตรวัด: คำขอนี้คุยกับ D1 กี่รอบ และเสียเวลาไปเท่าไหร่ ── (5 ก.ย. 2569)
+   เจ้าของร้านสั่ง "ไม่ย้าย แต่หาทางทำให้เร็วสุด ๆ" ⇒ ต้องรู้ก่อนว่าเวลาหายไปไหน
+
+   วัดจากข้างนอกได้แค่ "ทั้งคำขอใช้กี่วินาที" ซึ่งบอกไม่ได้ว่าเป็นเพราะ D1 ช้า
+   หรือเพราะ Netlify ช้า หรือเพราะเน็ตจากไทย ⇒ ทุกครั้งที่จะแก้ต้องเดาแล้วรอ deploy อีกวัน
+   ⇒ ให้ทุกคำตอบติดหัวข้อมูล `x-d1-ms` `x-d1-count` `x-d1-max` มาเลย เปิด DevTools ดูได้ทันที
+
+   ⚠️ **ต้องใช้ AsyncLocalStorage ห้ามใช้ตัวแปรระดับไฟล์**
+      ฟังก์ชันหนึ่งตัวรับหลายคำขอพร้อมกันในคอนเทนเนอร์เดียวได้
+      ตัวนับก้อนเดียว = คำขอ A นับเวลาของคำขอ B ปนเข้ามา แล้วตัวเลขจะมั่วแบบดูสมเหตุสมผล
+      (ซึ่งอันตรายกว่าไม่มีตัวเลขเลย — ดูกฎ measure-must-prove-work)
+   ⚠️ `x-d1-ms` เป็น **ผลบวกของทุกคำขอ** ⇒ ตอนยิงพร้อมกันมันจะมากกว่าเวลาจริง
+      อยากรู้ว่า "รอ D1 จริง ๆ กี่วินาที" ให้ดู `x-d1-max` (ตัวที่ช้าที่สุด) คู่กันเสมอ */
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const d1Meter = new AsyncLocalStorage();
+
+/** ครอบตัวจัดการคำขอด้วยตัวนี้ แล้วเรียก `d1Stats()` ตอนจะตอบ */
+export function withD1Meter(fn) {
+  return d1Meter.run({ count: 0, ms: 0, max: 0 }, fn);
+}
+
+/** ตัวเลขของคำขอปัจจุบัน — อยู่นอก withD1Meter จะได้ null (ไม่ throw) */
+export function d1Stats() {
+  const m = d1Meter.getStore();
+  return m ? { count: m.count, ms: Math.round(m.ms), max: Math.round(m.max) } : null;
+}
+
 /** ยิง SQL หนึ่งประโยค (พารามิเตอร์ใช้ ? ตามลำดับ) — คืน rows */
 export async function coreQuery(sql, params = []) {
   const token = process.env.CLOUDFLARE_D1_TOKEN;
   if (!token) throw new Error("ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN");
+  const meter = d1Meter.getStore();
+  const t0 = meter ? Date.now() : 0;
+  /* ⚠️ ต้องจดเวลา **ทั้งตอนสำเร็จและตอนล้ม** — ถ้าจดเฉพาะตอนสำเร็จ
+      คำขอที่หมดเวลา (15 วิ) จะไม่ถูกนับ แล้วมาตรวัดจะบอกว่า "D1 เร็วดี"
+      ในวันที่ D1 ล่มพอดี ⇒ ชี้ผิดทางในวันที่ต้องการมันที่สุด */
+  const done = () => {
+    if (!meter) return;
+    const d = Date.now() - t0;
+    meter.count += 1;
+    meter.ms += d;
+    if (d > meter.max) meter.max = d;
+  };
+  try {
+    return await d1Fetch(token, sql, params);
+  } finally {
+    done();
+  }
+}
+
+async function d1Fetch(token, sql, params) {
   const res = await fetch(
     `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/d1/database/${DB_ID}/query`,
     {
@@ -150,4 +198,50 @@ export async function coreInit() {
     await coreQuery(sql).catch(() => null);
   }
   return { tables: 10 };
+}
+
+/** ฐานข้อมูลอยู่โซนไหนจริง ๆ — อ่านจาก Cloudflare ตรง ๆ ไม่ใช่จากคอมเมนต์ในไฟล์นี้
+ *
+ *  ⚠️ **มีไว้เพราะคอมเมนต์เชื่อไม่ได้** — หัวไฟล์นี้เขียนว่า "อยู่โซน APAC" มาตลอด
+ *     แต่ไม่มีใครเคยยิงถามของจริงเลยสักครั้ง (stale-state-comments)
+ *     และคำตอบนี้เปลี่ยนคำแนะนำทั้งหมด: ถ้าฐานอยู่ APAC แต่ฟังก์ชันอยู่ us-east
+ *     ทุกคำขอต้องข้ามแปซิฟิกไป-กลับ ⇒ ย้ายโซนฐานได้กำไรมากกว่าแก้โค้ดทั้งวัน
+ *  ⚠️ อ่านอย่างเดียว ไม่แตะข้อมูล · ต้องมีรหัสหลังร้านถึงเรียกได้
+ */
+export async function d1Info() {
+  const token = process.env.CLOUDFLARE_D1_TOKEN;
+  if (!token) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const t0 = Date.now();
+  const res = await fetch(
+    `https://api.cloudflare.com/client/v4/accounts/${ACCOUNT}/d1/database/${DB_ID}`,
+    { headers: { authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(10000) }
+  ).catch((e) => ({ ok: false, status: 0, _err: String(e?.message || e) }));
+  const meta = Date.now() - t0;
+
+  // ยิง SQL ที่เบาที่สุดเท่าที่จะเบาได้ 3 ครั้ง — วัด "ค่าเดินทางล้วน ๆ" ไม่ปนเวลาคิดเลข
+  const pings = [];
+  for (let i = 0; i < 3; i++) {
+    const t = Date.now();
+    await d1Fetch(token, "SELECT 1 AS ok", []).catch(() => null);
+    pings.push(Date.now() - t);
+  }
+
+  const data = res.ok ? await res.json().catch(() => null) : null;
+  const r = data?.result || {};
+  return {
+    name: r.name ?? null,
+    // ชื่อช่องที่ Cloudflare ใช้ต่างกันตามรุ่น API ⇒ หยิบทุกตัวที่เป็นไปได้ แล้วส่งดิบไปด้วย
+    region: r.running_in_region ?? r.region ?? r.primary_location_hint ?? null,
+    sizeBytes: r.file_size ?? null,
+    tables: r.num_tables ?? null,
+    version: r.version ?? null,
+    metaMs: meta,
+    /* ⚠️ ตัวเลขที่ใช้ตัดสินคือ **ค่ากลางของ pingMs** ไม่ใช่ metaMs
+        (metaMs เป็นการอ่านทะเบียนฐาน คนละเส้นทางกับการยิง SQL)
+        ราว 20–40 ms = ฐานอยู่ใกล้ฟังก์ชัน · ราว 180–250 ms = คนละฝั่งมหาสมุทร */
+    pingMs: pings,
+    pingMedian: pings.slice().sort((a, b) => a - b)[1] ?? null,
+    note: "ยิงจากในฟังก์ชัน Netlify ⇒ เป็นระยะทาง 'ฟังก์ชัน ↔ D1' ล้วน ๆ ไม่ปนเน็ตจากเครื่องคนดู",
+    raw: r,
+  };
 }
