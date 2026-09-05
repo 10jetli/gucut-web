@@ -92,7 +92,20 @@ async function memberStats(now) {
     }),
   );
   recent.sort((a, b) => b.created - a.created);
-  return { total: blobs.length, new7, via, recent: recent.slice(0, 5) };
+  /* ⚠️ **ต้องบอกออกไปว่าอ่านไม่ครบ ห้ามเงียบ** — `total` นับจากรายชื่อคีย์จึงถูกเสมอ
+      แต่ `new7` กับ `via` อ่านได้แค่ 400 บัญชีแรก ⇒ **ต่ำกว่าจริงเมื่อสมาชิกเกิน 400**
+      ไม่บอก = จอเขียน "สมัครผ่าน LINE 120 คน" ทั้งที่ของจริงมากกว่านั้น โดยไม่มีอะไรฟ้อง
+      (โรคเดียวกับ partial-coverage-reported-as-full ที่โดนมาแล้วหลายรอบ) */
+  const READ_CAP = 400;
+  return {
+    total: blobs.length,
+    new7,
+    via,
+    recent: recent.slice(0, 5),
+    readCap: READ_CAP,
+    // true = new7 กับ via เป็นค่าต่ำกว่าจริง **จอต้องเขียนกำกับ ห้ามโชว์เป็นตัวเลขเต็ม**
+    partial: blobs.length > READ_CAP,
+  };
 }
 
 /** PWA — เปิดจากแอปวันนี้/7 วัน + ยอดกดติดตั้ง */
@@ -137,15 +150,24 @@ export async function stats() {
   const buckets = [];
   for (let i = 0; i < ONLINE_MIN; i++) buckets.push(minuteOf(now - i * 60000));
 
+  /* ── จับเวลาแยกรายส่วน ──
+     ⚠️ **มีไว้เพื่อจะได้เลิกเดาว่าส่วนไหนช้า** — ตัวเลข 23.9 วิ ที่วัดได้จากข้างนอก
+        บอกแค่ว่า "ช้า" ไม่ได้บอกว่าใครช้า ⇒ ทุกครั้งที่จะแก้ต้องเดาแล้วลอง แล้วรอ deploy อีกวัน
+     ⚠️ เวลาที่ได้เป็น "เวลาของส่วนที่ช้าที่สุดที่ยังไม่เสร็จ" เพราะทุกส่วนวิ่งพร้อมกัน
+        ⇒ **ห้ามเอาไปบวกกัน** ผลรวมจะเกินเวลาจริงเสมอ ดูทีละตัวเทียบกับ msTotal เท่านั้น */
+  const t0 = Date.now();
+  const ms = {};
+  const timed = (k, pr) => pr.then((v) => { ms[k] = Date.now() - t0; return v; });
+
   // ── ยิงทุกส่วนพร้อมกัน — ไม่มีส่วนไหนต้องรอผลของอีกส่วน ──
   const [perBucket, dayKeys, ckeys, srcPerDay, members, pwa] = await Promise.all([
-    Promise.all(buckets.map((b) => keysWithPrefix(s, `l/${b}/`))),
-    Promise.all(weekDays.map((d) => keysWithPrefix(s, `v/${d}/`))),
-    keysWithPrefix(s, `c/${today}/`),
+    timed("online", Promise.all(buckets.map((b) => keysWithPrefix(s, `l/${b}/`)))),
+    timed("days", Promise.all(weekDays.map((d) => keysWithPrefix(s, `v/${d}/`)))),
+    timed("countries", keysWithPrefix(s, `c/${today}/`)),
     // ⚠️ ลิสต์ทีละวัน (7 ครั้งพร้อมกัน) แทนการลิสต์ `s/` ทั้งหมด — จำนวนคีย์คงที่ ไม่โตตามอายุร้าน
-    Promise.all(weekDays.map((d) => keysWithPrefix(s, `s/${d}/`))),
-    memberStats(now).catch(() => null), // นับสมาชิกพลาดต้องไม่ล้มสถิติที่เหลือ
-    pwaStats(s, weekDays).catch(() => null),
+    timed("channels", Promise.all(weekDays.map((d) => keysWithPrefix(s, `s/${d}/`)))),
+    timed("members", memberStats(now).catch(() => null)), // นับสมาชิกพลาดต้องไม่ล้มสถิติที่เหลือ
+    timed("pwa", pwaStats(s, weekDays).catch(() => null)),
   ]);
 
   // ออนไลน์ตอนนี้ = รวมคีย์ของ ONLINE_MIN นาทีล่าสุด แล้วตัดคนซ้ำ
@@ -209,6 +231,10 @@ export async function stats() {
     today: days[0]?.n ?? 0,
     days: days.reverse(),
     at: now,
+    /* เวลาที่แต่ละส่วนใช้ (มิลลิวินาที) — ทุกส่วนวิ่งพร้อมกัน **ห้ามบวกกัน**
+       msTotal คือเวลาจริงทั้งหมด · ตัวที่ใกล้ msTotal ที่สุดคือตัวที่ถ่วงอยู่ */
+    ms: { ...ms, pages: Date.now() - t0 },
+    msTotal: Date.now() - t0,
   };
 }
 
