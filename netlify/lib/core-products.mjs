@@ -987,16 +987,47 @@ export async function linkStatus(o = {}) {
     const perDayMax = needMax / days;
     const st = g.stock;
     /* พอไปอีกกี่วัน — ใช้อัตราสูงสุดให้ได้ค่าน้อยสุด (ฝั่งปลอดภัย)
-       ⚠️ ไม่มีข้อต่อรหัสนี้ในคลัง ⇒ null ไม่ใช่ 0 · 0 แปลว่า "มีแต่หมด" คนละเรื่องกับ "ไม่มีรหัส" */
-    const daysLeftMin = st === null || !(perDayMax > 0) ? null : Math.max(0, Math.round((st / perDayMax) * 10) / 10);
-    const daysLeftMax = st === null || !(perDayMin > 0) ? null : Math.max(0, Math.round((st / perDayMin) * 10) / 10);
+       ⚠️ ไม่มีข้อต่อรหัสนี้ในคลัง ⇒ null ไม่ใช่ 0 · 0 แปลว่า "มีแต่หมด" คนละเรื่องกับ "ไม่มีรหัส"
+       ⚠️ **ปล่อยให้ติดลบได้ ห้ามตัดที่ 0** (ฝั่งจอชี้มา 5 ก.ย. 2569)
+          ของที่ติดลบอยู่แล้ว ถ้าบังคับเป็น 0 จอจะเขียนว่า "เหลือ 0 วัน" = หมดพอดีวันนี้
+          ความจริงคือ **ติดลบมาก่อนแล้ว** — ค่าติดลบบอกได้ด้วยว่าเกินมากี่วันของการขาย
+          (−20 คู่ ÷ 1.87 คู่/วัน ≈ ติดลบมาแล้วราว 11 วัน) เป็นข้อมูลที่ 0 บอกไม่ได้เลย */
+    const daysLeftMin = st === null || !(perDayMax > 0) ? null : Math.round((st / perDayMax) * 10) / 10;
+    const daysLeftMax = st === null || !(perDayMin > 0) ? null : Math.round((st / perDayMin) * 10) / 10;
+
+    /* ⚠️ **"ยังตอบไม่ได้" เดิมกลืนสองสาเหตุที่ต้องทำคนละอย่าง** (ฝั่งจอชี้มา 5 ก.ย. 2569)
+        ① คลังไม่มีรหัสข้อต่อเบอร์นี้เลย  ⇒ ต้องไปหาว่าใช้ตัวไหนแล้วเพิ่มรหัส
+        ② ช่วงนี้ไม่มีการขายโซ่เบอร์นี้ ⇒ ไม่ใช่ปัญหา แค่ยังคำนวณไม่ได้
+        คำเดียวกันแต่คนอ่านต้องทำคนละเรื่อง ⇒ ส่ง `reason` เป็นรหัสให้จอแยกได้
+        และส่ง `nextStep` เป็นประโยคสั่งงาน เพราะ verdict บอกแค่ "เป็นอะไร" ไม่ได้บอก "ทำอะไรต่อ" */
     let verdict = "ยังตอบไม่ได้";
-    if (st !== null && needMax > 0) {
-      if (st < 0) verdict = "ติดลบ — ตัดขายไม่ได้";
-      else if (st < needMin) verdict = "ขาดแน่นอน";
-      else if (st < needMax) verdict = "อาจไม่พอ";
-      else verdict = "พอ";
+    let reason = "unknown";
+    let nextStep = "";
+    if (g.linkSku === null) {
+      reason = "no_link_sku";
+      nextStep = "คลังไม่มีรหัสข้อต่อเบอร์นี้เลย — ตรวจว่าร้านใช้ข้อต่อตัวไหนกับโซ่เบอร์นี้ แล้วเพิ่มรหัสเข้าคลัง";
+    } else if (!(needMax > 0)) {
+      reason = "no_sales";
+      nextStep = `ช่วงนี้ไม่มีการขายโซ่เบอร์นี้เลย จึงยังคำนวณไม่ได้ — ไม่ใช่ปัญหา ลองขยายช่วงวันดู`;
+    } else if (st < 0) {
+      verdict = "ติดลบ — ตัดขายไม่ได้";
+      reason = "negative";
+      nextStep = "ติดลบมาก่อนแล้ว ต้องนับของจริงในลิ้นชักก่อน แล้วสั่งเพิ่ม";
+    } else if (st < needMin) {
+      verdict = "ขาดแน่นอน";
+      reason = "short_sure";
+      nextStep = "ไม่พอแน่นอนแม้คิดแบบดีที่สุด — สั่งเพิ่มได้เลย";
+    } else if (st < needMax) {
+      verdict = "อาจไม่พอ";
+      reason = "short_maybe";
+      nextStep = "พอหรือไม่ขึ้นกับว่าตัดโซ่สั้นหรือยาว — เผื่อไว้ก่อนดีกว่า";
+    } else {
+      verdict = "พอ";
+      reason = "ok";
+      nextStep = "ยังไม่ต้องสั่ง";
     }
+    // ติดลบไปแล้วกี่คู่ — จอเอาไปเขียนได้ตรง ๆ ว่า "ค้างอยู่ N คู่"
+    const overdrawnPairs = st !== null && st < 0 ? Math.round(-st * 10) / 10 : null;
     return {
       pitch: g.pitch,
       brand: g.brand,
@@ -1009,7 +1040,10 @@ export async function linkStatus(o = {}) {
       pairsNeedMax: needMax,
       daysLeftMin,
       daysLeftMax,
+      overdrawnPairs,
       verdict,
+      reason,
+      nextStep,
     };
   });
 
@@ -1041,6 +1075,11 @@ export async function linkStatus(o = {}) {
     compatNote:
       "ข้อต่อ 3/8 ใช้กับม้วน 3623 และ 3652 ได้ · 3/8p ใช้กับ 3636 เท่านั้น ใส่กับ 3623/3652 ไม่ได้ · " +
       "325 กับ 404 แยกของตัวเอง (เจ้าของร้านยืนยัน 5 ก.ย. 2569)",
+    verdictNote:
+      "reason แยกสาเหตุให้แล้ว — no_link_sku (คลังไม่มีรหัสข้อต่อเบอร์นี้) กับ no_sales " +
+      "(ช่วงนี้ไม่มีการขาย) เดิมถูกกลืนเป็น 'ยังตอบไม่ได้' คำเดียว ทั้งที่ต้องทำคนละเรื่อง · " +
+      "nextStep คือประโยคสั่งงาน เอาไปแสดงต่อจาก verdict ได้เลย · " +
+      "daysLeft ติดลบได้ แปลว่าติดลบมาก่อนแล้ว ไม่ใช่ 'เหลือ 0 วัน' — ดู overdrawnPairs ประกอบ",
     crossBrandNote:
       "ยังไม่รู้ว่าข้อต่อ NEWWAVE กับ KINGKONG ใส่แทนกันได้ไหม ⇒ แยกกองตามยี่ห้อไว้ก่อน · " +
       "crossBrand คือยอดรวมข้ามยี่ห้อ ส่งมาให้ดูคู่กันเฉย ๆ ห้ามเอาไปตัดสินแทนจนกว่าจะรู้คำตอบ",
