@@ -225,7 +225,7 @@ export default function ChainSizeFinder({
                 width={480}
                 height={160}
                 loading="lazy"
-                className="mt-1 w-full max-w-[300px] rounded border border-steel-600 bg-white"
+                className="mt-1 w-full max-w-[170px] rounded border border-steel-600 bg-white"
               />
               <input
                 inputMode="numeric"
@@ -247,7 +247,7 @@ export default function ChainSizeFinder({
                 width={480}
                 height={160}
                 loading="lazy"
-                className="mt-1 w-full max-w-[300px] rounded border border-steel-600 bg-white"
+                className="mt-1 w-full max-w-[170px] rounded border border-steel-600 bg-white"
               />
               <input
                 inputMode="decimal"
