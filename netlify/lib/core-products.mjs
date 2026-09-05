@@ -687,3 +687,124 @@ export async function blockedByNegative() {
     sellableRows: sellable,
   };
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   วางแผนสั่งม้วนใหม่ — "ของนี้พอขายอีกกี่วัน"
+
+   ⚠️ **ที่มา** (5 ก.ย. 2569) — ผมเกือบแนะนำเจ้าของร้านผิด
+      เห็นม้วนเหลือ 34.5 ฟัน แล้วสรุปว่า "อย่าเปิดขาย เดี๋ยวสัญญาเกินของ"
+      เจ้าของร้านบอกว่า **"เศษต่อได้ ถ้าม้วนใหม่เข้ามา"**
+      ⇒ เศษปลายม้วนไม่ใช่ของตาย · ฟันใช้แทนกันได้ทั้งข้ามความยาวและข้ามม้วน
+      ⇒ ม้วนที่เหลือน้อยไม่ใช่ปัญหา "ห้ามขาย" แต่เป็นสัญญาณ **"ต้องสั่งของ"**
+      **คนละคำสั่งกันคนละทิศ** — ห้ามขาย = ปิดรายได้ · สั่งของ = รักษารายได้
+      บทเรียน: เห็นตัวเลขน้อยแล้วรีบสรุปว่าเป็นความเสี่ยง ทั้งที่ยังไม่รู้ว่าของเติมได้ยังไง
+
+   ⚠️ หน่วยในคลังคือ **"ฟัน" ไม่ใช่ "ม้วน"** (ยืนยัน 5 ก.ย. 2569 จากกล่องจริง + สูตรในระบบ)
+      3/8 (3636 · 3623 · 3652) = 820 ฟัน/ม้วน · 404 (3860) = 740 · 325 = 920
+      `03386` ที่คลังบอก 19,917 คือ **24.3 ม้วน** ไม่ใช่ 19,917 ม้วน
+      ⇒ เอาจำนวนฟันต่อม้วนจากสูตร `<รหัส>-roll` **ห้ามฝังเลข 820 ไว้ในโค้ด**
+        มีสามค่าแล้วตอนนี้ และวันหน้าอาจมีอีก
+
+   ⚠️ **ยอดใช้ต้องนับผ่านสูตร** — ขายโซ่ 22 ฟันหนึ่งเส้น = ใช้ฟันไป 22 ไม่ใช่ 1
+      นับหัวรายการตรง ๆ จะได้ยอดใช้ต่ำกว่าจริงหลายสิบเท่า แล้วบอกว่าของพอขายอีกเป็นปี
+   ⚠️ ไม่เคยขายเลยในช่วงที่ดู ⇒ `daysLeft` เป็น **null ห้ามเป็น 0 หรือ Infinity**
+      0 แปลว่า "หมดพรุ่งนี้" · Infinity แปลว่า "ไม่มีวันหมด" — ทั้งคู่ผิดคนละทิศ
+      ความจริงคือ "ยังตอบไม่ได้"
+   ───────────────────────────────────────────────────────────────────────────── */
+export async function reorderPlan(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const days = Math.max(7, Math.min(365, num(o.days) || 90));
+
+  // วันแบบไทย — order_date เก็บเป็นวันไทยอยู่แล้ว จึงเทียบสตริงตรง ๆ ได้
+  const thai = (offset = 0) =>
+    new Date(Date.now() + 7 * 3600e3 - offset * 86400e3).toISOString().slice(0, 10);
+  const to = thai(0);
+  const from = thai(days);
+
+  const links = await coreQuery(`SELECT bundle_sku, sku, qty FROM bundle_items`);
+  const parentOf = new Map(); // รหัสชุด → { parent, per }
+  const kidsOf = new Map();   // ม้วนแม่ → [รหัสชุด]
+  const perRoll = new Map();  // ม้วนแม่ → ฟันต่อม้วน (จากสูตร -roll)
+  for (const l of links) {
+    const b = String(l.bundle_sku ?? "");
+    const p = String(l.sku ?? "");
+    const per = num(l.qty);
+    if (!b || !p || !(per > 0)) continue;
+    parentOf.set(b, { parent: p, per });
+    if (!kidsOf.has(p)) kidsOf.set(p, []);
+    kidsOf.get(p).push(b);
+    if (b === `${p}-roll`) perRoll.set(p, per);
+  }
+
+  const CANCEL =
+    `o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'`;
+  const sold = await coreQuery(
+    `SELECT oi.sku AS sku, SUM(oi.qty) AS qty
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.order_date >= ? AND o.order_date <= ? AND ${CANCEL}
+     GROUP BY oi.sku`,
+    [from, to]
+  );
+  // ฟันที่ใช้ไปต่อม้วนแม่ — ขายชุดไหนก็แปลงกลับเป็นฟันด้วยสูตรของชุดนั้น
+  const usedTeeth = new Map();
+  const add = (p, n) => usedTeeth.set(p, (usedTeeth.get(p) ?? 0) + n);
+  for (const s of sold) {
+    const sku = String(s.sku ?? "");
+    const q = num(s.qty);
+    if (!sku || !(q > 0)) continue;
+    const link = parentOf.get(sku);
+    if (link) add(link.parent, q * link.per);          // ขายเป็นชุด/ม้วน ⇒ คูณสูตร
+    else if (kidsOf.has(sku)) add(sku, q);             // ขายฟันตรง ๆ (หายาก แต่กันไว้)
+  }
+
+  const stock = new Map(
+    (await coreQuery(`SELECT sku, name, available FROM products WHERE available IS NOT NULL`))
+      .map((r) => [String(r.sku), { name: String(r.name ?? ""), have: num(r.available) }])
+  );
+
+  const rows = [];
+  for (const [parent, kids] of kidsOf) {
+    const st = stock.get(parent);
+    if (!st) continue;
+    const used = usedTeeth.get(parent) ?? 0;
+    const perDay = used / days;
+    const tpr = perRoll.get(parent) ?? null;
+    rows.push({
+      sku: parent,
+      name: st.name,
+      teeth: st.have,
+      teethPerRoll: tpr,
+      // ⚠️ ไม่รู้ฟันต่อม้วน ⇒ null ห้ามเดา 820 · มีสามค่าแล้ว และวันหน้าอาจมีอีก
+      rolls: tpr ? Math.round((st.have / tpr) * 100) / 100 : null,
+      listings: kids.filter((k) => !k.endsWith("-roll")).length,
+      teethUsed: Math.round(used * 10) / 10,
+      teethPerDay: Math.round(perDay * 100) / 100,
+      /* พอขายอีกกี่วัน — ไม่เคยขายในช่วงที่ดู ⇒ null (ยังตอบไม่ได้)
+         ของติดลบอยู่แล้ว ⇒ 0 (หมดไปแล้วจริง ๆ ไม่ใช่ "ยังตอบไม่ได้") */
+      daysLeft: perDay > 0 ? Math.max(0, Math.round((st.have / perDay) * 10) / 10) : null,
+    });
+  }
+  /* เรียง: ของที่จะหมดก่อนขึ้นก่อน · ตัวที่ยังตอบไม่ได้ไปท้าย
+     ⚠️ **ห้ามเอา null ไปเรียงปนกับตัวเลข** — JS เทียบ null กับเลขได้เงียบ ๆ แล้วลำดับมั่ว */
+  rows.sort((a, b) => {
+    if (a.daysLeft === null && b.daysLeft === null) return a.teeth - b.teeth;
+    if (a.daysLeft === null) return 1;
+    if (b.daysLeft === null) return -1;
+    return a.daysLeft - b.daysLeft;
+  });
+
+  return {
+    from,
+    to,
+    days,
+    parents: rows.length,
+    neverSold: rows.filter((r) => r.daysLeft === null).length,
+    scope:
+      `ยอดใช้คิดจากใบขายจริงช่วง ${from} ถึง ${to} (${days} วัน) ไม่รวมใบยกเลิก · ` +
+      "หน่วยเป็น 'ฟัน' ไม่ใช่ม้วน — ขายโซ่ 22 ฟันหนึ่งเส้นคือใช้ฟันไป 22 · " +
+      "daysLeft = null แปลว่าช่วงนี้ไม่มีการขายเลย ยังตอบไม่ได้ ไม่ใช่ 'ไม่มีวันหมด'",
+    note:
+      "เศษปลายม้วนต่อกับม้วนใหม่ได้ ⇒ ม้วนที่เหลือน้อยไม่ใช่เหตุให้ปิดขาย แต่เป็นสัญญาณให้สั่งของ",
+    rows,
+  };
+}

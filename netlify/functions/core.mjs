@@ -25,6 +25,7 @@ import {
 } from "../lib/pos.mjs";
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems, blockedByNegative,
+  reorderPlan,
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
@@ -277,6 +278,14 @@ export default async function handler(req, context) {
           และ **ไม่มีอะไรฟ้องเลย** — สินค้าไม่ได้ขึ้นว่า "หมด" แต่หายไปทั้งตัว */
     if (url.searchParams.get("blocked")) {
       return json({ ok: true, ...(await blockedByNegative()) });
+    }
+    /* วางแผนสั่งม้วนใหม่ — "ของนี้พอขายอีกกี่วัน"
+         GET /api/core?reorder=1[&days=90]
+       ⚠️ หน่วยเป็น "ฟัน" ไม่ใช่ม้วน · ขายโซ่ 22 ฟันหนึ่งเส้น = ใช้ฟันไป 22
+       ⚠️ เศษปลายม้วนต่อกับม้วนใหม่ได้ (เจ้าของร้านยืนยัน 5 ก.ย. 2569)
+          ⇒ ม้วนเหลือน้อย = สัญญาณให้สั่งของ **ไม่ใช่เหตุให้ปิดขาย** */
+    if (url.searchParams.get("reorder")) {
+      return json({ ok: true, ...(await reorderPlan({ days: url.searchParams.get("days") })) });
     }
     if (url.searchParams.get("list") === "bundles") {
       return json({
