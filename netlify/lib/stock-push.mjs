@@ -149,8 +149,37 @@ async function lazadaPlan() {
   return p;
 }
 
+/** ── TikTok Shop ── (เขียนได้ 6 ก.ย. 2569 หลังเชื่อมร้านสำเร็จ)
+ *  ⚠️ ตัวเทียบจะ **หยุดเองถ้าอ่านจำนวนคงเหลือไม่ได้** แล้วส่ง skip กลับมา
+ *     ห้ามแก้ให้เดินต่อด้วยเลข 0 — ทุกรหัสจะดูเหมือน "ของหมด" แล้วแผนจะสั่งเปิดขายทั้งร้าน
+ *  ⚠️ ตัวเลขที่ TikTok ให้คือของที่ **ลงขายอยู่ (ACTIVATE)** เท่านั้น
+ *     "ไม่เจอ" จึงแปลว่า "ไม่ได้ลงขายอยู่ตอนนี้" ไม่ใช่ "ไม่เคยขายบน TikTok"
+ */
+async function tiktokPlan() {
+  const { tiktokStockCompare } = await import("./tiktok-stock.mjs");
+  const c = await tiktokStockCompare();
+  if (c.skip || c.note) return { skip: c.skip || c.note };
+
+  const rows = [
+    ...(c.diff || []).map((d) => ({
+      sku: d.sku, name: d.name, platformQty: num(d.tiktok), coreQty: num(d.core), known: true,
+    })),
+    ...(c.missingSample || []).map((m) => ({
+      sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
+    })),
+  ];
+  const p = planFrom(rows);
+  // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
+  p.same = num(c.same);
+  p.platformSkus = num(c.tiktokSkus);
+  p.skipUnknown = num(c.missing);
+  p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown === p.platformSkus;
+  p.day = c.day;
+  return p;
+}
+
 /** แผนการดันสต็อก — อ่านอย่างเดียวทั้งหมด
- *  @param platform "shopee" | "lazada" | "all"
+ *  @param platform "shopee" | "lazada" | "tiktok" | "all"
  */
 export async function stockPushDryRun(o = {}) {
   const want = String(o.platform ?? "all").toLowerCase();
@@ -162,7 +191,15 @@ export async function stockPushDryRun(o = {}) {
   if (want === "lazada" || want === "all") {
     out.lazada = await lazadaPlan().catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
   }
-  out.tiktok = { skip: "ยังเชื่อมไม่ได้ — รอ TikTok ตรวจสอบพาร์ทเนอร์ (ยื่นแล้ว 5 ก.ย. 2569)" };
+  /* ⚠️ **ห้ามเขียนสถานะการเชื่อมต่อเป็นข้อความตายตัวอีก** (แก้ 6 ก.ย. 2569)
+      ของเดิมเขียนไว้ว่า "ยังเชื่อมไม่ได้ — รอ TikTok ตรวจสอบพาร์ทเนอร์ (ยื่นแล้ว 5 ก.ย.)"
+      พอเชื่อมสำเร็จเช้า 6 ก.ย. ประโยคนั้น **กลายเป็นเท็จทันทีโดยไม่มีอะไรฟ้อง**
+      และจะโกหกต่อไปเรื่อย ๆ จนกว่าจะมีคนบังเอิญมาอ่าน (ดู [[stale-state-comments]])
+      ⇒ ถามของจริงทุกครั้ง แล้วแยกให้ชัดว่า **"เชื่อมไม่ได้" กับ "ยังไม่ได้เขียนตัววางแผน"
+        เป็นคนละเรื่อง** — รวมเป็นข้อความเดียวเมื่อไหร่ คนอ่านจะไปแก้ผิดจุด */
+  if (want === "tiktok" || want === "all") {
+    out.tiktok = await tiktokPlan().catch((e) => ({ error: String(e?.message || e).slice(0, 200) }));
+  }
 
   out.safetyNote =
     "ห้ามดันรหัสที่คลังเราติดลบ (ติดลบ = ข้อมูลเราผิด ไม่ใช่ของหมด) · " +

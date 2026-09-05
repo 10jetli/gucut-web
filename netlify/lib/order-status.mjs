@@ -53,6 +53,16 @@ const MAP = {
   140: { th: "ยกเลิก", platform: "tiktok", group: "cancelled", unverified: true },
 };
 
+/* ⚠️ **TikTok มีสถานะสองภาษา และตารางนี้รู้จักแค่ภาษาเดียว** (6 ก.ย. 2569 หลังเชื่อม API ตรง)
+    - ผ่าน ZORT (`integration_status`) → **รหัสตัวเลข** 121 · 130 · 140 … ← ตารางข้างบนคือชุดนี้
+    - ผ่าน TikTok Open API ตรง        → **ตัวหนังสือ** UNPAID · AWAITING_SHIPMENT · IN_TRANSIT
+                                          · DELIVERED · COMPLETED · CANCELLED (ยืนยันจากเอกสารทางการแล้ว)
+    ⇒ ค่าจาก `tiktok_orders` (ท่อตรง) **ห้ามส่งเข้า readStatus ตัวนี้**
+      เพราะ `COMPLETED` กับ `CANCELLED` **สะกดชนกับ Shopee เป๊ะ** ⇒ จะถูกติดป้ายว่าเป็นของ Shopee
+      แล้วยอดไปกองผิดแพลตฟอร์มโดยไม่มีอะไรฟ้อง (คลาสเดียวกับ [[similar-name-other-unit]])
+    ถ้าวันหนึ่งต้องแปลค่าจากท่อตรงด้วย ให้ทำ **ตารางแยกอีกใบ** พร้อมพารามิเตอร์บอกที่มา
+    ห้ามยัดรวมลงตารางนี้ — คีย์ซ้ำจะเงียบ ๆ ทับกันเอง */
+
 /** ชื่อไทยของกลุ่ม — จอเอาไปตั้งชื่อแท็บได้เลย */
 export const GROUP_TH = {
   waiting_pay: "รอชำระเงิน",

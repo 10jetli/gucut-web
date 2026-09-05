@@ -950,7 +950,17 @@ async function route(req, context) {
           ห้ามแก้ให้คืนค่าจริง — คำตอบของ TikTok มีชื่อ/ที่อยู่/เบอร์ผู้รับอยู่ในนั้น
           (กติกาเดียวกับ pendingfields ด้านล่าง) */
     if (url.searchParams.get("tiktokshape")) {
-      return json({ ok: true, shape: await tiktokOrderShape() });
+      const { tiktokProductShape } = await import("../lib/tiktok-stock.mjs");
+      const [order, product] = await Promise.all([
+        tiktokOrderShape().catch((e) => ({ error: String(e?.message || e).slice(0, 200) })),
+        tiktokProductShape().catch((e) => ({ error: String(e?.message || e).slice(0, 200) })),
+      ]);
+      return json({ ok: true, order, product });
+    }
+    // เทียบสต็อกที่ลงขายบน TikTok กับภาพถ่ายคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ TikTok
+    if (url.searchParams.get("tiktokstock")) {
+      const { tiktokStockCompare } = await import("../lib/tiktok-stock.mjs");
+      return json({ ok: true, tiktok: await tiktokStockCompare() });
     }
     // เทียบสต็อกบน Shopee กับคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ Shopee
     /* เทียบรายการที่ลงขายบนแพลตฟอร์ม กับของที่มีในคลัง

@@ -230,8 +230,13 @@ export async function syncTiktokOrders(days = 3) {
   };
 }
 
-// สถานะที่ไม่นับเป็นยอดขาย — UNPAID ยังไม่จ่าย (ZORT ยังไม่รับเข้า) · CANCELLED ยกเลิก
-// ⚠️ ชุดนี้มาจากเอกสารทางการ (order_status ของ Get Order List) ไม่ได้เดาจากข้อมูลที่เห็น
+/* สถานะทั้งชุดจากเอกสารทางการ (order_status ของ Get Order List 202309 — อ่านของจริงแล้ว):
+     UNPAID · ON_HOLD · AWAITING_SHIPMENT · PARTIALLY_SHIPPING · AWAITING_COLLECTION
+     · IN_TRANSIT · DELIVERED · COMPLETED · CANCELLED
+   ⚠️ **คนละภาษากับสถานะ TikTok ที่มาทาง ZORT** ซึ่งเป็น **รหัสตัวเลข** (121 · 130 · 140)
+      ⇒ ห้ามเอาค่าจากตารางนี้ไปเข้า `readStatus()` ของ order-status.mjs
+        `COMPLETED`/`CANCELLED` สะกดชนกับ Shopee เป๊ะ จะถูกนับเป็นของ Shopee เงียบ ๆ
+   ไม่นับเป็นยอดขาย: UNPAID ยังไม่จ่าย (ZORT ยังไม่รับเข้า) · CANCELLED ยกเลิก */
 const SKIP_STATUS = `('UNPAID','CANCELLED')`;
 
 /** เทียบรายวัน N วันล่าสุด: TikTok API vs แถว ZORT ช่องทาง TikTok ใน D1 */
