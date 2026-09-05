@@ -23,7 +23,32 @@ export default async function handler() {
         เขียนน้อยอยู่แล้วเพราะเขียนเฉพาะใบที่ต่าง — รอบปกติจะไม่มีอะไรให้เขียนเลย */
     const utc = new Date();
     const wide = utc.getUTCHours() === 19 && utc.getUTCMinutes() < 30; // ตี 2 เวลาไทย
-    const sync = await syncOrders(wide ? 45 : 7);
+    /* ⚠️ **ตัวซิงก์ล้มต้องส่งเสียง** (เพิ่ม 5 ก.ย. 2569 คืน หลังย้ายฐาน)
+        ของเดิม `await syncOrders(...)` ไม่มี catch ⇒ ล้มแล้วทั้งฟังก์ชันตาย
+        ไม่มีใครรู้ นอกจากเข้าไปเปิด log เอง ซึ่งไม่มีใครทำ
+        คืนนี้เจอของจริง: ย้ายฐานแล้วคอลัมน์ขาด ⇒ `no such column: ship_amount`
+        ⇒ ถ้าไม่ได้ยิงมือตรวจ กระจกจะหยุดอัปเดตเงียบ ๆ ทุกครึ่งชั่วโมงไปเรื่อย ๆ
+           จอยังโชว์เลขเดิมสวยงาม (ชีพจร `sync_orders` ค้างเป็นตัวเดียวที่ฟ้อง แต่ต้องมีคนเปิดดู)
+        ⇒ ล้มเมื่อไหร่ **เด้ง Telegram ทันที** แล้วทำงานส่วนที่เหลือต่อ */
+    let sync;
+    try {
+      sync = await syncOrders(wide ? 45 : 7);
+    } catch (e) {
+      const msg = String(e?.message || e).slice(0, 300);
+      sync = { error: msg };
+      const { TELEGRAM_BOT_TOKEN: bt, TELEGRAM_CHAT_ID: ci } = process.env;
+      if (bt && ci) {
+        await fetch(`https://api.telegram.org/bot${bt}/sendMessage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chat_id: ci,
+            text: `⚠️ ซิงก์ออเดอร์เข้าคลังเงาล้ม — กระจกหยุดอัปเดตแล้ว\n${msg}\n\nสั่งซิงก์เดี๋ยวนี้: /api/core?sync=1&days=7`,
+          }),
+          signal: AbortSignal.timeout(8000),
+        }).catch(() => null);
+      }
+    }
     // ท่อที่สอง (แผนลับขั้น 3): ออเดอร์ตรงจาก Shopee API — พังไม่ล้มรอบ
     const shopee = await syncShopeeOrders(7).catch((e) => ({ error: String(e?.message || e) }));
 
