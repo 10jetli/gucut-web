@@ -711,6 +711,10 @@ export async function blockedByNegative() {
       0 แปลว่า "หมดพรุ่งนี้" · Infinity แปลว่า "ไม่มีวันหมด" — ทั้งคู่ผิดคนละทิศ
       ความจริงคือ "ยังตอบไม่ได้"
    ───────────────────────────────────────────────────────────────────────────── */
+/** ม้วนหนึ่งแถมข้อต่อมากี่คู่ — เจ้าของร้านนับให้เอง 5 ก.ย. 2569
+ *  ⚠️ ตัวเลขนี้มาจากปากเจ้าของร้าน ไม่ได้คำนวณจากอะไร **เปลี่ยนต้องถามก่อน** */
+const LINKS_PER_ROLL = 30;
+
 export async function reorderPlan(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const days = Math.max(7, Math.min(365, num(o.days) || 90));
@@ -748,13 +752,23 @@ export async function reorderPlan(o = {}) {
   // ฟันที่ใช้ไปต่อม้วนแม่ — ขายชุดไหนก็แปลงกลับเป็นฟันด้วยสูตรของชุดนั้น
   const usedTeeth = new Map();
   const add = (p, n) => usedTeeth.set(p, (usedTeeth.get(p) ?? 0) + n);
+  /* ── นับ "จำนวนเส้นที่ตัด" แยกจาก "จำนวนฟันที่ใช้" ──
+      ⚠️ สองอย่างนี้ตอบคนละคำถาม และต้องใช้คู่กันถึงจะรู้เรื่องข้อต่อ
+         ฟัน  → ม้วนจะหมดเมื่อไหร่
+         เส้น → **ข้อต่อ**จะหมดเมื่อไหร่ (ตัด 1 เส้น = ข้อต่อ 1 คู่)
+      ⚠️ ขายทั้งม้วน (`-roll`) **ไม่นับเป็นการตัด** — ไม่ได้ต่อเป็นวงให้ลูกค้า
+         นับรวมเมื่อไหร่ ข้อต่อจะดูเหมือนถูกใช้ไปทั้งที่ยังอยู่ในกล่อง */
+  const chainsCut = new Map();
+  const addCut = (p, n) => chainsCut.set(p, (chainsCut.get(p) ?? 0) + n);
   for (const s of sold) {
     const sku = String(s.sku ?? "");
     const q = num(s.qty);
     if (!sku || !(q > 0)) continue;
     const link = parentOf.get(sku);
-    if (link) add(link.parent, q * link.per);          // ขายเป็นชุด/ม้วน ⇒ คูณสูตร
-    else if (kidsOf.has(sku)) add(sku, q);             // ขายฟันตรง ๆ (หายาก แต่กันไว้)
+    if (link) {
+      add(link.parent, q * link.per);                  // ขายเป็นชุด/ม้วน ⇒ คูณสูตร
+      if (!sku.endsWith("-roll")) addCut(link.parent, q);
+    } else if (kidsOf.has(sku)) add(sku, q);           // ขายฟันตรง ๆ (หายาก แต่กันไว้)
   }
 
   const stock = new Map(
@@ -767,6 +781,7 @@ export async function reorderPlan(o = {}) {
     const st = stock.get(parent);
     if (!st) continue;
     const used = usedTeeth.get(parent) ?? 0;
+    const cut = chainsCut.get(parent) ?? 0;
     const perDay = used / days;
     const tpr = perRoll.get(parent) ?? null;
     rows.push({
@@ -779,6 +794,19 @@ export async function reorderPlan(o = {}) {
       listings: kids.filter((k) => !k.endsWith("-roll")).length,
       teethUsed: Math.round(used * 10) / 10,
       teethPerDay: Math.round(perDay * 100) / 100,
+      /* ── ข้อต่อ ── (เจ้าของร้านให้ตัวเลข 5 ก.ย. 2569: ม้วนหนึ่งแถมข้อต่อ 30 คู่)
+          ตัด 1 เส้น = ใช้ข้อต่อ 1 คู่ · ม้วน 1 ม้วน = ได้ข้อต่อมาฟรี 30 คู่
+          ⇒ จุดคุ้มทุนอยู่ที่ **ฟันต่อม้วน ÷ 30** (3/8 = 820/30 = 27.3 ฟัน)
+             ตัดสั้นกว่านี้ = ได้เส้นเยอะกว่า 30 ⇒ **ข้อต่อที่แถมมาไม่พอ ต้องซื้อเพิ่ม**
+          ⚠️ ไม่รู้ฟันต่อม้วน ⇒ null ทั้งแถว **ห้ามเดา 820** (มี 3 ค่า: 820 · 740 · 920) */
+      chainsCut: cut,
+      avgTeethPerChain: cut > 0 ? Math.round((used / cut) * 10) / 10 : null,
+      linkBreakEvenTeeth: tpr ? Math.round((tpr / LINKS_PER_ROLL) * 10) / 10 : null,
+      /* บวก = ข้อต่อที่แถมมาเหลือ · ลบ = ต้องซื้อข้อต่อเพิ่มเท่านี้คู่ ในช่วงที่ดู
+         คิดจาก "ฟันที่ใช้ไป" ไม่ใช่ "ม้วนที่รับเข้า" เพราะกระจกยังไม่มีใบรับของ
+         ⇒ เป็นค่าประมาณของช่วงที่ขาย ไม่ใช่ยอดคงเหลือจริงของข้อต่อ */
+      linkBalance:
+        tpr && cut > 0 ? Math.round(((used / tpr) * LINKS_PER_ROLL - cut) * 10) / 10 : null,
       /* พอขายอีกกี่วัน — ไม่เคยขายในช่วงที่ดู ⇒ null (ยังตอบไม่ได้)
          ของติดลบอยู่แล้ว ⇒ 0 (หมดไปแล้วจริง ๆ ไม่ใช่ "ยังตอบไม่ได้") */
       daysLeft: perDay > 0 ? Math.max(0, Math.round((st.have / perDay) * 10) / 10) : null,
