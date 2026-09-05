@@ -561,6 +561,16 @@ export async function stockCard(o = {}) {
       ⚠️ ตัวที่แตะ `stock_moves` ต้องมี .catch ของตัวเอง (ตารางอาจยังไม่ถูกสร้าง)
          **ห้ามใช้ try/catch ครอบทั้งก้อน** — มันจะกลืน error ของเพื่อนใน Promise.all ไปด้วย
       ⚠️ ลำดับของ rows ไม่สำคัญ เพราะเรียงใหม่ด้านล่างอยู่แล้ว */
+  /* ⚠️ **แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล" ให้ได้** (5 ก.ย. 2569)
+      ของเดิม `stock_moves` ล้ม ⇒ `.catch(() => [{ c: 0 }])` ⇒ จอเขียน "ปรับ 0 รายการ"
+      ซึ่งเป็น **คำยืนยันที่ผิด** ไม่ใช่การไม่รู้ — คนอ่านจะสรุปว่ารหัสนี้ไม่เคยถูกปรับเลย
+      (ฝั่งจอเจอโรคเดียวกัน 3 จุดวันเดียวกัน: '0 ใบ ฿0' และ 'ยังไม่มียอดใน 30 วัน')
+      ⇒ ใช้อาร์เรย์ตัวเดียวกันเป็นเครื่องหมาย "ล้ม" แล้วเช็คด้วย === (เทียบที่ตัวตน ไม่ใช่ค่า)
+         อาร์เรย์ว่างธรรมดาแปลว่า "ไม่มีจริง" · ตัวนี้แปลว่า "ยังไม่รู้"
+      ⚠️ ยังคืน counts.adjust = 0 เหมือนเดิมเพื่อไม่ให้ total เพี้ยน
+         แต่ติดธง `failed` มาด้วย **จอต้องเขียนว่าตัวเลขนี้ไม่ครบ ห้ามโชว์เฉย ๆ** */
+  const FAILED = [];
+
   const wantSale = want.includes("sale");
   const wantBuy = want.includes("buy");
   const wantAdjust = want.includes("adjust");
@@ -591,7 +601,7 @@ export async function stockCard(o = {}) {
                   ref AS ref, '' AS party, qty AS qty, NULL AS amount
            FROM stock_moves WHERE sku = ${esc(sku)}
            ORDER BY at DESC LIMIT ${limit}`
-        ).catch(() => [])
+        ).catch(() => FAILED)
       : none(),
     /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
         เดิมดึงแต่ละแหล่ง LIMIT เท่ากัน แล้วรวม-เรียง-ตัด ⇒ ใบซื้อ 4 ใบที่เก่ากว่า
@@ -608,12 +618,15 @@ export async function stockCard(o = {}) {
       ? coreQuery(`SELECT COUNT(*) AS c FROM purchase_order_items WHERE sku = ${esc(sku)}`)
       : none(),
     wantAdjust
-      ? coreQuery(`SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`).catch(() => [{ c: 0 }])
+      ? coreQuery(`SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`).catch(() => FAILED)
       : none(),
   ]);
 
   const rows = [...saleRows, ...buyRows, ...adjRows];
   rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+
+  const failed = [];
+  if (adjRows === FAILED || adjCnt === FAILED) failed.push("adjust");
 
   const counts = {
     sale: num(saleCnt[0]?.c),
@@ -629,6 +642,9 @@ export async function stockCard(o = {}) {
     total, // จำนวนจริงทั้งหมดในตัวกรองนี้ (ไม่ใช่จำนวนที่แสดง)
     shown,
     counts, // แยกตามแหล่ง — จอเขียนได้ว่า "ขาย N · ซื้อ M · ปรับ K"
+    /* ⚠️ มีชื่ออยู่ในนี้ = แหล่งนั้น **ดึงไม่สำเร็จ ไม่ใช่ไม่มีข้อมูล**
+        จอต้องเขียนกำกับว่าตัวเลขไม่ครบ **ห้ามโชว์ 0 เฉย ๆ** ไม่งั้นกลายเป็นคำยืนยันที่ผิด */
+    failed,
     // ⚠️ true = มีของถูกตัดออกเพราะชนเพดาน **จอต้องเขียนบอก ห้ามตัดเงียบ**
     truncated: total > shown,
     // ค่าที่ส่งมาแต่ไม่รู้จัก → บอกให้รู้ ไม่เมินเงียบ

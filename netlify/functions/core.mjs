@@ -1935,6 +1935,7 @@ async function route(req, context) {
       );
     }
 
+    const FAILED = [];
     /* ── สถานะรวม (หน้าแรกหลังร้าน) ──
        ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — วัดจริง 3.1 วิ ทั้งที่ตอบ 3.3 KB)
           ห้าตัวนี้ไม่มีตัวไหนต้องรอผลของอีกตัวเลย
@@ -1951,13 +1952,29 @@ async function route(req, context) {
         `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
          FROM orders GROUP BY channel ORDER BY amount DESC LIMIT 20`
       ),
-      // เทียบ 3 ทางฝั่ง Shopee (แผนลับขั้น 3 — ระยะรันคู่) · ตารางยังไม่มี = ส่ง [] เฉย ๆ
-      shopeeRecon(7).catch(() => []),
-      // สมุดเทียบสต็อก (แผนลับขั้น 1) — ตารางยังไม่ได้สร้าง = ส่ง [] ไม่ล้มทั้งหน้า
-      stockReconLog(14).catch(() => []),
+      /* ⚠️ **แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีข้อมูล"** (5 ก.ย. 2569 — ฝั่งจอเจอโรคเดียวกัน 3 จุด)
+          ของเดิมล้มแล้วส่ง [] ⇒ จอเขียน "ยังไม่มีบันทึกเทียบยอด" ซึ่งเป็น**คำยืนยันที่ผิด**
+          คนอ่านจะสรุปว่าระบบเทียบยอดไม่เคยทำงาน ทั้งที่แค่อ่านตารางไม่ได้รอบนี้
+          ⇒ ใช้อาร์เรย์ตัวตนเดียวเป็นเครื่องหมายว่าล้ม แล้วเทียบด้วย === (ตัวตน ไม่ใช่ค่า)
+             อาร์เรย์ว่างธรรมดา = "ไม่มีจริง" · ตัวนี้ = "ยังไม่รู้" */
+      shopeeRecon(7).catch(() => FAILED),
+      stockReconLog(14).catch(() => FAILED),
     ]);
     const counts = countsRows?.[0];
-    return json({ ready: true, counts, recon, channels, shopee, stock });
+    const failed = [];
+    if (shopee === FAILED) failed.push("shopee");
+    if (stock === FAILED) failed.push("stock");
+    return json({
+      ready: true,
+      counts,
+      recon,
+      channels,
+      shopee: shopee === FAILED ? [] : shopee,
+      stock: stock === FAILED ? [] : stock,
+      /* ⚠️ มีชื่ออยู่ในนี้ = ส่วนนั้นดึงไม่สำเร็จ **ไม่ใช่ว่าไม่มีข้อมูล**
+          จอต้องเขียนว่า "ยังดูไม่ได้" ห้ามเขียนว่า "ยังไม่มี" */
+      failed,
+    });
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500);
   }
