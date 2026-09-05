@@ -228,7 +228,7 @@ export async function shopeeMissingSkus() {
 }
 
 /** เทียบสต็อก Shopee กับภาพถ่ายสต็อกล่าสุดในคลังเรา — อ่านอย่างเดียว */
-export async function shopeeStockCompare() {
+export async function shopeeStockCompare(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const t = await validToken();
   if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
@@ -323,7 +323,12 @@ export async function shopeeStockCompare() {
     missingSample,
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
     diffCount: diff.length,
-    diff: diff.slice(0, 50),
+    /* ⚠️ `diff` ถูกตัดที่ 50 **เพื่อการแสดงผลเท่านั้น** — ตัวจริงอยู่ใน diffCount
+        ใครจะเอาไป "คิดต่อ" (เช่นแผนดันสต็อก) ต้องขอ full:1 ไม่งั้นจะคิดจากตัวอย่าง
+        แล้วของหายเงียบ ๆ (เจอจริง 5 ก.ย. 2569 ดึก — แผนดันขาดไป 5 รหัสโดยไม่มีอะไรฟ้อง
+        เป็นกับดัก "ตัวอย่างไม่ใช่ตัวแทน" ตัวที่ 6 ของวันเดียวกัน) */
+    diff: o.full ? diff : diff.slice(0, 50),
+    diffTruncated: !o.full && diff.length > 50,
   };
 }
 

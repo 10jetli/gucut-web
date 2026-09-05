@@ -88,7 +88,10 @@ function planFrom(rows) {
  */
 async function shopeePlan() {
   const { shopeeStockCompare } = await import("./shopee-stock.mjs");
-  const c = await shopeeStockCompare();
+  /* ⚠️ ต้องขอ full:1 เสมอ — ค่าเริ่มต้นของตัวเทียบตัด diff ไว้ 50 ตัวเพื่อการแสดงผล
+      แผนดันที่คิดจากตัวอย่าง = รหัสที่เกิน 50 หายจากแผนเงียบ ๆ (เจอจริง 5 ก.ย. 2569:
+      diffCount 55 แต่แผนเห็นแค่ 50 ⇒ bucketsAddUp ฟ้อง false ซึ่งคือหน้าที่ของมันพอดี) */
+  const c = await shopeeStockCompare({ full: 1 });
   if (c.skip || c.note) return { skip: c.skip || c.note };
 
   const rows = [
