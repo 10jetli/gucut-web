@@ -30,6 +30,9 @@ async function ensureTables() {
        updated_at TEXT)`
   );
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_po_date ON purchase_orders(po_date)`);
+  /* โน้ตใต้ป้ายสถานะ (ฝั่งจอขอจากภาพ 27 · 5 ก.ย. 2569) — ZORT เรียก `description`
+     (ชื่อเดียวกับที่ใบโอนใช้เป็น note อยู่แล้ว) · SQLite ไม่มี ADD COLUMN IF NOT EXISTS ⇒ กลืน error */
+  await coreQuery(`ALTER TABLE purchase_orders ADD COLUMN note TEXT`).catch(() => null);
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS purchase_order_items (
        number TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
@@ -68,6 +71,7 @@ export async function syncPurchases(opt = {}) {
       amount: num(p?.amount),
       pay: String(p?.paymentstatus ?? "").slice(0, 40),
       wh: String(p?.warehousecode ?? "").slice(0, 40),
+      note: String(p?.description ?? "").trim().slice(0, 200),
       items: Array.isArray(p?.list) ? p.list : [],
     }))
     .filter((r) => r.number);
@@ -75,7 +79,7 @@ export async function syncPurchases(opt = {}) {
   const prev = new Map(
     (
       await coreQuery(
-        `SELECT number, vendor, po_date, status, amount, payment_status, warehouse FROM purchase_orders`
+        `SELECT number, vendor, po_date, status, amount, payment_status, warehouse, note, note FROM purchase_orders`
       )
     ).map((r) => [r.number, r])
   );
@@ -88,7 +92,10 @@ export async function syncPurchases(opt = {}) {
       String(p.status ?? "") !== r.status ||
       num(p.amount) !== r.amount ||
       String(p.payment_status ?? "") !== r.pay ||
-      String(p.warehouse ?? "") !== r.wh
+      String(p.warehouse ?? "") !== r.wh ||
+      /* ⚠️ ขาดบรรทัดนี้ = คอลัมน์ใหม่ไม่มีวันถูกเติมให้ใบเก่าที่นิ่งแล้ว (new-columns-need-backfill)
+          รอบแรกหลัง deploy ทุกใบจะ "เปลี่ยน" เพราะของเดิม note เป็น null ⇒ กวาดเติมให้เองครบ */
+      String(p.note ?? "") !== r.note
     );
   });
 
@@ -98,15 +105,15 @@ export async function syncPurchases(opt = {}) {
       .map(
         (r) =>
           `(${esc(r.number)},${esc(r.vendor)},${esc(r.date)},${esc(r.status)},${r.amount},` +
-          `${esc(r.pay)},${esc(r.wh)},datetime('now'))`
+          `${esc(r.pay)},${esc(r.wh)},${esc(r.note)},datetime('now'))`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO purchase_orders (number,vendor,po_date,status,amount,payment_status,warehouse,updated_at)
+      `INSERT INTO purchase_orders (number,vendor,po_date,status,amount,payment_status,warehouse,note,updated_at)
        VALUES ${values}
        ON CONFLICT(number) DO UPDATE SET vendor=excluded.vendor, po_date=excluded.po_date,
          status=excluded.status, amount=excluded.amount, payment_status=excluded.payment_status,
-         warehouse=excluded.warehouse, updated_at=excluded.updated_at`
+         warehouse=excluded.warehouse, note=excluded.note, updated_at=excluded.updated_at`
     );
   }
 
