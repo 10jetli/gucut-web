@@ -783,9 +783,14 @@ export async function reorderPlan(o = {}) {
     const used = usedTeeth.get(parent) ?? 0;
     const cut = chainsCut.get(parent) ?? 0;
     /* บันไดความยาวของม้วนนี้ — ใช้ตีกรอบว่า "ตัดได้อย่างน้อย/อย่างมากกี่เส้น"
-       ⚠️ ตัด `-roll` ออก ไม่งั้นค่าสูงสุดจะกลายเป็น 820 แล้วช่วงพังทั้งแถว */
+       ⚠️ เอาเฉพาะ **รหัสความยาวของม้วนนี้เอง** (`<ม้วน>-…`) เท่านั้น
+          ม้วนหนึ่งถูกใช้เป็นส่วนประกอบของ **ชุดเลื่อยทั้งเครื่อง** ด้วย (เช่น `00023-24NW`)
+          นับรวมเข้ามา = บันไดเพี้ยนทันที · ของจริง 5 ก.ย. 2569: `00817` ได้บันได 1–69 ฟัน
+          แล้วช่วงจำนวนเส้นออกมา 38–2,679 ซึ่งไร้สาระจนเห็นได้ด้วยตา
+          **แต่ถ้าไม่ได้เปิดดูก็จะไม่มีอะไรฟ้อง** — แถวอื่นดูสมเหตุสมผลหมด
+       ⚠️ ตัด `-roll` ออกด้วย ไม่งั้นค่าสูงสุดกลายเป็น 820 */
     const lens = kids
-      .filter((k) => !k.endsWith("-roll"))
+      .filter((k) => k.startsWith(`${parent}-`) && !k.endsWith("-roll"))
       .map((k) => parentOf.get(k)?.per ?? 0)
       .filter((n) => n > 0);
     const minT = lens.length ? Math.min(...lens) : null;
@@ -799,7 +804,8 @@ export async function reorderPlan(o = {}) {
       teethPerRoll: tpr,
       // ⚠️ ไม่รู้ฟันต่อม้วน ⇒ null ห้ามเดา 820 · มีสามค่าแล้ว และวันหน้าอาจมีอีก
       rolls: tpr ? Math.round((st.have / tpr) * 100) / 100 : null,
-      listings: kids.filter((k) => !k.endsWith("-roll")).length,
+      // จำนวนความยาวที่ลงขาย — เฉพาะรหัสของม้วนนี้เอง ไม่นับชุดเลื่อยที่มีม้วนนี้เป็นส่วนประกอบ
+      listings: lens.length,
       teethUsed: Math.round(used * 10) / 10,
       teethPerDay: Math.round(perDay * 100) / 100,
       /* ── ข้อต่อ ── (เจ้าของร้านให้ตัวเลข 5 ก.ย. 2569: ม้วนหนึ่งแถมข้อต่อ 30 คู่)
