@@ -590,7 +590,42 @@ export async function blockedByNegative() {
     childOf.get(k).push({ sku: String(l.bundle_sku), per: num(l.qty) });
   }
 
-  const roots = goods.map((r) => {
+  /* ── สูตรของตัวเอง ── รหัสที่ติดลบบางตัว **เป็นชุดที่ประกอบตอนมีออเดอร์**
+      เจ้าของร้านยืนยัน 5 ก.ย. 2569: *"ตะไบแพ็ค 3 แพ็คตอนมีออเดอร์"*
+      ⇒ ของแบบนี้ **ตัวเลขจริงคือสูตร ไม่ใช่ช่องสต็อกของตัวเอง**
+        `03409-3` ช่องสต็อกบอก −4 แต่สูตร 03409×3 กับตะไบ 1,511 ตัว ⇒ แพ็คได้ 503
+
+      ⚠️ **ตัวเลขติดลบของรหัสแบบนี้ไม่ใช่ "ปัญหา" แต่เป็น "ตัวเลขที่เชื่อไม่ได้"**
+         ถ้านับรวมเป็นปัญหา รายงานจะบอกให้ไปนับของที่ไม่ต้องนับ
+         และที่แย่กว่าคือ **จะไม่มีใครรู้ว่ามันขายได้ 503** ⇒ ปิดขายต่อไปเรื่อย ๆ
+      ⚠️ แยกเป็นกองของตัวเอง **ห้ามซ่อนทิ้ง** — ช่องสต็อกที่ผิดยังเป็นเรื่องที่ต้องล้างอยู่ดี
+      ⚠️ ถ้าสูตรคำนวณแล้วยัง ≤ 0 (ส่วนประกอบก็ติดลบ) ⇒ กลับไปเป็นปัญหาตามเดิม */
+  const recipeOf = new Map(); // รหัสชุด → [ส่วนประกอบ]
+  for (const l of links) {
+    const b = String(l.bundle_sku ?? "");
+    if (!b) continue;
+    if (!recipeOf.has(b)) recipeOf.set(b, []);
+    recipeOf.get(b).push({ sku: String(l.sku ?? ""), per: num(l.qty) });
+  }
+  const stockOf = new Map(
+    (await coreQuery(`SELECT sku, available FROM products WHERE available IS NOT NULL`))
+      .map((r) => [String(r.sku), num(r.available)])
+  );
+  /** ทำได้กี่ชิ้นตามสูตร — ส่วนประกอบที่ทำได้น้อยที่สุดเป็นตัวกำหนด
+   *  คืน null เมื่อไม่มีสูตร หรือสูตรใช้ไม่ได้ (per ≤ 0 · ไม่รู้จักส่วนประกอบ)
+   *  ⚠️ ไม่รู้ ต้องคืน null **ห้ามคืน 0** — 0 แปลว่า "ทำไม่ได้" ซึ่งเป็นคำตอบคนละอย่าง */
+  const canMakeOf = (sku) => {
+    const parts = recipeOf.get(String(sku));
+    if (!parts?.length) return null;
+    let best = Infinity;
+    for (const p of parts) {
+      if (!(p.per > 0) || !stockOf.has(p.sku)) return null;
+      best = Math.min(best, Math.floor(stockOf.get(p.sku) / p.per));
+    }
+    return Number.isFinite(best) ? best : null;
+  };
+
+  const mk = (r) => {
     const kids = childOf.get(String(r.sku)) ?? [];
     return {
       sku: String(r.sku),
@@ -603,9 +638,26 @@ export async function blockedByNegative() {
       unlocks: kids.length > 0 ? kids.length : 1,
       children: kids.map((k) => k.sku).sort(),
     };
-  });
+  };
+
+  const roots = [];
+  const sellable = []; // ติดลบในช่องสต็อก แต่สูตรบอกว่ายังขายได้
+  for (const r of goods) {
+    const can = canMakeOf(r.sku);
+    if (can !== null && can > 0) {
+      sellable.push({
+        ...mk(r),
+        canMake: can,
+        recipe: recipeOf.get(String(r.sku)).map((p) => ({ sku: p.sku, per: p.per })),
+        why: "ประกอบตอนมีออเดอร์ — ตัวเลขจริงมาจากสูตร ไม่ใช่ช่องสต็อกของตัวเอง",
+      });
+    } else {
+      roots.push(mk(r));
+    }
+  }
   // เรียงตาม "นับแล้วคุ้มที่สุดก่อน" — ปลดล็อกได้เยอะสุดขึ้นก่อน
   roots.sort((a, b) => b.unlocks - a.unlocks || a.available - b.available);
+  sellable.sort((a, b) => b.canMake - a.canMake);
 
   const blockedSkus = roots.reduce((s, r) => s + r.unlocks, 0);
   return {
@@ -616,12 +668,22 @@ export async function blockedByNegative() {
       "แยกด้วยชนิดสินค้า ไม่ได้ดูจากชื่อ",
     roots: roots.length,
     blockedSkus,
-    /* ⚠️ ต้องบวกกลับได้เสมอ: บริการ + สินค้าที่ติดลบ = แถวที่ติดลบทั้งหมด
-        บวกไม่ได้เมื่อไหร่ = มีของหายระหว่างทาง (partial-coverage-reported-as-full) */
-    addsUp: services.length + roots.length === neg.length,
+    /* ⚠️ ต้องบวกกลับได้เสมอ: บริการ + ติดลบจริง + ติดลบแต่ยังขายได้ = แถวที่ติดลบทั้งหมด
+        บวกไม่ได้เมื่อไหร่ = มีของหายระหว่างทาง (partial-coverage-reported-as-full)
+        ⚠️ เพิ่มกองใหม่ต้องมาบวกในบรรทัดนี้ด้วยทุกครั้ง ไม่งั้นตาข่ายจะเงียบ */
+    addsUp: services.length + roots.length + sellable.length === neg.length,
     scope:
       "นับจากทะเบียนสินค้าในคลังเงาทั้งหมด ไม่ใช่เฉพาะที่ลงขายในช่องทางใดช่องทางหนึ่ง · " +
       "blockedSkus = จำนวนรหัสที่ลูกค้าซื้อไม่ได้ ไม่ใช่จำนวนชิ้น",
     rows: roots,
+    /* ── ติดลบแต่ยังขายได้ ── ประกอบตอนมีออเดอร์ ⇒ สูตรเป็นตัวจริง
+        ⚠️ **จอต้องโชว์กองนี้เป็น "โอกาสขาย" ไม่ใช่ "ปัญหา"** — สองคำสั่งคนละอย่าง
+           ปัญหา = ไปนับของ · โอกาส = ไปเปิดขายในช่องทางที่ปิดไว้
+        ⚠️ ช่องสต็อกที่ผิดยังต้องล้างอยู่ดี แต่เป็นงานล้างข้อมูล ไม่ใช่งานนับของ */
+    sellableDespiteNegative: sellable.length,
+    sellableNote:
+      "ติดลบในช่องสต็อกของตัวเอง แต่เป็นของที่ประกอบตอนมีออเดอร์ ⇒ ตัวเลขจริงมาจากสูตร · " +
+      "ไม่ต้องไปนับของ แต่ควรไปเปิดขายในช่องทางที่ปิดไว้ และล้างช่องสต็อกที่ผิดทีหลัง",
+    sellableRows: sellable,
   };
 }
