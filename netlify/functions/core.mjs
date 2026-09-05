@@ -162,6 +162,22 @@ async function route(req, context) {
       return json({ ready: false, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN ที่ Netlify" });
     }
 
+    /* ── ย้ายฐานไปโซนใกล้ฟังก์ชัน ── (5 ก.ย. 2569 เจ้าของร้านสั่งทำคืนนี้)
+       ?d1move=plan|create|schema|copy|verify — **ห้ามข้ามขั้น** ดูลำดับใน lib/d1move.mjs
+       ⚠️ ไม่มีคำสั่งไหนแตะฐานเดิมเลย · สับสวิตช์ทำด้วยการเปลี่ยน env เท่านั้น ไม่ได้อยู่ในโค้ด
+       ⚠️ copy เรียกซ้ำได้ `done:false` = ยังไม่ครบ **ไม่ใช่ล้มเหลว** */
+    if (url.searchParams.get("d1move")) {
+      const step = String(url.searchParams.get("d1move"));
+      const m = await import("../lib/d1move.mjs");
+      const fn = { plan: m.movePlan, create: m.moveCreate, schema: m.moveSchema, copy: m.moveCopy, verify: m.moveVerify }[step];
+      if (!fn) return json({ error: `ไม่รู้จัก d1move=${step}`, accepts: ["plan", "create", "schema", "copy", "verify"] }, 400);
+      return json({
+        ok: true,
+        step,
+        ...(await fn({ table: url.searchParams.get("table"), chunk: url.searchParams.get("chunk") })),
+      });
+    }
+
     /* ฐานข้อมูลอยู่โซนไหน และไกลจากฟังก์ชันแค่ไหน — อ่านอย่างเดียว
        ⚠️ **ถามของจริง ไม่ใช่เชื่อคอมเมนต์** หัวไฟล์ coredb.mjs เขียนว่า APAC มาตลอด
           แต่ไม่เคยมีใครยิงถามสักครั้ง (stale-state-comments) */
