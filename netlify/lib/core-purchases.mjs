@@ -348,18 +348,24 @@ export async function listTransfers(o = {}) {
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
   const filter = q ? `AND (number LIKE ${esc(`%${q}%`)} OR reference LIKE ${esc(`%${q}%`)})` : "";
-  const [sum] = await coreQuery(
-    `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filter}`
-  );
-  // แท็บสถานะ — นับข้ามตัวกรองสถานะเสมอ (กติกาเดียวกับทุกจอ)
-  const byStatus = await coreQuery(
-    `SELECT status, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
-  );
-  const rows = await coreQuery(
-    `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
-     FROM transfers WHERE 1=1 ${filter}
-     ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
-  );
+  /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569) — สามตัวนี้ไม่มีตัวไหนต้องรอกัน
+      ⚠️ CREATE TABLE ข้างบนยังต้องอยู่ก่อนและ await จริง ๆ — ห้ามย้ายลงมาในนี้
+         สามตัวนี้อ่านตารางนั้น ถ้ายังไม่ถูกสร้างจะล้มทั้งชุด */
+  const [sumRows, byStatus, rows] = await Promise.all([
+    coreQuery(
+      `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filter}`
+    ),
+    // แท็บสถานะ — นับข้ามตัวกรองสถานะเสมอ (กติกาเดียวกับทุกจอ)
+    coreQuery(
+      `SELECT status, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
+    ),
+    coreQuery(
+      `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
+       FROM transfers WHERE 1=1 ${filter}
+       ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
+    ),
+  ]);
+  const sum = sumRows[0];
   return {
     total: num(sum?.c),
     oldest: sum?.oldest || null,

@@ -456,12 +456,17 @@ export async function listDeadStock(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
 
-  const [snap] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
-  const day = snap?.d;
+  /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
+      สองตัวนี้ไม่เกี่ยวกัน — "วันถ่ายสต็อกล่าสุด" กับ "ช่วงวันที่มีออเดอร์"
+      ⚠️ ตัวที่เหลือ (sum · rows) ต้องรอ `day` จริง ๆ เพราะเอาไปใส่ใน SQL ⇒ อยู่รอบสอง */
+  const [snapRows, histRows] = await Promise.all([
+    coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`),
+    coreQuery(`SELECT MIN(order_date) AS f, MAX(order_date) AS t FROM orders`),
+  ]);
+  const day = snapRows[0]?.d;
   if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
 
-  const [hist] = await coreQuery(`SELECT MIN(order_date) AS f, MAX(order_date) AS t FROM orders`);
-  const historyFrom = hist?.f || null;
+  const historyFrom = histRows[0]?.f || null;
   // ⚠️ นับวันจาก "วันที่ถ่ายสต็อก" ไม่ใช่วันนี้ — สองค่านี้ไม่จำเป็นต้องเป็นวันเดียวกัน
   const cut = new Date(new Date(`${day}T00:00:00Z`).getTime() - days * 864e5)
     .toISOString()
@@ -469,7 +474,9 @@ export async function listDeadStock(o = {}) {
   const enoughHistory = Boolean(historyFrom) && historyFrom <= cut;
 
   const where = `cur.qty > 0 AND COALESCE(p.product_type,'') <> 'Service'`;
-  const [sum] = await coreQuery(
+  // ⚠️ สองตัวนี้ใช้เงื่อนไขชุดเดียวกัน ต่างกันแค่ "นับ" กับ "ดึงแถว" ⇒ ไม่ต้องรอกัน
+  const [sumRows, rows] = await Promise.all([
+    coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
      FROM stock_snapshots cur
      LEFT JOIN products p ON p.sku = cur.sku
@@ -478,8 +485,8 @@ export async function listDeadStock(o = {}) {
                 GROUP BY sku) s ON s.sku = cur.sku
      WHERE cur.day = ${esc(day)} AND ${where}
        AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})`
-  );
-  const rows = await coreQuery(
+  ),
+    coreQuery(
     `SELECT cur.sku AS sku, COALESCE(NULLIF(p.name,''), cur.name) AS name,
             COALESCE(p.category,'') AS category, s.last_sold AS lastSoldAt,
             cur.qty AS onhand, ROUND(cur.qty * cur.price, 2) AS value, cur.price AS price
@@ -492,7 +499,9 @@ export async function listDeadStock(o = {}) {
        AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})
      ORDER BY (cur.qty * cur.price) DESC, cur.sku
      LIMIT ${limit} OFFSET ${offset}`
-  );
+  ),
+  ]);
+  const sum = sumRows[0];
   return {
     day,
     days,
@@ -546,61 +555,71 @@ export async function stockCard(o = {}) {
   const kind = known ? asked : "all";
   const want = KINDS[kind];
 
-  const rows = [];
-  if (want.includes("sale")) {
-    for (const r of await coreQuery(
-      `SELECT o.order_date AS date, 'ขาย' AS kind, o.status AS status,
-              o.number AS ref, o.customer AS party, -oi.qty AS qty, oi.amount AS amount
-       FROM order_items oi JOIN orders o ON o.id = oi.order_id
-       WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}
-       ORDER BY o.order_date DESC LIMIT ${limit}`
-    )) rows.push(r);
-  }
-  if (want.includes("buy")) {
-    for (const r of await coreQuery(
-      `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
-              i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
-       FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
-       WHERE i.sku = ${esc(sku)}
-       ORDER BY po.po_date DESC LIMIT ${limit}`
-    )) rows.push(r);
-  }
-  if (want.includes("adjust")) {
-    for (const r of await coreQuery(
-      `SELECT date(at, '+7 hours') AS date, 'ปรับ (ของเราเอง)' AS kind, reason AS status,
-              ref AS ref, '' AS party, qty AS qty, NULL AS amount
-       FROM stock_moves WHERE sku = ${esc(sku)}
-       ORDER BY at DESC LIMIT ${limit}`
-    ).catch(() => [])) rows.push(r);
-  }
+  /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — เจ้าของร้านบอกว่าหลังร้านช้าทุกเมนู)
+      ของเดิมยิง D1 **6 รอบเรียงกัน** (3 รอบดึงแถว + 3 รอบนับ) ทั้งที่ไม่มีตัวไหนต้องรอกันเลย
+      D1 อยู่ไกล หนึ่งรอบไป-กลับราว 0.3–0.5 วิ ⇒ เสียเวลาฟรี ๆ ราว 2 วิ
+      ⚠️ ตัวที่แตะ `stock_moves` ต้องมี .catch ของตัวเอง (ตารางอาจยังไม่ถูกสร้าง)
+         **ห้ามใช้ try/catch ครอบทั้งก้อน** — มันจะกลืน error ของเพื่อนใน Promise.all ไปด้วย
+      ⚠️ ลำดับของ rows ไม่สำคัญ เพราะเรียงใหม่ด้านล่างอยู่แล้ว */
+  const wantSale = want.includes("sale");
+  const wantBuy = want.includes("buy");
+  const wantAdjust = want.includes("adjust");
+  const none = () => Promise.resolve([]);
 
+  const [saleRows, buyRows, adjRows, saleCnt, buyCnt, adjCnt] = await Promise.all([
+    wantSale
+      ? coreQuery(
+          `SELECT o.order_date AS date, 'ขาย' AS kind, o.status AS status,
+                  o.number AS ref, o.customer AS party, -oi.qty AS qty, oi.amount AS amount
+           FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}
+           ORDER BY o.order_date DESC LIMIT ${limit}`
+        )
+      : none(),
+    wantBuy
+      ? coreQuery(
+          `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
+                  i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
+           FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
+           WHERE i.sku = ${esc(sku)}
+           ORDER BY po.po_date DESC LIMIT ${limit}`
+        )
+      : none(),
+    wantAdjust
+      ? coreQuery(
+          `SELECT date(at, '+7 hours') AS date, 'ปรับ (ของเราเอง)' AS kind, reason AS status,
+                  ref AS ref, '' AS party, qty AS qty, NULL AS amount
+           FROM stock_moves WHERE sku = ${esc(sku)}
+           ORDER BY at DESC LIMIT ${limit}`
+        ).catch(() => [])
+      : none(),
+    /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
+        เดิมดึงแต่ละแหล่ง LIMIT เท่ากัน แล้วรวม-เรียง-ตัด ⇒ ใบซื้อ 4 ใบที่เก่ากว่า
+        ถูกดันตกหมดเมื่อใบขายเต็มเพดาน · จอเขียนว่า "รายการซื้อขายทั้งหมด"
+        แต่แสดงใบขายล้วน ⇒ **อ่านได้ว่ารหัสนี้ไม่เคยซื้อเข้าเลย ทั้งที่ซื้อ 4 ครั้ง**
+        ⇒ ส่งจำนวนจริงไปด้วย จอจะได้เขียน "แสดง 100 จาก N" แทนการเดาจากการชนเพดาน */
+    wantSale
+      ? coreQuery(
+          `SELECT COUNT(*) AS c FROM order_items oi JOIN orders o ON o.id = oi.order_id
+           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}`
+        )
+      : none(),
+    wantBuy
+      ? coreQuery(`SELECT COUNT(*) AS c FROM purchase_order_items WHERE sku = ${esc(sku)}`)
+      : none(),
+    wantAdjust
+      ? coreQuery(`SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`).catch(() => [{ c: 0 }])
+      : none(),
+  ]);
+
+  const rows = [...saleRows, ...buyRows, ...adjRows];
   rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
 
-  /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
-      เดิมดึงแต่ละแหล่ง LIMIT เท่ากัน แล้วรวม-เรียง-ตัด ⇒ ใบซื้อ 4 ใบที่เก่ากว่า
-      ถูกดันตกหมดเมื่อใบขายเต็มเพดาน · จอเขียนว่า "รายการซื้อขายทั้งหมด"
-      แต่แสดงใบขายล้วน ⇒ **อ่านได้ว่ารหัสนี้ไม่เคยซื้อเข้าเลย ทั้งที่ซื้อ 4 ครั้ง**
-      ⇒ ส่งจำนวนจริงไปด้วย จอจะได้เขียน "แสดง 100 จาก N" แทนการเดาจากการชนเพดาน */
-  const counts = { sale: 0, buy: 0, adjust: 0 };
-  if (want.includes("sale")) {
-    const [c] = await coreQuery(
-      `SELECT COUNT(*) AS c FROM order_items oi JOIN orders o ON o.id = oi.order_id
-       WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}`
-    );
-    counts.sale = num(c?.c);
-  }
-  if (want.includes("buy")) {
-    const [c] = await coreQuery(
-      `SELECT COUNT(*) AS c FROM purchase_order_items WHERE sku = ${esc(sku)}`
-    );
-    counts.buy = num(c?.c);
-  }
-  if (want.includes("adjust")) {
-    const [c] = await coreQuery(
-      `SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`
-    ).catch(() => [{ c: 0 }]);
-    counts.adjust = num(c?.c);
-  }
+  const counts = {
+    sale: num(saleCnt[0]?.c),
+    buy: num(buyCnt[0]?.c),
+    adjust: num(adjCnt[0]?.c),
+  };
   const total = counts.sale + counts.buy + counts.adjust;
   const shown = Math.min(rows.length, limit);
   return {
