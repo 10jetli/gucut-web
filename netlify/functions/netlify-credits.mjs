@@ -46,9 +46,21 @@ export default async function handler(req, context) {
     const usage = await usageRes.json();
     const acc = accRes.ok ? await accRes.json() : {};
 
+    /* ⚠️ **"ไม่มีข้อมูลมา" กับ "ใช้ไป 0" คนละเรื่องกัน** (เจอของจริง 5 ก.ย. 2569 คืน)
+        Netlify ตอบ 200 พร้อม object ว่าง ⇒ ของเดิมบวกได้ 0 แล้วรายงานว่า
+        **"ใช้ไป 0 เหลือ 15,000"** อย่างมั่นใจ ทั้งที่ชั่วโมงก่อนหน้าเพิ่งอ่านได้ 7,099
+        ⇒ ถ้าเชื่อ จะเข้าใจว่าเครดิตรีเซ็ตแล้ว deploy ได้ตามสบาย ซึ่งตรงข้ามกับความจริง
+        ⚠️ และของเดิม **เขียนทับแคชด้วยศูนย์** ⇒ ค่าดี ๆ ที่เคยอ่านได้หายไปด้วย
+        ⇒ ไม่มีคีย์เลย = อ่านไม่ได้ · มีคีย์แต่เป็นศูนย์ = ใช้ไป 0 จริง (ต้นรอบบิล) */
+    const entries = Object.entries(usage || {});
+    if (!entries.length) {
+      if (cached) return json({ ...cached, stale: true, note: "Netlify ไม่ส่งข้อมูลการใช้งานมา — นี่คือค่าที่อ่านได้ครั้งล่าสุด ไม่ใช่ค่าสด" });
+      return json({ unknown: true, note: "Netlify ตอบ 200 แต่ไม่มีข้อมูลการใช้งาน — อ่านไม่ได้ ไม่ใช่ใช้ไป 0" }, 502);
+    }
+
     let used = 0;
     const parts = [];
-    for (const [k, v] of Object.entries(usage || {})) {
+    for (const [k, v] of entries) {
       const c = Number(v?.credits_used) || 0;
       used += c;
       if (c > 0) parts.push([k, Math.round(c * 10) / 10]);
