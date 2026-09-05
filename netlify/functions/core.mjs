@@ -24,7 +24,7 @@ import {
   deleteVoidedSale, createSale, voidSale, listSales, branches, lookup, posCats, listCategories,
 } from "../lib/pos.mjs";
 import {
-  syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems,
+  syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems, blockedByNegative,
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
@@ -269,6 +269,14 @@ export default async function handler(req, context) {
     // สินค้าเป็นชุด (Bundle) — 360 ชุดที่ร้านใช้จริง
     if (url.searchParams.get("syncbundles")) {
       return json({ ok: true, bundles: await syncBundles() });
+    }
+    /* สินค้าที่ลูกค้าซื้อไม่ได้เพราะสต็อกติดลบ — เรียงตาม "นับตัวนี้แล้วปลดล็อกได้กี่รหัส"
+         GET /api/core?blocked=1
+       ⚠️ อ่านอย่างเดียว ไม่แก้สต็อกให้ — ติดลบแปลว่าของจริงกับในระบบไม่ตรง แก้ได้ด้วยการนับเท่านั้น
+       ⚠️ ของหนึ่งม้วนติดลบทำให้รหัสความยาวหลายสิบรหัสหายจากหน้าร้านพร้อมกัน
+          และ **ไม่มีอะไรฟ้องเลย** — สินค้าไม่ได้ขึ้นว่า "หมด" แต่หายไปทั้งตัว */
+    if (url.searchParams.get("blocked")) {
+      return json({ ok: true, ...(await blockedByNegative()) });
     }
     if (url.searchParams.get("list") === "bundles") {
       return json({
