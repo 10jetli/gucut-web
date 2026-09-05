@@ -28,6 +28,13 @@ const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID || "f496328a3fb6eac88b6ff64eb4
 const SRC = process.env.CORE_D1_ID || "a4007558-23ba-41df-8311-1c674ff12ae5";
 const NEW_NAME = "gucut-core-us";
 
+/* ── บันทึกการสับสวิตช์ 5 ก.ย. 2569 22:04 น. ──
+   `CORE_D1_ID` ที่ Netlify เปลี่ยนเป็น `0b8ead77-…` (gucut-core-us · โซนอเมริกา) แล้ว
+   วัดก่อนสับ 4 รอบ: ฐานเก่า 286/291/297/308 ms · ฐานใหม่ 61/63/65/66 ms ⇒ เร็วขึ้น ~4.6 เท่า
+   ⚠️ **ฐานเก่า `a4007558-…` ยังอยู่ครบ ไม่ถูกแตะเลย** — ถอยกลับ = เปลี่ยน env กลับแล้ว deploy
+   ⚠️ **คอมมิตเปล่าไม่ทำให้ Netlify build ใหม่** (พิสูจน์แล้วคืนนี้ รอ 12 นาทีไม่ขยับ)
+      ⇒ ต้องมีไฟล์เปลี่ยนจริงถึงจะได้ deploy ที่หยิบ env ตัวใหม่ไปใช้ */
+
 /* ⚠️ โซนของฐานใหม่ต้องตรงกับโซนที่ **ฟังก์ชัน** รันอยู่ ไม่ใช่โซนที่ร้านตั้งอยู่
     Netlify Functions รันบน AWS ฝั่งตะวันออกของอเมริกา (us-east-1/us-east-2)
     ⇒ enam = Eastern North America · ตัว ?d1move=plan รายงาน AWS_REGION จริงมาให้ตรวจซ้ำ
