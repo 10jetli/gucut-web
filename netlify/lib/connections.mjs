@@ -251,14 +251,47 @@ export async function connectionsStatus(opts = {}) {
     tokenRefresh = row
       ? {
           atUtc: row.at ?? null,
+          /* ⚠️ **ก้อนนี้คือ "บันทึกของรอบ 03:30" ไม่ใช่สถานะสด** (ฝั่งจอทักมา 5 ก.ย. 2569)
+              ค่า `hoursLeft` ที่ตัวต่ออายุจดไว้ ถูกคิดตอน 03:30 แล้ว **ไม่มีอะไรอัปเดตมันอีกเลย**
+              ⇒ บ่ายสองก็ยังเขียนว่า "เหลือ 3 ชั่วโมง" ทั้งที่เวลานั้นผ่านไปแล้ว
+                 คนอ่านจะเห็นเวลาหมดอายุที่เลยมาแล้ว แล้วนึกว่าระบบพัง ทั้งที่ต่ออายุไปเรียบร้อย
+                 (ของจริงตอนนั้น: ยิง Shopee ผ่าน 5 รอบรวด ⇒ token ใช้ได้ปกติ)
+              ⇒ คิด `hoursLeft` ใหม่จาก `expiresAtUtc` ตอนอ่านเสมอ + ติดธง `expired`
+              ⚠️ **ห้ามเอาก้อนนี้ไปใช้ตอบว่า "ตอนนี้เชื่อมอยู่ไหม"** — ใช้การ์ดใน `groups` ซึ่งยิงตรวจสด
+                 ค่า `connected` ในนี้เป็นความจริงของ 03:30 เท่านั้น ⇒ เปลี่ยนชื่อให้ชัดว่า `connectedAtRun`
+              ดูกฎ computed-now-goes-stale */
           result: (() => {
+            let v;
             try {
-              return JSON.parse(row.v || "{}");
+              v = JSON.parse(row.v || "{}");
             } catch {
               return null;
             }
+            if (!v || typeof v !== "object") return v ?? null;
+            const now = Date.now();
+            for (const [k, o] of Object.entries(v)) {
+              if (!o || typeof o !== "object") continue;
+              if ("connected" in o) {
+                o.connectedAtRun = o.connected;
+                delete o.connected;
+              }
+              const exp = o.expiresAtUtc ? Date.parse(o.expiresAtUtc) : NaN;
+              if (Number.isFinite(exp)) {
+                o.hoursLeft = Math.round((exp - now) / 3600000);
+                o.expired = exp <= now;
+              } else if ("hoursLeft" in o) {
+                // ไม่มีวันหมดอายุให้คิดใหม่ ⇒ ค่าที่จดไว้เชื่อไม่ได้ ทิ้งดีกว่าโชว์ค่าที่เก่า
+                delete o.hoursLeft;
+                o.hoursLeftNote = "ไม่มี expiresAtUtc ให้คิดใหม่ — ค่าที่จดไว้ตอนรันเก่าไปแล้ว";
+              }
+              void k;
+            }
+            return v;
           })(),
-          note: "เวลาเป็น UTC · ตัวต่ออายุวิ่งวันละครั้ง 03:30 น. เวลาไทย",
+          note:
+            "เวลาเป็น UTC · ตัวต่ออายุวิ่งวันละครั้ง 03:30 น. เวลาไทย · " +
+            "ก้อนนี้คือบันทึกของรอบนั้น ไม่ใช่สถานะสด — hoursLeft/expired คิดใหม่ตอนอ่านแล้ว " +
+            "แต่ connectedAtRun เป็นความจริงของตอนรันเท่านั้น อยากรู้ว่าตอนนี้เชื่อมอยู่ไหมให้ดู groups",
         }
       : { atUtc: null, note: "ยังไม่เคยวิ่งสักครั้ง (หรือยังไม่ถึงรอบแรก)" };
   } catch {
