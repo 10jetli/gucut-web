@@ -9,7 +9,11 @@
 //    ฐานแรกเผลอสร้างผ่าน MCP ไปตกบัญชีเก่า (28f8e8c7...) เลิกใช้แล้ว —
 //    ฐานจริงสร้างใหม่ผ่าน dashboard บัญชี 10jetli (30 ส.ค. 2569)
 const ACCOUNT = process.env.CLOUDFLARE_ACCOUNT_ID || "f496328a3fb6eac88b6ff64eb4b52fd3";
-const DB_ID = process.env.CORE_D1_ID || "a4007558-23ba-41df-8311-1c674ff12ae5";
+/* ⚠️ **ค่าสำรองต้องเป็นฐานที่ใช้อยู่จริงเสมอ** (แก้ 5 ก.ย. 2569 หลังย้ายโซน)
+    เดิมค่าสำรองเป็นฐานเก่า `a4007558-…` (โซน APAC) ⇒ วันไหน env หลุดไปสัก context เดียว
+    ฟังก์ชันจะ**เงียบ ๆ ไปอ่านฐานเก่า** แล้วเราจะเห็นข้อมูลสองชุดแยกกันโดยไม่รู้ตัว
+    (ฝั่งจอชี้จุดนี้เอง 5 ก.ย. — ของที่ไม่ล้มแต่ชี้ผิดที่ อันตรายกว่าของที่ล้ม) */
+const DB_ID = process.env.CORE_D1_ID || "0b8ead77-4890-4ab7-a1e8-38936305feca";
 
 export function coreReady() {
   return !!process.env.CLOUDFLARE_D1_TOKEN;
