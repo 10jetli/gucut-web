@@ -1868,21 +1868,58 @@ export default async function handler(req, context) {
       return json({ ok: true, ...orders, channels });
     }
 
-    // สถานะรวม
-    const [counts] = await coreQuery(
-      `SELECT (SELECT COUNT(*) FROM orders) AS orders,
-              (SELECT COUNT(*) FROM order_items) AS items,
-              (SELECT COUNT(*) FROM stock_snapshots) AS snapshots`
-    );
-    const recon = await coreQuery(`SELECT * FROM recon_log ORDER BY day DESC LIMIT 7`);
-    const channels = await coreQuery(
-      `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
-       FROM orders GROUP BY channel ORDER BY amount DESC LIMIT 20`
-    );
-    // เทียบ 3 ทางฝั่ง Shopee (แผนลับขั้น 3 — ระยะรันคู่) · ตารางยังไม่มี = ส่ง [] เฉย ๆ
-    const shopee = await shopeeRecon(7).catch(() => []);
-    // สมุดเทียบสต็อก (แผนลับขั้น 1) — ตารางยังไม่ได้สร้าง = ส่ง [] ไม่ล้มทั้งหน้า
-    const stock = await stockReconLog(14).catch(() => []);
+    /* ── ⛔ `list=` ที่ไม่รู้จัก ต้องตอบ 400 ห้ามตกมาถึงตัวสรุปหน้าแรก ──
+       (ฝั่งจอจับได้ 5 ก.ย. 2569 — และมันจับได้เพราะ **แกะ body ดูจริง** ไม่ใช่ดูแค่ 200)
+       ของเดิม `list=` ที่สะกดผิดหรือยังไม่ deploy จะร่วงมาถึงบรรทัดล่างนี้เงียบ ๆ
+       แล้วได้ **200 พร้อมข้อมูลคนละชุด** (ready/counts/recon/channels/shopee/stock)
+       ⇒ จอเห็น `stores` เป็น undefined · จอที่กัน `Array.isArray` ไว้ (คือทุกจอ)
+          จะวาด "ยังไม่มียอด" อย่างสงบ **ไม่มี error ไม่มีอะไรฟ้อง**
+       ⇒ คนไล่บั๊กจะไปนั่งหาที่ฝั่งข้อมูล ทั้งที่ความจริงคือพิมพ์ชื่อเส้นผิดตัวเดียว
+
+       ⚠️ **การตัดสินใจอยู่ที่ "มาถึงบรรทัดนี้ = ไม่รู้จัก" ไม่ได้อยู่ที่รายชื่อข้างล่าง**
+          รายชื่อมีไว้ **เขียนข้อความบอกทางเท่านั้น** ⇒ ต่อให้ลืมอัปเดตรายชื่อ
+          เส้นที่มีอยู่จริงก็ยังทำงานปกติ (มันคืนค่าไปก่อนถึงตรงนี้แล้ว)
+          ถ้าเอาไปเช็คหัวฟังก์ชันแทน ลืมเติมชื่อครั้งเดียว = ปิดเส้นที่ใช้งานอยู่ทันที */
+    const listArg = p.get("list");
+    if (listArg) {
+      const known = [
+        "branches", "bundleitems", "bundles", "categories", "channel-gaps", "contacts",
+        "deadstock", "logistics", "missing-sku", "moves", "orderfacets", "orders",
+        "poscats", "purchaseitems", "purchases", "quotations", "sales", "stock",
+        "stockcard", "topproducts", "transfers", "warehouses",
+      ];
+      return json(
+        {
+          error: `ไม่รู้จัก list=${listArg}`,
+          hint: "สะกดผิด หรือเป็นเส้นที่ยังไม่ได้ deploy ขึ้นเว็บ",
+          accepts: known,
+        },
+        400
+      );
+    }
+
+    /* ── สถานะรวม (หน้าแรกหลังร้าน) ──
+       ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — วัดจริง 3.1 วิ ทั้งที่ตอบ 3.3 KB)
+          ห้าตัวนี้ไม่มีตัวไหนต้องรอผลของอีกตัวเลย
+       ⚠️ สองตัวท้ายมี .catch เป็น [] เพราะตารางอาจยังไม่ถูกสร้าง — **ห้ามถอด**
+          ล้มตัวเดียวจะลากทั้งหน้าแรกตาย */
+    const [countsRows, recon, channels, shopee, stock] = await Promise.all([
+      coreQuery(
+        `SELECT (SELECT COUNT(*) FROM orders) AS orders,
+                (SELECT COUNT(*) FROM order_items) AS items,
+                (SELECT COUNT(*) FROM stock_snapshots) AS snapshots`
+      ),
+      coreQuery(`SELECT * FROM recon_log ORDER BY day DESC LIMIT 7`),
+      coreQuery(
+        `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+         FROM orders GROUP BY channel ORDER BY amount DESC LIMIT 20`
+      ),
+      // เทียบ 3 ทางฝั่ง Shopee (แผนลับขั้น 3 — ระยะรันคู่) · ตารางยังไม่มี = ส่ง [] เฉย ๆ
+      shopeeRecon(7).catch(() => []),
+      // สมุดเทียบสต็อก (แผนลับขั้น 1) — ตารางยังไม่ได้สร้าง = ส่ง [] ไม่ล้มทั้งหน้า
+      stockReconLog(14).catch(() => []),
+    ]);
+    const counts = countsRows?.[0];
     return json({ ready: true, counts, recon, channels, shopee, stock });
   } catch (e) {
     return json({ error: String(e?.message || e) }, 500);

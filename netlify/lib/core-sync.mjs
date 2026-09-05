@@ -264,28 +264,39 @@ export async function reconYesterday() {
   if (!coreReady()) return { skip: "no token" };
   const day = thaiDayOffset(1);
 
-  // ตัวเลขฝั่ง ZORT — ดึงสดเฉพาะวันเมื่อวาน นับแบบไม่รวมใบยกเลิก
-  let zortOrders = 0;
-  let zortAmount = 0;
-  for (const st of stores()) {
+  /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — วัดจริงได้ 6.1 วิ ทั้งที่ตอบแค่ 123 ไบต์)
+      สามอย่างนี้ไม่มีตัวไหนต้องรอผลของอีกตัว: ZORT ร้านที่ 1 · ZORT ร้านที่ 2 · ตัวเลขฝั่งเรา
+      ⚠️ **การนับต้องแยกกันต่อร้าน** — `seen` เดิมสร้างใหม่ทุกร้านอยู่แล้ว (กันเลขที่ซ้ำ "ในร้านเดียวกัน")
+         ถ้าเผลอย้ายมาใช้ Set ก้อนเดียวข้ามร้าน จะกลายเป็นตัดใบของอีกร้านทิ้งเมื่อเลขที่บังเอิญตรงกัน
+         ⇒ ยอดหายเงียบ ๆ แล้วหน้าเทียบยอดจะบอกว่า "ZORT น้อยกว่าเรา" ทั้งที่ของเราถูก
+      ⚠️ การบันทึกลง recon_log ยังต้องอยู่หลังทั้งหมด (ลำดับสำคัญ) — ห้ามย้ายเข้ามาในนี้ */
+  const countStore = async (st) => {
     const raw = await fetchOrders(st, day, day);
     const seen = new Set();
+    let orders = 0;
+    let amount = 0;
     for (const o of raw) {
       if (!o?.number || seen.has(o.number)) continue;
       seen.add(o.number);
       if (CANCELLED.test(String(o.status))) continue;
       if (orderDay(o) !== day) continue;
-      zortOrders += 1;
-      zortAmount += num(o.amount);
+      orders += 1;
+      amount += num(o.amount);
     }
-  }
+    return { orders, amount };
+  };
 
-  // ตัวเลขฝั่ง Core
-  const rows = await coreQuery(
-    `SELECT COUNT(*) AS c, COALESCE(SUM(amount),0) AS s FROM orders
-     WHERE order_date = ? AND status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`,
-    [day]
-  );
+  const [perStore, rows] = await Promise.all([
+    Promise.all(stores().map(countStore)),
+    // ตัวเลขฝั่ง Core
+    coreQuery(
+      `SELECT COUNT(*) AS c, COALESCE(SUM(amount),0) AS s FROM orders
+       WHERE order_date = ? AND status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`,
+      [day]
+    ),
+  ]);
+  const zortOrders = perStore.reduce((a, b) => a + b.orders, 0);
+  const zortAmount = perStore.reduce((a, b) => a + b.amount, 0);
   const coreOrders = num(rows[0]?.c);
   const coreAmount = num(rows[0]?.s);
 
