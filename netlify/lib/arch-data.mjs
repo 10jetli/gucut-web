@@ -1,12 +1,12 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-04T15:06:22.087Z",
+  "generatedAt": "2026-09-05T11:12:52.934Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
   "functions": {
-    "count": 48,
+    "count": 50,
     "scheduled": [
       {
         "name": "backup-run",
@@ -21,12 +21,20 @@ export const ARCH = {
         "cron": "13,43 * * * *"
       },
       {
+        "name": "live-sweep",
+        "cron": "0 19 * * *"
+      },
+      {
         "name": "permit-remind",
         "cron": "30 2 * * *"
       },
       {
         "name": "shopee-reviews-pull",
         "cron": "20 17 * * *"
+      },
+      {
+        "name": "token-refresh",
+        "cron": "30 20 * * *"
       }
     ]
   },
@@ -57,6 +65,7 @@ export const ARCH = {
       "bundles",
       "category_values",
       "contacts",
+      "core_meta",
       "order_items",
       "orders",
       "products",
