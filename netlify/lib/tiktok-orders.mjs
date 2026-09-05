@@ -270,8 +270,20 @@ export async function tiktokReconYesterdayLine() {
   const r = rows.find((x) => x.day === day);
   if (!r) return null;
   const flag = r.match ? "✅" : "❗ต่างกัน";
+  /* ⚠️ ฝั่ง ZORT คัดด้วย `LIKE '%TikTok%'` — เป็นการจัดประเภทด้วยสตริงย่อยเหมือนฝั่ง Shopee
+      วันนี้ (6 ก.ย. 2569) ในกระจกมีชื่อเดียวคือ 'TIKTOK' จึงยังปลอดภัย
+      แต่ถ้ามีช่องทางชื่ออื่นที่มีคำว่า TikTok โผล่มา (เช่นร้านอื่น) จะถูกนับรวมเงียบ ๆ
+      ⇒ ใช้ตัวจับตัวเดียวกับฝั่ง Shopee — เจอมากกว่าหนึ่งชื่อเมื่อไหร่ให้เตือนในข้อความเลย */
+  const { zortChannelsOn } = await import("./shopee-orders.mjs");
+  const chans = await zortChannelsOn(day, "TikTok").catch(() => []);
+  const extra =
+    chans.length > 1
+      ? `\n   ⚠️ ฝั่ง ZORT วันนี้นับจาก ${chans.length} ช่องทาง: ` +
+        chans.map((c) => `${c.channel} ${c.orders}`).join(" · ") +
+        " — เช็คว่าเป็นร้านเราทุกช่องทางไหม"
+      : "";
   return (
     `🎵 TikTok ตรง API: ${r.api_orders} ใบ · ฿${num(r.api_amount).toLocaleString("th-TH")} ` +
-    `| ZORT: ${r.zort_orders} ใบ · ฿${num(r.zort_amount).toLocaleString("th-TH")} ${flag}`
+    `| ZORT: ${r.zort_orders} ใบ · ฿${num(r.zort_amount).toLocaleString("th-TH")} ${flag}${extra}`
   );
 }

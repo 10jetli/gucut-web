@@ -186,14 +186,44 @@ export async function shopeeRecon(daysBack = 7) {
 }
 
 /** บรรทัดสรุปของเมื่อวานสำหรับพ่วงท้าย Telegram ยาม recon (คืน null ถ้าไม่มีข้อมูล) */
+/* ⚠️ **ฝั่ง ZORT ของการเทียบนี้คัดด้วย `LIKE \'%Shopee%\'` ซึ่งเป็นการจัดประเภทด้วยสตริงย่อย**
+    (กติกาที่เราห้ามตัวเองไว้ — [[no-substring-classification]])
+    ตรวจของจริง 6 ก.ย. 2569: ในกระจกมีช่องทางชื่อ **\'ZAMA Shopee\' 134 ใบ** อยู่ด้วย
+    ⇒ ถ้าช่องทางนั้นกลับมามีบิลเมื่อไหร่ **ฝั่ง ZORT จะบวมขึ้นเงียบ ๆ** แล้วดูเหมือน
+      "API ดึงมาไม่ครบ" ทั้งที่ความจริงคือเรานับของร้านอื่นเข้ามา
+    ตอนนี้ยังไม่กัด (30 วันล่าสุดไม่มีบิลของช่องทางนั้นเลย) จึง **ยังไม่เปลี่ยนวิธีคัด**
+    เพราะเส้นนี้ร้านใช้จริงทุกวัน — แต่ **ต้องมีตัวจับไว้ก่อน** ไม่ใช่รอให้เจอตอนตัวเลขเพี้ยน
+    ⇒ นับช่องทางที่ถูกคัดเข้ามาจริงในวันนั้น ถ้ามีมากกว่าหนึ่งชื่อ ให้ต่อท้ายข้อความเตือน */
+async function zortChannelsOn(day, likeWord) {
+  const rows = await coreQuery(
+    `SELECT channel, COUNT(*) AS c FROM orders
+     WHERE order_date = ? AND channel LIKE ? AND ${CANCEL_FREE}
+     GROUP BY channel ORDER BY c DESC`,
+    [day, `%${likeWord}%`]
+  ).catch(() => []);
+  return rows.map((r) => ({ channel: String(r.channel ?? ""), orders: num(r.c) }));
+}
+
+const CANCEL_FREE =
+  `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+
 export async function shopeeReconYesterdayLine() {
   const day = new Date(Date.now() + 7 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
   const rows = await shopeeRecon(14);
   const r = rows.find((x) => x.day === day);
   if (!r) return null;
   const flag = r.match ? "✅" : "❗ต่างกัน";
+  const chans = await zortChannelsOn(day, "Shopee");
+  const extra =
+    chans.length > 1
+      ? `\n   ⚠️ ฝั่ง ZORT วันนี้นับจาก ${chans.length} ช่องทาง: ` +
+        chans.map((c) => `${c.channel} ${c.orders}`).join(" · ") +
+        " — เช็คว่าเป็นร้านเราทุกช่องทางไหม"
+      : "";
   return (
     `🛒 Shopee ตรง API: ${r.api_orders} ใบ · ฿${num(r.api_amount).toLocaleString("th-TH")} ` +
-    `| ZORT: ${r.zort_orders} ใบ · ฿${num(r.zort_amount).toLocaleString("th-TH")} ${flag}`
+    `| ZORT: ${r.zort_orders} ใบ · ฿${num(r.zort_amount).toLocaleString("th-TH")} ${flag}${extra}`
   );
 }
+
+export { zortChannelsOn };
