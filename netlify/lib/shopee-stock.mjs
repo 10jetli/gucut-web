@@ -223,11 +223,24 @@ export async function shopeeStockCompare() {
   const t = await validToken();
   if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
 
-  const rows = await shopeeStock();
+  /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — วัดจริง 6.7 วิ)
+      ของ Shopee (ยิงออกเน็ต) · วันล่าสุดของภาพถ่าย · สูตรชุด — **ไม่มีตัวไหนต้องรอกัน**
+      ตัวที่ต้องรอจริงมีตัวเดียวคือแถวภาพถ่าย เพราะต้องรู้ `day` ก่อน ⇒ อยู่รอบสอง
+      ⚠️ สูตรชุดต้องมี .catch ของตัวเอง (ตารางอาจยังไม่มี) **ห้ามให้ล้มลากทั้งการเทียบ**
+         ของเดิมใช้ try/catch ครอบ ซึ่งกลืน error ของเพื่อนใน Promise.all ไปด้วยถ้าเผลอครอบทั้งก้อน */
+  const [rows, dayRows, rec] = await Promise.all([
+    shopeeStock(),
+    coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`),
+    coreQuery(
+      `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
+       FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
+       WHERE b.active = 1`
+    ).catch(() => []), // ไม่มีตารางสูตร = ถอยไปใช้วิธีเดิม ห้ามล้ม
+  ]);
   const withSku = rows.filter((r) => r.sku);
 
   // ภาพถ่ายสต็อกล่าสุดของเรา (ถ่ายตี 1 จากแคช ZORT)
-  const day = (await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`))[0]?.d;
+  const day = dayRows[0]?.d;
   if (!day) {
     return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", shopeeSkus: withSku.length };
   }
@@ -246,13 +259,8 @@ export async function shopeeStockCompare() {
         **ระบุตัวด้วยสูตร · คิดจำนวนจากม้วนแม่จริง**
      ⚠️ ห้ามใช้ bundles.available เป็นตัวเลข — เพี้ยนจากม้วนจริง −1.8% ถึง +1.5%
         และเพี้ยนไม่เท่ากันแต่ละตระกูล (ดู handoff หัวข้อกับดักแผนดันสต็อก) */
-  let recipe = new Map();
-  try {
-    const rec = await coreQuery(
-      `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
-       FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
-       WHERE b.active = 1`
-    );
+  const recipe = new Map();
+  {
     const count = new Map();
     for (const r of rec) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
     for (const r of rec) {
@@ -261,8 +269,6 @@ export async function shopeeStockCompare() {
       const per = num(r.per);
       if (per > 0 && r.base) recipe.set(k, { base: String(r.base).trim(), per });
     }
-  } catch {
-    // ไม่มีตารางสูตร = ถอยไปใช้วิธีเดิม ห้ามล้ม
   }
 
   const diff = [];
