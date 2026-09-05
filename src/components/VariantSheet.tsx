@@ -7,6 +7,7 @@ import { addToCart, setBuyNow } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
 import Portal from "./Portal";
+import ChainSizeFinder from "./ChainSizeFinder";
 import { track } from "@/lib/track";
 
 // Bottom sheet เลือกตัวเลือกสินค้า สไตล์ Shopee / TikTok Shop
@@ -113,6 +114,20 @@ export default function VariantSheet({
         </div>
 
         <div className="h-px bg-steel-700" />
+
+        {/* ตัวช่วยหาขนาดโซ่ — ขึ้นเฉพาะสินค้าที่มีหลายความยาว (มีเลข T ในชื่อตัวเลือก)
+            ⚠️ วางไว้ **เหนือ** ปุ่มตัวเลือก เพราะต้องเห็นก่อนที่ลูกค้าจะเดาแล้วกดผิด
+               (เจ้าของร้านบอก 5 ก.ย. 2569 ว่าปัญหาคืนโซ่สูงเพราะลูกค้าเลือกผิดขนาด) */}
+        {hasVariants && (
+          <ChainSizeFinder
+            title={product.t}
+            variants={product.v}
+            onPick={(v) => {
+              setSel(v);
+              setQty(1);
+            }}
+          />
+        )}
 
         {/* ปุ่มตัวเลือก */}
         {hasVariants && (
