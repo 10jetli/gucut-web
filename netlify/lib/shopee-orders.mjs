@@ -149,7 +149,9 @@ export async function syncShopeeOrders(days = 3) {
       await coreQuery(
         `INSERT INTO shopee_order_items (order_sn,line,sku,name,qty,price) VALUES ${values}`
       );
-      itemRows += (values.match(/\)/g) || []).length;
+      /* ⚠️ เดิมนับ ")" ในสตริง SQL ซึ่งไม่ใช่จำนวนแถว — ชื่อสินค้าที่มีวงเล็บ (ไทยมีบ่อย)
+          ทำให้ตัวเลขพองขึ้นเงียบ ๆ (ผู้ตรวจจับได้ 6 ก.ย. 2569 ตอนเทียบกับฝาแฝด TikTok) */
+      itemRows += chunk.reduce((n, r) => n + (r.items?.length ?? 0), 0);
     }
   }
   return { days, orders: rows.length, written: changed.length, skipped, itemRows };

@@ -43,13 +43,22 @@ const pick = (obj, keys) => {
   return undefined;
 };
 
-/** ยอดรวมของใบ — TikTok ส่ง payment เป็นก้อน และเป็น "สตริง" ไม่ใช่ตัวเลข */
+/** ยอดรวมของใบ — TikTok ส่ง payment เป็นก้อน และเป็น "สตริง" ไม่ใช่ตัวเลข
+ *  ⚠️ **ต้องรายงานเมื่ออ่านไม่ได้** (ผู้ตรวจจับได้ 6 ก.ย. 2569) — ของเดิมคืน 0 เงียบ ๆ
+ *     แล้ว 0 นั้นไปโผล่เป็น `api_amount` ในการเทียบยอด ⇒ อ่านออกมาเป็น "สองฝั่งไม่ตรง"
+ *     ทั้งที่ความจริงคือ "อ่านฟิลด์ไม่ได้" — คนละเรื่องกันคนละโลก
+ *  คืน { amount, how } — how: "total" (มีตัวรวมมาให้) · "sum" (บวกเอง) · null (อ่านไม่ได้) */
 const orderAmount = (o) => {
-  const p = o?.payment || {};
+  const p = o?.payment;
+  if (!p || typeof p !== "object") return { amount: 0, how: null };
   const total = pick(p, ["total_amount", "total"]);
-  if (total !== undefined) return num(total);
-  // ไม่มี total → บวกเอง (sub_total + ค่าส่ง − ส่วนลดผู้ขาย) แล้วบอกว่าเป็นค่าคำนวณ
-  return num(p.sub_total) + num(p.shipping_fee) - num(p.seller_discount);
+  if (total !== undefined) return { amount: num(total), how: "total" };
+  const parts = ["sub_total", "shipping_fee", "seller_discount"].filter((k) => p[k] !== undefined);
+  if (!parts.length) return { amount: 0, how: null };
+  return {
+    amount: num(p.sub_total) + num(p.shipping_fee) - num(p.seller_discount),
+    how: "sum",
+  };
 };
 
 // ⚠️ สร้างตารางเองเสมอ ห้ามรอให้ใครไปกด ?init=1 (บทเรียน 2 ก.ย. 2569: ตายเงียบที่ no such table)
@@ -59,7 +68,7 @@ async function ensureTables() {
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS tiktok_orders (
       order_id TEXT PRIMARY KEY, status TEXT, amount REAL NOT NULL DEFAULT 0,
-      currency TEXT, order_date TEXT, create_time INTEGER, updated_at TEXT)`
+      currency TEXT, order_date TEXT, create_time INTEGER, updated_at TEXT, items_fp TEXT)`
   );
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS tiktok_order_items (
@@ -67,6 +76,8 @@ async function ensureTables() {
       qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0,
       PRIMARY KEY (order_id, line))`
   );
+  // ⚠️ คอลัมน์ที่เพิ่มทีหลังต้องมาทาง ALTER เสมอ (ฐานที่สร้างไปแล้วไม่ได้ CREATE ใหม่)
+  await coreQuery(`ALTER TABLE tiktok_orders ADD COLUMN items_fp TEXT`).catch(() => {});
   tablesReady = true;
 }
 
@@ -109,7 +120,13 @@ export async function syncTiktokOrders(days = 3) {
   // 1) กวาดออเดอร์ทั้งช่วง — Get Order List คืน "ทั้งใบ" อยู่แล้ว ไม่ต้องยิงรายละเอียดซ้ำแบบ Shopee
   const orders = [];
   let pageToken = "";
-  for (let page = 0; page < 20; page++) {
+  /* ⚠️ หลุดเพดานหน้าแล้วต้องโยน error — คืนของบางส่วนเหมือนครบ = api_orders หดเงียบ ๆ
+      แล้วอ่านออกมาเป็น "ZORT กับ API ไม่ตรงกัน" (กติกาเดียวกับฝั่งสต็อก) */
+  const MAX_PAGES = 20;
+  for (let page = 0; page <= MAX_PAGES; page++) {
+    if (page === MAX_PAGES) {
+      throw new Error(`ออเดอร์ TikTok ช่วงนี้เกิน ${MAX_PAGES * 100} ใบ — ต้องลด days หรือขยายเพดานหน้า`);
+    }
     const data = await shopCall(`/order/${VERSION}/orders/search`, {
       method: "POST",
       query: {
@@ -127,6 +144,9 @@ export async function syncTiktokOrders(days = 3) {
 
   // 2) แปลงเป็นแถว — และ **จดไว้ว่าอะไรแปลไม่ได้**
   const unmapped = new Set();
+  // ⚠️ ทิ้งได้ แต่ต้องนับ — ถ้าชื่อคีย์ id ไม่ตรง จะได้ orders:0 ซึ่งแยกไม่ออกจาก "ไม่มีออเดอร์"
+  const noId = orders.filter((o) => !o?.id).length;
+  if (noId) unmapped.add("order.id");
   const rows = orders
     .filter((o) => o?.id)
     .map((o) => {
@@ -141,34 +161,48 @@ export async function syncTiktokOrders(days = 3) {
         if (sku === undefined) unmapped.add("item.sku");
         if (nm === undefined) unmapped.add("item.name");
         if (pr === undefined) unmapped.add("item.price");
+        /* ⚠️ TikTok นับ **1 บรรทัด = 1 ชิ้น** (ตามที่เห็นในเอกสาร) จึงไม่มี quantity ในบรรทัด
+            แต่ถ้าวันหนึ่งมีขึ้นมาแล้วชื่อไม่ตรง เราจะได้ 1 ทุกบรรทัดเงียบ ๆ ซึ่ง
+            **อันตรายกว่าได้ 0 เพราะดูสมเหตุสมผล** ⇒ แยก "ไม่มีฟิลด์" (ปกติ) ออกจาก
+            "มีฟิลด์แต่อ่านไม่ได้" (ต้องฟ้อง) · และห้ามใช้ `|| 1` ซึ่งเปลี่ยนเลข 0 ที่ถูกต้องให้เป็น 1 */
+        const rawQty = it?.quantity;
+        if (rawQty !== undefined && !Number.isFinite(Number(rawQty))) unmapped.add("item.qty");
         return {
           line: idx + 1,
           sku: String(sku ?? "").trim().slice(0, 60),
           name: String(nm ?? "").slice(0, 120),
-          // TikTok นับ 1 บรรทัด = 1 ชิ้น (ไม่มี quantity ในรายการสินค้า) — ยืนยันตอนส่องของจริง
-          qty: num(it.quantity ?? 1) || 1,
+          qty: rawQty === undefined ? 1 : num(rawQty),
           price: num(pr),
         };
       });
+      const amt = orderAmount(o);
+      if (amt.how === null) unmapped.add("payment.amount");
+      const cur = o?.payment?.currency;
+      if (cur === undefined) unmapped.add("payment.currency");
+      /* ⚠️ **ลายนิ้วมือของรายการสินค้า** — ตัวเทียบ "เปลี่ยนหรือยัง" ของเดิมดูแค่
+          status/amount/วัน ⇒ วันที่แก้ชื่อฟิลด์ให้ถูก ใบเก่าที่สามค่านั้นไม่ขยับ
+          **จะไม่ถูกเขียนใหม่ตลอดกาล** รายการสินค้าที่แปลผิดจะแช่แข็งอยู่อย่างนั้น
+          (ผู้ตรวจจับได้ 6 ก.ย. 2569 — คลาสเดียวกับ [[new-columns-need-backfill]]) */
+      const fp = items.map((i) => `${i.sku}:${i.qty}:${i.price}`).join("|").slice(0, 400);
       return {
         id: String(o.id),
         status: String(status ?? ""),
-        amount: orderAmount(o),
-        currency: String(o?.payment?.currency ?? "").slice(0, 8),
+        amount: amt.amount,
+        currency: String(cur ?? "").slice(0, 8),
         day: thaiDay(o.create_time),
         ct: num(o.create_time),
         items,
+        fp,
       };
     });
 
-  if (!rows.length) return { days, orders: 0, unmapped: [...unmapped] };
+  if (!rows.length) return { days, orders: 0, droppedNoId: noId, unmapped: [...unmapped] };
 
   // 3) เขียนเฉพาะใบที่เปลี่ยนจริง — เหตุผลเดียวกับกระจกอื่น (โควตาเขียนของ D1)
   const prev = new Map(
-    (await coreQuery(`SELECT order_id, status, amount, order_date FROM tiktok_orders`)).map((r) => [
-      r.order_id,
-      r,
-    ])
+    (
+      await coreQuery(`SELECT order_id, status, amount, order_date, items_fp FROM tiktok_orders`)
+    ).map((r) => [r.order_id, r])
   );
   const changed = rows.filter((r) => {
     const p = prev.get(r.id);
@@ -176,46 +210,65 @@ export async function syncTiktokOrders(days = 3) {
       !p ||
       String(p.status ?? "") !== r.status ||
       num(p.amount) !== r.amount ||
-      String(p.order_date ?? "") !== r.day
+      String(p.order_date ?? "") !== r.day ||
+      // รายการสินค้าเปลี่ยน (รวมถึงกรณีเราแก้ชื่อฟิลด์ให้ถูกแล้วอ่านได้ต่างจากเดิม)
+      String(p.items_fp ?? "") !== r.fp
     );
   });
   const skipped = rows.length - changed.length;
+
+  /* ⚠️ **ลำดับสำคัญ: เขียนรายการสินค้าก่อน แล้วค่อยเขียนหัวใบ** (ผู้ตรวจจับได้ 6 ก.ย. 2569)
+      D1 ไม่มี transaction ข้ามคำสั่ง ⇒ ถ้าเขียนหัวใบก่อนแล้ว DELETE/INSERT รายการสินค้าล้ม
+      รอบถัดไปใบนั้นจะ "ไม่เปลี่ยน" (หัวใบตรงแล้ว) ⇒ **ไม่เข้ารายการซ่อม ของหายถาวร**
+      เขียนสินค้าก่อน: ล้มเมื่อไหร่หัวใบยังเป็นค่าเก่า ⇒ รอบหน้ายังถูกหยิบมาซ่อมเสมอ
+      ⚠️ และแบ่งก้อนด้วย **จำนวนไบต์** ไม่ใช่จำนวนใบ — ใบใหญ่ไม่กี่ใบก็ทะลุเพดาน ~100KB ได้ */
+  let itemRows = 0;
+  {
+    const MAX_SQL = 80_000;
+    let batch = [];
+    let ids = [];
+    let bytes = 0;
+    const flush = async () => {
+      if (!ids.length) return;
+      await coreQuery(`DELETE FROM tiktok_order_items WHERE order_id IN (${ids.join(",")})`);
+      if (batch.length) {
+        await coreQuery(
+          `INSERT INTO tiktok_order_items (order_id,line,sku,name,qty,price) VALUES ${batch.join(",")}`
+        );
+      }
+      batch = [];
+      ids = [];
+      bytes = 0;
+    };
+    for (const r of changed) {
+      const vals = r.items.map(
+        (it) => `(${esc(r.id)},${it.line},${esc(it.sku)},${esc(it.name)},${it.qty},${it.price})`
+      );
+      const size = vals.reduce((n, v) => n + v.length + 1, 0) + esc(r.id).length + 1;
+      if (bytes + size > MAX_SQL) await flush();
+      ids.push(esc(r.id));
+      batch.push(...vals);
+      bytes += size;
+      itemRows += r.items.length;
+    }
+    await flush();
+  }
 
   for (let i = 0; i < changed.length; i += 80) {
     const values = changed
       .slice(i, i + 80)
       .map(
         (r) =>
-          `(${esc(r.id)},${esc(r.status)},${r.amount},${esc(r.currency)},${esc(r.day)},${r.ct},datetime('now'))`
+          `(${esc(r.id)},${esc(r.status)},${r.amount},${esc(r.currency)},${esc(r.day)},${r.ct},datetime('now'),${esc(r.fp)})`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO tiktok_orders (order_id,status,amount,currency,order_date,create_time,updated_at)
+      `INSERT INTO tiktok_orders (order_id,status,amount,currency,order_date,create_time,updated_at,items_fp)
        VALUES ${values}
        ON CONFLICT(order_id) DO UPDATE SET
          status=excluded.status, amount=excluded.amount, currency=excluded.currency,
-         order_date=excluded.order_date, updated_at=excluded.updated_at`
+         order_date=excluded.order_date, updated_at=excluded.updated_at, items_fp=excluded.items_fp`
     );
-  }
-
-  let itemRows = 0;
-  for (let i = 0; i < changed.length; i += 60) {
-    const chunk = changed.slice(i, i + 60);
-    const idList = chunk.map((r) => esc(r.id)).join(",");
-    await coreQuery(`DELETE FROM tiktok_order_items WHERE order_id IN (${idList})`);
-    const values = chunk
-      .flatMap((r) =>
-        r.items.map(
-          (it) => `(${esc(r.id)},${it.line},${esc(it.sku)},${esc(it.name)},${it.qty},${it.price})`
-        )
-      )
-      .join(",");
-    if (values) {
-      await coreQuery(
-        `INSERT INTO tiktok_order_items (order_id,line,sku,name,qty,price) VALUES ${values}`
-      );
-      itemRows += chunk.reduce((n, r) => n + r.items.length, 0);
-    }
   }
 
   return {
@@ -224,6 +277,7 @@ export async function syncTiktokOrders(days = 3) {
     written: changed.length,
     skipped,
     itemRows,
+    droppedNoId: noId,
     // ⚠️ ว่าง = แปลได้ครบทุกฟิลด์ · ไม่ว่าง = **มีของที่เขียน 0/ว่างลงฐานเพราะหาชื่อไม่เจอ**
     //    จอกับ Telegram ต้องเอาไปโชว์ ห้ามกลืน
     unmapped: [...unmapped],

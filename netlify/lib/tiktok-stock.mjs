@@ -16,9 +16,30 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
    ⚠️ กติกาเดียวกับ tiktok-orders.mjs: หาไม่เจอ = **รายงานออกมา** ห้ามคืน 0 เงียบ ๆ
       (0 ที่แปลว่า "ของหมด" กับ 0 ที่แปลว่า "หาชื่อฟิลด์ไม่เจอ" หน้าตาเหมือนกันเป๊ะ
        และตัวหลังจะทำให้แผนดันสต็อกสั่ง "ปิดการขาย" ทั้งร้าน) */
+/* ⚠️ **บทเรียน 6 ก.ย. 2569 (ผู้ตรวจจับได้ก่อน deploy)** — ของเดิมเขียนว่า
+      `Array.isArray(s?.inventory) ? s.inventory.reduce(...) : undefined`
+   `Array.isArray([])` เป็น **true** ⇒ อาเรย์ว่างคืน **0 ไม่ใช่ undefined**
+   และถ้าทุกสมาชิกไม่มีคีย์ `quantity` `num(undefined)` ก็ให้ 0 อีกเหมือนกัน
+   ⇒ `unmapped` ว่าง ⇒ ตัวกันที่เขียนไว้ **ไม่ทำงานเลย** ⇒ ทุกรหัสกลายเป็น "ของหมด"
+     แล้วแผนดันสต็อกจะสั่ง reopen ทั้งร้านจากเลขที่แต่งขึ้น
+   ⇒ **ต้องแยก "มีคีย์แล้วค่าเป็น 0" ออกจาก "ไม่มีคีย์ให้อ่าน" ตั้งแต่ในตัวอ่าน**
+     นับเฉพาะสมาชิกที่ "มีคีย์นั้นจริง" ถ้าไม่มีสักตัว = อ่านไม่ได้ (undefined) */
+const sumOf = (arr, key) => {
+  if (!Array.isArray(arr) || !arr.length) return undefined;
+  let seen = 0;
+  let total = 0;
+  for (const it of arr) {
+    if (it && it[key] !== undefined && it[key] !== null) {
+      seen++;
+      total += num(it[key]);
+    }
+  }
+  return seen ? total : undefined;
+};
+
 const QTY_PATHS = [
-  (s) => (Array.isArray(s?.inventory) ? s.inventory.reduce((n, i) => n + num(i?.quantity), 0) : undefined),
-  (s) => s?.stock_infos?.reduce?.((n, i) => n + num(i?.available_stock), 0),
+  (s) => sumOf(s?.inventory, "quantity"),
+  (s) => sumOf(s?.stock_infos, "available_stock"),
   (s) => s?.quantity,
   (s) => s?.available_stock,
 ];
@@ -47,8 +68,16 @@ export async function tiktokStock() {
 
   const rows = [];
   const unmapped = new Set();
+  let noSku = 0;
   let pageToken = "";
-  for (let p = 0; p < 25; p++) {
+  /* ⚠️ **หลุดเพดานหน้าแล้วต้องโยน error ห้ามออกจากลูปเงียบ ๆ**
+      คืนของบางส่วนเหมือนเป็นของครบ = ทุกตัวนับข้างล่างผิดหมดโดยไม่มีอะไรฟ้อง
+      (ฝั่ง Shopee เรียนบทเรียนนี้ไปแล้วและโยน error — ของใหม่ไม่ได้ลอกส่วนนี้มา) */
+  const MAX_PAGES = 25;
+  for (let p = 0; p <= MAX_PAGES; p++) {
+    if (p === MAX_PAGES) {
+      throw new Error(`สินค้า TikTok เกิน ${MAX_PAGES * 100} รหัส — ต้องขยายเพดานหน้า ไม่ใช่ตัดทิ้งเงียบ ๆ`);
+    }
     const d = await shopCall(`/product/${VERSION}/products/search`, {
       method: "POST",
       query: { page_size: "100", ...(pageToken ? { page_token: pageToken } : {}) },
@@ -57,7 +86,8 @@ export async function tiktokStock() {
     for (const it of d?.data?.products ?? []) {
       for (const s of it?.skus ?? []) {
         const sku = String(s?.seller_sku ?? "").trim();
-        if (!sku) continue;
+        // ⚠️ ทิ้งได้ แต่ **ต้องนับ** — ไม่งั้น tiktokSkus ต่ำกว่าจริงและไม่มีใครรู้ว่ามีของผูกรหัสไม่ได้
+        if (!sku) { noSku++; continue; }
         const qty = readQty(s);
         if (qty === undefined) unmapped.add("sku.quantity");
         rows.push({ sku, name: String(it?.title ?? "").slice(0, 120), qty: num(qty) });
@@ -66,7 +96,7 @@ export async function tiktokStock() {
     pageToken = d?.data?.next_page_token || "";
     if (!pageToken) break;
   }
-  return { rows, unmapped: [...unmapped] };
+  return { rows, unmapped: [...unmapped], noSku };
 }
 
 /** ส่องชื่อฟิลด์จริงของสินค้า — **คืนเฉพาะชื่อ ไม่คืนค่า** (คู่กับ tiktokOrderShape) */
@@ -103,6 +133,7 @@ export async function tiktokStockCompare() {
   if (got.unmapped.length) {
     return { skip: `อ่านจำนวนคงเหลือของ TikTok ไม่ได้ (${got.unmapped.join(", ")})` };
   }
+  const noSku = num(got.noSku);
   const rows = got.rows;
 
   const dayRows = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
@@ -157,6 +188,8 @@ export async function tiktokStockCompare() {
   return {
     day,
     tiktokSkus: rows.length,
+    // ⚠️ รหัสที่ผูก seller_sku ไม่ได้ — ไม่ได้อยู่ในตัวหาร แต่ต้องเห็น
+    noSellerSku: noSku,
     same,
     missing,
     viaRecipe,

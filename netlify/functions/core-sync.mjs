@@ -57,6 +57,30 @@ export default async function handler() {
     //    ถ้ารอบเริ่มหลุด 26 วินาทีเมื่อไหร่ ให้แยกท่อ TikTok ไปเป็นงานตามเวลาของตัวเอง
     //    (ห้ามแก้ด้วยการลด days ของท่ออื่นเงียบ ๆ — ช่วงที่หายไปไม่มีอะไรฟ้อง)
     const tiktok = await syncTiktokOrders(7).catch((e) => ({ error: String(e?.message || e) }));
+    /* ⚠️ **ผลที่คำนวณแล้วไม่มีใครเห็น เท่ากับไม่ได้คำนวณ** (ผู้ตรวจจับได้ 6 ก.ย. 2569)
+        ของเดิม `unmapped` ไปจบใน response ของงานตามเวลา **ซึ่งไม่มีใครอ่าน**
+        และท่อ TikTok ล้มก็เงียบสนิท ต่างจาก syncOrders ที่มีเด้ง Telegram ให้
+        ⇒ ท่อ TikTok ตายได้เป็นสัปดาห์โดยไม่มีสัญญาณ
+        ⚠️ เตือน **ครั้งเดียวต่อรอบ** และเฉพาะตอนมีเรื่องจริง — ไม่งั้นทุกครึ่งชั่วโมงคนจะเลิกอ่าน */
+    {
+      const problem = tiktok?.error
+        ? `ท่อ TikTok ล้ม: ${String(tiktok.error).slice(0, 200)}`
+        : tiktok?.unmapped?.length
+          ? `ท่อ TikTok อ่านฟิลด์ไม่ได้: ${tiktok.unmapped.join(", ")} — ข้อมูลที่เขียนลงคลังเงารอบนี้ไม่ครบ`
+          : null;
+      const { TELEGRAM_BOT_TOKEN: bt2, TELEGRAM_CHAT_ID: ci2 } = process.env;
+      if (problem && bt2 && ci2) {
+        await fetch(`https://api.telegram.org/bot${bt2}/sendMessage`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            chat_id: ci2,
+            text: `⚠️ ${problem}\n\nส่องชื่อฟิลด์จริง: /api/core?tiktokshape=1\nสั่งดึงใหม่: /api/core?tiktoksync=1&days=7`,
+          }),
+          signal: AbortSignal.timeout(8000),
+        }).catch(() => null);
+      }
+    }
 
     // ตี 1 เวลาไทย (18:00-18:29 UTC) — งานรายวัน
     let daily = null;
@@ -91,7 +115,8 @@ export default async function handler() {
           body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
           signal: AbortSignal.timeout(8000),
         }).catch(() => null);
-        daily.shopeeLine = line;
+        // ชื่อเดิม shopeeLine ไม่ตรงแล้ว — บรรทัดนี้รวมทั้ง Shopee และ TikTok
+        daily.marketLines = line;
       }
     }
 
