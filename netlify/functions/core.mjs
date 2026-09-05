@@ -165,6 +165,18 @@ async function route(req, context) {
     /* ฐานข้อมูลอยู่โซนไหน และไกลจากฟังก์ชันแค่ไหน — อ่านอย่างเดียว
        ⚠️ **ถามของจริง ไม่ใช่เชื่อคอมเมนต์** หัวไฟล์ coredb.mjs เขียนว่า APAC มาตลอด
           แต่ไม่เคยมีใครยิงถามสักครั้ง (stale-state-comments) */
+    /* ซ้อมดันสต็อกกลับมาร์เก็ตเพลส — **อ่านอย่างเดียว ไม่เขียนกลับแพลตฟอร์มเลยสักบรรทัด**
+       ⚠️ ตัวไลบรารีตั้งใจไม่มีคำสั่งเขียนอยู่จริง ๆ (ไม่ใช่ "มีแต่ปิดไว้")
+          วันที่จะดันจริงต้องเขียนไฟล์ใหม่แยก **ห้ามเติม POST ลงไฟล์นั้น**
+       ⚠️ ยิง Shopee + Lazada สด ⇒ ช้าราว 10 วินาที **เป็นเส้นกดเอง ห้ามให้จอเรียกตอนเปิดหน้า** */
+    if (url.searchParams.get("stockpush")) {
+      const { stockPushDryRun } = await import("../lib/stock-push.mjs");
+      return json({
+        ok: true,
+        ...(await stockPushDryRun({ platform: url.searchParams.get("platform") })),
+      });
+    }
+
     if (url.searchParams.get("dbinfo")) {
       return json({ ok: true, ...(await d1Info()) });
     }
