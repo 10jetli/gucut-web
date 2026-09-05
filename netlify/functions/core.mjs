@@ -1225,6 +1225,29 @@ async function route(req, context) {
           ⇒ จัดกลุ่มทั้งช่วงในคำสั่งเดียว (ไม่มี IN) แล้วค่อยกรองด้วยชื่อฝั่งนี้
              จำนวนแถวถูกจำกัดด้วย distinct(ลูกค้า × ช่องทาง) ในช่วงอยู่แล้ว */
       const wantNames = new Set(named.map((r) => String(r.name)));
+
+      /* ── ซื้อครั้งแรกเมื่อไหร่ (ทั้งประวัติ) ── (ฝั่งจอขอ 6 ก.ย. 2569 — จอรายงานลูกค้า)
+         ⚠️ **ต้อง MIN ทั้งตาราง ไม่ใช่แค่ในช่วง** — นี่คือทั้งประเด็นของช่องนี้
+            จอใช้แยก "ลูกค้าใหม่" (ซื้อครั้งแรกอยู่ในช่วงที่เลือก) ออกจาก "ลูกค้าเก่าซื้อซ้ำ"
+            ตามนิยามของ ZORT · ถ้า MIN เฉพาะในช่วง ทุกคนจะกลายเป็นลูกค้าใหม่หมด
+         ⚠️ ตัวกรองร้านยังต้องใช้ (ลูกค้า z1 กับ z2 คนละบริบท) แต่**ไม่ใส่กรอบวัน**
+         ⚠️ ไม่ใช้ IN(ชื่อ) — เพดานตัวแปร D1 (บทเรียนเดิมข้างบน) ⇒ จัดกลุ่มทั้งหมดแล้วกรองฝั่งนี้ */
+      const firstMap = new Map();
+      if (wantNames.size) {
+        const fw = ["TRIM(COALESCE(customer,'')) <> ''", CANCEL];
+        const fp = [];
+        if (store) { fw.push("source = ?"); fp.push(store); }
+        const fRows = await coreQuery(
+          `SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
+           FROM orders WHERE ${fw.join(" AND ")} GROUP BY 1`,
+          fp
+        );
+        for (const r of fRows) {
+          const k = String(r.name);
+          if (wantNames.has(k)) firstMap.set(k, r.firstDay);
+        }
+      }
+
       const chMap = new Map();
       if (wantNames.size) {
         const chRows = await coreQuery(
@@ -1251,6 +1274,14 @@ async function route(req, context) {
           orders: num2(r.orders),
           sales: num2(r.sales),
           lastDay: r.lastDay,
+          /* ซื้อครั้งแรกทั้งประวัติ (ไม่ใช่แค่ในช่วง) — ใช้แยกลูกค้าใหม่/เก่าตามนิยาม ZORT
+             ⚠️ ประวัติของกระจกเริ่ม ~มิ.ย. 2569 — ลูกค้าที่ซื้อก่อนหน้านั้นจะดูเป็น "ใหม่" เกินจริง
+                จอควรบอกขอบเขตนี้ (ดู historyFrom ระดับบนสุด) */
+          firstDay: firstMap.get(String(r.name)) ?? null,
+          /* ⚠️ สามสถานะ: true = ใหม่ในช่วง · false = เก่าซื้อซ้ำ · null = **ไม่รู้** (หา firstDay ไม่ได้)
+              เดิมเขียน (x ?? "") >= from ⇒ ข้อมูลหาย = false = "เก่าซื้อซ้ำ" อย่างมั่นใจ
+              ซึ่งคือคำยืนยันที่ผิด ไม่ใช่การบอกว่าไม่รู้ (คลาสเดียวกับที่แก้กัน 5 จุดเมื่อวาน) */
+          newInRange: firstMap.has(String(r.name)) ? firstMap.get(String(r.name)) >= from : null,
           // เรียงจากช่องทางที่ซื้อบ่อยสุด · คนเดียวซื้อหลายช่องทางได้ ⇒ เป็นอาร์เรย์เสมอ
           channels: chMap.get(String(r.name)) || [],
         })),
@@ -1262,6 +1293,46 @@ async function route(req, context) {
         totalSales: num2(tot?.sales),
         distinctNames: num2(tot?.names),
         truncated: named.length >= limit,
+        /* ── กราฟแนวโน้มรายเดือน: ลูกค้าใหม่ / ซื้อซ้ำ / ไม่ระบุชื่อ ── (ฝั่งจอขอ 6 ก.ย. 2569)
+           "ใหม่" = เดือนนั้นเป็นเดือนที่ซื้อครั้งแรกทั้งประวัติ (นิยาม ZORT) · นับเป็น "คน" ไม่ใช่ "ใบ"
+           ⚠️ ใบไม่ระบุชื่อแยกกองต่างหาก (นับเป็นใบ เพราะไม่รู้ว่าเป็นกี่คน) **ห้ามเอาไปบวกกับสองกองแรก**
+           ⚠️ subquery MIN ข้างในไม่ใส่กรอบวันโดยตั้งใจ — เหตุผลเดียวกับ firstDay ข้างบน */
+        monthly: await (async () => {
+          const mw = ["o.order_date >= ?", "o.order_date <= ?", CANCEL.replace(/status/g, "o.status")];
+          if (store) mw.push("o.source = ?");
+          const storeCond = store ? "AND f.source = ?" : "";
+          /* ⚠️ **ลำดับพารามิเตอร์ต้องตรงกับลำดับ `?` ในตัวหนังสือ SQL ไม่ใช่ลำดับที่เราคิด**
+              subquery สองตัวอยู่ใน SELECT ซึ่งมาก่อน WHERE ⇒ store, store ต้องมาก่อน from, today
+              (เกือบผูกเป็น [from, today, store, store, store] ตอนเขียนรอบแรก — เดือนจะถูกกรองด้วยชื่อร้าน
+               และร้านถูกกรองด้วยวันที่ แบบเงียบ ๆ ไม่มี error เพราะชนิดข้อมูลใน SQLite หลวม) */
+          const mp = store ? [store, store, from, today, store] : [from, today];
+          const rows = await coreQuery(
+            `SELECT substr(o.order_date,1,7) AS month,
+                    COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND substr((SELECT MIN(f.order_date) FROM orders f
+                                  WHERE TRIM(f.customer) = TRIM(o.customer) ${storeCond}
+                                    AND f.status NOT LIKE '%cancel%' AND f.status NOT LIKE '%void%' AND f.status NOT LIKE '%ยกเลิก%'),1,7) = substr(o.order_date,1,7)
+                      THEN TRIM(o.customer) END) AS newCustomers,
+                    COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND substr((SELECT MIN(f.order_date) FROM orders f
+                                  WHERE TRIM(f.customer) = TRIM(o.customer) ${storeCond}
+                                    AND f.status NOT LIKE '%cancel%' AND f.status NOT LIKE '%void%' AND f.status NOT LIKE '%ยกเลิก%'),1,7) < substr(o.order_date,1,7)
+                      THEN TRIM(o.customer) END) AS repeatCustomers,
+                    SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) = '' THEN 1 ELSE 0 END) AS unnamedOrders
+             FROM orders o WHERE ${mw.join(" AND ")}
+             GROUP BY 1 ORDER BY 1`,
+            mp
+          ).catch((e) => ({ error: String(e?.message || e).slice(0, 160) }));
+          if (!Array.isArray(rows)) return rows; // ล้ม = ส่ง error ไปตรง ๆ อย่าแกล้งเป็นอาร์เรย์ว่าง
+          return rows.map((r) => ({
+            month: r.month,
+            newCustomers: num2(r.newCustomers),
+            repeatCustomers: num2(r.repeatCustomers),
+            unnamedOrders: num2(r.unnamedOrders),
+          }));
+        })(),
+        /* ขอบเขตประวัติ — จอต้องบอกว่า "ใหม่" นับจากข้อมูลที่เริ่มเมื่อไหร่ ไม่ใช่ตั้งแต่เปิดร้านจริง */
+        historyFrom: (await coreQuery(`SELECT MIN(order_date) AS d FROM orders`).catch(() => [{}]))[0]?.d ?? null,
         note:
           "customers = เฉพาะใบที่มีชื่อลูกค้า เรียงตามยอด · " +
           "unnamed = ใบที่ไม่ได้ระบุชื่อ (ส่วนใหญ่คือ POS) **แยกไว้ ห้ามนับเป็นลูกค้าคนเดียว** · " +
