@@ -262,7 +262,20 @@ export async function moveVerify() {
   const tabs = await tablesOf(SRC);
   const out = [];
   for (const t of tabs) {
-    const cols = await q(SRC, `PRAGMA table_info("${t.name}")`);
+    /* ⚠️ **ต้องเทียบ "รายชื่อคอลัมน์" ด้วย ไม่ใช่แค่จำนวนแถวกับผลรวม** (เพิ่ม 5 ก.ย. 2569 คืน)
+        ของจริงที่เจอ: ลอกโครงจาก `sqlite_master` แล้ว **คอลัมน์ที่เคยเพิ่มด้วย ALTER TABLE หายไป**
+        (`orders.ship_amount` และเพื่อน ๆ) ⇒ ฐานใหม่ขาดคอลัมน์ แต่ verify เดิม **ผ่าน 19/19**
+        เพราะมันเทียบเฉพาะแถวกับผลรวมของคอลัมน์ที่ **ต้นทาง** มี แล้วบังเอิญไม่โดนตัวที่ขาด
+        อาการโผล่ตอนซิงก์จริง: `no such column: ship_amount` ⇒ **ซิงก์ตายทั้งรอบ**
+        ⇒ ตัวตรวจต้องครอบสิ่งที่พัง ไม่ใช่ครอบสิ่งที่คิดว่าจะพัง */
+    const srcCols = await q(SRC, `PRAGMA table_info("${t.name}")`);
+    const tgtColRows = await q(tgt.id, `PRAGMA table_info("${t.name}")`).catch(() => null);
+    const srcNames = srcCols.map((c) => String(c.name));
+    const tgtNames = tgtColRows ? tgtColRows.map((c) => String(c.name)) : null;
+    const missingCols = tgtNames ? srcNames.filter((c) => !tgtNames.includes(c)) : ["(อ่านไม่ได้)"];
+    const extraCols = tgtNames ? tgtNames.filter((c) => !srcNames.includes(c)) : [];
+
+    const cols = srcCols;
     const nums = cols
       .filter((c) => /INT|REAL|NUM|DEC|FLOAT|DOUB/i.test(String(c.type || "")))
       .map((c) => String(c.name));
@@ -271,9 +284,18 @@ export async function moveVerify() {
       q(SRC, `SELECT ${expr} FROM "${t.name}"`).then((r) => r[0] || {}),
       q(tgt.id, `SELECT ${expr} FROM "${t.name}"`).then((r) => r[0] || {}).catch(() => null),
     ]);
-    if (!b) { out.push({ table: t.name, ok: false, why: "อ่านฐานใหม่ไม่ได้" }); continue; }
+    if (!b) { out.push({ table: t.name, ok: false, why: "อ่านฐานใหม่ไม่ได้", missingCols }); continue; }
     const diffs = Object.keys(a).filter((k) => String(a[k]) !== String(b[k]));
-    out.push({ table: t.name, rows: a.n, ok: diffs.length === 0, ...(diffs.length ? { diffs, src: a, tgt: b } : {}) });
+    const colOk = missingCols.length === 0;
+    out.push({
+      table: t.name,
+      rows: a.n,
+      ok: diffs.length === 0 && colOk,
+      // ⚠️ คอลัมน์ขาด = **ต้องไม่ผ่าน** ต่อให้แถวเท่ากันเป๊ะ — เขียนกลับไม่ได้คือพังของจริง
+      ...(missingCols.length ? { missingCols } : {}),
+      ...(extraCols.length ? { extraCols } : {}),
+      ...(diffs.length ? { diffs, src: a, tgt: b } : {}),
+    });
   }
   const bad = out.filter((r) => !r.ok);
   return {
@@ -284,6 +306,9 @@ export async function moveVerify() {
     /* ⚠️ **ผ่านทุกตารางเท่านั้นถึงจะสับสวิตช์ได้** — ผ่านบางตารางแล้วสับ = ข้อมูลหายบางส่วน
         แล้วจะไม่มีใครรู้จนกว่าจะมีคนเปิดจอนั้นพอดี */
     canSwitch: bad.length === 0,
+    /* ⚠️ แถวต่างกันเพราะฐานใหม่รับงานไปแล้ว **เป็นเรื่องปกติหลังสับสวิตช์**
+        สิ่งที่ต้องไม่มีคือ `missingCols` — นั่นแปลว่าเขียนกลับไม่ได้จริง */
+    colProblems: out.filter((r) => r.missingCols?.length).map((r) => ({ table: r.table, missingCols: r.missingCols })),
     detail: out,
     switchHow: "เปลี่ยน env CORE_D1_ID ที่ Netlify เป็น id ของฐานใหม่ แล้ว deploy · ถอยกลับ = เปลี่ยนกลับค่าเดิม",
   };
