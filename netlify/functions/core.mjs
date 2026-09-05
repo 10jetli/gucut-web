@@ -25,7 +25,7 @@ import {
 } from "../lib/pos.mjs";
 import {
   syncProducts, syncBundles, listBundles, saveBundleItems, listBundleItems, blockedByNegative,
-  reorderPlan, linkStatus,
+  reorderPlan, linkStatus, zortWarehouseProbe,
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
@@ -288,6 +288,12 @@ export default async function handler(req, context) {
          GET /api/core?links=1[&days=90]
        ⚠️ 3/8 ใช้กับ 3623 และ 3652 · 3/8p ใช้กับ 3636 เท่านั้น ใส่ข้ามไม่ได้
        ⚠️ ยังไม่รู้ว่าข้ามยี่ห้อได้ไหม ⇒ แยกกองไว้ก่อน · crossBrand ส่งมาให้ดูคู่กันเฉย ๆ */
+    /* ยิงถาม ZORT ว่าให้สต็อกแยกรายคลังได้ไหม — อ่านอย่างเดียว
+         GET /api/core?zortwarehouse=1[&sku=00894]
+       ⚠️ ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม" */
+    if (url.searchParams.get("zortwarehouse")) {
+      return json({ ok: true, ...(await zortWarehouseProbe({ sku: url.searchParams.get("sku") })) });
+    }
     if (url.searchParams.get("links")) {
       return json({ ok: true, ...(await linkStatus({ days: url.searchParams.get("days") })) });
     }

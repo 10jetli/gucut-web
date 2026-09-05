@@ -1120,3 +1120,85 @@ export async function linkStatus(o = {}) {
     unmatchedRows: unmatched,
   };
 }
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ตัวยิงทดสอบ: ZORT ให้ "สต็อกแยกรายคลัง" ได้ไหม
+
+   ⚠️ **ทำไมต้องมี** (5 ก.ย. 2569) — ในโค้ดเราเขียนไว้ว่า "ไม่มีข้อมูลรายคลัง"
+      แต่ประโยคนั้นบอกแค่ว่า **กระจกของเราไม่มี** ไม่ได้บอกว่า **ZORT ให้ไม่ได้**
+      สองเรื่องนี้ต่างกันคนละขั้ว และไม่มีใครเคยยิงทดสอบเลยสักครั้ง
+      (ฝั่งจอถามตรง ๆ ว่า "ถ้าท่อดึงสต็อกแยกรายคลังได้ จะทำช่องโกดังให้เป็นกล่องจริง")
+      ⇒ **ห้ามตอบว่าทำไม่ได้จนกว่าจะยิงถามของจริง** — ตอบจากคอมเมนต์ตัวเองคือถามซ้ำ ไม่ใช่ทดสอบ
+      (probe-shares-the-bug)
+
+   ⚠️ **อ่านอย่างเดียว ไม่เขียนอะไรกลับ ZORT** และไม่แตะกระจก
+   ⚠️ ยิงหลายท่าเพราะไม่รู้ว่าท่าไหนถูก — **รายงานทุกท่าพร้อมผลดิบ**
+      ห้ามสรุปว่า "ไม่ได้" เพราะท่าแรกล้ม · และห้ามสรุปว่า "ได้" เพราะตอบ 200
+      ต้องดูว่า **ตัวเลขต่างกันจริงเมื่อเปลี่ยนคลัง** ถึงจะแปลว่าตัวกรองทำงาน
+      (ตอบ 200 พร้อมข้อมูลชุดเดิมทุกคลัง = ZORT เมินพารามิเตอร์ที่ไม่รู้จัก ซึ่งเจอมาแล้วหลายรอบ)
+   ───────────────────────────────────────────────────────────────────────────── */
+export async function zortWarehouseProbe(o = {}) {
+  const h = headers();
+  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const sku = String(o.sku ?? "").trim().slice(0, 60) || null;
+
+  const tries = [
+    { name: "GetProducts เปล่า (ฐานเทียบ)", url: `${BASE}/Product/GetProducts?limit=3&page=1` },
+    { name: "GetProducts + warehouseid=1", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehouseid=1` },
+    { name: "GetProducts + warehousecode=NEW", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehousecode=NEW` },
+    { name: "GetProducts + warehouse=NEW", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehouse=NEW` },
+    { name: "Warehouse/list", url: `${BASE}/Warehouse/list?limit=20&page=1` },
+    { name: "Product/GetProductWarehouse", url: `${BASE}/Product/GetProductWarehouse?limit=5&page=1` },
+    { name: "Stock/list", url: `${BASE}/Stock/list?limit=5&page=1` },
+  ];
+  if (sku) {
+    tries.push({ name: `GetProducts sku=${sku}`, url: `${BASE}/Product/GetProducts?limit=3&page=1&sku=${encodeURIComponent(sku)}` });
+  }
+
+  const out = [];
+  for (const t of tries) {
+    try {
+      const r = await fetch(t.url, { headers: h, signal: AbortSignal.timeout(10000) });
+      const text = await r.text();
+      let j = null;
+      try { j = JSON.parse(text); } catch { /* ไม่ใช่ JSON — เก็บข้อความดิบไว้ดู */ }
+      const list = Array.isArray(j?.list) ? j.list : null;
+      /* ⚠️ เก็บ "ชื่อช่องทั้งหมดของแถวแรก" ไว้ด้วย — ถ้ามีช่องชื่อคล้ายคลังโผล่มา
+          แปลว่าข้อมูลรายคลังอาจซ่อนอยู่ในคำตอบเดิมโดยที่เราไม่เคยดู */
+      const keys = list?.[0] ? Object.keys(list[0]) : null;
+      const warehouseish = keys ? keys.filter((k) => /wareh|stock|branch|คลัง/i.test(k)) : null;
+      out.push({
+        name: t.name,
+        status: r.status,
+        ok: r.ok,
+        count: list ? list.length : null,
+        total: j?.count ?? j?.total ?? null,
+        warehouseFields: warehouseish,
+        // ลายนิ้วมือของผลลัพธ์ — เอาไว้เทียบว่าเปลี่ยนคลังแล้วข้อมูลเปลี่ยนจริงไหม
+        firstSku: list?.[0]?.sku ?? null,
+        firstStock: list?.[0]?.stock ?? null,
+        firstAvailable: list?.[0]?.availablestock ?? null,
+        raw: j ? null : String(text).slice(0, 200),
+      });
+    } catch (e) {
+      out.push({ name: t.name, error: String(e?.message || e).slice(0, 160) });
+    }
+  }
+
+  /* ⚠️ **ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม"**
+      ZORT เมินพารามิเตอร์ที่ไม่รู้จักแล้วคืนข้อมูลชุดเดิม ซึ่งอ่านเผิน ๆ เหมือนสำเร็จ */
+  const base = out[0];
+  const filtered = out.slice(1, 4).filter((x) => x.ok && x.firstSku);
+  const changed = filtered.some(
+    (x) => x.firstSku !== base?.firstSku || x.firstStock !== base?.firstStock
+  );
+  return {
+    verdict: changed
+      ? "ตัวกรองคลังมีผลจริง — เปลี่ยนคลังแล้วตัวเลขเปลี่ยน"
+      : "ยังไม่พบว่าตัวกรองคลังมีผล — ทุกท่าคืนข้อมูลชุดเดิม (ZORT น่าจะเมินพารามิเตอร์)",
+    note:
+      "ตอบ 200 ไม่ได้แปลว่าใช้ได้ — ต้องเปลี่ยนคลังแล้วตัวเลขเปลี่ยนจริงถึงจะแปลว่าตัวกรองทำงาน · " +
+      "ดู warehouseFields ด้วย ถ้ามีช่องชื่อคล้ายคลังโผล่มา แปลว่าข้อมูลรายคลังอาจซ่อนอยู่ในคำตอบเดิม",
+    tries: out,
+  };
+}
