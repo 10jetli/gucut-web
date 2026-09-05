@@ -177,6 +177,9 @@ export async function moveCopy(o = {}) {
 
     const cols = (await q(SRC, `PRAGMA table_info("${t.name}")`)).map((c) => String(c.name));
     let moved = 0;
+    /* ⚠️ ตารางเดียวล้มต้องไม่ลากทั้งรอบตาย — จดไว้แล้วไปตารางถัดไป
+        ไม่งั้นตารางที่มีปัญหาตัวเดียวจะบล็อกการย้ายทั้งหมดอย่างเงียบ ๆ */
+    try {
     let offset = tgtN; // เริ่มต่อจากที่มีอยู่แล้ว (เรียงตาม rowid เหมือนกันทั้งสองฝั่ง)
     while (offset < srcN && Date.now() < deadline) {
       const rows = await q(
@@ -184,15 +187,34 @@ export async function moveCopy(o = {}) {
         `SELECT ${cols.map((c) => `"${c}"`).join(",")} FROM "${t.name}" ORDER BY rowid LIMIT ${CHUNK} OFFSET ${offset}`
       );
       if (!rows.length) break;
-      const values = rows
-        .map((r) => `(${cols.map((c) => lit(r[c])).join(",")})`)
-        .join(",");
-      await q(
-        tgt.id,
-        `INSERT OR REPLACE INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES ${values}`
-      );
+      /* ⚠️ **ต้องแบ่งตามขนาดตัวหนังสือ ไม่ใช่ตามจำนวนแถว** (เจอจริง 5 ก.ย. 2569)
+          แบ่ง 300 แถวเท่ากันทุกตาราง ⇒ ตารางที่มีข้อความยาว (contacts · products)
+          ทำ SQL ยาวเกินจน D1 ตอบ `SQLITE_TOOBIG` แล้ว**ล้มทั้งรอบ** ไม่ใช่แค่ตารางนั้น
+          ⇒ สะสมไปเรื่อย ๆ แล้วยิงเมื่อใกล้เพดาน · แถวยาวมากก็ยิงทีละแถวได้เอง
+          ⚠️ เพดาน 80KB เผื่อไว้จากของจริง 100KB — อย่าตั้งชิดขอบ */
+      const head = `INSERT OR REPLACE INTO "${t.name}" (${cols.map((c) => `"${c}"`).join(",")}) VALUES `;
+      const MAX = 80000;
+      let buf = [];
+      let bufLen = 0;
+      const flush = async () => {
+        if (!buf.length) return;
+        await q(tgt.id, head + buf.join(","));
+        moved += buf.length;
+        buf = [];
+        bufLen = 0;
+      };
+      for (const r of rows) {
+        const v = `(${cols.map((c) => lit(r[c])).join(",")})`;
+        if (bufLen + v.length + 1 > MAX) await flush();
+        buf.push(v);
+        bufLen += v.length + 1;
+      }
+      await flush();
       offset += rows.length;
-      moved += rows.length;
+    }
+    } catch (e) {
+      report.push({ table: t.name, src: srcN, tgt: tgtN + moved, moved, error: String(e?.message || e).slice(0, 160) });
+      continue;
     }
     report.push({ table: t.name, src: srcN, tgt: tgtN + moved, moved, status: tgtN + moved >= srcN ? "ครบแล้ว" : "ยังไม่ครบ" });
     if (Date.now() > deadline) { hitDeadline = true; break; }
