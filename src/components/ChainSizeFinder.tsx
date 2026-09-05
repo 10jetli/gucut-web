@@ -214,6 +214,19 @@ export default function ChainSizeFinder({
               <span className="text-[12px] text-[#1a1a1a]">
                 ข้อต่อตาม (ข้อที่ยื่นลงร่องบาร์) — นับให้ครบรอบ
               </span>
+              {/* รูปจากคู่มือของร้านเอง — เจ้าของร้านสั่งให้ใส่ 5 ก.ย. 2569
+                  ⚠️ ตัวหนังสืออธิบายอย่างเดียวไม่พอ ลูกค้าไม่รู้ว่า "ข้อต่อตาม" คืออันไหนบนโซ่จริง
+                     ⇒ นับผิดชิ้น = ได้เลขผิด = ยังคืนของอยู่ดี
+                  ⚠️ อยู่ที่ /guide/ ไม่ใช่ /img/ โดยตั้งใจ — /img/ เสิร์ฟจาก R2 และต้องรัน
+                     img-to-r2.mjs ทุกครั้งที่เพิ่มรูป · /guide/ Netlify เสิร์ฟตรงจาก repo */}
+              <img
+                src="/guide/count-drivelink.webp"
+                alt="ตัวอย่างการนับข้อต่อตาม ข้อที่ 1 2 3 4 บนโซ่"
+                width={480}
+                height={160}
+                loading="lazy"
+                className="mt-1 w-full max-w-[300px] rounded border border-steel-600 bg-white"
+              />
               <input
                 inputMode="numeric"
                 value={dl}
@@ -228,6 +241,14 @@ export default function ChainSizeFinder({
                 ฟัน (ใบมีดที่กัดไม้) — ใส่เพื่อตรวจทานว่านับไม่พลาด{" "}
                 <span className="text-[11px]">· ไม่ใส่ก็ได้</span>
               </span>
+              <img
+                src="/guide/count-cutter.webp"
+                alt="ตัวอย่างการนับฟัน ใบมีดที่ 1 และ 2 บนโซ่"
+                width={480}
+                height={160}
+                loading="lazy"
+                className="mt-1 w-full max-w-[300px] rounded border border-steel-600 bg-white"
+              />
               <input
                 inputMode="decimal"
                 value={teeth}
