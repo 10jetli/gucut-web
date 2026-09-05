@@ -110,20 +110,30 @@ async function memberStats(now) {
 
 /** PWA — เปิดจากแอปวันนี้/7 วัน + ยอดกดติดตั้ง */
 async function pwaStats(s, weekDays) {
-  const [pw, pwi] = await Promise.all([s.list({ prefix: "pw/" }), s.list({ prefix: "pwi/" })]);
+  /* ⚠️ **ลิสต์ทีละวัน ห้ามลิสต์ทั้งคำนำหน้า** (แก้ 5 ก.ย. 2569)
+      ของเดิมลิสต์ `pw/` กับ `pwi/` **ทั้งหมดตั้งแต่เปิดร้าน** แล้วค่อยกรองเอา 7 วันในหน่วยความจำ
+      ⇒ ต้นทุนโตขึ้นทุกวันตลอดไป ทั้งที่ของที่ใช้จริงมีแค่ 7 วัน
+      เป็นโรคเดียวกับที่เพิ่งแก้ไปกับ `s/` ในไฟล์นี้เอง — **ตกหล่นไปหนึ่งจุด**
+      ⚠️ นี่อธิบายได้ว่าทำไม `/api/live` ช้าเท่าเดิม (23.9 กับ 26.1 วิ) ทั้งที่เก็บกวาดไปแล้ว
+         เพราะ **ของที่ถ่วงคือคีย์ที่ยังไม่หมดอายุ ไม่ใช่ของเก่าที่รอกวาด**
+         ⇒ กวาดของเก่ากี่รอบก็ไม่ช่วย (ยังไม่ยืนยัน — ต้องดู ms แยกรายส่วนหลัง deploy)
+      ⚠️ **ห้ามเปลี่ยนกลับไปลิสต์ทั้งคำนำหน้าเพราะดูโค้ดสั้นกว่า** */
+  const [pwPerDay, pwiPerDay] = await Promise.all([
+    Promise.all(weekDays.map((d) => keysWithPrefix(s, `pw/${d}/`))),
+    Promise.all(weekDays.map((d) => keysWithPrefix(s, `pwi/${d}/`))),
+  ]);
   const uniqToday = new Set();
   const uniqWeek = new Set();
-  for (const b of pw.blobs) {
-    const [, d, id] = b.key.split("/");
-    if (!d || !id) continue;
-    if (d === weekDays[0]) uniqToday.add(id);
-    if (weekDays.includes(d)) uniqWeek.add(id);
-  }
-  let installs7 = 0;
-  for (const b of pwi.blobs) {
-    const d = b.key.split("/")[1];
-    if (weekDays.includes(d)) installs7++;
-  }
+  pwPerDay.forEach((keys, i) => {
+    for (const k of keys) {
+      const [, d, id] = k.split("/");
+      if (!d || !id) continue;
+      if (i === 0) uniqToday.add(id); // weekDays[0] = วันนี้
+      uniqWeek.add(id);
+    }
+  });
+  // ทุกคีย์ที่ได้มาอยู่ใน 7 วันอยู่แล้ว (ลิสต์ทีละวัน) ⇒ นับตรง ๆ ไม่ต้องกรองซ้ำ
+  const installs7 = pwiPerDay.reduce((a, keys) => a + keys.length, 0);
   return { today: uniqToday.size, week: uniqWeek.size, installs7 };
 }
 
