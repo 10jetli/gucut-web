@@ -213,30 +213,51 @@ export async function stats() {
 }
 
 /** เก็บกวาดของเก่า — เรียกตอนหลังร้านเปิดดู ไม่ต้องตั้ง cron ให้เปลืองอีกตัว */
-export async function sweep() {
+export async function sweep(o = {}) {
+  /* ⚠️ **ห้ามเรียกตัวนี้ตอนเปิดหน้าหลังร้านอีก** (แก้ 5 ก.ย. 2569)
+      ของเดิมเรียกตอนเปิดหน้า พร้อมคอมเมนต์ว่า "ไม่ต้องตั้งงานตามเวลาให้เปลืองอีกตัว"
+      ผลคือ **คนเปิดหน้าคนแรกของวันต้องนั่งรอแทนเครื่อง**
+      วัดจริง: เปิดครั้งแรก 25 วินาที · ครั้งถัดไป 3 วินาที (เพราะครั้งแรกกวาดไปหมดแล้ว)
+      เจ้าของร้านบอกเองว่า "เสียอารมณ์เวลาเข้า"
+      ⇒ ย้ายไปเป็นงานตามเวลาตอนตี 2 แทน · หน้าหลังร้านไม่ต้องรออะไรอีก
+      ⇒ บทเรียน: **งานบ้านห้ามไปเกาะอยู่กับการกดของคน** ต่อให้ประหยัดกว่าในกระดาษ
+         คนกดเป็นคนจ่ายเวลาให้เสมอ และจ่ายไม่เท่ากันด้วย (คนแรกของวันจ่ายทั้งหมด)
+
+      ⚠️ **มีเพดานจำนวนที่ลบต่อรอบ** — `l/` โตนาทีละคีย์ต่อคนที่ออนไลน์
+         วันที่คนเข้าเยอะ ๆ อาจมีหลายหมื่นคีย์ ⇒ ไม่มีเพดาน = ฟังก์ชันหมดเวลาแล้วไม่ได้ลบอะไรเลย
+         ⇒ ลบเท่าที่ทำได้ แล้ว **บอกออกไปว่าเหลือค้างอีกกี่รายการ** ห้ามเงียบ
+            (เหลือค้าง = รอบหน้ามาลบต่อ · ถ้าเหลือทุกวันแปลว่าเพดานต่ำไป ต้องมีคนเห็น) */
   const s = store();
+  const cap = Math.max(200, Math.min(20000, Number(o.max) || 8000));
   let gone = 0;
+  let left = 0;
+  const del = async (keys) => {
+    const take = keys.slice(0, Math.max(0, cap - gone));
+    left += keys.length - take.length;
+    gone += take.length;
+    await Promise.allSettled(take.map((k) => s.delete(k)));
+  };
+
   // คีย์ออนไลน์: เก็บแค่ช่วงที่ยังนับอยู่ ที่เหลือทิ้ง
   const keep = new Set();
   for (let i = 0; i < ONLINE_MIN + 2; i++) keep.add(String(minuteOf(Date.now() - i * 60000)));
   const { blobs } = await s.list({ prefix: "l/" });
-  await Promise.allSettled(
-    blobs.filter((b) => !keep.has(b.key.split("/")[1])).map((b) => { gone++; return s.delete(b.key); }),
-  );
+  await del(blobs.filter((b) => !keep.has(b.key.split("/")[1])).map((b) => b.key));
+
   // สถิติรายวันเก่ากว่า KEEP_DAYS (ทั้งรายคนและรายประเทศ)
   const oldest = dayOf(Date.now() - KEEP_DAYS * 86400000);
   // p/ = บันทึกบอต AI รายหน้า — โตไม่หยุด (เคยสะสม 21,751 คีย์จนหน้าสถานะช้า 3 วิ)
   for (const prefix of ["v/", "c/", "s/", "pw/", "pwi/", "p/"]) {
     const { blobs } = await s.list({ prefix });
-    await Promise.allSettled(
+    await del(
       blobs
         .filter((b) => {
           const parts = b.key.split("/");
           // เก่าเกินกำหนด หรือเป็นข้อมูลทดสอบที่หลงเหลือจากตอนพัฒนา
           return (parts[1] || "") < oldest || (parts[parts.length - 1] || "").startsWith("test-");
         })
-        .map((b) => { gone++; return s.delete(b.key); }),
+        .map((b) => b.key),
     );
   }
-  return gone;
+  return { gone, left, cap };
 }

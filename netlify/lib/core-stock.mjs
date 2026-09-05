@@ -256,7 +256,13 @@ export async function listStock(o = {}) {
   // ทะเบียนสินค้าเข้ามาทางนี้ — ราคาซื้อ · พร้อมขาย · หน่วย · เปิดใช้งาน · ประเภท
   const JOIN = `LEFT JOIN products p ON p.sku = cur.sku`;
 
-  const [sum] = await coreQuery(
+  /* ⚠️ **ยิง D1 พร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — เจ้าของร้านบอกว่าหลังร้านช้าทุกเมนู)
+      สี่ตัวนี้ใช้แค่ `day` เหมือนกันหมด **ไม่มีตัวไหนต้องรอผลของอีกตัว**
+      ของเดิมยิงเรียงกัน ⇒ เสียเวลาเดินทางไป-กลับ D1 ฟรี ๆ 3 รอบ (ราว 1–1.5 วิ)
+      ⚠️ `latest` ต้องมาก่อนจริง ๆ เพราะทุกตัวใช้ `day` จากมัน — เลี่ยงไม่ได้
+      ⚠️ ห้ามเอา await กลับมาเรียงกันอีก */
+  const [[sum], [aside], shownRows, rows] = await Promise.all([
+    coreQuery(
     `${CTE}
      SELECT COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
@@ -274,30 +280,27 @@ export async function listStock(o = {}) {
             SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS no_cost
      FROM cur ${JOIN} WHERE 1=1 ${kind ? `AND ${kind}` : ""} ${filter}`,
     [day, since, ...fParams]
-  );
-
-  // ⚠️ **นับ "บริการ" / "ปิดใช้งาน" นอกกรอบ kind เสมอ** — สองตัวนี้มีไว้บอกว่า
-  //    *ซ่อนอะไรไว้กี่รายการ* ถ้าเอาไปกรองด้วย kind ด้วย พอตั้ง kind=goods มันจะตอบ 0
-  //    แล้วจอจะเขียนว่า "ซ่อนบริการ 0 รายการ" ทั้งที่ซ่อนไป 6 — คือหายเงียบอีกแบบหนึ่ง
-  const [aside] = await coreQuery(
+  ),
+    // ⚠️ **นับ "บริการ" / "ปิดใช้งาน" นอกกรอบ kind เสมอ** — สองตัวนี้มีไว้บอกว่า
+    //    *ซ่อนอะไรไว้กี่รายการ* ถ้าเอาไปกรองด้วย kind ด้วย พอตั้ง kind=goods มันจะตอบ 0
+    //    แล้วจอจะเขียนว่า "ซ่อนบริการ 0 รายการ" ทั้งที่ซ่อนไป 6 — คือหายเงียบอีกแบบหนึ่ง
+    coreQuery(
     `${CTE}
      SELECT SUM(CASE WHEN COALESCE(p.product_type,0) = 1 THEN 1 ELSE 0 END) AS services,
             SUM(CASE WHEN COALESCE(p.active,1) = 0 THEN 1 ELSE 0 END) AS inactive
      FROM cur ${JOIN} WHERE 1=1 ${filter}`,
     [day, since, ...fParams]
-  );
-
-  // จำนวนแถวของ "แท็บที่เลือกอยู่" — ใช้ทำเลขหน้า ไม่ใช่ตัวเลขบนแท็บ
-  const [shown] =
+  ),
+    /* จำนวนแถวของ "แท็บที่เลือกอยู่" — ใช้ทำเลขหน้า ไม่ใช่ตัวเลขบนแท็บ
+       ⚠️ ไม่มีตัวกรอง ⇒ ค่าเท่ากับ sum.skus อยู่แล้ว ไม่ต้องยิงซ้ำ (คืน null แล้วเติมทีหลัง) */
     only || kind
-      ? await coreQuery(
+      ? coreQuery(
           `${CTE} SELECT COUNT(*) AS c FROM cur ${JOIN}
            WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}`,
           [day, since, ...fParams]
         )
-      : [{ c: sum?.skus }];
-
-  const rows = await coreQuery(
+      : Promise.resolve(null),
+    coreQuery(
     `${CTE}
      SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
@@ -309,7 +312,9 @@ export async function listStock(o = {}) {
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
      ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
     [day, since, ...fParams]
-  );
+  ),
+  ]);
+  const shown = shownRows ? shownRows[0] : { c: sum?.skus };
 
   /* คอลัมน์ Marketplace แบบ ZORT — โลโก้ช่องทางที่สินค้าตัวนั้นกำลังลงขายอยู่
      ⚠️ ล้มไม่ได้ทำให้ทั้งจอพัง — เช็คไม่ได้ก็แค่ไม่มีโลโก้ พร้อมบอกว่าเช็คใครได้บ้าง

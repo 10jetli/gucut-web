@@ -120,32 +120,84 @@ export async function listOrders(o = {}) {
 
   const w = buildWhere({ from, to, channel, status, q, includeCancelled, source });
 
-  const [sum] = await coreQuery(
-    `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
-     FROM orders WHERE ${w.sql}`,
-    w.params
-  );
-  const rows = await coreQuery(
+  /* ⚠️ **ยิง D1 พร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
+      ของเดิมยิง D1 **10 รอบเรียงกัน** ในคำขอเดียว ⇒ วัดจริงได้ 4.5 วินาที
+      D1 อยู่ไกล หนึ่งรอบไป-กลับราว 0.3–0.5 วิ ⇒ เวลาเกือบทั้งหมดคือ "รอเดินทาง" ไม่ใช่ "คิดเลข"
+      เจ้าของร้านบอกว่า admin.gucut.com ช้าทุกเมนู · คลาสเดียวกับ /api/live ที่ช้า 25 วิ
+      ⚠️ **ห้ามเอา await กลับมาเรียงกันอีก** ต่อให้อ่านง่ายกว่า
+      ⚠️ เพิ่ม query ใหม่ต้องถามก่อนเสมอว่า "ตัวนี้ต้องรอผลของตัวก่อนหน้าจริงไหม"
+         ไม่ต้องรอ ⇒ **ใส่ใน Promise.all เดียวกัน**
+      ⚠️ ตัวที่อาจล้มได้ (core_meta ยังไม่ถูกสร้าง) ต้องมี .catch ของตัวเอง
+         ไม่งั้นล้มตัวเดียวลากทั้งคำขอตาย — เดิมมันอยู่ใน try/catch แยก */
+  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true });
+  const [
+    sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, byStatus,
+    beatRows, chgRows, rngRows,
+  ] = await Promise.all([
+    coreQuery(
+      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
+       FROM orders WHERE ${w.sql}`,
+      w.params
+    ),
     /* ⚠️ เพิ่มคอลัมน์ในตารางแล้วต้องเพิ่มใน SELECT นี้ด้วย ไม่งั้นจอไม่มีวันเห็น
         (ฝั่งจอทักมา 4 ก.ย. 2569 — เก็บ integration_status เข้าฐานแล้วแต่แถวไม่มีฟิลด์นี้) */
-    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus
-     FROM orders WHERE ${w.sql}
-     ORDER BY order_date DESC, number DESC
-     LIMIT ${limit} OFFSET ${offset}`,
-    w.params
-  );
+    coreQuery(
+      `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus
+       FROM orders WHERE ${w.sql}
+       ORDER BY order_date DESC, number DESC
+       LIMIT ${limit} OFFSET ${offset}`,
+      w.params
+    ),
+    /* ⚠️ **เหตุผลที่ช่องนี้ว่าง ต้องติดมากับแถว ไม่ใช่ให้จอไปจับคู่ชื่อช่องทางเอง**
+        เกณฑ์: ช่องทางนั้นมีค่าอยู่ **อย่างน้อย 5 ใบ และอย่างน้อย 1%** ⇒ ควรมีค่า แต่ใบนี้ไม่มี
+        ⇒ source_empty (ต้นทางไม่ส่งมา) · ไม่ถึงเกณฑ์ ⇒ none_expected */
+    coreQuery(
+      `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+              COUNT(*) AS total,
+              SUM(CASE WHEN COALESCE(integration_status,'') <> '' THEN 1 ELSE 0 END) AS withVal
+       FROM orders GROUP BY 1`
+    ),
+    // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
+    coreQuery(
+      `SELECT COALESCE(integration_status,'') AS st,
+              COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
+              COUNT(*) AS c
+       FROM orders WHERE ${w.sql} GROUP BY 1,2`,
+      w.params
+    ),
+    // ยอดแยกช่องทางของ "ช่วงที่กรองอยู่" — ZORT ไม่มีให้ดูในจอเดียว แต่ร้านถามบ่อย
+    coreQuery(
+      `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${w.sql}
+       GROUP BY channel ORDER BY amount DESC`,
+      w.params
+    ),
+    /* ยอดแยก "ร้าน" ของช่วงที่กรองอยู่ (ฝั่งจอขอ 5 ก.ย. 2569)
+        ส่งรายการร้านที่มีอยู่จริง ไม่ใช่ประโยคสำเร็จรูป ⇒ ร้านที่สามโผล่มา ป้ายเปลี่ยนเอง */
+    coreQuery(
+      `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${w.sql}
+       GROUP BY source ORDER BY source`,
+      w.params
+    ),
+    /* ยอดแยก "สถานะ" — จอเอาไปทำแท็บพร้อมจำนวนในวงเล็บแบบ ZORT
+       ⚠️ **นับใบยกเลิกด้วยเสมอ** ไม่งั้นแท็บ "ยกเลิก" จะหายไปจากจอทั้งที่มีอยู่จริง
+          (เจอจริง 2 ก.ย. 2569: มี Voided 44 ใบ แต่จอไม่มีแท็บให้กด)
+          แท็บคือ "สารบัญ" ของข้อมูลทั้งหมด ไม่ใช่ผลของตัวกรองที่เลือกอยู่ */
+    coreQuery(
+      `SELECT status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${wAll.sql}
+       GROUP BY status ORDER BY orders DESC`,
+      wAll.params
+    ),
+    /* ── อายุของข้อมูล ── ตารางชีพจรอาจยังไม่ถูกสร้าง (ต้องยิง ?init=1)
+        ⇒ .catch คืนอาร์เรย์ว่าง **ห้ามให้ล้มลากทั้งคำขอ** */
+    coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`).catch(() => []),
+    coreQuery(`SELECT MAX(updated_at) AS at FROM orders`).catch(() => []),
+    coreQuery(`SELECT MAX(updated_at) AS at FROM orders WHERE ${w.sql}`, w.params).catch(() => []),
+  ]);
+  const sum = sumRows?.[0];
 
-  /* ⚠️ **เหตุผลที่ช่องนี้ว่าง ต้องติดมากับแถว ไม่ใช่ให้จอไปจับคู่ชื่อช่องทางเอง**
-      (ฝั่งจอชี้ 4 ก.ย. 2569 — ถ้าให้จอจับคู่เอง = กลับไปตัดสินประเภทจากชื่อ ซึ่งเราแบนแล้ว)
-      เกณฑ์: ช่องทางนั้นมีค่าอยู่ **อย่างน้อย 5 ใบ และอย่างน้อย 1%** ⇒ ควรมีค่า แต่ใบนี้ไม่มี
-      ⇒ source_empty (ต้นทางไม่ส่งมา) · ไม่ถึงเกณฑ์ ⇒ none_expected (ช่องทางนี้ไม่มีใครบอกสถานะ)
-      ⚠️ ใช้เกณฑ์มีขั้นต่ำ ไม่ใช่ "เคยมีสักใบ" — ค่าหลุดใบเดียวจะพลิกทั้งกองทันที */
-  const chanStats = await coreQuery(
-    `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
-            COUNT(*) AS total,
-            SUM(CASE WHEN COALESCE(integration_status,'') <> '' THEN 1 ELSE 0 END) AS withVal
-     FROM orders GROUP BY 1`
-  );
   /* ⚠️ **ต้องรวมชื่อช่องทางที่สะกดต่างกันก่อนคิดเกณฑ์** (ฝั่งจอชี้ 4 ก.ย. 2569)
       ในฐานมี "Line OA @gucut1" (177 ใบ) กับ "LINE OA @gucut1" (66 ใบ) ซึ่งเป็นช่องทางเดียวกัน
       ถูกนับแยกกัน ⇒ ถ้าวันหนึ่งก้อนหนึ่งข้ามเกณฑ์แต่อีกก้อนไม่ข้าม
@@ -170,80 +222,17 @@ export async function listOrders(o = {}) {
   };
   const chanMap = { get: (ch) => reasonOf(ch) };
 
-  /* ── อายุของข้อมูล ── (ฝั่งจอขอ 4 ก.ย. 2569)
-      ทุกการ์ด/แท็บบนจอนี้นับจากกระจกล้วน ๆ ไม่ได้ยิง ZORT สด
-      ถ้าซิงก์ตายเงียบไปหนึ่งวัน จอจะยังโชว์เลขเดิมสวยงามโดยไม่มีอะไรฟ้อง
-
-      ⚠️ **ต้องส่งสองเวลา ห้ามส่งอันเดียว** — มันตอบคนละคำถาม
-         syncedAt   = ครั้งสุดท้ายที่ "เราไปดู ZORT" (ชีพจร · มีทุกรอบแม้เขียน 0 แถว)
-         changedAt  = ครั้งสุดท้ายที่ "ข้อมูลเปลี่ยนจริง" (MAX updated_at)
-      ส่งแต่ changedAt อย่างเดียวจะหลอกตา: คืนที่ไม่มีออเดอร์ขยับเลย มันจะเก่าเป็นชั่วโมง
-      ทั้งที่ซิงก์ทำงานปกติ ⇒ จอจะเตือนผิด แล้วคนจะเลิกเชื่อคำเตือน (warning-placement)
-      ⚠️ ทุกเวลาเป็น **UTC** ตามที่ SQLite เก็บ — ชื่อฟิลด์ลงท้าย Utc เพื่อไม่ให้เดาผิด
-         (กติกาเวลาใน CLAUDE.md: เก็บ UTC · คิดเป็นวันไทย · โชว์ต้องบวก 7 แล้วเขียนกำกับ) */
-  let freshness = { syncedAtUtc: null, changedAtUtc: null, rangeChangedAtUtc: null };
-  try {
-    const [beat] = await coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`);
-    const [chg] = await coreQuery(`SELECT MAX(updated_at) AS at FROM orders`);
-    const [rng] = await coreQuery(
-      `SELECT MAX(updated_at) AS at FROM orders WHERE ${w.sql}`,
-      w.params
-    );
-    freshness = {
-      syncedAtUtc: beat?.at ?? null,
-      changedAtUtc: chg?.at ?? null,
-      rangeChangedAtUtc: rng?.at ?? null,
-    };
-  } catch {
-    // ตารางชีพจรยังไม่ถูกสร้าง (ต้องยิง ?init=1) — คืน null ดีกว่าทำทั้งจอล้ม
-  }
-
-  // นับสถานะจัดส่งจากฐานทั้งช่วง (ไม่ใช่จากหน้าที่ตัดมาแล้ว)
-  const statusCountsRaw = await coreQuery(
-    `SELECT COALESCE(integration_status,'') AS st,
-            COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
-            COUNT(*) AS c
-     FROM orders WHERE ${w.sql} GROUP BY 1,2`,
-    w.params
-  );
-
-  // ยอดแยกช่องทางของ "ช่วงที่กรองอยู่" — ZORT ไม่มีให้ดูในจอเดียว แต่ร้านถามบ่อย
-  const byChannel = await coreQuery(
-    `SELECT channel, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
-     FROM orders WHERE ${w.sql}
-     GROUP BY channel ORDER BY amount DESC`,
-    w.params
-  );
-
-  /* ── ยอดแยก "ร้าน" ของช่วงที่กรองอยู่ ── (ฝั่งจอขอ 5 ก.ย. 2569)
-      เดิมท่อส่งแต่ `source` ติดมากับแต่ละแถว แต่ไม่บอก **ขอบเขต** ว่าตัวเลขรวมนับกี่ร้าน
-      ⇒ จอต้องเขียนเองว่า "รวมทั้ง 2 ร้าน" ซึ่งถูกวันนี้ แต่เป็นข้อความแช่แข็ง
-         วันที่มีร้านที่สาม มันจะโกหกเงียบ ๆ โดยไม่มีอะไรฟ้อง (computed-now-goes-stale)
-      ⚠️ **ส่งรายการร้านที่มีอยู่จริงในช่วงนั้น ไม่ใช่ส่งประโยคสำเร็จรูป**
-         จอนับ stores.length เอง ⇒ ร้านที่สามโผล่มาเมื่อไหร่ ป้ายเปลี่ยนตามเองทันที
-      ⚠️ นับจากช่วงที่กรองอยู่ ไม่ใช่ทั้งฐาน — ช่วงที่ ceojet ไม่มีบิลเลย ต้องได้ 1 ร้าน ไม่ใช่ 2
-      ⚠️ ผลรวม stores[].orders ต้องเท่ากับ total เป๊ะ (กติกา "บวกทุกกองเทียบยอดรวม") */
-  const storeRows = await coreQuery(
-    `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
-     FROM orders WHERE ${w.sql}
-     GROUP BY source ORDER BY source`,
-    w.params
-  );
-
-  // ยอดแยก "สถานะ" ของช่วงที่กรองอยู่ — จอเอาไปทำแท็บพร้อมจำนวนในวงเล็บแบบ ZORT
-  // ⚠️ ไม่กรองตามสถานะที่เลือกอยู่ ไม่งั้นแท็บอื่นจะกลายเป็นศูนย์หมดทันทีที่กดแท็บแรก
-  //    (แท็บต้องบอกได้เสมอว่าแท็บอื่นมีกี่ใบ ไม่งั้นมันไม่ใช่แท็บ เป็นแค่ปุ่มกรอง)
-  // ⚠️ **นับใบยกเลิกด้วยเสมอ** ไม่ว่าตัวกรองหลักจะรวมหรือไม่ —
-  //    ไม่งั้นแท็บ "ยกเลิก" จะหายไปจากจอทั้งที่มีอยู่จริง (เจอจริง 2 ก.ย. 2569:
-  //    มี Voided 44 ใบ แต่จอไม่มีแท็บให้กดเลย เพราะ byStatus ถูกกรองทิ้งไปก่อน)
-  //    แท็บคือ "สารบัญ" ของข้อมูลทั้งหมด ไม่ใช่ผลของตัวกรองที่เลือกอยู่
-  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true });
-  const byStatus = await coreQuery(
-    `SELECT status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
-     FROM orders WHERE ${wAll.sql}
-     GROUP BY status ORDER BY orders DESC`,
-    wAll.params
-  );
+  /* ⚠️ **ต้องส่งสองเวลา ห้ามส่งอันเดียว** — มันตอบคนละคำถาม
+        syncedAt  = ครั้งสุดท้ายที่ "เราไปดู ZORT" (ชีพจร · มีทุกรอบแม้เขียน 0 แถว)
+        changedAt = ครั้งสุดท้ายที่ "ข้อมูลเปลี่ยนจริง" (MAX updated_at)
+     ส่งแต่ changedAt อย่างเดียวจะหลอกตา: คืนที่ไม่มีออเดอร์ขยับเลย มันจะเก่าเป็นชั่วโมง
+     ทั้งที่ซิงก์ทำงานปกติ ⇒ จอจะเตือนผิด แล้วคนจะเลิกเชื่อคำเตือน
+     ⚠️ ทุกเวลาเป็น **UTC** ตามที่ SQLite เก็บ — ชื่อฟิลด์ลงท้าย Utc เพื่อไม่ให้เดาผิด */
+  const freshness = {
+    syncedAtUtc: beatRows?.[0]?.at ?? null,
+    changedAtUtc: chgRows?.[0]?.at ?? null,
+    rangeChangedAtUtc: rngRows?.[0]?.at ?? null,
+  };
 
   return {
     from,

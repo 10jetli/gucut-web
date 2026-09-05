@@ -58,19 +58,18 @@ export default async function handler(req, context) {
   if (gate.deny) return gate.deny;
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
+  // ⚠️ ต้องอ่าน searchParams จาก req.url — ฟังก์ชันนี้ไม่มีตัวแปร url มาก่อน
+  const url = new URL(req.url);
   const s = await stats();
 
-  // เก็บกวาดของเก่าไปด้วยตอนเปิดดู ไม่ต้องตั้งงานตามเวลาให้เปลืองอีกตัว
-  //
-  // ⚠️ ห้ามเขียนเป็น context?.waitUntil?.(sweep()) เด็ดขาด
-  //    ถ้า waitUntil ไม่มี JavaScript จะ "ข้ามการประเมิน argument ทั้งก้อน"
-  //    แปลว่า sweep() ไม่เคยถูกเรียกเลยแม้แต่ครั้งเดียว — ของเก่าค้างสะสมตลอดไป
-  //    และข้อความ "เก็บย้อนหลัง 30 วัน" ในหน้าหลังร้านก็จะไม่จริง
-  //    (เขียนผิดแบบนี้ไว้ตั้งแต่แรก เพิ่งจับได้ 19 ส.ค. 2569 ตอนลบข้อมูลทดสอบไม่ออก)
-  //    ไฟล์ chat.mjs กับ orders.mjs ใช้ท่าที่ถูกอยู่แล้ว เอามาใช้ให้ตรงกัน
-  const job = sweep().catch(() => {});
-  if (context?.waitUntil) context.waitUntil(job);
-  else await job;          // ไม่มี waitUntil ก็รอให้เสร็จ — หน้านี้เป็นหลังร้าน ช้าอีกนิดไม่เป็นไร
+  /* ⚠️ **ไม่เก็บกวาดตรงนี้แล้ว** (5 ก.ย. 2569) — ย้ายไป netlify/functions/live-sweep.mjs
+      ของเดิมกวาดตอนเปิดหน้า ⇒ คนเปิดคนแรกของวันรอ 25 วินาที (วัดจริง)
+      **ห้ามเอากลับมาใส่ที่นี่อีก** ต่อให้ดูประหยัดกว่าเพราะไม่ต้องมีฟังก์ชันเพิ่ม
+      สั่งกวาดเดี๋ยวนั้นได้ที่ GET /api/live?admin=1&sweep=1 (ต้องมี x-admin-key) */
+  if (url.searchParams.get("sweep") === "1") {
+    const r = await sweep().catch((e) => ({ error: String(e?.message || e).slice(0, 160) }));
+    return json({ ...s, sweep: r });
+  }
 
   return json(s);
 }
