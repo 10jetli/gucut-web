@@ -712,8 +712,20 @@ export async function blockedByNegative() {
       ความจริงคือ "ยังตอบไม่ได้"
    ───────────────────────────────────────────────────────────────────────────── */
 /** ม้วนหนึ่งแถมข้อต่อมากี่คู่ — เจ้าของร้านนับให้เอง 5 ก.ย. 2569
- *  ⚠️ ตัวเลขนี้มาจากปากเจ้าของร้าน ไม่ได้คำนวณจากอะไร **เปลี่ยนต้องถามก่อน** */
-const LINKS_PER_ROLL = 30;
+ *
+ *  ⚠️ **ยืนยันแล้วเฉพาะม้วน 820 ฟัน (3/8 · 3/8p · 3652) เท่านั้น**
+ *     ตอนถามว่าโซ่ 1/4 (เลื่อยแบต) แถม 30 คู่เหมือนกันไหม เจ้าของร้านตอบว่า
+ *     **"ไม่แน่ใจ ติดไว้ก่อน"** ⇒ ห้ามเดาว่าเท่ากัน
+ *  ⚠️ เหตุผลที่เดาไม่ได้: ม้วน 1/4 ตัดได้ **50–86 เส้น** ต่อม้วน (โซ่สั้น ได้เยอะ)
+ *     ถ้าแถมมา 30 คู่จริง = ข้อต่อขาดทุกม้วนแน่นอน · ส่วน 404 ตัดได้ 14–18 เส้น = เหลือเพียบ
+ *     ตัวเลขเดียวกันจึงให้ข้อสรุปตรงข้ามกันคนละขั้ว **เดาผิดคือแนะนำให้สั่งของผิดทาง**
+ *  ⚠️ ไม่รู้ ⇒ คืน **null** ทั้งแถว ห้ามคืน 30 · null แปลว่า "ยังตอบไม่ได้"
+ *     ส่วน 30 แปลว่า "รู้แล้วว่า 30" — คนละคำตอบ
+ *
+ *  รู้คำตอบของเบอร์อื่นเมื่อไหร่ ให้เติมลงตารางนี้ (คีย์ = จำนวนฟันต่อม้วน) */
+const LINKS_PER_ROLL_BY_TEETH = new Map([[820, 30]]);
+const linksPerRoll = (teethPerRoll) =>
+  LINKS_PER_ROLL_BY_TEETH.get(Number(teethPerRoll)) ?? null;
 
 export async function reorderPlan(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
@@ -797,6 +809,7 @@ export async function reorderPlan(o = {}) {
     const maxT = lens.length ? Math.max(...lens) : null;
     const perDay = used / days;
     const tpr = perRoll.get(parent) ?? null;
+    const lpr = linksPerRoll(tpr);
     rows.push({
       sku: parent,
       name: st.name,
@@ -830,12 +843,14 @@ export async function reorderPlan(o = {}) {
       ladderTeethMin: minT,
       ladderTeethMax: maxT,
       avgTeethPerChain: cut > 0 ? Math.round((used / cut) * 10) / 10 : null,
-      linkBreakEvenTeeth: tpr ? Math.round((tpr / LINKS_PER_ROLL) * 10) / 10 : null,
+      // แถมกี่คู่ต่อม้วน — null = ยังไม่รู้สำหรับเบอร์นี้ (จอต้องขึ้นขีด ไม่ใช่ 0)
+      linksPerRoll: lpr,
+      linkBreakEvenTeeth: tpr && lpr ? Math.round((tpr / lpr) * 10) / 10 : null,
       /* บวก = ข้อต่อที่แถมมาเหลือ · ลบ = ต้องซื้อข้อต่อเพิ่มเท่านี้คู่ ในช่วงที่ดู
          คิดจาก "ฟันที่ใช้ไป" ไม่ใช่ "ม้วนที่รับเข้า" เพราะกระจกยังไม่มีใบรับของ
          ⇒ เป็นค่าประมาณของช่วงที่ขาย ไม่ใช่ยอดคงเหลือจริงของข้อต่อ */
       linkBalance:
-        tpr && cut > 0 ? Math.round(((used / tpr) * LINKS_PER_ROLL - cut) * 10) / 10 : null,
+        tpr && lpr && cut > 0 ? Math.round(((used / tpr) * lpr - cut) * 10) / 10 : null,
       /* พอขายอีกกี่วัน — ไม่เคยขายในช่วงที่ดู ⇒ null (ยังตอบไม่ได้)
          ของติดลบอยู่แล้ว ⇒ 0 (หมดไปแล้วจริง ๆ ไม่ใช่ "ยังตอบไม่ได้") */
       daysLeft: perDay > 0 ? Math.max(0, Math.round((st.have / perDay) * 10) / 10) : null,
@@ -867,6 +882,10 @@ export async function reorderPlan(o = {}) {
       "chainsCountable = false แปลว่า 'นับไม่ได้' ไม่ใช่ 'ไม่มีการตัด' · " +
       "chainsEstMin/Max เป็นช่วงที่เป็นไปได้จากบันไดความยาวของม้วนนั้น ไม่ใช่ค่าจริง " +
       "(ข้อต่อที่ใช้ = จำนวนเส้น ⇒ ใช้ช่วงเดียวกันนี้ประมาณได้)",
+    linksNote:
+      "ม้วนแถมข้อต่อมา 30 คู่ — ยืนยันแล้วเฉพาะม้วน 820 ฟัน (3/8 · 3/8p) · " +
+      "เบอร์อื่นยังไม่รู้ (เจ้าของร้านตอบว่าไม่แน่ใจ 5 ก.ย. 2569) ⇒ linksPerRoll เป็น null " +
+      "และ linkBreakEvenTeeth กับ linkBalance เป็น null ตามไปด้วย · null = ยังตอบไม่ได้ ไม่ใช่ 0",
     rows,
   };
 }
