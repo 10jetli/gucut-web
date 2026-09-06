@@ -90,6 +90,14 @@ export default async function handler(req, context) {
     for (const b of blobs) {
       const meta = await store.getMetadata(b.key).catch(() => null);
       items.push({
+        /* ⚠️ **ส่งชื่อจอสั้น ๆ ออกไปด้วยเสมอ** (6 ก.ย. 2569 — ฝั่งจอเจอของจริง)
+            เดิมส่งแต่ `key` ซึ่งมี prefix `t/` ติดมา (`t/branch`)
+            แต่เส้นอ่านรายจอรับ **ชื่อสั้น** (`?screen=branch`)
+            ⇒ ฝั่งจอส่งคีย์เต็มไปตามที่เห็นในรายการ แล้วได้ **ตารางว่าง**
+              ซึ่งหน้าตา **เหมือน "จอนี้ไม่มีข้อมูล" เป๊ะ** ไม่มีอะไรฟ้องว่าส่งชื่อผิด
+            🔑 API ที่ให้ค่าออกมารูปหนึ่ง แต่รับกลับอีกรูปหนึ่ง = กับดักที่คนใช้ต้องรู้เองว่าต้องตัด prefix
+              ⇒ ให้ค่าที่เอาไปใช้ต่อได้ทันที ดีกว่าให้คนอ่านเอกสารแล้วแปลงเอง */
+        screen: String(b.key).replace(/^t\//, ""),
         key: b.key,
         rows: Number(meta?.metadata?.rows ?? 0),
         expected: Number(meta?.metadata?.expected ?? 0),
@@ -113,7 +121,12 @@ export default async function handler(req, context) {
 
   // ── อ่านของจอเดียว (ต้องระบุชื่อจอ) ──
   if (req.method === "GET") {
-    const screen = String(url.searchParams.get("screen"));
+    /* ⚠️ **รับทั้งชื่อสั้น (`branch`) และคีย์เต็ม (`t/branch`)** (ฝั่งจอเสนอ 6 ก.ย. 2569)
+        รายการรวมส่ง `key` ที่มี prefix ติดมา ⇒ ธรรมชาติที่สุดคือคนหยิบค่านั้นมาใช้ต่อเลย
+        เดิมรับแต่ชื่อสั้น ⇒ ส่งคีย์เต็มมาได้ **ตารางว่างที่หน้าตาเหมือน "ไม่มีข้อมูล"**
+        แก้สองทางพร้อมกัน (ส่งชื่อสั้นออกไปด้วย + รับคีย์เต็มเข้ามาด้วย) ⇒ **เหลือทางพลาดศูนย์ทาง**
+        🔑 ของที่ "คนใช้ต้องรู้เองว่าต้องแปลงก่อน" คือของที่จะมีคนลืมแปลงเสมอ */
+    const screen = String(url.searchParams.get("screen") ?? "").replace(/^t\//, "");
     if (!SCREENS.has(screen)) return json({ error: `ไม่รู้จักจอ ${screen}`, accepts: [...SCREENS] }, 400);
     const data = await store.get(`t/${screen}`, { type: "json" }).catch(() => null);
     if (!data) return json({ error: "ยังไม่ได้เก็บจอนี้" }, 404);
