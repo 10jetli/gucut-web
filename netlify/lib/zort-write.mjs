@@ -469,33 +469,74 @@ export const ZORT_WEBHOOK = {
 export async function zortDocumentsRead(limitRaw) {
   const headers = creds();
   if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
-  const limit = Math.max(1, Math.min(100, Number(limitRaw) || 20));
-  let r;
-  try {
-    r = await fetch(`${BASE}/Document/GetDocuments?limit=${limit}&page=1`, {
-      headers,
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (e) {
-    return { ok: false, error: `ยิง ZORT ไม่ถึง: ${e?.message ?? e}` };
+  const per = Math.max(1, Math.min(100, Number(limitRaw) || 100));
+
+  /* ⚠️ **ต้องไล่ให้ครบทุกหน้า ไม่ใช่ดูหน้าแรกแล้วสรุป** — หน้าแรกไม่ใช่ตัวแทนของทั้งกอง
+      (บทเรียนซ้ำของวันนี้: ตัวอย่าง 50 ใบผีเป็น Shopify ทั้งหมด แต่ทั้งกองไม่ใช่)
+      ⚠️ เพดานหน้า 12 หน้า กันวนไม่รู้จบถ้า ZORT คืนหน้าเดิมซ้ำ — ชนเพดานต้อง**บอก**
+         ห้ามเงียบแล้วรายงานเหมือนนับครบ */
+  const MAX_PAGES = 12;
+  const byHeader = new Map();
+  const byType = new Map();
+  let total = null, fetched = 0, pages = 0, hitCap = false, sample = null, rowFields = null;
+
+  for (let page = 1; page <= MAX_PAGES; page++) {
+    let r;
+    try {
+      r = await fetch(`${BASE}/Document/GetDocuments?limit=${per}&page=${page}`, {
+        headers,
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (e) {
+      return { ok: false, error: `ยิง ZORT ไม่ถึงที่หน้า ${page}: ${e?.message ?? e}`, fetched, pages };
+    }
+    const raw = await r.text().catch(() => "");
+    let data = null;
+    try { data = JSON.parse(raw); } catch { /* ไม่ใช่ JSON */ }
+    const code = String(data?.res?.resCode ?? data?.resCode ?? data?.rescode ?? "");
+    if (code !== "200")
+      return { ok: false, resCode: code || null, error: "ZORT ไม่ได้ตอบว่าสำเร็จ", fetched, pages,
+               rawHead: data ? null : raw.slice(0, 300) };
+    if (total === null && Number.isFinite(Number(data?.count))) total = Number(data.count);
+    const list = Array.isArray(data?.list) ? data.list : null;
+    /* สามสถานะ: null = ไม่มีช่องรายการ · [] = หมดแล้ว · มีของ = นับต่อ */
+    if (list === null) return { ok: false, error: "ZORT ตอบมาแต่ไม่มีช่องรายการ", fetched, pages };
+    pages = page;
+    if (!list.length) break;
+    if (!rowFields && list[0] && typeof list[0] === "object") rowFields = Object.keys(list[0]).sort();
+    if (!sample) {
+      /* ⚠️ ตัวอย่างส่งกลับแค่ 2 แถว และ **ตัดช่อง detail ทิ้ง** — ในนั้นมีข้อมูลใบเต็ม
+          (ชื่อคู่ค้า ยอดเงิน รายการสินค้า) ซึ่งไม่จำเป็นต่อการตัดสินใจว่าดึงอัตโนมัติได้ไหม */
+      sample = list.slice(0, 2).map(({ detail, ...rest }) => rest);
+    }
+    for (const it of list) {
+      fetched += 1;
+      const h = String(it?.header ?? "(ไม่มีหัวเรื่อง)");
+      const t = String(it?.referencetype ?? "?");
+      byHeader.set(h, (byHeader.get(h) ?? 0) + 1);
+      byType.set(t, (byType.get(t) ?? 0) + 1);
+    }
+    if (list.length < per) break;
+    if (page === MAX_PAGES) hitCap = true;
   }
-  const raw = await r.text().catch(() => "");
-  let data = null;
-  try { data = JSON.parse(raw); } catch { /* ไม่ใช่ JSON — คืนดิบให้คนอ่านเอง */ }
-  /* ⚠️ ZORT ตอบ 200 เสมอ ⇒ ห้ามตัดสินจาก r.ok · resCode วางคนละที่แล้วแต่โมดูล */
-  const resCode = String(data?.res?.resCode ?? data?.resCode ?? data?.rescode ?? "");
-  const list = Array.isArray(data?.list) ? data.list : null;
+
+  const sortDesc = (m) =>
+    [...m.entries()].sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ ชนิด: k, จำนวน: n }));
   return {
-    ok: resCode === "200",
-    resCode: resCode || null,
-    /* สามสถานะของ `list` — ห้ามยุบรวม
-       null = ZORT ไม่ส่งช่องรายการมาเลย · [] = มีช่องแต่ว่าง · มีของ = ได้ข้อมูลจริง */
-    count: Number.isFinite(Number(data?.count)) ? Number(data.count) : null,
-    rows: list ? list.length : null,
-    topFields: data && typeof data === "object" ? Object.keys(data).sort() : null,
-    rowFields: list && list[0] && typeof list[0] === "object" ? Object.keys(list[0]).sort() : null,
-    sample: list ? list.slice(0, 2) : null,
-    rawHead: data ? null : raw.slice(0, 400),
+    ok: true,
+    total,                       // จำนวนที่ ZORT บอก
+    fetched,                     // ที่นับได้จริง
+    pages,
+    /* 🔴 **ต้องบอกเมื่อนับไม่ครบ** — ตัวเลขที่ดูเหมือนครบแต่ไม่ครบ อันตรายกว่าไม่มีตัวเลข */
+    complete: total !== null ? fetched >= total : null,
+    hitPageCap: hitCap,
+    byHeader: sortDesc(byHeader),
+    byType: sortDesc(byType),
+    rowFields,
+    sample,
+    note:
+      "linkurl = ลิงก์ดาวน์โหลด PDF จาก ZORT โดยตรง ⇒ เอกสารชนิดที่อยู่ในรายการนี้ " +
+      "**ดึงอัตโนมัติได้ ไม่ต้องคัดด้วยมือก่อนปิดบัญชี**",
   };
 }
 
