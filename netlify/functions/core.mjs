@@ -357,6 +357,18 @@ async function route(req, context) {
       const { zortWebhookRead } = await import("../lib/zort-write.mjs");
       return json(await zortWebhookRead());
     }
+    /* 🆕 โมดูล `Document` — เจอ 6 ก.ย. 2569 ตอนกวาดชื่อโมดูลตาม URL ของจอ ZORT
+       มีเส้นเดียว `Document/GetDocuments` (อ่านอย่างเดียว · Add/Edit/Delete = 404 ทั้งหมด)
+       ⚠️ **ยังไม่รู้ว่ามันคืออะไร** — เดาได้ 2 ทาง ยังแยกไม่ออกจนกว่าจะยิงด้วยรหัสจริง:
+          ① "เอกสารบัญชี" (จอ /ZDocument/list) ซึ่ง ZORT ของร้าน **ว่างเปล่าอยู่แล้ว** ⇒ ไม่ได้อะไรเพิ่ม
+          ② **รายการไฟล์แนบ/สลิป 376 ใบ** ซึ่งอยู่ใน "ของที่ต้องคัดด้วยมือก่อนปิดบัญชี ZORT"
+             ⇒ ถ้าเป็นข้อนี้ **ตัดงานที่มีเส้นตายออกได้อีกหนึ่งกอง**
+       ⇒ ต่อเส้นอ่านไว้ให้ยิงตรวจได้ · **ส่งของดิบ + ชื่อช่องที่ได้จริงกลับไป ไม่แกะตามชื่อที่เดาเอง**
+          (เดารูปแล้วอ่านไม่เจอ จะกลายเป็น "ไม่มีข้อมูล" ซึ่งชวนให้สรุปผิดว่ายังต้องคัดมือ) */
+    if (url.searchParams.get("zortdocs")) {
+      const { zortDocumentsRead } = await import("../lib/zort-write.mjs");
+      return json(await zortDocumentsRead(url.searchParams.get("limit")));
+    }
 
     if (url.searchParams.get("move")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);

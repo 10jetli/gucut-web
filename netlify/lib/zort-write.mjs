@@ -461,6 +461,44 @@ export const ZORT_WEBHOOK = {
   untested: true,
 };
 
+/** อ่านรายการจากโมดูล `Document` ของ ZORT — **อ่านอย่างเดียว**
+ *  เจอ 6 ก.ย. 2569 ตอนกวาดชื่อโมดูลตาม URL ของจอ · มีแค่เส้นอ่าน (Add/Edit/Delete = 404)
+ *  ⚠️ ยังไม่รู้ว่าเป็น "เอกสารบัญชี" หรือ "ไฟล์แนบ/สลิป" ⇒ **ห้ามแกะฟิลด์ตามชื่อที่เดาเอง**
+ *     ส่งของดิบ + รายชื่อช่องที่ได้จริงกลับไป ให้คนดูตัดสินเอง
+ *     (เดารูปแล้วอ่านไม่เจอ จะกลายเป็น "ไม่มีข้อมูล" ซึ่งชวนสรุปผิดว่ายังต้องคัดมือ) */
+export async function zortDocumentsRead(limitRaw) {
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  const limit = Math.max(1, Math.min(100, Number(limitRaw) || 20));
+  let r;
+  try {
+    r = await fetch(`${BASE}/Document/GetDocuments?limit=${limit}&page=1`, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e) {
+    return { ok: false, error: `ยิง ZORT ไม่ถึง: ${e?.message ?? e}` };
+  }
+  const raw = await r.text().catch(() => "");
+  let data = null;
+  try { data = JSON.parse(raw); } catch { /* ไม่ใช่ JSON — คืนดิบให้คนอ่านเอง */ }
+  /* ⚠️ ZORT ตอบ 200 เสมอ ⇒ ห้ามตัดสินจาก r.ok · resCode วางคนละที่แล้วแต่โมดูล */
+  const resCode = String(data?.res?.resCode ?? data?.resCode ?? data?.rescode ?? "");
+  const list = Array.isArray(data?.list) ? data.list : null;
+  return {
+    ok: resCode === "200",
+    resCode: resCode || null,
+    /* สามสถานะของ `list` — ห้ามยุบรวม
+       null = ZORT ไม่ส่งช่องรายการมาเลย · [] = มีช่องแต่ว่าง · มีของ = ได้ข้อมูลจริง */
+    count: Number.isFinite(Number(data?.count)) ? Number(data.count) : null,
+    rows: list ? list.length : null,
+    topFields: data && typeof data === "object" ? Object.keys(data).sort() : null,
+    rowFields: list && list[0] && typeof list[0] === "object" ? Object.keys(list[0]).sort() : null,
+    sample: list ? list.slice(0, 2) : null,
+    rawHead: data ? null : raw.slice(0, 400),
+  };
+}
+
 /** อ่านค่า webhook ปัจจุบันของ ZORT — **อ่านอย่างเดียว ไม่มีคู่สำหรับเขียนในไฟล์นี้โดยตั้งใจ** */
 export async function zortWebhookRead() {
   const headers = creds();
