@@ -142,9 +142,16 @@ export default async function handler(req, context) {
     /* ⚠️ **จอที่ดึงด้วย API ได้แล้ว ต้องไม่ค้างอยู่ในรายการ "ยังไม่ได้เก็บ"**
         ไม่งั้นคนอ่านจะไปนั่งคัดมือของที่ไม่ต้องคัด **ในงานที่มีเส้นตาย**
         (เป็นอาการเดียวกับ "จอว่างจริงแต่ค้างใน notYet" ที่เพิ่งแก้ไปเมื่อชั่วโมงก่อน) */
-    const BY_API = new Set(["return", "stock-adjust"]);
+    /* จอที่ **ไม่ต้องคัดมือแล้ว** พร้อมเหตุผลรายตัว — ส่งออกไปให้เห็น ไม่ใช่ลบเงียบ ๆ
+       ⚠️ เหตุผลต้องติดมาด้วยเสมอ ไม่งั้นคนรอบหน้าจะไม่รู้ว่า "ทำไมหายไป"
+          แล้วอาจเอากลับมาใส่ หรือแย่กว่านั้นคือนึกว่าตกหล่นแล้วไปคัดซ้ำ */
+    const COVERED = {
+      return: "ดึงด้วย API ได้ — ReturnOrder/GetReturnOrders (682 ใบ)",
+      "stock-adjust": "อยู่ในกระจกเราแล้ว — /api/core?list=transfers ช่อง kind = Adjust",
+      bank: "อยู่ในจอกระเป๋าเงินที่เก็บไปแล้ว — ทั้งระบบมีบัญชีธนาคารเดียว (ตรวจ 7 ก.ย. 2569 · ไม่มีเมนูบัญชีธนาคารแยกใน ZORT)",
+    };
     const missing = [...SCREENS].filter(
-      (s) => !BY_API.has(s) && !items.some((i) => i.key === `t/${s}`)
+      (s) => !COVERED[s] && !items.some((i) => i.key === `t/${s}`)
     );
     return json({
       ok: true,
@@ -154,7 +161,7 @@ export default async function handler(req, context) {
       notYet: missing,
       /* จอที่เคยอยู่ในรายการคัดมือ แต่พิสูจน์แล้วว่าดึงด้วย API ได้ ⇒ ไม่ต้องคัด
          ส่งออกไปให้เห็น **ไม่ใช่ลบเงียบ ๆ** คนอ่านจะได้รู้ว่าหายไปเพราะอะไร */
-      coveredByApi: [...BY_API],
+      coveredElsewhere: COVERED,
       note: "จอที่ไม่มีใน notYet และ complete:true เท่านั้นที่ถือว่าเก็บครบแล้ว",
     });
   }
