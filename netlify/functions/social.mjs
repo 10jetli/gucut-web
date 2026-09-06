@@ -44,8 +44,17 @@ const clean = (v, n) =>
 
 const store = () => getStore({ name: "gucut-social", consistency: "strong" });
 
+/* ⚠️ **อ่าน x-forwarded-for ตัวท้าย ไม่ใช่ทั้งสตริง** (ไล่ทั้งคลาส 6 ก.ย. 2569)
+    ของเดิมเอาทั้งหัวมาเป็นกุญแจ ⇒ ผู้เรียกเปลี่ยนหัวทุกครั้ง = ได้กุญแจใหม่ทุกครั้ง
+    ⇒ โควตาหัวใจ 120/10 นาที กับคอมเมนต์ 5/10 นาที **เท่ากับไม่มี**
+    ทิศของความผิดที่นี่เบากว่า /time/ (แค่ปั่นยอดกับสแปมคอมเมนต์ ไม่ได้เข้าถึงอะไร)
+    แต่แก้พร้อมกันเพราะเป็นบั๊กคลาสเดียวกัน */
 const who = (req, context) =>
-  context?.ip || req.headers.get("x-nf-client-connection-ip") || req.headers.get("x-forwarded-for") || "ไม่รู้";
+  context?.ip ||
+  req.headers.get("x-nf-client-connection-ip") ||
+  (req.headers.get("x-forwarded-for") || "")
+    .split(",").map((x) => x.trim()).filter(Boolean).slice(-1)[0] ||
+  "ไม่รู้";
 
 // เกินโควตาไหม — เก็บเวลาที่ยิงไว้ใน blob เดียวกัน
 async function overLimit(s, ip, kind, max) {
