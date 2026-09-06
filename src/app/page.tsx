@@ -7,7 +7,7 @@ import CouponStrip from "@/components/CouponStrip";
 import ProductCard from "@/components/ProductCard";
 import HomeVideoFloat from "@/components/HomeVideoFloat";
 import SectionHead from "@/components/SectionHead";
-import { bestSellers, collections, inCollection, sellable } from "@/lib/catalog";
+import { bestSellers, collections, inCollection, products, sellable } from "@/lib/catalog";
 import { ldScript, organizationLd, websiteLd } from "@/lib/seo";
 import { floatClips } from "@/lib/feed";
 
@@ -71,12 +71,14 @@ export default function HomePage() {
 
       {/* ทางไปดูสินค้าทั้งหมด — เดิมมีตาราง "สินค้าแนะนำ" 30 ชิ้นอยู่เหนือปุ่มนี้
           เอาออกแล้วเพราะโหลดรูปทีเดียว 30 ใบ ทำให้หน้าแรกช้า
-          ลูกค้าเลือกจากหมวดหรือค้นหาตรง ๆ เร็วกว่าเลื่อนดูของสุ่ม ๆ */}
+          ลูกค้าเลือกจากหมวดหรือค้นหาตรง ๆ เร็วกว่าเลื่อนดูของสุ่ม ๆ
+          ⚠️ จำนวนรายการนับจาก products ตอน build ห้ามเขียนเลขตายตัว
+             (เคยเขียนไว้ 2,482 แล้วของจริงเพิ่มขึ้น กลายเป็นตัวเลขเท็จบนหน้าแรก) */}
       <Link
         href="/categories/"
         className="mx-3 mt-7 block rounded-sm border-2 border-safety py-3 text-center text-[15px] font-medium text-safety active:bg-safety active:text-white"
       >
-        ดูสินค้าทั้งหมด 2,482 รายการ ›
+        ดูสินค้าทั้งหมด {products.length.toLocaleString("th-TH")} รายการ ›
       </Link>
 
       {/* คลิปลอยมุมขวาล่างแบบ Shopee — สุ่มคลิปใหม่ทุกครั้งที่เปิดหน้า

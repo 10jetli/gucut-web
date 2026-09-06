@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-05T22:55:30.868Z",
+  "generatedAt": "2026-09-06T00:01:38.077Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",

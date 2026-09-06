@@ -8,7 +8,8 @@ import { formatPrice } from "@/lib/types";
 
 export const dynamicParams = false;
 
-// สร้างเฉพาะสินค้าที่มีรีวิวจริง (ตอนนี้ 34 ตัว)
+// สร้างเฉพาะสินค้าที่มีรีวิวจริง — จำนวนนับจากคีย์ใน src/data/reviews.json ตอน build
+// (REVIEWED_HANDLES) ที่ยังมีอยู่ในแคตตาล็อกจริง ห้ามเขียนเลขตายตัวไว้ตรงนี้
 export function generateStaticParams() {
   const inCatalog = new Set(products.map((p) => p.h));
   return REVIEWED_HANDLES.filter((h) => inCatalog.has(h)).map((handle) => ({ handle }));

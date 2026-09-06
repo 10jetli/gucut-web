@@ -209,6 +209,46 @@ async function route(req, context) {
       const r = await deleteMove(url.searchParams.get("movedel"));
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
     }
+    /* ── เขียนกลับ ZORT (จอหลังร้านตัวใหม่เรียกผ่านท่อกลาง) ──
+       POST /api/core?addproduct=1  body {ref, sku, name, price?, cost?, unit?, barcode?, category?}
+       POST /api/core?addpo=1       body {ref, vendor?, note?, items:[{sku,name?,qty,price?}]}
+       ⚠️ **เขียนเข้า ZORT ไม่ใช่เขียนลง D1** — คลังเงายังเป็นกระจกที่ซิงก์ทับทุกครึ่งชั่วโมง
+          เขียนลง D1 เอง = รอบซิงก์ถัดไปทับหาย · ให้ ZORT เป็นตัวจริงไปก่อน แล้วกระจกดูดกลับเอง
+       ⚠️ **ต้องมี ref เสมอ** กันยิงซ้ำ · คืน added กับ duplicate แยกกัน จอต้องบอกคนใช้ตรง ๆ
+       ⚠️ ผิด method = 405 (เคยพลาดมาแล้ว 2 ก.ย. 2569 ปุ่มลบเขียนเป็น POST แล้วเงียบไป) */
+    if (url.searchParams.get("addproduct")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddProduct } = await import("../lib/zort-write.mjs");
+      const r = await zortAddProduct(body);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (url.searchParams.get("addpo")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddPurchaseOrder } = await import("../lib/zort-write.mjs");
+      const r = await zortAddPurchaseOrder(body);
+      return json(r, r.ok ? 200 : 400);
+    }
+    /* รายการที่ ZORT **ไม่เปิด API ให้** — จอเอาไปโชว์เหตุผลได้ตรง ๆ
+       ⚠️ ต่างจาก "เรายังไม่ได้ทำ" คนละเรื่อง ห้ามให้จอเขียนรวมกัน */
+    /* ข้อมูลนิติบุคคล + ใบอนุญาต — **แหล่งความจริงเดียว** สำหรับจอหลังร้านทุกตัว
+       ⚠️ คุณส้มขอเส้นนี้แทนการคัดลอกข้อมูลไปไว้ฝั่งจอ (6 ก.ย. 2569)
+          คัดลอกเมื่อไหร่ = ต่ออายุใบอนุญาตแล้วต้องแก้สองที่ แล้วตกหล่นแน่นอน
+       ⚠️ **ไม่มีที่อยู่ในคำตอบนี้** ทั้งของผู้ขายและผู้ผลิต — ไม่มีจอไหนต้องใช้
+          ส่งออกไป = ไปโผล่ในไฟล์ของ repo อื่นแทน (ย้ายปัญหา ไม่ใช่แก้)
+       ⚠️ **สองนิติบุคคล ห้ามยุบรวม** — seller คือคนขาย · licensee คือผู้ถือใบอนุญาต */
+    if (url.searchParams.get("shopinfo")) {
+      const { SHOP_DATA } = await import("../lib/shop-data.mjs");
+      return json({ ok: true, ...SHOP_DATA });
+    }
+    if (url.searchParams.get("zortnoapi")) {
+      const { ZORT_NO_API } = await import("../lib/zort-write.mjs");
+      return json({ ok: true, items: ZORT_NO_API });
+    }
+
     if (url.searchParams.get("move")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

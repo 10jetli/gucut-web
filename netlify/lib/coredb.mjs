@@ -233,7 +233,9 @@ export async function coreInit() {
   ]) {
     await coreQuery(sql).catch(() => null);
   }
-  return { tables: 10 };
+  // นับจากคำสั่ง CREATE TABLE จริงใน stmts — เพิ่มตารางแล้วเลขนี้ตามเอง
+  // (เคยเขียนตายตัวว่า 10 ซึ่งจะกลายเป็นเท็จเงียบ ๆ ทันทีที่มีคนเพิ่มตาราง)
+  return { tables: stmts.filter((s) => /CREATE\s+TABLE/i.test(s)).length };
 }
 
 /** ฐานข้อมูลอยู่โซนไหนจริง ๆ — อ่านจาก Cloudflare ตรง ๆ ไม่ใช่จากคอมเมนต์ในไฟล์นี้

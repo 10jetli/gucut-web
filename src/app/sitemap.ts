@@ -2,7 +2,8 @@ import type { MetadataRoute } from "next";
 import { articles } from "@/lib/articles";
 import { products, collections } from "@/lib/catalog";
 
-// sitemap สำหรับ 2,482 หน้าสินค้า + 30 หมวด
+// sitemap สำหรับหน้าสินค้าทุกตัวในแคตตาล็อก + หมวดหมู่ทั้งหมด
+// ⚠️ ห้ามเขียนจำนวนเป็นเลขตายตัวตรงนี้ — โตทุกครั้งที่นำเข้าสินค้าใหม่ แล้วคอมเมนต์จะโกหกเงียบ ๆ
 // พร้อมใช้ทันทีที่ย้ายไป gucut.com — แค่เปลี่ยน NEXT_PUBLIC_SITE_URL (ดู src/lib/site.ts)
 import { SITE_URL as BASE } from "@/lib/site";
 

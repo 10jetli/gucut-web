@@ -164,7 +164,8 @@ src/
 ├── components/               # SectionHead (หัวข้อประจำแบรนด์), SiteFooter, PwaSetup,
 │                             # SearchBar, BannerSlider, FlashSale, ProductCard, BottomNav
 └── lib/
-    ├── catalog.ts            # ข้อมูลสินค้า 2,482 รายการ (อยู่ในโค้ด ไม่เรียก API ใคร)
+    ├── catalog.ts            # ข้อมูลสินค้าทั้งคลัง — จำนวนนับจาก src/data/products.json
+    │                         # (อยู่ในโค้ด ไม่เรียก API ใคร · วัดจริง 6 ก.ย. 2569: 2,483 รายการ)
     ├── local-images.ts       # สลับ URL รูปมาเป็นไฟล์ใน public/img/
     └── useLiveStock.ts       # ดึงสต็อก/ราคาสดจาก ZORT ผ่าน /api/stock
 ```
@@ -191,8 +192,10 @@ src/
 
 ## ข้อมูลสินค้า — ไม่พึ่ง Shopify แล้ว
 สินค้า รูป และรีวิว **เก็บไว้ในโปรเจกต์นี้ทั้งหมด** ปิดร้าน Shopify ได้โดยเว็บไม่กระทบ:
-- สินค้า 2,482 รายการ → `src/lib/catalog.ts` + `src/data/`
-- รูปสินค้า 5,595 ไฟล์ → `public/img/` · รูปรีวิว 3,117 ไฟล์ → `public/rv/`
+- สินค้า → `src/lib/catalog.ts` + `src/data/` (นับจากจำนวนรายการใน `src/data/products.json` · วัดจริง 6 ก.ย. 2569: 2,483 รายการ)
+- รูปสินค้า → `public/img/` (นับด้วย `ls public/img | wc -l` · วัดจริง 6 ก.ย. 2569: 5,823 ไฟล์) · รูปรีวิว → `public/rv-img/` (นับด้วย `ls public/rv-img | wc -l` · วัดจริง 6 ก.ย. 2569: 3,117 ไฟล์ .webp)
+  ⚠️ **`public/rv/` ไม่ใช่ที่เก็บรูป** — เป็นไฟล์ `.json` ข้อมูลรีวิวรายสินค้า 239 ไฟล์
+  เขียนผิดมานานว่า "รูปรีวิว … → public/rv/" ⇒ ใครไปนับไฟล์ในนั้นจะเจอ .json ล้วนแล้วสรุปว่ารูปหาย
 - สต็อก/ราคาสด → ZORT ผ่าน `netlify/functions/stock.mjs`
 - คลิปวิดีโอ 459 คลิป → `src/data/videos.json` (**ตัวไฟล์ .mp4 ยังอยู่บน Shopify CDN** ดูด้านล่าง)
 
@@ -529,7 +532,8 @@ Flash ไม่เปิดตำแหน่ง/ไทม์ไลน์ให�
 - ร้านลบคอมเมนต์ได้ที่ `/admin/comments/`
 
 ## บทความ — ดึงจากบล็อก Shopify มาเก็บเองแล้ว
-**73 บทความ** → `src/data/articles.json` (174KB) · รูป 17 ไฟล์ → `public/art/`
+**บทความ** → `src/data/articles.json` (จำนวนนับจากไฟล์นั้นตรง ๆ · วัดจริง 6 ก.ย. 2569: 73 บทความ · 174KB)
+· รูป → `public/art/` (วัดจริง 6 ก.ย. 2569: 17 ไฟล์)
 ดึงด้วย `scripts/gen-articles.mjs` (อ่านจากหน้าร้านสาธารณะ ไม่ต้องใช้รหัส API · รันซ้ำได้ ของเดิมไม่หาย)
 หน้าเว็บ `/articles/` กับ `/articles/<handle>/` มี JSON-LD + og:image + อยู่ใน sitemap
 
@@ -742,7 +746,8 @@ Flash ไม่เปิดตำแหน่ง/ไทม์ไลน์ให�
 เคยเขียนตายตัวว่า "เก็บเงินปลายทางได้" ทั้งที่ปิดอยู่ — ผิดทั้งกับลูกค้าและกับ FAQPage schema ที่ส่งให้ Google
 
 ### ตัวคุมบอต AI — หลังร้าน → ตรวจสุขภาพ SEO → แท็บผู้ช่วย AI
-เลือกได้ว่าจะให้ AI เจ้าไหนเก็บข้อมูลเว็บเราบ้าง (19 ตัว) — แทนแอป Avada AEO Optimizer
+เลือกได้ว่าจะให้ AI เจ้าไหนเก็บข้อมูลเว็บเราบ้าง — รายชื่อนับจากบอตที่ `kind === "ai"`
+ในตัวแปร `BOTS` ของ `netlify/lib/aibots.mjs` (วัดจริง 6 ก.ย. 2569: 19 ตัว) — แทนแอป Avada AEO Optimizer
 กติกาเก็บที่ `netlify/lib/botrules.mjs` (store `gucut-coupon` คีย์ `botrules`)
 **บังคับจริงที่ edge function** (`ai-bots.js` คืน 403) ไม่ใช่แค่เขียนใน robots.txt ซึ่งเป็นแค่คำขอ
 
@@ -759,7 +764,8 @@ Flash ไม่เปิดตำแหน่ง/ไทม์ไลน์ให�
 
 **ตัวจับบอต AI** — `netlify/edge-functions/ai-bots.js` → `/api/ai-bots` → แท็บผู้ช่วย AI
 บอกได้ว่า GPTBot / ClaudeBot / Google-Extended / PerplexityBot มาอ่านเว็บเราหรือยัง กี่หน้า
-และ **Googlebot กลับมาเก็บอีกครั้งไหมหลังปลด noindex** · รู้จักบอต 28 ตัว
+และ **Googlebot กลับมาเก็บอีกครั้งไหมหลังปลด noindex**
+· รู้จักบอตเท่าที่มีในรายชื่อ `BOTS` ของ `netlify/lib/aibots.mjs` (วัดจริง 6 ก.ย. 2569: 28 ตัว)
 ต้องเป็น edge function เพราะเว็บเป็นไฟล์นิ่งและบอตไม่รัน JS ตัวนับคนเข้าเว็บจึงมองไม่เห็นเลย
 
 ⚠️ **สามข้อห้ามของไฟล์ edge function นี้ — ผิดข้อไหนก็เจ็บ**

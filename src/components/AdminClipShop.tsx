@@ -28,7 +28,7 @@ export default function AdminClipShop() {
   useEffect(() => {
     fetch("/feed.json").then((r) => r.json()).then(setClips).catch(() => {});
     fetch("/api/clip-shop").then((r) => r.json()).then((d) => setMap(d.map ?? {})).catch(() => {});
-    // ดัชนีค้นหาสินค้า 2,483 รายการ — หนักไปสำหรับหน้าร้าน แต่หลังร้านโหลดได้
+    // ดัชนีค้นหาสินค้าทั้งคลัง — หนักไปสำหรับหน้าร้าน แต่หลังร้านโหลดได้
     fetch("/search-index.json")
       .then((r) => r.json())
       .then((d) => setIndex(d.items ?? d))
