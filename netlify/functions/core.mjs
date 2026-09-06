@@ -246,6 +246,14 @@ async function route(req, context) {
     }
     /* ⚠️ คืนสองกองแยกกันเสมอ — "ZORT ไม่เปิดให้" (รอไปก็ไม่มา) กับ
         "เรายังไม่ได้ทำ" (สั่งได้ทุกเมื่อ) · ยุบรวมเมื่อไหร่ คนอ่านจะรอของที่ไม่มีวันมา */
+    if (url.searchParams.get("addquotation")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddQuotation } = await import("../lib/zort-write.mjs");
+      const r = await zortAddQuotation(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("zortnoapi")) {
       const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT } = await import("../lib/zort-write.mjs");
       return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT, items: ZORT_NO_API });
