@@ -130,7 +130,18 @@ async function zort(tag, storeEnv, keyEnv, secEnv) {
   });
   if (!r.ok) return { connected: false, detail: `ZORT ตอบ ${r.status}` };
   const d = await r.json().catch(() => null);
-  return { connected: true, detail: `ร้าน ${storename} · สินค้า ${Number(d?.count ?? 0).toLocaleString("th-TH")} รายการ` };
+  /* 🔴 **นับไม่ได้ต้องไม่โชว์ตัวเลข ห้ามตกไปเป็น 0** — กติกาเดียวกับ shopee()/tiktok() ข้างล่าง
+      (ตัวนี้เขียนก่อน เลยไม่ได้แก้ตามตอนใส่กติกานั้น — 6 ก.ย. 2569)
+      ZORT ตอบ 200 แต่รูปคำตอบไม่มี `count` (หรือ JSON เพี้ยน) ⇒ เดิมได้ `?? 0`
+      ⇒ จอขึ้น "ร้าน … · สินค้า 0 รายการ" **พร้อมสถานะเขียว** = "เชื่อมได้ แต่คลังว่างเปล่า"
+      ซึ่งเป็นคำยืนยันที่ผิดและน่าตกใจ ทั้งที่ความจริงคือ **แค่อ่านตัวเลขไม่ได้** */
+  const n = Number(d?.count);
+  return {
+    connected: true,
+    detail: Number.isFinite(n)
+      ? `ร้าน ${storename} · สินค้า ${n.toLocaleString("th-TH")} รายการ`
+      : `ร้าน ${storename} · เชื่อมได้ (อ่านจำนวนสินค้าไม่ได้)`,
+  };
 }
 
 async function shopee() {

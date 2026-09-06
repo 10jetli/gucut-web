@@ -11,7 +11,8 @@
 //    และจำนวนครั้งต่อคน ถ้าเช็คฝั่งลูกค้าจะปลอมได้ทันที
 import { adminGate } from "../lib/admin-gate.mjs";
 import {
-  allCoupons, couponStore, findCoupon, publicCoupon, readCoupons, validate, writeCoupons,
+  allCoupons, couponStore, findCoupon, publicCoupon, readCoupons, readCouponsForWrite,
+  validate, writeCoupons,
 } from "../lib/coupons.mjs";
 import { currentUser, store as usersStore } from "../lib/session.mjs";
 
@@ -95,7 +96,22 @@ export default async function handler(req, context) {
     if (gate.deny) return gate.deny;
     if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
-    const list = await readCoupons(s);
+    /* 🔴 **ทางนี้เขียนทับของเดิมทั้งก้อน ⇒ ต้องรู้ให้ได้ว่า "ไม่มีโค้ด" กับ "อ่านไม่ได้" ต่างกัน**
+        อ่านไม่ได้แล้วเขียนต่อ = โค้ดทุกใบที่ร้านเคยสร้างหายถาวร พร้อมตัวนับ used
+        ⇒ อ่านพลาด **ไม่เขียนอะไรเลย** แล้วบอกตรง ๆ ว่ายังไม่ได้แก้ (ไม่ใช่ตอบ ok:true) */
+    let list;
+    try {
+      list = await readCouponsForWrite(s);
+    } catch (e) {
+      return json(
+        {
+          error: "อ่านรายการโค้ดเดิมไม่ได้ จึงยังไม่ได้แก้อะไร — ลองใหม่อีกครั้ง",
+          why: String(e?.message || e).slice(0, 160),
+          changed: false,
+        },
+        503
+      );
+    }
 
     if (action === "delete") {
       const code = up(body.code);

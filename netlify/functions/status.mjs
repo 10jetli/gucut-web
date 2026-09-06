@@ -319,7 +319,13 @@ export default async function handler(req, context) {
     // ---------- หัวใจ / คอมเมนต์ใต้คลิป ----------
     check("หัวใจและคอมเมนต์ใต้คลิป", async () => {
       const s = getStore({ name: "gucut-social", consistency: "eventual" });
-      const counts = (await s.get("counts", { type: "json" }).catch(() => null)) || {};
+      /* 🔴 **ห้ามกลืน "อ่านไม่ได้" ให้กลายเป็น "ยังไม่มีใครใช้"** (แก้ 6 ก.ย. 2569)
+          `check()` จับ error เองแล้วขึ้น "ใช้ไม่ได้" ซึ่งถูกต้อง — แต่ `.catch(() => null) || {}`
+          **ตัดทางนั้นทิ้ง** ⇒ Blobs อ่านไม่ได้ ⇒ หน้าสถานะประกาศเป็นสีเทาว่ายังไม่เปิดใช้
+          ทั้งที่ของจริงมีคนใช้อยู่ ⇒ เจ้าของร้านจะสรุปว่าไม่มีคนใช้แล้วเลิกสนใจ
+          ขัดกับกฎในไฟล์นี้เอง: "ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ"
+          ⇒ ปล่อยให้ throw ขึ้นไปถึง check() ตามที่มันถูกออกแบบมา */
+      const counts = (await s.get("counts", { type: "json" })) || {};
       const n = Object.keys(counts).length;
       return n ? { note: `มีข้อมูล ${n} คลิป` } : { off: true, note: "ยังไม่มีใครกดอะไร" };
     }),
@@ -327,7 +333,13 @@ export default async function handler(req, context) {
     // ---------- พิกเซลการตลาด ----------
     check("พิกเซลการตลาด", async () => {
       const s = getStore({ name: "gucut-coupon", consistency: "strong" });
-      const m = (await s.get("marketing", { type: "json" }).catch(() => null)) || {};
+      /* 🔴 **ห้ามกลืน "อ่านไม่ได้" ให้กลายเป็น "ยังไม่มีใครใช้"** (แก้ 6 ก.ย. 2569)
+          `check()` จับ error เองแล้วขึ้น "ใช้ไม่ได้" ซึ่งถูกต้อง — แต่ `.catch(() => null) || {}`
+          **ตัดทางนั้นทิ้ง** ⇒ Blobs อ่านไม่ได้ ⇒ หน้าสถานะประกาศเป็นสีเทาว่ายังไม่เปิดใช้
+          ทั้งที่ของจริงมีคนใช้อยู่ ⇒ เจ้าของร้านจะสรุปว่าไม่มีคนใช้แล้วเลิกสนใจ
+          ขัดกับกฎในไฟล์นี้เอง: "ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ"
+          ⇒ ปล่อยให้ throw ขึ้นไปถึง check() ตามที่มันถูกออกแบบมา */
+      const m = (await s.get("marketing", { type: "json" })) || {};
       const on = Object.entries(m)
         .filter(([, v]) => v && typeof v === "object" && v.on)
         .map(([k]) => k);
@@ -349,7 +361,13 @@ export default async function handler(req, context) {
     //    จะรู้แน่ก็ต่อเมื่อมีออเดอร์จริงผ่านเข้าไปแล้ว (กติกาเดียวกับ Beam)
     check("ยิงยอดขายเข้า Meta จากเซิร์ฟเวอร์", async () => {
       const s = getStore({ name: "gucut-coupon", consistency: "strong" });
-      const m = (await s.get("marketing", { type: "json" }).catch(() => null)) || {};
+      /* 🔴 **ห้ามกลืน "อ่านไม่ได้" ให้กลายเป็น "ยังไม่มีใครใช้"** (แก้ 6 ก.ย. 2569)
+          `check()` จับ error เองแล้วขึ้น "ใช้ไม่ได้" ซึ่งถูกต้อง — แต่ `.catch(() => null) || {}`
+          **ตัดทางนั้นทิ้ง** ⇒ Blobs อ่านไม่ได้ ⇒ หน้าสถานะประกาศเป็นสีเทาว่ายังไม่เปิดใช้
+          ทั้งที่ของจริงมีคนใช้อยู่ ⇒ เจ้าของร้านจะสรุปว่าไม่มีคนใช้แล้วเลิกสนใจ
+          ขัดกับกฎในไฟล์นี้เอง: "ตัวตรวจที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีตัวตรวจ"
+          ⇒ ปล่อยให้ throw ขึ้นไปถึง check() ตามที่มันถูกออกแบบมา */
+      const m = (await s.get("marketing", { type: "json" })) || {};
       const meta = m.meta || {};
       if (!meta.on || !meta.pixelId) return { off: true, note: "ยังไม่ได้เปิดพิกเซล Meta" };
       if (!meta.token) {
@@ -391,7 +409,11 @@ export default async function handler(req, context) {
     //    แล้วหน้าโฆษณาจะโชว์ตัวเลขเก่าค้างโดยไม่มีอะไรบอกว่ามันหยุดไปแล้ว
     check("ตัวเลขค่าโฆษณา Google (สคริปต์)", async () => {
       const s = getStore({ name: "gucut-coupon", consistency: "strong" });
-      const cfg = (await s.get("adstats", { type: "json" }).catch(() => null)) || {};
+      /* 🔴 **ห้ามกลืน "อ่านไม่ได้" เป็น "ยังไม่เคยมีสคริปต์ส่งข้อมูลเข้ามา"** (แก้ 6 ก.ย. 2569)
+          ตัวตรวจนี้มีไว้จับกรณี "สคริปต์ใน Google Ads หยุดไปเงียบ ๆ" โดยเฉพาะ
+          ถ้าอ่านค่าไม่ได้แล้วตกไปทาง off มันจะ**เงียบไปด้วยกันกับสิ่งที่มันควรจับ**
+          ⇒ ปล่อยให้ throw ขึ้นไปถึง check() เพื่อขึ้น "ใช้ไม่ได้" ตามความจริง */
+      const cfg = (await s.get("adstats", { type: "json" })) || {};
       const g = cfg.google || {};
 
       // ต่อ API ตรงได้แล้วก็ไม่ต้องพึ่งสคริปต์
