@@ -52,6 +52,12 @@ const get = async (qs) => {
 
    ⇒ ทุกข้อ **ต้องพิสูจน์ก่อนว่าคำตอบมาจากเส้นที่ตั้งใจถาม** ด้วยคีย์ประจำเส้นนั้น
       พิสูจน์ไม่ได้ = **"ตรวจไม่ได้" ห้ามตีความเนื้อคำตอบต่อเด็ดขาด** */
+/* ⚠️ **ด่านนี้ต้องไม่กลืน `error` ที่ปลายทางอุตส่าห์ส่งมาบอกสาเหตุ** (ฝั่งจอเจอรูเดียวกันในตัวเอง)
+   ตัวกรองที่ตั้งใจกันของปลอม เผลอกันของจริงที่สำคัญที่สุดไปด้วย ⇒ จอ/รายงานจะบอกว่า
+   "เส้นยังไม่ขึ้น รอ deploy" ทั้งที่ความจริงคือ **เส้นขึ้นแล้วแต่ล้มเหลว**
+   ⇒ พาคนไปรอ deploy ที่ไม่ได้แก้อะไรเลย
+   ⇒ ทุกรายการต้องใส่ `"error"` ไว้ใน mustHave เสมอ · ตัวกรองทุกตัวต้องถามว่า
+      **"มันทิ้งอะไรไปบ้าง"** ไม่ใช่แค่ "มันปล่อยอะไรผ่าน" */
 const HOMEPAGE_KEYS = ["counts", "recon"]; // ลายเซ็นของ "คำตอบหน้าแรก"
 function wrongEndpoint(body, mustHave) {
   if (!body || typeof body !== "object") return "คำตอบไม่ใช่ JSON";
@@ -137,7 +143,7 @@ const CLAIMS = [
     claim: "ส่วนต่างกระจก vs ZORT ยังเป็นข้อสันนิษฐาน ยังไม่มีคำอธิบายที่พิสูจน์แล้ว",
     async check() {
       const r = await get("list=transfers&limit=1");
-      const bad = wrongEndpoint(r.body, ["total", "rows", "oldest"]);
+      const bad = wrongEndpoint(r.body, ["total", "rows", "oldest", "error"]);
       if (bad) return { state: "ตรวจไม่ได้", why: bad };
       const t = r.body?.total;
       if (!Number.isFinite(t)) return { state: "ตรวจไม่ได้", why: "อ่าน total ไม่ได้" };
@@ -157,7 +163,7 @@ const CLAIMS = [
     claim: "ทะเบียนความสามารถ ZORT ยังตรง และของที่ยังไม่ยิงจริงต้องติดธง untested",
     async check() {
       const r = await get("zortnoapi=1");
-      const bad = wrongEndpoint(r.body, ["canButNotBuilt", "noApi"]);
+      const bad = wrongEndpoint(r.body, ["canButNotBuilt", "noApi", "error"]);
       if (bad) return { state: "ตรวจไม่ได้", why: bad };
       const cb = r.body?.canButNotBuilt;
       if (!Array.isArray(cb)) return { state: "ตรวจไม่ได้", why: "ไม่มีคีย์ canButNotBuilt" };
