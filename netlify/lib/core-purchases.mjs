@@ -339,6 +339,60 @@ export async function resetTransfers() {
 }
 
 /** จอ "รายการโอนสินค้า" แบบ ZORT */
+/** รายละเอียดใบโอนรายใบ — บรรทัดสินค้า + เลขพัสดุ (ฝั่งจอ /core/receive ขอมา 6 ก.ย. 2569)
+ *
+ *  📌 ยิงตรวจ 9 ชื่อ 2 โมดูลแล้ว ⇒ มีจริง 2 เส้น
+ *     ✅ Transfer/GetTransfers (รายการ — ตัวที่ syncTransfers ใช้อยู่)
+ *     ✅ Transfer/GetTransferDetail (รายใบ — ตัวนี้)
+ *     ❌ Transfer/GetTransfer · GetTransferList · list · Warehouse/GetTransfer(s|List|Detail)
+ *     ตัวคุมกลุ่ม Product/GetProducts → resCode 100
+ *
+ *  ⚠️ **ยังไม่เคยยิงของจริง** — รู้แค่ว่า "เส้นมีอยู่" ยังไม่รู้ว่าคืนช่องอะไรบ้าง
+ *     ⇒ ตัวนี้จึงคืน `fields` (ชื่อช่องที่เจอจริง) กลับไปด้วยเสมอ **ห้ามลบทิ้ง**
+ *     จอจะได้รู้ว่ามีเลขพัสดุให้ใช้ไหม แทนที่จะเดาจากชื่อฟังก์ชัน
+ *  ⚠️ ดึงสด ไม่เก็บลงกระจก — ใช้ตอนคนกำลังยืนรับของ ต้องได้ค่าล่าสุดเสมอ
+ */
+export async function getTransferDetail(id) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const key = String(id ?? "").trim();
+  if (!key) return { error: "ต้องระบุเลขใบโอน" };
+  const res = await fetch(
+    `${BASE}/Transfer/GetTransferDetail?id=${encodeURIComponent(key)}`,
+    { headers: h, signal: AbortSignal.timeout(15000) }
+  ).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  if (!data) return { error: "ดึงรายละเอียดใบโอนจาก ZORT ไม่ได้" };
+  /* ⚠️ ZORT วางตัวใบไว้คนละที่แล้วแต่เส้น — ลองทุกรูปที่เคยเจอในโปรเจกต์นี้
+      หาไม่เจอ = **บอกว่าหาไม่เจอ** ห้ามคืนใบว่างที่หน้าตาเหมือน "ใบนี้ไม่มีของ" */
+  const t = data?.detail ?? data?.data ?? (Array.isArray(data?.list) ? data.list[0] : null);
+  if (!t || typeof t !== "object") {
+    return { error: "ZORT ตอบมาแต่หาตัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  }
+  const lines = Array.isArray(t.list) ? t.list : Array.isArray(t.items) ? t.items : null;
+  return {
+    live: true,
+    number: String(t.number ?? ""),
+    status: String(t.status ?? ""),
+    date: String(t.transferdate ?? "").slice(0, 10),
+    from: String(t.fromwarehousecode ?? ""),
+    to: String(t.towarehousecode ?? ""),
+    // เลขพัสดุ — ZORT ผูกไว้ตั้งแต่ต้นทาง (จอรับสินค้าของ ZORT ค้นด้วยเลขนี้ได้)
+    tracking: String(t.trackingno ?? t.trackingNo ?? t.tracking ?? ""),
+    /* ⚠️ null = **ไม่มีช่องบรรทัดสินค้ามาให้** · [] = มีช่องแต่ใบนี้ไม่มีของ
+        สองอย่างนี้จอต้องเขียนคนละคำ (คลาสสามสถานะเดิม) */
+    lines: lines
+      ? lines.map((i) => ({
+          sku: String(i?.sku ?? ""),
+          name: String(i?.name ?? ""),
+          qty: num(i?.number ?? i?.amount),
+        }))
+      : null,
+    // ชื่อช่องที่ ZORT ส่งมาจริง — ให้จอ (และคนไล่ปัญหา) เห็นว่ามีอะไรให้ใช้บ้าง
+    fields: Object.keys(t).sort(),
+  };
+}
+
 export async function listTransfers(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await coreQuery(

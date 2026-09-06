@@ -513,6 +513,13 @@ async function route(req, context) {
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
           ⇒ เลขสองจอนี้เทียบกันไม่ได้ ห้ามเอามาลบกัน (ฝั่งจอชี้เอง 6 ก.ย. 2569)
        ⚠️ ชื่อลูกค้าถูกปิดบางส่วนมาจากท่อแล้ว — ZORT เองก็ปิดในจอนี้ */
+    /* รายละเอียดใบโอนรายใบ — จอ "รับสินค้า" ใช้ตอนคนยืนรับของอยู่หน้าคลัง
+       ⚠️ ดึงสดเสมอ ไม่อ่านจากกระจก · และคืน `fields` มาด้วยว่า ZORT ส่งช่องอะไรมาจริง
+          จอจะได้รู้ว่ามีเลขพัสดุ/บรรทัดสินค้าให้ใช้ไหม แทนการเดา */
+    if (url.searchParams.get("transfer")) {
+      const { getTransferDetail } = await import("../lib/core-purchases.mjs");
+      return json({ ok: true, ...(await getTransferDetail(url.searchParams.get("transfer"))) });
+    }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
       return json({ ok: true, ...(await listReturnOrders(url.searchParams.get("limit"))) });

@@ -44,8 +44,38 @@ export async function applyMoves(list) {
   }
   if (!rows.length) return { error: "ไม่มีรายการที่ใช้ได้", bad };
 
-  // ถามยอดก่อน-หลัง เพื่อบอกได้ว่าเขียนจริงกี่แถว (D1 REST ไม่คืน changes มาให้)
-  const before = Number((await coreQuery(`SELECT COUNT(*) c FROM stock_moves`))[0]?.c ?? 0);
+  /* นับว่าเขียนจริงกี่แถว — D1 REST ไม่คืน `changes` มาให้ จึงต้องนับเอง
+     ⚠️ **ห้ามนับ COUNT(*) ของทั้งตารางก่อน-หลัง** (ฝั่งจอจับได้ 6 ก.ย. 2569)
+        ถ้ามีคนอื่นหรืองานตามเวลาเขียน stock_moves คั่นกลาง ตัวเลขจะบวกของคนอื่นเข้ามา
+        แล้ว `duplicate` ติดลบได้ · วันนี้ยังไม่เห็นเพราะใช้ทีละคน
+        แต่วันที่สองสาขาบันทึกพร้อมกัน เลขบนจอจะเพี้ยน **โดยไม่มีอะไรฟ้อง**
+     ⇒ นับเฉพาะคีย์ของชุดนี้ (reason+ref+sku) ซึ่งเป็นคีย์เดียวกับดัชนี UNIQUE
+        ⚠️ ต้องนับ **ก่อนเขียน** ด้วย ไม่ใช่นับหลังอย่างเดียว — บางแถวอาจมีอยู่แล้วจากใบก่อน */
+  /* ⚠️ จับกลุ่มตาม (reason, ref) แล้วนับด้วย `sku IN (...)` — **ไม่ใช้ row-value `IN (VALUES ...)`**
+      เพราะเป็นไวยากรณ์ที่ต้องพึ่งรุ่นของ SQLite ⇒ ถ้ารุ่นไม่รองรับ คำสั่งจะ error
+      แล้วเส้นบันทึกของเข้าที่ร้านใช้จริงจะพังทั้งเส้น — ของที่ยังไม่แน่ใจ ห้ามเอามาขวางทางหลัก
+      ปกติหนึ่งใบมี reason/ref เดียว ⇒ วนแค่รอบเดียว */
+  const groups = new Map();
+  for (const r of rows) {
+    const k = `${r.reason}\u0000${r.ref}`;
+    if (!groups.has(k)) groups.set(k, { reason: r.reason, ref: r.ref, skus: [] });
+    groups.get(k).skus.push(r.sku);
+  }
+  const countMine = async () => {
+    let n = 0;
+    for (const g of groups.values()) {
+      for (let i = 0; i < g.skus.length; i += 200) {
+        const inList = g.skus.slice(i, i + 200).map(esc).join(",");
+        const c = await coreQuery(
+          `SELECT COUNT(*) c FROM stock_moves
+           WHERE reason = ${esc(g.reason)} AND ref = ${esc(g.ref)} AND sku IN (${inList})`
+        );
+        n += Number(c[0]?.c ?? 0);
+      }
+    }
+    return n;
+  };
+  const before = await countMine();
   for (let i = 0; i < rows.length; i += 80) {
     const values = rows
       .slice(i, i + 80)
@@ -56,7 +86,7 @@ export async function applyMoves(list) {
       `INSERT OR IGNORE INTO stock_moves (sku,qty,reason,ref,at) VALUES ${values}`
     );
   }
-  const after = Number((await coreQuery(`SELECT COUNT(*) c FROM stock_moves`))[0]?.c ?? 0);
+  const after = await countMine();
   const added = after - before;
   return { sent: rows.length, added, duplicate: rows.length - added, bad: bad.length ? bad : undefined };
 }
