@@ -192,10 +192,113 @@ const CLAIMS = [
   },
 ];
 
+const SITE = LOCAL ? "http://localhost:3000" : "https://gucut.com";
+const site = async (path, opt = {}) => {
+  const r = await fetch(`${SITE}${path}`, { redirect: "manual", signal: AbortSignal.timeout(60000), ...opt });
+  return { status: r.status, loc: r.headers.get("location"), text: await r.text().catch(() => "") };
+};
+
+/* ── หน้าร้าน ─────────────────────────────────────────────────────────────
+   ⚠️ **ทำไมต้องมีในตัวเดียวกับหลังร้าน** — หลังร้านพังคือร้านทำงานลำบาก
+      **หน้าร้านพังคือไม่มีเงินเข้า** และคืนที่ push ของค้างทีเดียวหลายสิบคอมมิต
+      คือคืนที่มีโอกาสพังมากที่สุดของทั้งเดือน
+   ⚠️ ทุกข้อเลือกอันที่ **ตรวจแล้วเปลี่ยนผลได้จริง** ไม่ใช่ดูแค่ 200
+      (หน้า error ของ Next ก็ตอบ 200 · ฟีดที่ ZORT ล่มก็ตอบ 200) */
+const STOREFRONT = [
+  {
+    id: "หน้าแรกขายของได้",
+    where: "src/app/page.tsx",
+    claim: "หน้าแรกขึ้นและมีจำนวนสินค้าที่คำนวณจากแคตตาล็อกจริง",
+    async check() {
+      const r = await site("/");
+      if (r.status !== 200) return { state: "ไม่ผ่าน", why: `หน้าแรกตอบ ${r.status}` };
+      /* ⚠️ ห้ามดูแค่ 200 — ต้องเจอ "ดูสินค้าทั้งหมด N รายการ" ที่มีเลขจริง
+          เพราะหน้าที่วาดพลาดก็ตอบ 200 เหมือนกัน */
+      const m = r.text.match(/ดูสินค้าทั้งหมด\s*([\d,]+)\s*รายการ/);
+      if (!m) return { state: "ไม่ผ่าน", why: "หน้าขึ้นแต่ไม่เจอบรรทัดจำนวนสินค้า — หน้าอาจวาดไม่ครบ" };
+      const n = Number(m[1].replace(/,/g, ""));
+      return n > 2000
+        ? { state: "ผ่าน", why: `${m[1]} รายการ` }
+        : { state: "ไม่ผ่าน", why: `จำนวนสินค้าเหลือ ${m[1]} ซึ่งน้อยผิดปกติ (เคยมีกว่า 2,400)` };
+    },
+  },
+  {
+    id: "ฟีดสินค้าใช้สต็อกสด",
+    where: "netlify/functions/products-feed.mjs",
+    claim: "/products.json ใช้สต็อกสดจาก ZORT ไม่ใช่ตัวเลขที่แช่ไว้ตอน build",
+    async check() {
+      const r = await site("/products.json");
+      let d = null;
+      try { d = JSON.parse(r.text); } catch { return { state: "ไม่ผ่าน", why: "ฟีดไม่ใช่ JSON" }; }
+      const items = d.products ?? d.items ?? (Array.isArray(d) ? d : []);
+      if (!items.length) return { state: "ไม่ผ่าน", why: "ฟีดไม่มีสินค้าสักตัว" };
+      /* สามสถานะตามที่ฟีดออกแบบไว้: สด · ของเก่าที่เคยกวาด · สต็อกที่แช่ตอน build */
+      if (d.stockLive === true) return { state: "ผ่าน", why: `${items.length} รายการ · สต็อกสด` };
+      if (d.stockLive === false)
+        return { state: "ไม่ผ่าน", why: `${items.length} รายการ แต่ **สต็อกไม่สด** — ZORT ล่มหรือคีย์หมดอายุ` };
+      return { state: "ตรวจไม่ได้", why: "ฟีดไม่มีช่อง stockLive — อาจเป็นไฟล์นิ่งที่ไม่ควรมี" };
+    },
+  },
+  {
+    id: "รีวิวเก่าไม่หาย",
+    where: "src/data/reviews.json (กฎเจ้าของร้าน: ห้ามให้ยอดรีวิวลดลง)",
+    claim: "ยอดรีวิวรวมต้องไม่ต่ำกว่าค่าฐาน 11,304",
+    async check() {
+      /* ⚠️ อ่านจากไฟล์ในรีโปโดยตั้งใจ — นี่คือของที่ **เอาคืนไม่ได้ตลอดกาล**
+          ร้านต้นทาง (Lazada/Shopee/TikTok เก่า) ปิดไปแล้ว ดึงซ้ำไม่ได้
+          ⇒ ตรวจที่ต้นทางของความจริง ไม่ใช่ที่หน้าเว็บซึ่งเป็นผลพลอยได้ */
+      const fs = await import("node:fs");
+      let d = null;
+      try { d = JSON.parse(fs.readFileSync("src/data/reviews.json", "utf8")); }
+      catch (e) { return { state: "ตรวจไม่ได้", why: `อ่าน reviews.json ไม่ได้: ${e?.message}` }; }
+      const rows = Array.isArray(d) ? d : Object.values(d);
+      const total = rows.reduce((a, v) => a + (Number(v?.count) || 0), 0);
+      const FLOOR = 11304; // วัดจริง 6 ก.ย. 2569 · ขึ้นได้ ลงไม่ได้
+      return total >= FLOOR
+        ? { state: "ผ่าน", why: `${total.toLocaleString()} รีวิว (ค่าฐาน ${FLOOR.toLocaleString()})` }
+        : {
+            state: "ไม่ผ่าน",
+            why: `🔴 ยอดรีวิวลดลงเหลือ ${total.toLocaleString()} จากค่าฐาน ${FLOOR.toLocaleString()} — ` +
+              "**ห้าม deploy** · ของนี้เอาคืนไม่ได้ ร้านต้นทางปิดไปแล้ว",
+          };
+    },
+  },
+  {
+    id: "www ต้องเด้งไปโดเมนเดียว",
+    where: "netlify.toml",
+    claim: "www.gucut.com ต้อง 301 ไป gucut.com เสมอ (ไม่งั้นปุ่มเข้าสู่ระบบพัง + Google เห็นเนื้อหาซ้ำ)",
+    async check() {
+      if (LOCAL) return { state: "ตรวจไม่ได้", why: "โหมด --local ไม่มีโดเมนจริง" };
+      const r = await fetch("https://www.gucut.com/", {
+        redirect: "manual", signal: AbortSignal.timeout(30000),
+      }).catch(() => null);
+      if (!r) return { state: "ตรวจไม่ได้", why: "ยิง www ไม่ถึง" };
+      const loc = r.headers.get("location") || "";
+      return r.status === 301 && /^https:\/\/gucut\.com/.test(loc)
+        ? { state: "ผ่าน", why: `301 → ${loc}` }
+        : { state: "ไม่ผ่าน", why: `ได้ ${r.status} → ${loc || "(ไม่มี location)"} ⇒ ปุ่มเข้าสู่ระบบจะพัง` };
+    },
+  },
+  {
+    id: "เปิดให้ Google เก็บ",
+    where: "public/robots.txt",
+    claim: "robots.txt ต้องไม่บล็อก Googlebot ทั้งเว็บ",
+    async check() {
+      const r = await site("/robots.txt");
+      if (r.status !== 200) return { state: "ไม่ผ่าน", why: `robots.txt ตอบ ${r.status}` };
+      /* ⚠️ จับเฉพาะรูปที่ปิดทั้งเว็บจริง ๆ — Disallow บางเส้นทางเป็นเรื่องปกติ */
+      const blocked = /User-agent:\s*\*[\s\S]*?Disallow:\s*\/\s*$/im.test(r.text);
+      return blocked
+        ? { state: "ไม่ผ่าน", why: "🔴 robots.txt ปิดทั้งเว็บ — เว็บจะหายจาก Google" }
+        : { state: "ผ่าน", why: "ไม่ได้ปิดทั้งเว็บ" };
+    },
+  },
+];
+
 const ICON = { ผ่าน: "✅", ไม่ผ่าน: "🔴", ตรวจไม่ได้: "⚪", ต้องดูด้วยตา: "👁" };
 const tally = {};
-console.log(`ตรวจคำกล่าวอ้างกับของจริงที่ ${API}\n`);
-for (const c of CLAIMS) {
+console.log(`ตรวจคำกล่าวอ้างกับของจริง — หน้าร้าน ${SITE} · หลังร้าน ${API}\n`);
+for (const c of [...STOREFRONT, ...CLAIMS]) {
   let r;
   try {
     r = await c.check();
