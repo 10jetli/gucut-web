@@ -335,6 +335,19 @@ async function route(req, context) {
       const r = await zortAddQuotation(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* ใบรับคืนสินค้า — ฝั่งจอขอมา 6 ก.ย. 2569 (รูปแบบเดียวกับ addpo เป๊ะ)
+       ⚠️ **ใบนี้คือรับคืนจาก "ลูกค้า" (ใบลดหนี้ CN-) ไม่ใช่คืนของให้ "ผู้ขาย"**
+          ฝั่งจอขอมาในชื่อ "คืนสินค้าซื้อ" — ตรวจของจริง 682 ใบแล้วทุกใบมีช่องลูกค้า
+          ป้ายบนจอต้องเขียนให้ตรง ไม่งั้นออกใบลดหนี้ให้ลูกค้าโดยนึกว่าคืนของให้โรงงาน
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น · ต้อง confirm:true ถึงเขียนจริง · ยังไม่เคยยิงจริงสักใบ */
+    if (url.searchParams.get("addreturn")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddReturnOrder } = await import("../lib/zort-write.mjs");
+      const r = await zortAddReturnOrder(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     /* 🛑 **แก้ / ยกเลิกใบเสนอราคา — เครื่องมือตรวจสอบ ยังไม่ใช่ของให้จอเรียก**
         สร้าง 6 ก.ย. 2569 เพื่อพิสูจน์ว่าการส่ง totalprice แก้ปัญหาใบราคา ฿0 ได้จริง
         โดยไม่ต้องสร้างเอกสารทดสอบใบใหม่ในระบบบัญชีร้าน (เจ้าของร้านเลือกทางนี้)

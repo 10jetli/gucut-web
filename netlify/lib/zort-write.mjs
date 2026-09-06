@@ -202,6 +202,92 @@ export async function zortAddProduct(o = {}) {
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */
+/* 💰 **กติกาเงินของ ZORT — ใช้ร่วมกันทุกใบ (ใบเสนอราคา · ใบสั่งซื้อ · ใบรับคืน)**
+ *
+ * 🔴 **ZORT ไม่คำนวณอะไรให้เลยสักชั้น** เก็บเฉพาะตัวเลขที่เราส่งไปตรง ๆ
+ *    พิสูจน์ด้วยของจริง 6 ก.ย. 2569 ทีละชั้น (ใบทดสอบ QT-202609001 · QT-202609002):
+ *      ส่งแต่ `pricepernumber` → บรรทัดมีราคาต่อหน่วย แต่ **ยอดรวมบรรทัดเป็น 0**
+ *      เติม `totalprice`      → บรรทัดถูกแล้ว แต่ **ยอดหัวใบยังเป็น 0**
+ *      ⇒ ต้องส่งครบ **สามชั้น**: ราคาต่อหน่วย → ยอดรวมบรรทัด → ยอดรวมหัวใบ
+ *
+ * ⚠️ **นี่คือกับดัก "ยิงผ่าน แต่ข้อมูลไม่เข้าช่อง"** — ZORT ตอบสำเร็จ สร้างเอกสารจริง
+ *    ให้เลขที่ใบจริง **แต่ราคาเป็นศูนย์** ไม่มีอะไรฟ้องสักคำ
+ * ⚠️ ตอนเจอครั้งแรกแก้แค่ชั้นเดียวแล้วนึกว่าจบ — **วัดทีละชั้นเท่านั้นถึงจะเห็นชั้นที่เหลือ**
+ * ⚠️ **ห้ามคิดบรรทัดที่ไม่มีราคาเป็นศูนย์** — "ยังไม่รู้ราคา" ≠ "ราคาศูนย์"
+ *    นับเป็นศูนย์ = ได้ยอดต่ำกว่าจริงแบบดูสมเหตุสมผล ซึ่งจับด้วยตาไม่ได้
+ *    ⇒ มีบรรทัดไหนไม่มีราคา = **ไม่ส่งยอดหัวใบเลย** ปล่อยให้เห็นว่าใบนั้นยังไม่ครบ
+ * ⚠️ ไม่ส่ง `amount_pretax`/`vatamount` — ขึ้นกับ vattype ปล่อย ZORT คิด แล้วค่อยวัด
+ *    ⚠️ **ใบที่มีภาษียังไม่ผ่านการตรวจ** ใบทดสอบทั้งสองใบเป็นแบบไม่มีภาษี (vattype 1)
+ */
+function headerAmount(list) {
+  if (!list.length) return {};
+  if (!list.every((l) => typeof l.totalprice === "number")) return {};
+  return { amount: Math.round(list.reduce((s, l) => s + l.totalprice, 0) * 10000) / 10000 };
+}
+
+/**
+ * สร้างใบ "รับคืนสินค้า" (ReturnOrder/AddReturnOrder) — ฝั่งจอขอมา 6 ก.ย. 2569
+ *
+ * ⚠️⚠️ **ใบนี้คือการรับคืนจาก "ลูกค้า" ไม่ใช่การคืนของให้ "ผู้ขาย"**
+ *    ฝั่งจอขอมาในชื่อ "คืนสินค้าซื้อ" พร้อมช่อง `vendor` — **แต่ตรวจของจริงแล้วไม่ใช่**
+ *    ใบในระบบ 682 ใบเป็น **CN-…** (ใบลดหนี้) และทุกใบมีช่อง **ลูกค้า** ไม่มีช่องผู้ขายเลย
+ *    ⇒ รับพารามิเตอร์เป็น `customer` · ยังรับ `vendor` เป็นชื่อพ้องไว้ให้จอเดิมไม่พัง
+ *      แต่ **ป้ายบนจอต้องเขียนว่า "รับคืนจากลูกค้า"** ไม่งั้นร้านจะออกใบลดหนี้ให้ลูกค้า
+ *      โดยเข้าใจว่ากำลังคืนของให้โรงงาน — **ผิดทั้งสต็อกและบัญชี**
+ *    ⇒ กวาดหาใบคืนฝั่งผู้ขายแล้ว (`PurchaseReturn/*` · `ReturnPurchase/*`) → **404 ทุกชื่อ**
+ *
+ * ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น — ต้องส่ง `confirm: true` ถึงจะเขียนจริง
+ * ⚠️ ต้องมี `ref` เสมอ (กันยิงซ้ำที่ระดับที่เก็บข้อมูล เหมือนใบซื้อ/ใบเสนอราคา)
+ * ⚠️ **ยังไม่เคยยิงจริงสักใบ** — ต้องยิงหนึ่งใบแล้วดึงกลับมาดูว่าเงินเข้าถูกช่องก่อนเปิดปุ่ม
+ */
+export async function zortAddReturnOrder(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ต้องมีรายการสินค้าอย่างน้อย 1 บรรทัด" };
+
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sku = txt(it?.sku, 60);
+    const qty = numOrNull(it?.qty);
+    const price = numOrNull(it?.price);
+    if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+    if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนไม่ถูกต้อง` };
+    if (it?.price !== undefined && price === null)
+      return { ok: false, error: `บรรทัดที่ ${i + 1} ราคาไม่ใช่ตัวเลข` };
+    list.push({
+      sku,
+      name: txt(it?.name, 200),
+      number: qty, // ⚠️ ZORT เรียกจำนวนว่า `number` · `amount` แปลว่ามูลค่าเงิน
+      ...(price === null ? {} : { pricepernumber: price, totalprice: qty * price }),
+    });
+  }
+
+  const body = { list, ...headerAmount(list) };
+  const who = txt(o.customer, 160) || txt(o.vendor, 160);
+  if (who) body.customername = who;
+  if (txt(o.note)) body.description = txt(o.note, 500);
+  if (txt(o.reference)) body.reference = txt(o.reference, 80);
+
+  if (!o.confirm)
+    return { ok: true, dryRun: true, ref, willSend: body,
+      note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง",
+      warnKind: "ใบนี้คือ **รับคืนจากลูกค้า** (ใบลดหนี้ CN-) ไม่ใช่การคืนของให้ผู้ขาย" };
+
+  const seen = await seenRef("returnorder", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT ลองใหม่อีกครั้ง" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("ReturnOrder/AddReturnOrder", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("returnorder", ref, { kind: "returnorder", who, lines: list.length });
+  return { ok: true, added: true, ref, lines: list.length, detail: r.detail, warn,
+    message: `สร้างใบรับคืนสินค้า (${list.length} บรรทัด) แล้ว — **ต้องดึงใบกลับมาดูว่าเงินเข้าถูกช่อง**` };
+}
+
 export async function zortAddPurchaseOrder(o = {}) {
   const ref = cleanRef(o.ref);
   if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
@@ -229,11 +315,12 @@ export async function zortAddPurchaseOrder(o = {}) {
       sku,
       name: txt(it?.name, 200),
       number: qty,
-      ...(price === null ? {} : { pricepernumber: price }),
+      // 🔴 ต้องมี totalprice เสมอ — ZORT ไม่บวกให้ (ดูเหตุผลเต็มที่ `moneyRules` ท้ายไฟล์)
+      ...(price === null ? {} : { pricepernumber: price, totalprice: qty * price }),
     });
   }
 
-  const body = { list };
+  const body = { list, ...headerAmount(list) };
   if (txt(o.vendor)) body.customername = txt(o.vendor, 160);
   if (txt(o.note)) body.description = txt(o.note, 500);
 
@@ -321,10 +408,7 @@ export async function zortAddQuotation(o = {}) {
    ⚠️ ยังไม่ส่ง `amount_pretax` / `vatamount` — สองตัวนั้นขึ้นกับ vattype ของใบ
       ปล่อยให้ ZORT คิดเองก่อน แล้ววัดผลจริงว่ามันคิดให้ไหม (ทำทีละชั้น วัดทีละชั้น)
       ⚠️ **ใบที่มีภาษีจึงยังไม่ถือว่าผ่านการตรวจ** — ใบทดสอบเป็นแบบไม่มีภาษี (vattype 1) */
-  const priced = list.filter((l) => typeof l.totalprice === "number");
-  const body = { customername: customer, list };
-  if (priced.length === list.length && list.length)
-    body.amount = Math.round(priced.reduce((s, l) => s + l.totalprice, 0) * 10000) / 10000;
+  const body = { customername: customer, list, ...headerAmount(list) };
   if (txt(o.phone)) body.customerphone = txt(o.phone, 40);
   if (txt(o.note)) body.description = txt(o.note, 500);
   if (txt(o.reference)) body.reference = txt(o.reference, 80);
