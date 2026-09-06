@@ -637,9 +637,14 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
   /* ⚠️ **ข้อสรุปเดียวของเรื่อง "ใบเสนอราคาแก้ทีหลังได้ไหม"** — เคยส่งข้อความขัดกันเองไปสองใบ
       (6 ก.ย. 2569 · ฝั่งจอทักมาถูก) ⇒ ต่อจากนี้ยึดบรรทัดนี้ที่เดียว
       "มีเส้นสำหรับแก้ แต่ยังไม่เคยยิงจริง" ≠ "แก้ได้" และ ≠ "แก้ไม่ได้" — สามสถานะ */
-  { what: "แก้ใบเสนอราคาที่สร้างแล้ว", at: "2026-09-06", untested: true,
-    probe: "Quotation/EditQuotation → resCode 100 (UpdateQuotation = 404 คนละชื่อ)",
-    note: "มีทางแก้ แต่ยังไม่เคยยิงจริง — ระหว่างนี้ทำใบให้ถูกตั้งแต่แรก" },
+  /* 🔴 **ยิงจริงแล้ว 6 ก.ย. 2569 — ไม่ผ่าน** ⇒ เลิกสถานะ "ยังไม่เคยยิง" ได้แล้ว
+      ลอง 4 รอบ: id หัวใบเป็นตัวเลข · เป็นข้อความ · เลขที่ใบ · แนบ id ของบรรทัดไปด้วย
+      → `Invalid ID.` (resCode 100) ทุกรอบ · เลขเดียวกันนี้ GET ได้ปกติและ ZORT คืนมาเอง
+      ⇒ **แก้ใบที่สร้างแล้วไม่ได้จริง ๆ** ⇒ ต้องทำใบให้ถูกตั้งแต่แรก (ไม่ใช่คำแนะนำชั่วคราวอีกต่อไป)
+      ✅ ทุกรอบที่ถูกปฏิเสธ **ไม่มีอะไรถูกเขียนบางส่วน** — ดึงใบกลับมาดูแล้วค่าเดิมครบ */
+  { what: "แก้ใบเสนอราคาที่สร้างแล้ว", at: "2026-09-06", tested: true, works: false,
+    probe: "POST Quotation/EditQuotation × 4 รูปแบบ id → 'Invalid ID.' ทุกครั้ง",
+    note: "เส้นมีจริง (405) แต่ปฏิเสธ id ทุกแบบที่เรามี — น่าจะไม่เปิดให้บัญชี/แพ็กเกจของเรา" },
   { what: "แก้ใบสั่งซื้อที่สร้างแล้ว", at: "2026-09-06", untested: true,
     probe: "PurchaseOrder/EditPurchaseOrder → resCode 100 (UpdatePurchaseOrder = 404)" },
   { what: "รับคืนสินค้า", at: "2026-09-06", untested: true,
@@ -671,8 +676,14 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
   { what: "บันทึกรับชำระเงิน", at: "2026-09-06", untested: true,
     probe: "Payment/AddPayment → 405 · Payment/GetPaymentDetail → 200",
     note: "⚠️ ไม่มีเส้น 'รายการชำระทั้งหมด' — GetPayments/GetPaymentList = 404 ทั้งคู่ ⇒ ดูได้ทีละใบเท่านั้น" },
-  { what: "ยกเลิกใบเสนอราคา / ใบสั่งซื้อ / ใบคืนสินค้า", at: "2026-09-06", untested: true,
-    probe: "Quotation/VoidQuotation · PurchaseOrder/VoidPurchaseOrder · ReturnOrder/VoidReturnOrder → 405" },
+  /* 🔴 ยิงจริงแล้ว — ยกเลิกใบเสนอราคาไม่ผ่านเช่นกัน (payload มีแค่ id ตัวเดียว)
+      ⇒ ตัวแปรเดียวคือค่า id และปฏิเสธทั้งสองค่าที่เรามี ⇒ ไม่ใช่เรื่องรูปแบบ payload
+      ⚠️ อีกสองใบ (ใบสั่งซื้อ · ใบคืนสินค้า) **ยังไม่เคยยิง** — ห้ามเหมาว่าพังตามกัน */
+  { what: "ยกเลิกใบเสนอราคา (ยิงจริงแล้ว ไม่ผ่าน)", at: "2026-09-06", tested: true, works: false,
+    probe: "POST Quotation/VoidQuotation ด้วย id ตัวเลขและเลขที่ใบ → 'Invalid ID.' ทั้งคู่",
+    note: "⇒ ใบทดสอบต้องเข้าไปกดยกเลิกในหน้าจอ ZORT เอง" },
+  { what: "ยกเลิกใบสั่งซื้อ / ใบคืนสินค้า", at: "2026-09-06", untested: true,
+    probe: "PurchaseOrder/VoidPurchaseOrder · ReturnOrder/VoidReturnOrder → 405 (ยังไม่เคยยิงจริง)" },
   { what: "ลบสินค้า", at: "2026-09-06", untested: true,
     probe: "Product/DeleteProduct → 405",
     note: "⚠️ ของร้านจริง ลบพลาดเอาคืนไม่ได้ — ต่อเข้าจอต้องมีขั้นยืนยันเสมอ" },
