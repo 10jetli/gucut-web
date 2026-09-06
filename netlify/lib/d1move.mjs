@@ -325,23 +325,52 @@ export async function movePing(o = {}) {
   const tgt = await findTarget();
   if (!tgt) return { error: "ยังไม่มีฐานปลายทาง" };
   const n = Math.max(3, Math.min(9, Number(o.n) || 5));
+  /* 🔴 **ห้ามนับเวลาของรอบที่ล้มเหลวเป็นผลวัด** (แก้ 6 ก.ย. 2569)
+      เดิม `.catch(() => null)` แล้วเก็บเวลาไปเลยทุกรอบ ⇒ token ไม่มีสิทธิ์กับฐานปลายทาง
+      หรือฐานยังไม่พร้อม ⇒ Cloudflare ตอบ 401/404 **กลับมาเร็วมาก**
+      ⇒ ค่ากลางของฐานใหม่ต่ำ ⇒ รายงานว่า "ฐานใหม่เร็วกว่า 250 ms ต่อคำขอ"
+      ⇒ **สับสวิตช์ไปฐานที่ยังใช้ไม่ได้** โดยตัววัดยืนยันให้ด้วยความมั่นใจ
+      หัวฟังก์ชันนี้เขียนเองว่า "ต้องวัดก่อนสับสวิตช์เสมอ" — แต่ตัววัดต้องพิสูจน์ว่า
+      **มันแตะงานจริง** ไม่ใช่แค่ว่ามีตัวเลขออกมา ([[measure-must-prove-work]])
+      ⇒ นับเฉพาะรอบที่ได้ `[{ok:1}]` กลับมาจริง · รอบที่ล้มนับแยกแล้วรายงานออกไป */
   const src = [];
   const dst = [];
+  let srcFail = 0;
+  let dstFail = 0;
+  const ping = async (id) => {
+    const t = Date.now();
+    const rows = await q(id, "SELECT 1 AS ok").catch(() => null);
+    const took = Date.now() - t;
+    /* พิสูจน์ว่าฐานตอบงานจริง ไม่ใช่แค่ "มีอะไรกลับมา" — 401/404 ก็มีอะไรกลับมาเหมือนกัน */
+    const real = Array.isArray(rows) && Number(rows[0]?.ok) === 1;
+    return real ? took : null;
+  };
   for (let i = 0; i < n; i++) {
-    let t = Date.now();
-    await q(SRC, "SELECT 1 AS ok").catch(() => null);
-    src.push(Date.now() - t);
-    t = Date.now();
-    await q(tgt.id, "SELECT 1 AS ok").catch(() => null);
-    dst.push(Date.now() - t);
+    const a = await ping(SRC);
+    if (a === null) srcFail++; else src.push(a);
+    const b = await ping(tgt.id);
+    if (b === null) dstFail++; else dst.push(b);
+  }
+  /* ⚠️ ไม่มีรอบที่สำเร็จเลย = **ยังตอบไม่ได้** ห้ามคืนค่ากลางของกองว่าง
+      (ค่ากลางของ [] เป็น undefined ⇒ เลขคำนวณต่อได้เป็น NaN ซึ่งดูเหมือนผลวัด) */
+  if (!src.length || !dst.length) {
+    return {
+      error: "วัดไม่ได้ — ยังไม่มีรอบที่ฐานตอบงานจริง",
+      functionRegion: process.env.AWS_REGION || null,
+      source: { id: SRC, ok: src.length, failed: srcFail },
+      target: { id: tgt.id, name: tgt.name, region: tgt.region, ok: dst.length, failed: dstFail },
+      verdict: "⛔ ห้ามสับสวิตช์จากผลรอบนี้ — ยังพิสูจน์ไม่ได้ว่าฐานปลายทางใช้งานได้",
+    };
   }
   const med = (a) => a.slice().sort((x, y) => x - y)[Math.floor(a.length / 2)];
   const ms = med(src);
   const md = med(dst);
   return {
     functionRegion: process.env.AWS_REGION || null,
-    source: { id: SRC, pings: src, median: ms },
-    target: { id: tgt.id, name: tgt.name, region: tgt.region, pings: dst, median: md },
+    /* ⚠️ ต้องรายงาน `failed` ออกไปด้วยเสมอ — ผลวัดที่มาจาก 2 รอบใน 5
+        กับที่มาจาก 5 รอบใน 5 เชื่อถือได้ไม่เท่ากัน แต่ค่ากลางหน้าตาเหมือนกันเป๊ะ */
+    source: { id: SRC, pings: src, median: ms, failed: srcFail },
+    target: { id: tgt.id, name: tgt.name, region: tgt.region, pings: dst, median: md, failed: dstFail },
     fasterBy: `${(ms - md).toFixed(0)} ms ต่อคำขอ`,
     timesFaster: ms && md ? Number((ms / md).toFixed(1)) : null,
     /* ⚠️ เกณฑ์ตัดสิน — เขียนไว้ก่อนเห็นผล จะได้ไม่ตีความเข้าข้างตัวเองทีหลัง */

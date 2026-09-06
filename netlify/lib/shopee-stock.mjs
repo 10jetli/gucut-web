@@ -108,10 +108,14 @@ export async function shopeeStockLine() {
        เพราะถ้าเติมแล้วพัง มันจะพังแบบ "บรรทัดยามหายไปเงียบ ๆ" ซึ่งไม่มีใครสังเกต) */
   if (r?.skip) return null;
   const flag = r.diffCount === 0 ? "✅" : "⚠️";
+  /* ⚠️ ตัวเลข "คลังไม่รู้จัก" เชื่อไม่ได้ถ้าถามสูตรชุดไม่ได้ — ต้องเขียนกำกับในบรรทัดเดียวกัน
+      ไม่ใช่ปล่อยให้คนอ่านตัวเลขที่สูงเกินจริงแล้วไปไล่หาของที่ไม่ได้หาย */
+  const recipeWarn = r.recipeError ? " | ⚠️ ถามสูตรชุดไม่ได้ ตัวเลข 'คลังไม่รู้จัก' สูงเกินจริง" : "";
   return (
     `📦 สต็อก Shopee vs คลังเรา: ตรง ${r.same} · ต่าง ${r.diffCount} ${flag}` +
     ` | คลังยังไม่รู้จัก ${r.missing} รหัส (คนละระดับกับ Shopee ไม่ใช่ของหาย)` +
-    (r.negativeInCore ? ` | ⚠️ ติดลบในคลัง ${r.negativeInCore} รหัส` : "")
+    (r.negativeInCore ? ` | ⚠️ ติดลบในคลัง ${r.negativeInCore} รหัส` : "") +
+    recipeWarn
   );
 }
 
@@ -252,8 +256,20 @@ export async function shopeeStockCompare(o = {}) {
       `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
        FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
        WHERE b.active = 1`
-    ).catch(() => []), // ไม่มีตารางสูตร = ถอยไปใช้วิธีเดิม ห้ามล้ม
+    ).catch((e) => {
+      /* 🔴 **แยก "ไม่มีตารางสูตร" (ปกติ) ออกจาก "ถามไม่ได้" (ผิดปกติ)** (แก้ 6 ก.ย. 2569)
+          เดิมกลืนเป็น `[]` ทั้งสองกรณี ⇒ D1 สะดุดชั่วคราว ⇒ สูตรชุดหายทั้งกอง
+          ⇒ โซ่ตัดขาย/ชุด KINGKONG ตกไปเป็น "คลังไม่รู้จัก" ⇒ Telegram รายวันส่งว่า
+            "คลังไม่รู้จัก 148 จาก 1,926 รหัสที่ลงขายอยู่" **ทั้งที่คลังรู้จักครบ**
+          และตัวตรวจตัวเอง `bucketsAddUp` ยังเป็น true (ทุกกองบวกได้ครบ) ⇒ ไม่มีอะไรฟ้อง
+          ⇒ ไม่มีตาราง = ถอยไปวิธีเดิมเงียบ ๆ ได้ · ถามไม่ได้ = **ต้องติดธงไปกับผล** */
+      const msg = String(e?.message || e);
+      return /no such table/i.test(msg) ? [] : { __err: msg.slice(0, 160) };
+    }),
   ]);
+  /* ถามสูตรชุดไม่ได้ = ต้องบอกออกไป ห้ามให้ผลดูเหมือนตรวจครบ */
+  const recipeErr = rec && !Array.isArray(rec) ? rec.__err : null;
+  const recRows = Array.isArray(rec) ? rec : [];
   const withSku = rows.filter((r) => r.sku);
 
   // ภาพถ่ายสต็อกล่าสุดของเรา (ถ่ายตี 1 จากแคช ZORT)
@@ -279,8 +295,8 @@ export async function shopeeStockCompare(o = {}) {
   const recipe = new Map();
   {
     const count = new Map();
-    for (const r of rec) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
-    for (const r of rec) {
+    for (const r of recRows) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
+    for (const r of recRows) {
       const k = String(r.sku).trim();
       if (count.get(k) !== 1) continue; // ชุดหลายชิ้นคิดแบบนี้ไม่ได้
       const per = num(r.per);
@@ -329,6 +345,9 @@ export async function shopeeStockCompare(o = {}) {
     missing,
     missingSample,
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
+    /* ⚠️ ถามตารางสูตรชุดไม่ได้ ⇒ กอง "คลังไม่รู้จัก" สูงเกินจริง (สินค้าชุดตกมากองนี้หมด)
+        **ห้ามอ่านตัวเลขนั้นเป็น "ของหาย"** · null = ถามได้ปกติ */
+    recipeError: recipeErr,
     diffCount: diff.length,
     /* ⚠️ `diff` ถูกตัดที่ 50 **เพื่อการแสดงผลเท่านั้น** — ตัวจริงอยู่ใน diffCount
         ใครจะเอาไป "คิดต่อ" (เช่นแผนดันสต็อก) ต้องขอ full:1 ไม่งั้นจะคิดจากตัวอย่าง

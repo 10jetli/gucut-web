@@ -146,16 +146,28 @@ export async function tiktokStockCompare() {
       `SELECT b.sku AS sku, i.sku AS base, i.qty AS per
        FROM bundles b JOIN bundle_items i ON i.bundle_sku = b.sku
        WHERE b.active = 1`
-    ).catch(() => []), // ไม่มีตารางสูตร = ถอยไปวิธีเดิม ห้ามล้ม
+    ).catch((e) => {
+      /* 🔴 **แยก "ไม่มีตารางสูตร" (ปกติ) ออกจาก "ถามไม่ได้" (ผิดปกติ)** (แก้ 6 ก.ย. 2569)
+          เดิมกลืนเป็น `[]` ทั้งสองกรณี ⇒ D1 สะดุดชั่วคราว ⇒ สูตรชุดหายทั้งกอง
+          ⇒ โซ่ตัดขาย/ชุด KINGKONG ตกไปเป็น "คลังไม่รู้จัก" ⇒ Telegram รายวันส่งว่า
+            "คลังไม่รู้จัก 148 จาก 1,926 รหัสที่ลงขายอยู่" **ทั้งที่คลังรู้จักครบ**
+          และตัวตรวจตัวเอง `bucketsAddUp` ยังเป็น true (ทุกกองบวกได้ครบ) ⇒ ไม่มีอะไรฟ้อง
+          ⇒ ไม่มีตาราง = ถอยไปวิธีเดิมเงียบ ๆ ได้ · ถามไม่ได้ = **ต้องติดธงไปกับผล** */
+      const msg = String(e?.message || e);
+      return /no such table/i.test(msg) ? [] : { __err: msg.slice(0, 160) };
+    }),
   ]);
+  /* ถามสูตรชุดไม่ได้ = ต้องบอกออกไป ห้ามให้ผลดูเหมือนตรวจครบ */
+  const recipeErr = rec && !Array.isArray(rec) ? rec.__err : null;
+  const recRows = Array.isArray(rec) ? rec : [];
   const snap = new Map(snapRows.map((r) => [String(r.sku).trim(), num(r.qty)]));
 
   /* สูตรชุด — เหมือนฝั่ง Shopee เป๊ะ (ชุดหลายชิ้นคิดแบบนี้ไม่ได้ จึงข้าม) */
   const recipe = new Map();
   {
     const count = new Map();
-    for (const r of rec) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
-    for (const r of rec) {
+    for (const r of recRows) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
+    for (const r of recRows) {
       const k = String(r.sku).trim();
       if (count.get(k) !== 1) continue;
       const per = num(r.per);
@@ -198,6 +210,9 @@ export async function tiktokStockCompare() {
     missingSample,
     /* ⚠️ ตัวตรวจตัวเอง — ทุกรหัสต้องตกกองใดกองหนึ่งพอดี (partial-coverage-reported-as-full) */
     bucketsAddUp: same + diff.length + missing === rows.length,
+    /* ⚠️ ถามตารางสูตรชุดไม่ได้ ⇒ กอง "คลังไม่รู้จัก" สูงเกินจริง (สินค้าชุดตกมากองนี้หมด)
+        **ห้ามอ่านตัวเลขนั้นเป็น "ของหาย"** · null = ถามได้ปกติ */
+    recipeError: recipeErr,
   };
 }
 
@@ -208,8 +223,10 @@ export async function tiktokStockLine() {
       `note` = คำอธิบายผลที่สำเร็จ · `skip` = ทำต่อไม่ได้ **ห้ามปนกัน**
       ฝั่ง Lazada โดนคลาสนี้จริงแล้ว 6 ก.ย. 2569 (แผนดันสต็อกไม่เคยถูกคำนวณ) */
   if (!c || c.skip) return null;
+  /* ⚠️ เหมือนฝั่ง Shopee — ถามสูตรชุดไม่ได้ = ตัวเลข "คลังไม่รู้จัก" สูงเกินจริง ต้องเขียนกำกับ */
   return (
     `🎵 สต็อก TikTok vs คลัง (${c.day}): ตรง ${c.same} · ต่าง ${c.diffCount} · ` +
-    `คลังไม่รู้จัก ${c.missing} จาก ${c.tiktokSkus} รหัสที่ลงขายอยู่`
+    `คลังไม่รู้จัก ${c.missing} จาก ${c.tiktokSkus} รหัสที่ลงขายอยู่` +
+    (c.recipeError ? " | ⚠️ ถามสูตรชุดไม่ได้ ตัวเลขนี้สูงเกินจริง" : "")
   );
 }

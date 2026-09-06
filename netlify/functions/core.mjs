@@ -160,6 +160,27 @@ async function route(req, context) {
          "ผลแปลไม่ได้" ไม่ใช่ "ผลว่าไม่ผ่าน" · มีคีย์ ok เมื่อไหร่ จะมีคนอ่านเป็นคำตัดสิน
       ⚠️ ยังตอบ **HTTP 200** โดยตั้งใจ — ตอบ 5xx แล้วตัวดักพลาดรวมของจอจะกลบข้อความไทย
          ที่อธิบายสาเหตุจริง เหลือแต่ "เกิดข้อผิดพลาด" ซึ่งแย่กว่าเดิม */
+  /* ⏳ **คลาสนี้ยังเหลืออีกครึ่ง — ตั้งใจยังไม่แก้วันนี้ (ตกลงกับฝั่งจอ 6 ก.ย. 2569)**
+     ตัวห่อข้างล่างครอบเฉพาะเคส **spread** (`okJson({...ผลลัพธ์})`)
+     ยังมีอีกแบบที่ครอบไม่ถึง: เคสที่ **ยัดผลไว้ใต้คีย์** เช่น
+        `json({ ok: true, tiktok: await tiktokStockCompare() })`
+     ⇒ ข้างในเป็น `{skip:"…"}` แต่ข้างนอกยังเขียน `ok:true`
+
+     จุดที่เป็นแบบนี้ (นับ 6 ก.ย. 2569 — **นับใหม่ทุกครั้งก่อนใช้เลขนี้**):
+       init · bundles · products · purchases · reset · branches · peak · recon ·
+       shopee(sync) · tiktok(sync) · tiktok(stockcompare) · tokens ·
+       stock(shopeecompare) · snapshot · stock(recon)
+     ⚠️ **ไม่ใช่ทุกจุดที่เป็นปัญหา** — บางตัวคืนข้อมูลนิ่งที่ล้มเหลวไม่ได้
+        ⇒ ต้องดูทีละจุดว่าฟังก์ชันข้างในคืน `error`/`skip` ได้ไหม **ห้ามไล่แก้ตามรูปแบบ**
+
+     **ทางที่ตกลงกันแล้วว่าจะทำ (พรุ่งนี้ 7 ก.ย. 2569)**: เติมธงบนสุดแบบ**เพิ่มอย่างเดียว**
+        `partial: true` + `failedParts: ["tiktok"]`  ⇒ จอเก่าไม่พัง จอใหม่มีของให้เช็ค
+     🚫 **ไม่พลิก `ok` เป็น false** — เหตุผลของฝั่งจอ: `ok` แปลว่า "เส้นทำงานและตอบตามสัญญา"
+        ไม่ใช่ "ทุกส่วนข้างในได้ข้อมูลครบ" · พลิกเพราะ TikTok ส่วนเดียวล้ม =
+        **จอทิ้งข้อมูล Shopee+Lazada ที่ใช้ได้ปกติไปทั้งจอ** ⇒ เสียของที่ใช้ได้
+        เพื่อบอกว่ามีของที่ใช้ไม่ได้ · และ `ok:false` อ่านแล้วเข้าใจว่าทั้งเส้นพัง ซึ่งไม่จริง
+     **ทำไมเลื่อน**: เป็นสัญญาใหม่กลางวันของวันที่จะ push ของค้างเกือบร้อยคอมมิตตอน 21:00
+        ของใหม่ที่ยังไม่มีใครยิงของจริง ไม่ควรเพิ่มเข้ากองนั้น */
   const okJson = (payload, status = 200) => {
     const p = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
     if (p.inconclusive === true) return json(p, status);          // ห้ามเติม ok
@@ -1162,6 +1183,14 @@ async function route(req, context) {
           `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${from}&orderdatebefore=${to}&limit=200&page=${page}`,
           { headers: st, signal: AbortSignal.timeout(15000) }
         );
+        /* 🔴 **หน้าที่ยิงไม่สำเร็จ ห้ามตีความว่า "หมดแล้ว"** (แก้ 6 ก.ย. 2569)
+            เดิมไม่เช็ค `r.ok` เลย ⇒ ZORT ตอบ 429/500 ที่หน้ากลาง ⇒ `chunk = []`
+            ⇒ `chunk.length < 200` ⇒ **break แล้วรายงานว่าครบ** โดย `truncated` ยังเป็น false
+            ⇒ กวาดได้ 200 จาก 800 ใบ แล้วบอกว่า "กระจกมีใบเกินมา 600 ใบที่ ZORT ไม่มี"
+              ⇒ คนไปไล่แก้กระจกที่ถูกอยู่แล้ว · เครื่องมือนี้มีไว้จับ "581 ใบหายเงียบ" โดยเฉพาะ
+            ⇒ ยิงไม่สำเร็จ = **โยนออกไป** ให้ผู้เรียกเห็นว่าเทียบไม่ได้
+              ห้ามคืนผลบางส่วนที่หน้าตาเหมือนผลเต็ม */
+        if (!r.ok) throw new Error(`ZORT ตอบ ${r.status} ที่หน้า ${page} — เทียบไม่ได้ ห้ามใช้ผลรอบนี้`);
         const d = await r.json().catch(() => ({}));
         const chunk = Array.isArray(d.list) ? d.list : [];
         /* ⚠️ **กุญแจต้องเป็น `number` ไม่ใช่ `id` ของ ZORT** — รอบแรกผมใช้ `o.id`
@@ -1934,6 +1963,17 @@ async function route(req, context) {
         `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${day}&limit=200&page=1`,
         { headers: st, signal: AbortSignal.timeout(20000) }
       );
+      /* 🔴 **ถามไม่สำเร็จ ห้ามตอบว่า "ไม่เจอใบนี้"** (แก้ 6 ก.ย. 2569)
+          เดิมไม่เช็ค `r.ok` ⇒ คำขอล้ม ⇒ `d = {}` ⇒ หาไม่เจอ ⇒ ตอบยืนยันหนักแน่นว่า
+          "ไม่เจอใบนี้ในวันนั้น" พร้อม `ok:true` · เครื่องมือนี้มีไว้ตัดสินว่า
+          **"ใบนี้หายจาก ZORT จริงไหม"** ⇒ คำตอบผิดพาไปสรุปว่าออเดอร์หาย
+          "ถามไม่ได้" ≠ "ไม่มี" (three-states-not-two) */
+      if (!r.ok) {
+        return json(
+          { ok: false, error: `ZORT ตอบ ${r.status} — ยังตอบไม่ได้ว่ามีใบนี้ไหม`, found: null },
+          200
+        );
+      }
       const d = await r.json().catch(() => ({}));
       const hit = (Array.isArray(d.list) ? d.list : []).find((o) => String(o.number) === want);
       if (!hit) return json({ ok: true, found: false, note: "ไม่เจอใบนี้ในวันนั้น" });
@@ -2030,6 +2070,14 @@ async function route(req, context) {
           `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${day}&orderdatebefore=${today}&limit=200&page=${page}`,
           { headers: st, signal: AbortSignal.timeout(15000) }
         );
+        /* 🔴 **หน้าที่ยิงไม่สำเร็จ ห้ามตีความว่า "หมดแล้ว"** (แก้ 6 ก.ย. 2569)
+            เดิมไม่เช็ค `r.ok` เลย ⇒ ZORT ตอบ 429/500 ที่หน้ากลาง ⇒ `chunk = []`
+            ⇒ `chunk.length < 200` ⇒ **break แล้วรายงานว่าครบ** โดย `truncated` ยังเป็น false
+            ⇒ กวาดได้ 200 จาก 800 ใบ แล้วบอกว่า "กระจกมีใบเกินมา 600 ใบที่ ZORT ไม่มี"
+              ⇒ คนไปไล่แก้กระจกที่ถูกอยู่แล้ว · เครื่องมือนี้มีไว้จับ "581 ใบหายเงียบ" โดยเฉพาะ
+            ⇒ ยิงไม่สำเร็จ = **โยนออกไป** ให้ผู้เรียกเห็นว่าเทียบไม่ได้
+              ห้ามคืนผลบางส่วนที่หน้าตาเหมือนผลเต็ม */
+        if (!r.ok) throw new Error(`ZORT ตอบ ${r.status} ที่หน้า ${page} — เทียบไม่ได้ ห้ามใช้ผลรอบนี้`);
         const d = await r.json().catch(() => ({}));
         const chunk = Array.isArray(d.list) ? d.list : [];
         list.push(...chunk);
