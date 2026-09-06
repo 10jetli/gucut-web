@@ -18,6 +18,9 @@
 //    ⚠️ ข้อ ① กับ ② ห้ามยุบรวมเป็น "ไม่ดัน" เฉย ๆ — คนละสาเหตุ คนละวิธีแก้
 //       ติดลบ = ไปนับของ · ไม่รู้จัก = ไปผูกรหัสให้ตรงกัน
 
+/* 🔑 **กติกาของทั้งไฟล์: ตัวเทียบสต็อกทุกเจ้าใช้ `skip` = "ทำต่อไม่ได้" เท่านั้น**
+   `note` สงวนไว้สำหรับ **คำอธิบายผลลัพธ์ที่สำเร็จ** ⇒ **ห้ามเอา `c.note` มาตัดสินว่าข้าม**
+   (แยกชื่อกันเมื่อ 6 ก.ย. 2569 หลังเจอว่า Lazada พังเพราะสองความหมายปนกัน) */
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** แปลงผลเทียบสต็อกของแพลตฟอร์มหนึ่ง → แผนการดัน
@@ -92,7 +95,11 @@ async function shopeePlan() {
       แผนดันที่คิดจากตัวอย่าง = รหัสที่เกิน 50 หายจากแผนเงียบ ๆ (เจอจริง 5 ก.ย. 2569:
       diffCount 55 แต่แผนเห็นแค่ 50 ⇒ bucketsAddUp ฟ้อง false ซึ่งคือหน้าที่ของมันพอดี) */
   const c = await shopeeStockCompare({ full: 1 });
-  if (c.skip || c.note) return { skip: c.skip || c.note };
+  /* ✅ **ตรงนี้เคยถูกอยู่แล้ว ไม่ได้แก้ตามรูปแบบ** — เส้นสำเร็จของ shopeeStockCompare
+      ไม่มี `note` ⇒ เช็ค c.note จึงจับเฉพาะกรณีหยุดจริง (ต่างจาก Lazada ที่พัง)
+      แต่มันคือระเบิดเวลา: วันที่มีคนเติมคำอธิบายลงเส้นสำเร็จ Shopee จะเงียบตายแบบเดียวกัน
+      ⇒ เปลี่ยนต้นทางให้ใช้ `skip` แล้ว ตรงนี้จึงเหลือเช็ค skip อย่างเดียว */
+  if (c.skip) return { skip: c.skip };
 
   const rows = [
     // รหัสที่ตัวเลขไม่ตรง — รู้ทั้งสองฝั่ง
@@ -126,7 +133,17 @@ async function shopeePlan() {
 async function lazadaPlan() {
   const { lazadaStockCompare } = await import("./lazada.mjs");
   const c = await lazadaStockCompare();
-  if (c.skip || c.note) return { skip: c.skip || c.note };
+  /* 🔴 **ห้ามเช็ค `c.note` ตรงนี้อีก** (บั๊กที่เจอ 6 ก.ย. 2569)
+      `note` ของ lazadaStockCompare คือ **คำอธิบายคอลัมน์ของผลที่สำเร็จ** ⇒ มีทุกรอบที่สำเร็จ
+      เดิมเขียน `if (c.skip || c.note)` ⇒ **แผนดันสต็อก Lazada ไม่เคยถูกคำนวณเลยสักครั้ง**
+      และคืนคำอธิบายคอลัมน์ออกไปเป็น "เหตุผลที่ข้าม" ซึ่งอ่านแล้วดูสมเหตุสมผลมาก
+      **ไม่มีอะไรฟ้อง ไม่มี error ไม่มีเลขผิด** — จอขึ้นว่า "ข้าม" พร้อมเหตุผลยาวสวยงาม
+      ⇒ บทเรียน: ตัวที่บอกว่า "ข้าม" ต้องอ่านง่ายพอที่คนจะเห็นว่าเหตุผลนั้น**ไม่ใช่เหตุผล** */
+  if (c.skip) return { skip: c.skip };
+  /* ⚠️ ตาข่ายกันบั๊กแบบเดิมกลับมา: ถ้าไม่มีโครงผลลัพธ์ที่ต้องใช้ ให้บอกตรง ๆ ว่าอ่านผลไม่ได้
+      **ห้ามเดินต่อด้วยกองว่าง** เพราะจะได้แผน "ไม่ต้องดันอะไรเลย" ซึ่งดูเหมือนทุกอย่างตรงกันดี */
+  if (!Array.isArray(c.diff))
+    return { skip: "อ่านผลเทียบสต็อก Lazada ไม่ได้ (ไม่มีช่อง diff) — ไม่ใช่ 'ไม่มีอะไรต้องดัน'" };
 
   const exact = (c.diff || []).filter((d) => d.matchedAs === "ตรงตัว" || d.via === "สูตรชุด");
   const rows = exact.map((d) => ({
@@ -158,7 +175,11 @@ async function lazadaPlan() {
 async function tiktokPlan() {
   const { tiktokStockCompare } = await import("./tiktok-stock.mjs");
   const c = await tiktokStockCompare();
-  if (c.skip || c.note) return { skip: c.skip || c.note };
+  /* ✅ เคยถูกอยู่แล้วเหมือน Shopee (เส้นสำเร็จไม่มี `note`) — ไม่ได้แก้เพราะพัง
+      แต่ถอนชนวนให้เหมือนกันทั้งไฟล์: ต้นทางใช้ `skip` แล้ว เหลือเช็คทางเดียว */
+  if (c.skip) return { skip: c.skip };
+  if (!Array.isArray(c.diff))
+    return { skip: "อ่านผลเทียบสต็อก TikTok ไม่ได้ (ไม่มีช่อง diff) — ไม่ใช่ 'ไม่มีอะไรต้องดัน'" };
 
   const rows = [
     ...(c.diff || []).map((d) => ({

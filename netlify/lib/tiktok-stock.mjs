@@ -110,7 +110,7 @@ export async function tiktokProductShape() {
     body: { status: "ACTIVATE" },
   });
   const p = (d?.data?.products || [])[0];
-  if (!p) return { note: "ไม่มีสินค้าที่ลงขายอยู่เลย" };
+  if (!p) return { skip: "ไม่มีสินค้าที่ลงขายอยู่เลย" };
   const s = (p.skus || [])[0];
   return {
     productKeys: Object.keys(p).sort(),
@@ -138,7 +138,7 @@ export async function tiktokStockCompare() {
 
   const dayRows = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = dayRows[0]?.d;
-  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", tiktokSkus: rows.length };
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", tiktokSkus: rows.length };
 
   const [snapRows, rec] = await Promise.all([
     coreQuery(`SELECT sku, qty FROM stock_snapshots WHERE day = ?`, [day]),

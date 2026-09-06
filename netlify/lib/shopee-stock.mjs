@@ -134,7 +134,7 @@ export async function shopeeMissingSkus() {
   if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
 
   const day = (await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`))[0]?.d;
-  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
   const snap = new Map(
     (await coreQuery(`SELECT sku, qty, name FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [
       String(r.sku).trim(),
@@ -252,7 +252,7 @@ export async function shopeeStockCompare(o = {}) {
   // ภาพถ่ายสต็อกล่าสุดของเรา (ถ่ายตี 1 จากแคช ZORT)
   const day = dayRows[0]?.d;
   if (!day) {
-    return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", shopeeSkus: withSku.length };
+    return { skip: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", shopeeSkus: withSku.length };
   }
   const snap = new Map(
     (await coreQuery(`SELECT sku, qty FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [

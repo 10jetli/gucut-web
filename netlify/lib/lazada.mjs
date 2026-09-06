@@ -265,7 +265,14 @@ export async function lazadaStockCompare() {
   // ── ภาพถ่ายสต็อกล่าสุดของเรา ──
   const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = latest?.d;
-  if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", lazadaSkus: rows.length };
+  /* ⚠️ **ต้องเป็น `skip` ไม่ใช่ `note`** (แก้ 6 ก.ย. 2569)
+      ในไฟล์นี้ `note` ท้ายฟังก์ชันคือ **คำอธิบายคอลัมน์ของผลที่สำเร็จ** ⇒ มีทุกรอบที่สำเร็จ
+      เดิมบรรทัดนี้ใช้ `note` เป็น "เหตุผลที่ทำต่อไม่ได้" = **ชื่อเดียวสองความหมาย**
+      ผลคือ `stock-push.mjs` ที่เขียนว่า `if (c.skip || c.note) return {skip:...}`
+      **ตีผลที่สำเร็จว่าเป็นการข้าม ⇒ แผนดันสต็อก Lazada ไม่เคยถูกคำนวณเลยสักครั้ง**
+      และมันคืนคำอธิบายคอลัมน์ออกไปเป็น "เหตุผลที่ข้าม" ซึ่งอ่านแล้วดูสมเหตุสมผลมาก
+      ⇒ กติกาของไฟล์นี้ต่อจากนี้: `skip` = ทำต่อไม่ได้ · `note` = คำอธิบายผลลัพธ์ **ห้ามปนกัน** */
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา", lazadaSkus: rows.length };
   const snap = new Map(
     (await coreQuery(`SELECT sku, qty FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [
       String(r.sku).trim(),
