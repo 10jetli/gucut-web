@@ -18,6 +18,13 @@ const when = (ms: number) =>
 export default function PointsView() {
   const router = useRouter();
   const [d, setD] = useState<Data | null>(null);
+  /* 🔴 **สามสถานะ ห้ามยุบเหลือสอง** (6 ก.ย. 2569)
+      เดิม `d` เป็น null ได้ทั้งตอน **กำลังโหลด** และตอน **โหลดไม่สำเร็จ**
+      แล้วบรรทัดยอดแต้มเขียน `d?.points ?? 0` ⇒ ทั้งสองกรณีขึ้นเลข **0 ตัวใหญ่**
+      ⇒ ลูกค้าที่มีแต้มอยู่จริงเห็นว่า "แต้มเป็นศูนย์" **โดยไม่มีอะไรบอกว่าโหลดไม่ได้**
+         เขาจะเข้าใจว่าแต้มถูกล้าง แล้วเลิกใช้ระบบแต้มไปเลย ซึ่งเรียกกลับมายาก
+      ⚠️ ทิศที่ปลอดภัยคือ "ยังไม่รู้" ไม่ใช่ "ศูนย์" — ศูนย์เป็นคำยืนยันที่ผิดได้ */
+  const [failed, setFailed] = useState(false);
   const [needLogin, setNeedLogin] = useState(false);
 
   useEffect(() => {
@@ -26,7 +33,7 @@ export default function PointsView() {
       fetch("/api/auth").then((r) => r.json()).catch(() => ({ user: null })),
     ])
       .then(([p, a]) => { setD(p); setNeedLogin(!a.user); })
-      .catch(() => setD(null));
+      .catch(() => { setFailed(true); setD(null); });
   }, []);
 
   return (
@@ -40,8 +47,15 @@ export default function PointsView() {
       <section className="mx-2 mt-2 rounded-xl bg-white p-5 text-center">
         <p className="text-[12px] text-ink-300">แต้มที่มีตอนนี้</p>
         <p className="mt-1 font-heading text-[38px] font-extrabold leading-none text-safety">
-          {(d?.points ?? 0).toLocaleString("th-TH")}
+          {/* ยังไม่รู้ (กำลังโหลด/โหลดไม่สำเร็จ) ⇒ ขึ้นขีด ไม่ใช่เลข 0 */}
+          {d ? d.points.toLocaleString("th-TH") : "—"}
         </p>
+        {failed && (
+          <p className="mt-2 rounded-lg bg-[#fff4e5] px-3 py-2 text-[12px] leading-relaxed text-[#7a4a00]">
+            โหลดแต้มไม่สำเร็จ — <b>ไม่ได้แปลว่าแต้มหาย</b> ลองรีเฟรชหน้านี้อีกครั้ง
+            ถ้ายังไม่ขึ้น ทักร้านได้เลยครับ
+          </p>
+        )}
         {d && d.on && (
           <p className="mt-2 text-[12px] leading-relaxed text-ink-300">
             ซื้อครบ ฿{d.earnPer.toLocaleString("th-TH")} = 1 แต้ม<br />
