@@ -315,16 +315,63 @@ export async function zortAddQuotation(o = {}) {
        เจอ 404 ครบทุกชื่อถึงจะเขียนลงรายการนี้ได้ · เขียนชื่อที่ลองไว้ให้ครบด้วย
        ไม่งั้นคนอ่านจะไม่รู้ว่าเราลองแค่ชื่อเดียวหรือลองครบแล้ว */
 export const ZORT_NO_API = [
+  /* ⚠️ ทุกแถวในนี้ต้องผ่าน "การพิสูจน์ว่าไม่มี" แบบเต็ม — ยิงหลายชื่อ หลายโมดูล **และหลาย method**
+      (เบาะแสสำคัญ: ยิงผิด method ได้ **405** ซึ่งแปลว่าเส้นมีจริง ต่างจาก **404** ที่แปลว่าไม่มี) */
   {
-    what: "เซลเพจ (สร้าง/แก้)",
-    probe: "SalePage/AddSalePage · AddSalepage · CreateSalePage → 404 ทั้งหมด",
+    what: "เซลเพจ (สร้าง/แก้/อ่าน)",
     at: "2026-09-06",
+    probe:
+      "POST SalePage/AddSalePage · AddSalepage · CreateSalePage → 404 · " +
+      "GET SalePage/GetSalePages · SalePage/GetList → 404",
+  },
+  {
+    what: "กลุ่มลูกค้า",
+    at: "2026-09-06",
+    probe:
+      "GET ContactGroup/GetContactGroups · Contact/GetContactGroups · Contact/GetGroups · " +
+      "Contact/GetContactGroupList · Contact/GetGroupList · ContactGroup/GetList → 404 ทั้งหมด",
+    note: "Contact/GetContacts มีจริง แต่วัตถุผู้ติดต่อไม่มีช่องกลุ่มเลย และช่อง type เป็น 'Undefined' ทุกราย",
+  },
+  {
+    what: "ตัวแทนจำหน่าย",
+    at: "2026-09-06",
+    probe: "GET Contact/GetAgents · Agent/GetAgents · Contact/GetAgentList → 404",
+  },
+  {
+    what: "ดรอปชิป / หน้าสั่งซื้อ",
+    at: "2026-09-06",
+    probe: "GET Dropship/GetDropships · Dropship/GetList · Contact/GetDropshipList → 404",
+  },
+  {
+    what: "ราคาตามระดับลูกค้า (TierPrice)",
+    at: "2026-09-06",
+    probe: "GET TierPrice/GetTierPrices · Contact/GetTierPrices → 404",
   },
 ];
 
 /* เส้นที่ **มีจริง** แต่เรายังไม่ได้เขียนตัวเรียก — ต่างจากรายการข้างบนคนละเรื่อง
    ⚠️ เพิ่มฟังก์ชันเขียนตัวใหม่เมื่อไหร่ **ลบแถวของมันออกจากรายการนี้ในคอมมิตเดียวกัน**
       (เจอของจริงวันนี้: "สร้างใบเสนอราคา" ค้างอยู่ทั้งที่ทำเสร็จแล้ว) */
+/** วิธียิงตรวจ + **ตัวคุมกลุ่ม** — จอเอาไปโชว์คู่กับผลได้ ให้คนอ่านชั่งน้ำหนักหลักฐานเองเป็น
+ *  ⚠️ ผลยิงตรวจที่ไม่มีตัวคุมกลุ่มกำกับ **ห้ามเอาไปตัดงานทิ้ง**
+ *     6 ก.ย. 2569 เกือบพลาดสองแถว ("รับคืนสินค้า" · "แก้ใบสั่งซื้อ") เพราะยิงชื่อเดียวแล้วสรุปเลย
+ *     ทั้งคู่มีเส้นอยู่จริงแค่คนละชื่อ/คนละโมดูล ⇒ 404 ชื่อเดียว **ไม่ใช่หลักฐานพอ**
+ *  ⚠️ ขอบเขตข้อสรุปของทั้งไฟล์นี้: "ไม่พบภายใต้ชื่อที่ลอง" ไม่ใช่ "ไม่มีแน่นอน" */
+export const ZORT_PROBE_METHOD = {
+  how: "ยิงด้วย body {} ไม่ใส่คีย์ — ไม่สร้างข้อมูลอะไรเลย ทำซ้ำได้",
+  read: {
+    "resCode 100 Invalid API": "เส้นมีจริง แค่เราไม่ได้ใส่คีย์",
+    "HTTP 404 ตัวเปล่า": "ไม่พบเส้นนั้น",
+  },
+  control: ["Contact/GetContacts → resCode 100", "Product/GetProducts → resCode 100"],
+  nameShapes: [
+    "Module/GetXxxs", "Module/GetXxxList", "Module/list", "Module/GetList",
+    "Module/EditXxx (ไม่ใช่ Update เสมอไป)", "โมดูลอื่นที่ชื่อใกล้เคียง",
+  ],
+  caveat: "พิสูจน์ได้แค่ 'ไม่พบภายใต้ชื่อที่ลอง' ไม่ใช่ 'ไม่มีแน่นอน'",
+  at: "2026-09-06",
+};
+
 export const ZORT_CAN_BUT_NOT_BUILT = [
   { what: "เพิ่ม/แก้ผู้ติดต่อ (ลูกค้า · คู่ค้า)", at: "2026-09-06", untested: true,
     probe: "Contact/AddContact · Contact/UpdateContact → resCode 100 (Contact/EditContact = 404)" },
