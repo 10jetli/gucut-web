@@ -254,6 +254,14 @@ async function route(req, context) {
       const r = await zortAddQuotation(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* ชั้นที่สาม: ตรวจว่า "คำกล่าวอ้างเรื่องความสามารถของ ZORT" ในโค้ด **ยังจริงอยู่ไหม**
+       ⚠️ ต่างจาก ?zortnoapi=1 ซึ่งแค่ **อ่านสิ่งที่เราเขียนไว้** — ตัวนี้ **ยิงของจริงไปเทียบ**
+       ⚠️ ห้ามเอาไปใส่ prebuild (ของนอกบ้านห้ามทำให้ build ตก) · ให้รันหลัง deploy ทุกครั้ง
+       ⚠️ ตัวควบคุมไม่ผ่าน = ตอบ inconclusive **ห้ามตอบว่าทุกอย่างยังจริง** */
+    if (url.searchParams.get("zortclaims")) {
+      const { zortClaimCheck } = await import("../lib/zort-claim-check.mjs");
+      return json({ ok: true, ...(await zortClaimCheck()) });
+    }
     if (url.searchParams.get("zortnoapi")) {
       const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD, ZORT_WEBHOOK } =
         await import("../lib/zort-write.mjs");
