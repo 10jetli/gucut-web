@@ -469,6 +469,11 @@ export async function listQuotations(limit = 50) {
     total: num(data?.count),
     live: true, // ดึงสดจาก ZORT ไม่ใช่กระจก — จอเขียนบอกได้ว่าเป็นข้อมูลสด
     rows: list.map((q) => ({
+      /* ⚠️ **เลขที่ใบ (`number`) กับ id ในระบบ ZORT เป็นคนละตัว**
+          เส้นดึงรายละเอียดรายใบรับ **id เท่านั้น** ส่งเลขที่ใบไปได้ค่าว่างเงียบ ๆ
+          (เจอจริง 6 ก.ย. 2569 — ส่ง "QT-202609001" ไปแล้วดึงไม่ได้ ทั้งที่เส้นมีอยู่จริง)
+          ⇒ ส่ง id ออกมาด้วยเสมอ ไม่งั้นจอกดดูใบไหนก็ไม่ได้ */
+      id: q?.id ?? null,
       number: String(q?.number ?? ""),
       customer: String(q?.customername ?? ""),
       phone: String(q?.customerphone ?? ""),

@@ -482,8 +482,23 @@ export async function listBundleItems(bundleSku = "", memberSku = "") {
   );
   let rows = [];
   if (one) {
+    /* ⚠️ **ชื่อสินค้าใน `bundle_items` ว่างทุกแถว** — ตัวเก็บสูตรชุดเมื่อ 3 ก.ย. 2569
+        เก็บมาแต่ **รหัส** ไม่ได้เก็บชื่อ ⇒ จอ "สินค้าใน สินค้าเป็นชุด" ขึ้นขีด "—" ทั้งคอลัมน์
+        (เจ้าของร้านวงมาให้ 6 ก.ย. 2569) · ทั้งที่ชื่ออยู่ในทะเบียนสินค้าครบอยู่แล้ว
+        ⇒ ไม่ต้องไปเก็บสูตรชุดใหม่ แค่หยิบชื่อจากทะเบียนมาต่อให้ตอนอ่าน
+
+        ⚠️ ใช้ **subquery คืนค่าเดียว ไม่ใช่ JOIN** — รหัสซ้ำในทะเบียนจะทำให้แถวชิ้นส่วนงอก
+           แล้วสูตรชุดดูเหมือนมีของมากกว่าความจริง (กติกาเดียวกับตอนคิดราคารวมของชุด)
+        ⚠️ ลำดับที่มา: ชื่อในสูตรชุดก่อน (ถ้าวันหน้าเก็บมาได้) → ทะเบียนสินค้า → ชื่อที่เคยขายจริง
+           **หาไม่เจอให้เป็นค่าว่าง ห้ามเดา** จอจะได้ขึ้นขีดตามจริงว่าไม่รู้จักรหัสนี้
+        ⚠️ ไม่ได้เพิ่มรอบคุยกับฐานเลยสักรอบ — เกาะไปกับคำขอเดิม */
     rows = await coreQuery(
-      `SELECT line, sku, name, qty FROM bundle_items WHERE bundle_sku = ${esc(one)} ORDER BY line`
+      `SELECT line, sku, qty,
+              COALESCE(NULLIF(name,''),
+                       (SELECT p.name FROM products p WHERE p.sku = bundle_items.sku AND p.name <> ''),
+                       (SELECT oi.name FROM order_items oi WHERE oi.sku = bundle_items.sku AND oi.name <> '' LIMIT 1),
+                       '') AS name
+       FROM bundle_items WHERE bundle_sku = ${esc(one)} ORDER BY line`
     );
   } else if (member) {
     // อยู่ในชุดไหนบ้าง + ชื่อชุด (เอาจากตาราง bundles ถ้ามี)
