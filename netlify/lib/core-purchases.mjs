@@ -547,7 +547,7 @@ export async function listPurchaseItems(o = {}) {
  *  ทั้งที่ส่ง `pricepernumber` ไป ⇒ ต้องเห็นของที่ ZORT เก็บจริงถึงจะรู้ว่าชื่อช่องไหนถูก
  *  ⚠️ **ห้ามเดาชื่อช่องแล้วแก้ตัวส่ง** — เดาผิดคือใบเสนอราคาราคาศูนย์ทั้งร้าน
  *     ส่งช่องที่ ZORT คืนมาจริงกลับไปให้ดูด้วยตา แล้วค่อยตัดสิน */
-export async function getQuotationDetail(id) {
+export async function getQuotationDetail(id, raw = false) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const key = String(id ?? "").trim();
@@ -558,6 +558,13 @@ export async function getQuotationDetail(id) {
   ).catch(() => null);
   const data = res?.ok ? await res.json().catch(() => null) : null;
   if (!data) return { error: "ดึงรายละเอียดใบเสนอราคาจาก ZORT ไม่ได้" };
+  /* ⚠️ **โหมดดูของดิบ — สำหรับไล่ปัญหาเท่านั้น ห้ามให้จอเรียกประจำ**
+      ทำเพิ่ม 6 ก.ย. 2569 เพราะตัวย่อด้านล่างหยิบ `list[0]` มาแสดง
+      แล้ว `list[0]` ของเส้นนี้คือ **บรรทัดสินค้า ไม่ใช่หัวใบ** ⇒ ที่เห็นว่าเป็น "ใบ" มาตลอด
+      จริง ๆ คือบรรทัดเดียว และ `number: "1"` ที่นึกว่าเลขที่ใบ คือ **จำนวนชิ้น**
+      ⇒ ตัวย่อที่ตีความให้เรียบร้อยแล้ว **ปิดบังโครงสร้างจริง** จนไล่ปัญหาต่อไม่ได้
+      ⚠️ ห้าม log และห้ามส่งเข้า Telegram — มีชื่อ/เบอร์ลูกค้าในใบจริง */
+  if (raw) return { live: true, raw: data };
   const q = data?.detail ?? data?.data ?? (Array.isArray(data?.list) ? data.list[0] : null);
   if (!q || typeof q !== "object")
     return { error: "ZORT ตอบมาแต่หาตัวใบไม่เจอ", fields: Object.keys(data ?? {}) };

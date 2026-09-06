@@ -386,7 +386,8 @@ async function route(req, context) {
        ⚠️ "ยิงผ่าน" ≠ "ข้อมูลเข้าถูกช่อง" — ใบแรกที่สร้างจริงได้ยอดเงิน ฿0 ทั้งที่ส่งราคาไป */
     if (url.searchParams.get("quotation")) {
       const { getQuotationDetail } = await import("../lib/core-purchases.mjs");
-      return okJson(await getQuotationDetail(url.searchParams.get("quotation")));
+      return okJson(await getQuotationDetail(url.searchParams.get("quotation"),
+        url.searchParams.get("raw") === "1"));
     }
     if (url.searchParams.get("zortdocs")) {
       const { zortDocumentsRead } = await import("../lib/zort-write.mjs");
