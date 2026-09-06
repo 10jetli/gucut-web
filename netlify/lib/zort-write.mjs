@@ -357,16 +357,33 @@ export const ZORT_NO_API = [
  *     6 ก.ย. 2569 เกือบพลาดสองแถว ("รับคืนสินค้า" · "แก้ใบสั่งซื้อ") เพราะยิงชื่อเดียวแล้วสรุปเลย
  *     ทั้งคู่มีเส้นอยู่จริงแค่คนละชื่อ/คนละโมดูล ⇒ 404 ชื่อเดียว **ไม่ใช่หลักฐานพอ**
  *  ⚠️ ขอบเขตข้อสรุปของทั้งไฟล์นี้: "ไม่พบภายใต้ชื่อที่ลอง" ไม่ใช่ "ไม่มีแน่นอน" */
+/* วิธียิงตรวจว่า "เส้นนี้มีอยู่จริงไหม" — ทำซ้ำได้ ไม่ต้องใช้รหัสร้าน ไม่สร้างข้อมูล
+   สคริปต์พร้อมใช้: ~/claude-shared/zort-probe.sh */
 export const ZORT_PROBE_METHOD = {
-  how: "ยิงด้วย body {} ไม่ใส่คีย์ — ไม่สร้างข้อมูลอะไรเลย ทำซ้ำได้",
+  /* ⚠️ **ยิงด้วย GET เท่านั้น ห้าม POST** (เปลี่ยนวิธี 6 ก.ย. 2569 เช้า)
+      ZORT **ตอบ HTTP 200 ให้แทบทุกอย่าง** ⇒ POST ไปที่ `AddXxx` แล้วได้ 200
+      **แยกไม่ออกว่า "ถูกปฏิเสธ" หรือ "สร้างเอกสารจริงไปแล้ว"** จนกว่าจะอ่านเนื้อคำตอบ
+      วิธีเดิม (POST body {} ไม่ใส่คีย์) ปลอดภัยเพราะโดนตีตกที่ชั้นคีย์ก่อน — แต่
+      **ความปลอดภัยไปแขวนอยู่กับ "อย่าเผลอใส่คีย์"** ซึ่งเป็นเงื่อนไขที่พลาดได้
+      GET แยกได้เท่ากันโดยไม่ต้องพึ่งเงื่อนไขนั้นเลย */
+  how: "GET ที่ path ตรง ๆ ไม่ใส่คีย์ ไม่มี body — อ่านแค่ HTTP status",
   read: {
-    "resCode 100 Invalid API": "เส้นมีจริง แค่เราไม่ได้ใส่คีย์",
-    "HTTP 404 ตัวเปล่า": "ไม่พบเส้นนั้น",
+    "200": "เส้นมีจริง + รับ GET (เนื้อคำตอบจะบอกว่าไม่ได้ใส่คีย์)",
+    "405": "เส้นมีจริง แต่เป็นเส้นเขียน (รับเฉพาะ POST) ⇒ **ห้ามสรุปว่าไม่มี**",
+    "404": "ไม่พบเส้นนั้น",
   },
-  control: ["Contact/GetContacts → resCode 100", "Product/GetProducts → resCode 100"],
+  /* ⚠️ ต้องยิงตัวควบคุมคู่กันทุกครั้ง ไม่งั้นสคริปต์พังแล้วได้ 404 ทั้งกระดาน
+      = "ไม่มีอะไรเลย" ซึ่งหน้าตาเหมือนผลตรวจที่สมบูรณ์แบบ */
+  control: [
+    "บวก: Order/GetOrders → 200 · Order/AddOrder → 405 · Webhook/GetWebhook → 200",
+    "ลบ: Zzz/GetNothing → 404",
+  ],
   nameShapes: [
     "Module/GetXxxs", "Module/GetXxxList", "Module/list", "Module/GetList",
-    "Module/EditXxx (ไม่ใช่ Update เสมอไป)", "โมดูลอื่นที่ชื่อใกล้เคียง",
+    "Module/EditXxx (ไม่ใช่ Update เสมอไป)", "Module/VoidXxx", "Module/DeleteXxx",
+    // ⚠️ รูปเอกพจน์มีจริง — `Webhook/GetWebhook` ไม่ใช่ `GetWebhooks` (เจอ 6 ก.ย. 2569)
+    "Module/GetXxx (เอกพจน์ ไม่เติม s)",
+    "โมดูลอื่นที่ชื่อใกล้เคียง · ชื่อโมดูลมักตรงกับ URL ของจอใน ZORT",
   ],
   caveat: "พิสูจน์ได้แค่ 'ไม่พบภายใต้ชื่อที่ลอง' ไม่ใช่ 'ไม่มีแน่นอน'",
   at: "2026-09-06",
@@ -390,4 +407,79 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
     note: "แถวนี้เกือบถูกปิดเป็น ❌ เพราะยิงผิดโมดูล — ของจริงทำได้" },
   { what: "แก้ออเดอร์ที่ส่งเข้าไปแล้ว", at: "2026-09-06", untested: true,
     probe: "Order/EditOrder → resCode 100" },
+
+  /* ── กวาดทั้งแผง 6 ก.ย. 2569 เช้า · GET-only 140+ ชื่อ · ตัวควบคุมผ่าน ────────────
+     ที่มา: ยิงคู่ (โมดูล × คำกริยา) แทนการนึกชื่อทีละตัว — วิธีนึกทีละตัวพลาดมาแล้ว 3 รอบ
+     ⚠️ ทุกตัวข้างล่างนี้ **ยังไม่เคยยิงจริง** รู้แค่ว่า "เส้นมีอยู่" (ได้ 405 = เส้นเขียน)
+        ห้ามเอาไปเขียนบนจอว่าทำได้ จนกว่าจะยิงของจริงแล้วสำเร็จ */
+
+  /* 🔴 ตัวนี้ปิดช่องที่ CLAUDE.md เขียนไว้ว่า "ยกเลิกบนเว็บไม่ยกเลิกใน ZORT ต้องไปยกเลิกเอง"
+      ถ้ายิงแล้วผ่าน = ลูกค้ากดยกเลิกบนเว็บแล้วใบใน ZORT ตายตามทันที ไม่ต้องมีคนไปกดมือ
+      ⚠️ **ห้ามต่อเข้าปุ่มยกเลิกอัตโนมัติก่อนยิงทดสอบ** — ยกเลิกใบผิดเอาคืนไม่ได้ */
+  { what: "ยกเลิกออเดอร์ใน ZORT", at: "2026-09-06", untested: true,
+    probe: "Order/VoidOrder → 405 (เส้นเขียนมีจริง)",
+    note: "ปิดช่องที่ต้องไปกดยกเลิกเองใน ZORT ทุกครั้งที่ลูกค้ายกเลิกบนเว็บ" },
+  { what: "เปลี่ยนสถานะออเดอร์", at: "2026-09-06", untested: true,
+    probe: "Order/UpdateOrderStatus → 405" },
+  { what: "สร้าง/แก้/ยกเลิก ใบโอนสินค้าระหว่างคลัง", at: "2026-09-06", untested: true,
+    probe: "Transfer/AddTransfer · EditTransfer · VoidTransfer · UpdateTransferStatus → 405 ทั้งหมด",
+    note: "จอ /core/receive ตอนนี้อ่านใบอย่างเดียว — เส้นสร้างใบมีอยู่แล้ว" },
+  { what: "สร้าง/แก้/ลบ สินค้าเป็นชุด (Bundle)", at: "2026-09-06", untested: true,
+    probe: "Bundle/AddBundle · UpdateBundle · DeleteBundle → 405" },
+  { what: "เพิ่มคลังสินค้า", at: "2026-09-06", untested: true,
+    probe: "Warehouse/AddWarehouse → 405 (Warehouse/GetWarehouses → 200)" },
+  { what: "บันทึกรับชำระเงิน", at: "2026-09-06", untested: true,
+    probe: "Payment/AddPayment → 405 · Payment/GetPaymentDetail → 200",
+    note: "⚠️ ไม่มีเส้น 'รายการชำระทั้งหมด' — GetPayments/GetPaymentList = 404 ทั้งคู่ ⇒ ดูได้ทีละใบเท่านั้น" },
+  { what: "ยกเลิกใบเสนอราคา / ใบสั่งซื้อ / ใบคืนสินค้า", at: "2026-09-06", untested: true,
+    probe: "Quotation/VoidQuotation · PurchaseOrder/VoidPurchaseOrder · ReturnOrder/VoidReturnOrder → 405" },
+  { what: "ลบสินค้า", at: "2026-09-06", untested: true,
+    probe: "Product/DeleteProduct → 405",
+    note: "⚠️ ของร้านจริง ลบพลาดเอาคืนไม่ได้ — ต่อเข้าจอต้องมีขั้นยืนยันเสมอ" },
 ];
+
+/* 🔔 **ZORT ยิงเหตุการณ์กลับมาหาเราได้** — เจอ 6 ก.ย. 2569 ตอนกวาดทั้งแผง
+   `Webhook/GetWebhook` → 200 · `Webhook/UpdateWebhook` → 405 (เส้นเขียน)
+   ⚠️ ยังไม่รู้ว่ามันยิงเหตุการณ์อะไรได้บ้าง และรูปคำขอหน้าตายังไง — **ต้องยิงอ่านของจริงก่อน**
+   ถ้าใช้ได้จริง ผลคือ **เลิกนั่งถาม ZORT ทุก 30 นาที** ทั้งระบบ:
+     - ออเดอร์เปลี่ยนสถานะ/จัดส่ง รู้ทันทีแทนที่จะรู้ช้าได้ถึงครึ่งชั่วโมง
+     - กระจกออเดอร์ไม่ต้องกวาดย้อนหลังเผื่อทุกรอบ
+   ⚠️ **ห้ามตั้ง webhook ทับของเดิมเด็ดขาดจนกว่าจะอ่านค่าปัจจุบันออกมาดูก่อน**
+      ZORT Social Commerce / ตัวเชื่อมมาร์เก็ตเพลสอาจตั้ง URL ไว้อยู่แล้ว
+      ทับ = ของที่ร้านใช้หากินอยู่ทุกวันพังเงียบ ๆ (กติกาเดียวกับห้ามแตะ webhook ของ @gucut1) */
+export const ZORT_WEBHOOK = {
+  found: "2026-09-06",
+  read: "GET Webhook/GetWebhook",
+  write: "POST Webhook/UpdateWebhook",
+  status: "ยังไม่เคยอ่านค่าจริง — ยังไม่รู้ว่าตั้งอะไรไว้อยู่",
+  untested: true,
+};
+
+/** อ่านค่า webhook ปัจจุบันของ ZORT — **อ่านอย่างเดียว ไม่มีคู่สำหรับเขียนในไฟล์นี้โดยตั้งใจ** */
+export async function zortWebhookRead() {
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Webhook/GetWebhook`, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (e) {
+    return { ok: false, error: `ยิง ZORT ไม่ถึง: ${e?.message ?? e}` };
+  }
+  const raw = await r.text().catch(() => "");
+  let data = null;
+  try { data = JSON.parse(raw); } catch { /* ไม่ใช่ JSON — คืนดิบให้คนอ่านเอง */ }
+  /* ⚠️ ZORT ตอบ 200 เสมอ ⇒ ห้ามตัดสินจาก r.ok · และ `resCode` วางไว้คนละที่แล้วแต่โมดูล */
+  const resCode = String(data?.res?.resCode ?? data?.resCode ?? data?.rescode ?? "");
+  return {
+    ok: resCode === "200",
+    resCode: resCode || null,
+    /* ส่งชื่อช่องที่ได้จริงกลับไปด้วย — ยังไม่มีใครรู้ว่ารูปคำตอบหน้าตายังไง
+       เดารูปแล้วอ่านผิด จะกลายเป็น "ไม่มี webhook ตั้งไว้" ซึ่งชวนให้ไปตั้งทับของเดิม */
+    fields: data && typeof data === "object" ? Object.keys(data).sort() : null,
+    data: data ?? null,
+    rawHead: data ? null : raw.slice(0, 400),
+  };
+}

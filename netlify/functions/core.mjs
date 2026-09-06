@@ -255,8 +255,18 @@ async function route(req, context) {
       return json(r, r.ok ? 200 : 400);
     }
     if (url.searchParams.get("zortnoapi")) {
-      const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD } = await import("../lib/zort-write.mjs");
-      return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT, method: ZORT_PROBE_METHOD, items: ZORT_NO_API });
+      const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD, ZORT_WEBHOOK } =
+        await import("../lib/zort-write.mjs");
+      return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT,
+        method: ZORT_PROBE_METHOD, webhook: ZORT_WEBHOOK, items: ZORT_NO_API });
+    }
+    /* อ่านค่า webhook ที่ ZORT ตั้งไว้อยู่ตอนนี้ — **อ่านอย่างเดียว ไม่มีทางเขียนทับ**
+       ⚠️ ตั้งใจไม่ทำเส้นเขียน: ถ้า ZORT Social Commerce หรือตัวเชื่อมมาร์เก็ตเพลส
+          ตั้ง URL ไว้อยู่ ทับเมื่อไหร่ของที่ร้านใช้ทุกวันพังเงียบ ๆ
+          จะตั้งจริงต้องเห็นค่าปัจจุบันก่อน แล้วให้เจ้าของร้านตัดสินใจ */
+    if (url.searchParams.get("zortwebhook")) {
+      const { zortWebhookRead } = await import("../lib/zort-write.mjs");
+      return json(await zortWebhookRead());
     }
 
     if (url.searchParams.get("move")) {
