@@ -39,9 +39,13 @@ async function ownSales(sinceTs, untilTs) {
   const byDay = new Map();
   let orders = 0, revenue = 0, pending = 0;
 
+  /* 🔴 **แถวที่อ่านไม่ได้ต้องนับ** — ยอดขายที่ต่ำกว่าจริงทำให้ ROAS ดูแย่
+      แล้วเจ้าของร้าน **ตัดงบโฆษณาที่จริง ๆ คุ้มอยู่** ⇒ เสียเงินจากตัวเลขที่ขาดไปเงียบ ๆ */
+  let unreadable = 0;
   for (const b of blobs) {
     const o = await store.get(b.key, { type: "json" }).catch(() => null);
-    if (!o || typeof o.at !== "number") continue;
+    if (!o) { unreadable++; continue; }
+    if (typeof o.at !== "number") continue;
     if (o.at < sinceTs || o.at > untilTs) continue;
     if (o.status === "cancelled") continue;
     if (o.status === "pending") { pending += 1; continue; }
@@ -60,6 +64,10 @@ async function ownSales(sinceTs, untilTs) {
     orders,
     revenue,
     pending,
+    /* ⚠️ `unreadable` > 0 = **ยอดขายที่คืนไปต่ำกว่าจริง** เพราะอ่านบางใบไม่ได้
+        ⇒ ROAS ที่คำนวณจากตัวเลขนี้จะดูแย่กว่าความจริง
+        **จอต้องเขียนบอก ห้ามให้คนตัดงบโฆษณาจากตัวเลขที่ขาดไปเงียบ ๆ** */
+    unreadable,
     days: [...byDay.entries()].sort().map(([date, v]) => ({ date, ...v })),
   };
 }

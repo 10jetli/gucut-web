@@ -256,11 +256,18 @@ export default async function handler(req, context) {
   const readAll = async () => {
     const { blobs } = await s.list({ prefix: "c/" }).catch(() => ({ blobs: [] }));
     const items = [];
+    let unreadable = 0;
+      /* 🔴 **แถวที่อ่านไม่ได้ต้องนับไว้ ห้ามหายเงียบ** (แก้ 6 ก.ย. 2569)
+          `.catch(() => null)` แล้ว `continue` ⇒ แถวนั้นหายจากผลลัพธ์**โดยไม่มีตัวนับบอก**
+          ⇒ ผลลัพธ์หน้าตาเหมือนครบทุกประการ · ต้องส่งจำนวนที่อ่านไม่ได้ออกไปด้วย
+          (ท่าเดียวกับที่ lib/live.mjs ทำกับ READ_CAP อยู่แล้ว) */
     for (const b of blobs) {
       const rec = await s.get(b.key, { type: "json" }).catch(() => null);
-      if (rec) items.push(rec);
+      if (rec) items.push(rec); else unreadable++;
     }
     items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
+    /* แปะไว้กับอาร์เรย์ — ผู้เรียกหยิบไปใส่คำตอบได้โดยไม่ต้องเปลี่ยนรูปที่คืน */
+    items.unreadable = unreadable;
     return items;
   };
 

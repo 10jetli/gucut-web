@@ -294,9 +294,15 @@ export default async function handler(req, context) {
 
     const { blobs } = await store.list({ prefix: "o/" });
     const raw = [];
+    let unreadable = 0;
+      /* 🔴 **แถวที่อ่านไม่ได้ต้องนับไว้ ห้ามหายเงียบ** (แก้ 6 ก.ย. 2569)
+          `.catch(() => null)` แล้ว `continue` ⇒ แถวนั้นหายจากผลลัพธ์**โดยไม่มีตัวนับบอก**
+          ⇒ ผลลัพธ์หน้าตาเหมือนครบทุกประการ · ต้องส่งจำนวนที่อ่านไม่ได้ออกไปด้วย
+          (ท่าเดียวกับที่ lib/live.mjs ทำกับ READ_CAP อยู่แล้ว) */
     for (const b of blobs) {
       const o = await store.get(b.key, { type: "json" }).catch(() => null);
-      if (!o || normPhone(o.customer?.phone) !== myPhone) continue;
+      if (!o) { unreadable++; continue; }
+      if (normPhone(o.customer?.phone) !== myPhone) continue;
       raw.push(o);
     }
 
@@ -352,7 +358,9 @@ export default async function handler(req, context) {
       province: o.customer?.province || "",
     }));
     mine.sort((a, b) => b.at - a.at);
-    return json({ orders: mine });
+      /* ⚠️ `unreadable` > 0 = **มีแถวที่อ่านไม่ได้ ไม่ใช่ว่าไม่มี** — จอต้องเขียนบอก
+          ห้ามแสดงผลเหมือนรายการครบ (three-states-not-two) */
+    return json({ orders: mine, unreadable });
   }
 
   // ---------- ฝั่งร้าน ----------
@@ -387,16 +395,27 @@ export default async function handler(req, context) {
     // รายการทั้งหมด (ใหม่สุดก่อน) — ตัวออเดอร์เล็กอยู่แล้วเพราะแยกสลิปไว้ต่างหาก
     const { blobs } = await store.list({ prefix: "o/" });
     const orders = [];
+    let unreadable = 0;
+      /* 🔴 **แถวที่อ่านไม่ได้ต้องนับไว้ ห้ามหายเงียบ** (แก้ 6 ก.ย. 2569)
+          `.catch(() => null)` แล้ว `continue` ⇒ แถวนั้นหายจากผลลัพธ์**โดยไม่มีตัวนับบอก**
+          ⇒ ผลลัพธ์หน้าตาเหมือนครบทุกประการ · ต้องส่งจำนวนที่อ่านไม่ได้ออกไปด้วย
+          (ท่าเดียวกับที่ lib/live.mjs ทำกับ READ_CAP อยู่แล้ว) */
     for (const b of blobs) {
       const o = await store.get(b.key, { type: "json" }).catch(() => null);
-      if (o) orders.push(o);
+      if (o) orders.push(o); else unreadable++;
     }
     orders.sort((a, b) => b.at - a.at);
 
     if (url.searchParams.get("stat") === "1") {
-      return json({ newCount: orders.filter((o) => o.status === "new").length });
+      /* ⚠️ ป้ายออเดอร์ใหม่ต่ำกว่าจริง = **ร้านไม่รู้ว่ามีออเดอร์** ⇒ ต้องบอกว่าอ่านไม่ได้กี่ใบ */
+      return json({
+        newCount: orders.filter((o) => o.status === "new").length,
+        unreadable,
+      });
     }
-    return json({ orders });
+      /* ⚠️ `unreadable` > 0 = **มีแถวที่อ่านไม่ได้ ไม่ใช่ว่าไม่มี** — จอต้องเขียนบอก
+          ห้ามแสดงผลเหมือนรายการครบ (three-states-not-two) */
+    return json({ orders, unreadable });
   }
 
   if (req.method === "PATCH") {

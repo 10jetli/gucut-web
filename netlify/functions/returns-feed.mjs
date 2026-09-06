@@ -33,9 +33,15 @@ export default async function handler(req, context) {
   try { ({ blobs } = await store.list({ prefix: "o/" })); } catch { return json({ list: [] }); }
 
   const list = [];
+  let unreadable = 0;
+      /* 🔴 **แถวที่อ่านไม่ได้ต้องนับไว้ ห้ามหายเงียบ** (แก้ 6 ก.ย. 2569)
+          `.catch(() => null)` แล้ว `continue` ⇒ แถวนั้นหายจากผลลัพธ์**โดยไม่มีตัวนับบอก**
+          ⇒ ผลลัพธ์หน้าตาเหมือนครบทุกประการ · ต้องส่งจำนวนที่อ่านไม่ได้ออกไปด้วย
+          (ท่าเดียวกับที่ lib/live.mjs ทำกับ READ_CAP อยู่แล้ว) */
   for (const b of blobs) {
     const o = await store.get(b.key, { type: "json" }).catch(() => null);
-    if (!o || o.status !== "returned") continue;
+    if (!o) { unreadable++; continue; }
+    if (o.status !== "returned") continue;
     // ⚠️ ใช้เวลาที่เปลี่ยนเป็นคืนของ ไม่ใช่เวลาที่สั่ง — ไม่งั้นของที่สั่งปีที่แล้ว
     //    แล้วเพิ่งคืนเดือนนี้จะไม่โผล่ในช่วง 30 วัน
     const at = Number(o.returnedAt || o.at) || 0;
@@ -62,7 +68,8 @@ export default async function handler(req, context) {
   }
 
   list.sort((a, b) => (a.date < b.date ? 1 : -1));
-  return json({ list });
+  /* ⚠️ `unreadable` > 0 = อ่านบางใบไม่ได้ **ไม่ใช่ว่าไม่มีของคืนในช่วงนี้** */
+  return json({ list, unreadable });
 }
 
 export const config = { path: "/api/returns-feed" };
