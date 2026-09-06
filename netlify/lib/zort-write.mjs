@@ -725,7 +725,39 @@ export async function zortDocumentsRead(limitRaw) {
   const byType = new Map();
   let total = null, fetched = 0, pages = 0, hitCap = false, sample = null, rowFields = null;
 
-  for (let page = 1; page <= MAX_PAGES; page++) {
+  /* ⚡ **ยิงหน้าที่ 2 เป็นต้นไปพร้อมกัน ห้ามไล่เรียงกัน** (แก้ 7 ก.ย. 2569)
+      ของเดิมไล่ทีละหน้า 7 หน้า ⇒ **6.6–17.3 วินาที** แล้วแต่จุดที่ยิง
+      ⇒ **ชนเพดานเวลาฟังก์ชันของ Netlify (26 วิ) เป็นครั้งคราวจริง** —
+        ฝั่งจอวัดเจอ 502 ตัวเปล่าที่ 40 วิ หนึ่งครั้งจากสี่ครั้ง
+      ⚠️ และเอกสารมีแต่จะเพิ่มขึ้นทุกวัน ⇒ ปล่อยไว้ = วันหนึ่งจะ 502 ถาวร
+      ⚠️ **อาการตอนชน ไม่ได้บอกว่า "ช้าเกิน"** — ฝั่งจอเห็นเป็น "อ่าน JSON ไม่ออก"
+        (ได้ body เปล่ากลับมา) ⇒ ไล่ผิดทางได้ง่ายมาก
+      ⇒ หน้าแรกต้องยิงก่อนเพื่ออ่าน `count` · ที่เหลือยิงพร้อมกันทีเดียว
+      ⚠️ **ห้ามเอา await กลับมาเรียงกันอีก** */
+  const fetchPage = async (page) => {
+    const r = await fetch(`${BASE}/Document/GetDocuments?limit=${per}&page=${page}`, {
+      headers,
+      signal: AbortSignal.timeout(15000),
+    });
+    const raw = await r.text().catch(() => "");
+    let data = null;
+    try { data = JSON.parse(raw); } catch { /* ไม่ใช่ JSON */ }
+    return { data, raw };
+  };
+
+  const eat = (list) => {
+    if (!rowFields && list[0] && typeof list[0] === "object") rowFields = Object.keys(list[0]).sort();
+    if (!sample) sample = list.slice(0, 2).map(({ detail, ...rest }) => rest);
+    for (const it of list) {
+      fetched += 1;
+      const h = String(it?.header ?? "(ไม่มีหัวเรื่อง)");
+      const t = String(it?.referencetype ?? "?");
+      byHeader.set(h, (byHeader.get(h) ?? 0) + 1);
+      byType.set(t, (byType.get(t) ?? 0) + 1);
+    }
+  };
+
+  for (let page = 1; page <= 1; page++) {
     let r;
     try {
       r = await fetch(`${BASE}/Document/GetDocuments?limit=${per}&page=${page}`, {
@@ -762,7 +794,23 @@ export async function zortDocumentsRead(limitRaw) {
       byType.set(t, (byType.get(t) ?? 0) + 1);
     }
     if (list.length < per) break;
-    if (page === MAX_PAGES) hitCap = true;
+  }
+
+  /* หน้าที่เหลือยิงพร้อมกันทีเดียว — รู้จำนวนหน้าจาก `count` ของหน้าแรกแล้ว */
+  if (total !== null && fetched < total) {
+    const need = Math.min(MAX_PAGES, Math.ceil(total / per));
+    if (need > 1) {
+      const rest = await Promise.all(
+        Array.from({ length: need - 1 }, (_, i) => fetchPage(i + 2).catch(() => null))
+      );
+      for (const got of rest) {
+        const list = Array.isArray(got?.data?.list) ? got.data.list : null;
+        if (!list) continue; // หน้าไหนพลาด = ไม่นับ · `complete` ด้านล่างจะฟ้องเองว่าไม่ครบ
+        pages += 1;
+        eat(list);
+      }
+      if (need >= MAX_PAGES && fetched < total) hitCap = true;
+    }
   }
 
   const sortDesc = (m) =>
@@ -779,9 +827,17 @@ export async function zortDocumentsRead(limitRaw) {
     byType: sortDesc(byType),
     rowFields,
     sample,
+    /* 🔴 **ข้อความนี้เคยเขียนว่า "ดึงอัตโนมัติได้ ไม่ต้องคัดด้วยมือ" ซึ่งผิด**
+        และมันอยู่มาข้ามวันหลังจากผมพิสูจน์แล้วว่าผิด ⇒ ฝั่งจออ่านแล้วเกือบตัด
+        เอกสาร 694 ใบออกจากงานที่มีเส้นตายจริง (7 ก.ย. 2569)
+        🔑 **ข้อความที่ถูกตอนเขียน แล้วกลายเป็นเท็จ** — และมันอยู่ในฟิลด์ที่คนเอาไปตัดสินใจ
+           ⇒ แก้บทเรียนที่หัวไฟล์อื่นอย่างเดียวไม่พอ **ต้องแก้ที่คำตอบซึ่งคนอ่านจริง ๆ ด้วย**
+        ⚠️ ห้ามเขียนกลับไปว่าดึงอัตโนมัติได้ จนกว่าจะมีใครโหลด PDF สำเร็จจริงสักใบ */
     note:
-      "linkurl = ลิงก์ดาวน์โหลด PDF จาก ZORT โดยตรง ⇒ เอกสารชนิดที่อยู่ในรายการนี้ " +
-      "**ดึงอัตโนมัติได้ ไม่ต้องคัดด้วยมือก่อนปิดบัญชี**",
+      "ได้ **สารบัญ** ครบ · **ไม่ได้ตัวไฟล์** — `linkurl` เปิดด้วยรหัส API ไม่ได้ " +
+      "(ยิงจริงแล้วได้หน้า HTML ขอล็อกอินกลับมา ไม่ใช่ %PDF ⇒ ต้องมีคุกกี้เบราว์เซอร์ที่ล็อกอินอยู่) " +
+      "⇒ **ตัวไฟล์ยังต้องคัดด้วยมือก่อนปิดบัญชี** · ค่าของรายการนี้คือใช้เป็น **ตัวหาร** " +
+      "เพื่อเทียบว่าคัดครบ 694 ใบหรือยัง ไม่ใช่เพื่อข้ามงานคัด",
   };
 }
 
