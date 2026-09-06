@@ -244,9 +244,11 @@ async function route(req, context) {
       const { SHOP_DATA } = await import("../lib/shop-data.mjs");
       return json({ ok: true, ...SHOP_DATA });
     }
+    /* ⚠️ คืนสองกองแยกกันเสมอ — "ZORT ไม่เปิดให้" (รอไปก็ไม่มา) กับ
+        "เรายังไม่ได้ทำ" (สั่งได้ทุกเมื่อ) · ยุบรวมเมื่อไหร่ คนอ่านจะรอของที่ไม่มีวันมา */
     if (url.searchParams.get("zortnoapi")) {
-      const { ZORT_NO_API } = await import("../lib/zort-write.mjs");
-      return json({ ok: true, items: ZORT_NO_API });
+      const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT } = await import("../lib/zort-write.mjs");
+      return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT, items: ZORT_NO_API });
     }
 
     if (url.searchParams.get("move")) {

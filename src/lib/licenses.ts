@@ -119,9 +119,19 @@ export const LICENSES: License[] = [
   },
 ];
 
-/** ยังใช้ได้อยู่ไหม — คิดจากวันที่เสมอ ห้ามเขียนตายตัว */
+/** ยังใช้ได้อยู่ไหม — คิดจากวันที่เสมอ ห้ามเขียนตายตัว
+ *
+ *  ⚠️ **ต้องเทียบกับ "สิ้นวันตามเวลาไทย" ไม่ใช่ต้นวัน** (แก้ 6 ก.ย. 2569)
+ *     ของเดิม `new Date(l.expires)` แปลเป็น **เที่ยงคืน UTC** = 07:00 เวลาไทย
+ *     ⇒ ใบที่หมดอายุ "วันนี้" จะถูกประกาศว่าหมดอายุ **ตั้งแต่ 7 โมงเช้าของวันสุดท้าย**
+ *       ทั้งที่ยังใช้ได้ถึงเที่ยงคืน ⇒ ใบหลุดจาก JSON-LD และหน้า /policy/license/ ก่อนเวลา
+ *     ทิศของความผิด: **ต่ำกว่าความจริง** (ไม่ได้เคลมเกิน) จึงไม่อันตรายเท่าทางกลับ
+ *       แต่ก็ยังผิด และเป็นคลาสเดียวกับที่ฝั่งจอเจอในวันเดียวกัน
+ *  ⚠️ วันที่เขียนผิดรูปแบบ → Invalid Date → เทียบได้ false → นับว่าหมดอายุ
+ *     **ตั้งใจให้ผิดไปทางนี้** — ห้ามเคลมใบที่อ่านวันไม่ออกว่ายังใช้ได้เด็ดขาด
+ */
 export const isActive = (l: License, now = new Date()) =>
-  l.expires === null || new Date(l.expires) >= now;
+  l.expires === null || new Date(`${l.expires}T23:59:59+07:00`) >= now;
 
 export const activeLicenses = (now = new Date()) => LICENSES.filter((l) => isActive(l, now));
 
@@ -237,9 +247,10 @@ export const TRADEMARKS: Trademark[] = [
 
 export const TRADEMARK_AUTHORITY = TM_AUTHORITY;
 
-/** ยังอยู่ในอายุคุ้มครองไหม — คิดจากวันที่เสมอ ห้ามเขียนตายตัว */
+/** ยังอยู่ในอายุคุ้มครองไหม — คิดจากวันที่เสมอ ห้ามเขียนตายตัว
+ *  ⚠️ เทียบสิ้นวันไทยด้วยเหตุผลเดียวกับ `isActive` ข้างบน — แก้ที่เดียวไม่พอ ต้องแก้คู่กัน */
 export const isTrademarkActive = (t: Trademark, now = new Date()) =>
-  new Date(t.expires) >= now;
+  new Date(`${t.expires}T23:59:59+07:00`) >= now;
 
 export const activeTrademarks = (now = new Date()) =>
   TRADEMARKS.filter((t) => isTrademarkActive(t, now));

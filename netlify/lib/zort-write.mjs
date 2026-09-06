@@ -245,8 +245,31 @@ export async function zortAddPurchaseOrder(o = {}) {
     ยิงตรวจแล้วได้ 404 ทั้งหมด ⇒ จอต้องเขียนว่า "ZORT ไม่เปิด API ให้"
     **ห้ามเขียนว่า "ยังไม่ได้ทำ"** — คนอ่านจะรอของที่ไม่มีวันมา
     (และห้ามใส่ปุ่มที่กดแล้วไม่เกิดอะไร — กติกาที่ตกลงกับฝั่งจอไว้) */
+/* วิธียิงตรวจ (ทำซ้ำได้ · ไม่สร้างข้อมูลอะไรเลย):
+     curl -X POST https://open-api.zortout.com/v4/<path> -H 'content-type: application/json' -d '{}'
+   เกณฑ์อ่านผล — **สองอย่างนี้คนละความหมาย ห้ามยุบรวม**
+     `{"resCode":"100","resDesc":"Invalid API"}` = **เส้นมีจริง** แค่เราไม่ได้ใส่คีย์
+     HTTP 404 ตัวเปล่า                          = **ไม่มีเส้นนั้นในระบบ**
+   ⚠️ อย่าเขียนผลลงจอด้วยมือ — ให้จอดึงจาก `/api/core?zortnoapi=1` เสมอ
+      ไม่งั้นวันที่ ZORT เปิด API เพิ่ม ข้อความในจอจะกลายเป็นเท็จเงียบ ๆ
+      (คลาส [[new-platform-needs-repo-sweep]] — เจอมาแล้ว 8 จุดในวันเดียว 6 ก.ย. 2569) */
 export const ZORT_NO_API = [
   { what: "รับคืนสินค้า (ฝั่งซื้อ)", probe: "Order/AddReturnOrder → 404", at: "2026-09-06" },
-  { what: "เซลเพจ", probe: "SalePage/AddSalePage → 404", at: "2026-09-06" },
-  { what: "แก้ใบสั่งซื้อที่สร้างแล้ว", probe: "PurchaseOrder/UpdatePurchaseOrder → 404", at: "2026-09-06" },
+  { what: "เซลเพจ / หน้าสั่งซื้อ", probe: "SalePage/AddSalePage → 404 · SalePage/GetSalePages → 404", at: "2026-09-06",
+    note: "ไม่มีทั้งอ่านและเขียน" },
+  { what: "แก้ใบสั่งซื้อที่สร้างแล้ว", probe: "PurchaseOrder/UpdatePurchaseOrder → 404", at: "2026-09-06",
+    note: "สร้างได้อย่างเดียว สร้างผิดแล้วแก้ใน ZORT เอง" },
+  { what: "กลุ่มลูกค้า", at: "2026-09-06",
+    probe: "ContactGroup/GetContactGroups · Contact/GetContactGroups · Contact/GetGroups · Group/GetGroups → 404 ทั้งหมด" },
+  { what: "ตัวแทนจำหน่าย / ดรอปชิป", probe: "Agent/GetAgents → 404 · Dropship/GetDropships → 404", at: "2026-09-06" },
+];
+
+/* ── เส้นที่ **มีจริง** แต่เรายังไม่ได้เขียนตัวเรียก ──
+   ⚠️ แยกจากรายการข้างบนโดยตั้งใจ: อันบนคือ "ZORT ไม่เปิดให้" (รอไปก็ไม่มา)
+      อันนี้คือ "เรายังไม่ได้ทำ" (ทำได้ทุกเมื่อ) — **สองอย่างนี้ต้องไม่อยู่ในกองเดียวกัน**
+      คนอ่านจะได้รู้ว่าอันไหนควรรอ อันไหนควรสั่งให้ทำ */
+export const ZORT_CAN_BUT_NOT_BUILT = [
+  { what: "เพิ่ม/แก้ผู้ติดต่อ (ลูกค้า · คู่ค้า)", probe: "Contact/AddContact · Contact/UpdateContact → resCode 100", at: "2026-09-06" },
+  { what: "สร้างใบเสนอราคา", probe: "Quotation/AddQuotation → resCode 100", at: "2026-09-06" },
+  { what: "แก้ข้อมูลสินค้าที่มีอยู่แล้ว", probe: "Product/UpdateProduct → resCode 100", at: "2026-09-06" },
 ];
