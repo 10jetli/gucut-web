@@ -126,15 +126,31 @@ export async function syncPurchases(opt = {}) {
       (ชื่อเดียวกับ "เลขที่ใบ" ที่หัวใบ — คนละความหมายกันคนละระดับ)
       เดิมอ่าน quantity ⇒ ได้ 0 ทุกบรรทัด · ยอดรวมเป็น ฿0 **แต่จำนวนบรรทัดถูกต้องครบ**
       ดูเผิน ๆ เหมือนท่อทำงานแล้ว มีแถวขึ้นครบ 234 บรรทัด — แค่ตัวเลขเป็นศูนย์หมด */
-  const haveLines = new Set(
-    (await coreQuery(`SELECT DISTINCT number FROM purchase_order_items`).catch(() => [])).map((r) =>
-      String(r.number)
-    )
-  );
+  /* ⚠️ **อ่านไม่ได้ ≠ ยังไม่มีบรรทัดสักใบ** (แก้ 7 ก.ย. 2569)
+      เดิม `.catch(() => [])` ⇒ คำขอล้มแล้วได้เซตว่าง ⇒ ระบบสรุปว่า **"ยังไม่เคยเขียนบรรทัดเลย"**
+      ⇒ กระโดดไปเขียนใหม่ **ทุกใบในระบบ** ทั้งที่ของเดิมอยู่ครบ
+
+      ✅ **ตรวจแล้วข้อมูลไม่ซ้ำ** — เขียนแบบ DELETE ก่อนแล้ว INSERT และตารางมี PRIMARY KEY (number,line)
+      ⚠️ **แต่มันถูกโดยบังเอิญ ไม่ใช่เพราะตั้งใจ** [[correct-by-accident]]
+         ความเสียหายจริงคือ **เผาโควตา D1 เงียบ ๆ** — ไฟล์นี้เขียนกำกับเองว่าเลี่ยงการเขียนซ้ำ
+         เพราะโควตา แล้วทางที่ล้มก็พาไปเขียนทุกใบพอดี **โดยไม่มีอะไรฟ้องสักคำ**
+      ⇒ อ่านไม่ได้ = **ข้ามงานเติมบรรทัดรอบนี้ไปเลย** แล้วบอกออกไปว่าข้ามเพราะอะไร
+         (ใบที่เนื้อหาเปลี่ยนจริงยังถูกเขียนตามปกติ — ไม่ได้หยุดทั้งการซิงก์) */
+  let haveLines = null;
+  try {
+    const got = await coreQuery(`SELECT DISTINCT number FROM purchase_order_items`);
+    if (Array.isArray(got)) haveLines = new Set(got.map((r) => String(r.number)));
+  } catch {
+    haveLines = null; // อ่านไม่ได้จริง ๆ
+  }
+
   // repairItems=1 ⇒ เขียนบรรทัดใหม่ทุกใบ (ใช้ตอนแก้การจับคู่ฟิลด์ที่ผิด)
+  const linesUnknown = haveLines === null && !opt.repairItems;
   const needLines = opt.repairItems
     ? rows.filter((r) => r.items.length)
-    : rows.filter((r) => r.items.length && !haveLines.has(r.number));
+    : linesUnknown
+      ? [] // ไม่รู้ว่าใบไหนมีบรรทัดแล้ว ⇒ ไม่เดา ไม่เขียนทับทั้งระบบ
+      : rows.filter((r) => r.items.length && !haveLines.has(r.number));
   const todo = [...new Map([...changed, ...needLines].map((r) => [r.number, r])).values()];
   let lines = 0;
   for (const r of todo) {
@@ -162,6 +178,12 @@ export async function syncPurchases(opt = {}) {
     skipped: rows.length - changed.length,
     lines,
     lineRepairs: needLines.length, // ใบเก่าที่ไม่เคยมีบรรทัดแล้วเพิ่งเติมให้
+    /* ⚠️ **ต้องบอกออกไปว่ารอบนี้ข้ามงานเติมบรรทัด** ไม่งั้น lineRepairs:0 จะอ่านได้ว่า
+        "ไม่มีใบไหนต้องเติม" ซึ่งตรงข้ามกับความจริง ("อ่านไม่ได้เลยไม่รู้ว่าต้องเติมใบไหน")
+        เป็นกับดักสามสถานะตัวเดิม: ไม่มีงาน · มีงานทำเสร็จ · **ไม่รู้ว่ามีงานไหม** */
+    ...(linesUnknown
+      ? { lineRepairsSkipped: "อ่านตารางบรรทัดใบซื้อไม่ได้รอบนี้ — ข้ามงานเติมบรรทัดไว้ก่อน (ไม่ได้แปลว่าไม่มีใบต้องเติม)" }
+      : {}),
   };
 }
 
