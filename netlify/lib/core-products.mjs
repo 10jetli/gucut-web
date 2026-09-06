@@ -284,18 +284,24 @@ export async function listBundles(o = {}) {
   const filter = q ? `AND (sku LIKE ${esc(`%${q}%`)} OR name LIKE ${esc(`%${q}%`)})` : "";
   const only = { active: "AND active = 1", inactive: "AND active = 0" }[o.only] || "";
 
-  const [sum] = await coreQuery(
-    `SELECT COUNT(*) AS c,
-            SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS act,
-            SUM(CASE WHEN active = 0 THEN 1 ELSE 0 END) AS inact,
-            SUM(CASE WHEN COALESCE(onhand,0) < 0 THEN 1 ELSE 0 END) AS negative
-     FROM bundles WHERE 1=1 ${filter}`
-  );
-  const rows = await coreQuery(
-    `SELECT sku, name, sellprice, onhand, available, active, unit
-     FROM bundles WHERE 1=1 ${filter} ${only}
-     ORDER BY sku LIMIT ${limit} OFFSET ${offset}`
-  );
+  /* ⚡ **ยิงพร้อมกัน ห้ามเรียงกัน** (6 ก.ย. 2569 — เจ้าของร้านสั่ง "สินค้ากับสินค้าชุด ห้ามโหลดช้า")
+      สองตัวนี้อ่านตาราง `bundles` เหมือนกันและ **ไม่มีตัวไหนใช้ผลของอีกตัว**
+      ของเดิมเขียน await เรียงกัน ⇒ เสียเวลาเดินทางไป-กลับฐานฟรี ๆ หนึ่งรอบ (วัดได้ ~57 มิลลิวินาที)
+      ⚠️ ห้ามเอา await กลับมาเรียงกันอีก */
+  const [[sum], rows] = await Promise.all([
+    coreQuery(
+      `SELECT COUNT(*) AS c,
+              SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS act,
+              SUM(CASE WHEN active = 0 THEN 1 ELSE 0 END) AS inact,
+              SUM(CASE WHEN COALESCE(onhand,0) < 0 THEN 1 ELSE 0 END) AS negative
+       FROM bundles WHERE 1=1 ${filter}`
+    ),
+    coreQuery(
+      `SELECT sku, name, sellprice, onhand, available, active, unit
+       FROM bundles WHERE 1=1 ${filter} ${only}
+       ORDER BY sku LIMIT ${limit} OFFSET ${offset}`
+    ),
+  ]);
 
   /* คอลัมน์ "ราคาสินค้ารวม" แบบ ZORT = ผลรวม (ราคาขายของชิ้นส่วน × จำนวน)
      ✅ **ตรวจกับของจริงแล้วก่อนเปิดใช้** (3 ก.ย. 2569) — ชุด 00073-30-KK
@@ -308,20 +314,21 @@ export async function listBundles(o = {}) {
   let recipeAt = null;
   if (rows.length) {
     const keys = rows.map((r) => esc(String(r.sku))).join(",");
+    /* ⚡ **หยิบราคาชิ้นส่วนมาพร้อมกันในคำขอเดียว** (6 ก.ย. 2569)
+        ของเดิมยิงสองรอบเรียงกัน: ดึงชิ้นส่วนก่อน → เอารหัสไปถามราคาอีกรอบ
+        (และรอบที่สองยังวนเป็นก้อนละ 200 รหัส ⇒ ชุดเยอะ ๆ ยิ่งยิงหลายรอบ)
+        ⚠️ ใช้ **subquery คืนค่าเดียว** ไม่ใช่ JOIN — ถ้าตาราง products มีรหัสซ้ำ
+           JOIN จะทำให้แถวชิ้นส่วนงอกเป็นหลายแถว แล้ว **ราคารวมบวกเกินจริงแบบเนียน ๆ**
+           subquery คืนได้มากสุดหนึ่งค่าเสมอ จำนวนแถวจึงเท่าเดิมแน่นอน
+        ⚠️ ความหมายเหมือนเดิมเป๊ะ: "ไม่มีสินค้าตัวนั้น" กับ "มีแต่ไม่มีราคา"
+           เดิมได้ undefined กับ null — คนละค่าแต่ **ตัดสินเหมือนกันคือถือว่าไม่ครบ**
+           ตอนนี้ได้ null ทั้งคู่ ⇒ ผลลัพธ์ไม่เปลี่ยน (ห้ามเผลอคิดเป็นศูนย์เด็ดขาด) */
     const items = await coreQuery(
-      `SELECT bundle_sku, sku, qty, at FROM bundle_items WHERE bundle_sku IN (${keys})`
+      `SELECT bi.bundle_sku AS bundle_sku, bi.sku AS sku, bi.qty AS qty, bi.at AS at,
+              (SELECT p.sellprice FROM products p WHERE p.sku = bi.sku) AS sellprice
+       FROM bundle_items bi WHERE bi.bundle_sku IN (${keys})`
     ).catch(() => []);
     if (items.length) {
-      const need = [...new Set(items.map((i) => String(i.sku)))];
-      const price = new Map();
-      for (let i = 0; i < need.length; i += 200) {
-        const part = need.slice(i, i + 200).map((x) => esc(x)).join(",");
-        for (const r of await coreQuery(
-          `SELECT sku, sellprice FROM products WHERE sku IN (${part})`
-        ).catch(() => [])) {
-          price.set(String(r.sku), r.sellprice === null ? null : num(r.sellprice));
-        }
-      }
       const byBundle = new Map();
       for (const it of items) {
         const k = String(it.bundle_sku);
@@ -340,9 +347,9 @@ export async function listBundles(o = {}) {
         let total = 0;
         let complete = true;
         for (const p of parts) {
-          const v = price.get(String(p.sku));
+          const v = p.sellprice; // ราคามาติดกับแถวชิ้นส่วนแล้ว ไม่ต้องเปิดตารางราคาแยก
           if (v === undefined || v === null) { complete = false; break; }
-          total += v * num(p.qty);
+          total += num(v) * num(p.qty);
         }
         r.itemsValue = complete ? Math.round(total * 100) / 100 : null;
       }

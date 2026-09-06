@@ -189,14 +189,17 @@ export async function stockReconDaily() {
  */
 export async function listStock(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const [latest] = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
-  const day = latest?.d;
-  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
 
+  /* ⚡ **หาวันล่าสุดในคำขอเดียวกับงานจริง** (6 ก.ย. 2569 — เจ้าของร้านสั่ง "สินค้า ห้ามโหลดช้า")
+      ของเดิมยิงถามฐานว่า "ภาพถ่ายล่าสุดคือวันไหน" แยกก่อนหนึ่งรอบ **แล้วรอผลก่อนจะเริ่มอะไรได้เลย**
+      ⇒ ทุกครั้งที่เปิดจอสินค้า เสียเวลาเดินทางไป-กลับฐาน (สิงคโปร์) ฟรี ๆ หนึ่งรอบเต็ม
+      ตอนนี้ให้ฐานหาวันล่าสุดเองในคำสั่งเดียวกับที่นับของ ⇒ เหลือรอบเดียว
+      ⚠️ `soldDays` ก็ต้องคิดในฐานตามไปด้วย (`date(วันล่าสุด, '-N days')`)
+         เพราะฝั่งเราไม่รู้ `day` แล้วตอนประกอบคำสั่ง — เดิมคิดเป็น UTC ในจาวาสคริปต์
+         ผลลัพธ์เท่ากันเป๊ะ (ทั้งสองทางเป็นการลบวันจากวันที่ล้วน ไม่เกี่ยวกับเวลาในวัน)
+      ⚠️ **ห้ามแยกกลับไปยิงถามวันล่าสุดก่อนอีก** */
   const soldDays = Math.max(1, Math.min(90, num(o.soldDays) || 30));
-  const since = new Date(new Date(`${day}T00:00:00Z`).getTime() - soldDays * 864e5)
-    .toISOString()
-    .slice(0, 10);
+  const sinceMod = `-${soldDays} days`;
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
@@ -245,11 +248,12 @@ export async function listStock(o = {}) {
   const fParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
 
   const CTE = `
-    WITH cur AS (SELECT sku, qty, price FROM stock_snapshots WHERE day = ?),
+    WITH d AS (SELECT MAX(day) AS day FROM stock_snapshots),
+         cur AS (SELECT sku, qty, price FROM stock_snapshots WHERE day = (SELECT day FROM d)),
          sold AS (
            SELECT oi.sku AS sku, SUM(oi.qty) AS qty
            FROM order_items oi JOIN orders o ON o.id = oi.order_id
-           WHERE o.order_date >= ? AND ${CANCEL_SQL}
+           WHERE o.order_date >= date((SELECT day FROM d), ?) AND ${CANCEL_SQL}
              AND oi.sku IS NOT NULL AND oi.sku <> ''
            GROUP BY oi.sku
          )`;
@@ -259,12 +263,16 @@ export async function listStock(o = {}) {
   /* ⚠️ **ยิง D1 พร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569 — เจ้าของร้านบอกว่าหลังร้านช้าทุกเมนู)
       สี่ตัวนี้ใช้แค่ `day` เหมือนกันหมด **ไม่มีตัวไหนต้องรอผลของอีกตัว**
       ของเดิมยิงเรียงกัน ⇒ เสียเวลาเดินทางไป-กลับ D1 ฟรี ๆ 3 รอบ (ราว 1–1.5 วิ)
-      ⚠️ `latest` ต้องมาก่อนจริง ๆ เพราะทุกตัวใช้ `day` จากมัน — เลี่ยงไม่ได้
+      ⚠️ **ไม่มีตัวไหนต้องรอ "วันล่าสุด" แล้ว** — ฐานหาให้เองในคำสั่งเดียวกัน (แก้ 6 ก.ย. 2569)
+         เดิมมีคำขอนำหน้าอีกหนึ่งรอบเพื่อถามวันล่าสุด ซึ่งบล็อกทุกอย่างไว้
+      ⚠️ ตัวนับจาก Blobs ก็ยิงพร้อมกันในชุดนี้ด้วย — เดิมรอจนสี่ตัวบนเสร็จแล้วค่อยไปอ่าน
+         ทั้งที่มันคนละแหล่ง ไม่ได้ใช้ผลของกันและกันเลยสักนิด
       ⚠️ ห้ามเอา await กลับมาเรียงกันอีก */
-  const [[sum], [aside], shownRows, rows] = await Promise.all([
+  const [[sum], [aside], shownRows, rows, counts] = await Promise.all([
     coreQuery(
     `${CTE}
-     SELECT COUNT(*) AS skus,
+     SELECT (SELECT day FROM d) AS day,
+            COUNT(*) AS skus,
             SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
             SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
             /* ติดลบ — นับตาม kind ที่เลือกอยู่ (goods/service) เหมือน outOfStock
@@ -279,7 +287,7 @@ export async function listStock(o = {}) {
             ROUND(COALESCE(SUM(cur.qty * COALESCE(p.purchase_price,0)),0),2) AS value_cost,
             SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS no_cost
      FROM cur ${JOIN} WHERE 1=1 ${kind ? `AND ${kind}` : ""} ${filter}`,
-    [day, since, ...fParams]
+    [sinceMod, ...fParams]
   ),
     // ⚠️ **นับ "บริการ" / "ปิดใช้งาน" นอกกรอบ kind เสมอ** — สองตัวนี้มีไว้บอกว่า
     //    *ซ่อนอะไรไว้กี่รายการ* ถ้าเอาไปกรองด้วย kind ด้วย พอตั้ง kind=goods มันจะตอบ 0
@@ -289,7 +297,7 @@ export async function listStock(o = {}) {
      SELECT SUM(CASE WHEN COALESCE(p.product_type,0) = 1 THEN 1 ELSE 0 END) AS services,
             SUM(CASE WHEN COALESCE(p.active,1) = 0 THEN 1 ELSE 0 END) AS inactive
      FROM cur ${JOIN} WHERE 1=1 ${filter}`,
-    [day, since, ...fParams]
+    [sinceMod, ...fParams]
   ),
     /* จำนวนแถวของ "แท็บที่เลือกอยู่" — ใช้ทำเลขหน้า ไม่ใช่ตัวเลขบนแท็บ
        ⚠️ ไม่มีตัวกรอง ⇒ ค่าเท่ากับ sum.skus อยู่แล้ว ไม่ต้องยิงซ้ำ (คืน null แล้วเติมทีหลัง) */
@@ -297,7 +305,7 @@ export async function listStock(o = {}) {
       ? coreQuery(
           `${CTE} SELECT COUNT(*) AS c FROM cur ${JOIN}
            WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}`,
-          [day, since, ...fParams]
+          [sinceMod, ...fParams]
         )
       : Promise.resolve(null),
     coreQuery(
@@ -311,9 +319,24 @@ export async function listStock(o = {}) {
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
      ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
-    [day, since, ...fParams]
+    [sinceMod, ...fParams]
   ),
+    /* จำนวนที่ ZORT มีจริง — คนละแหล่งกับฐานเรา (Netlify Blobs) จึงยิงคู่กันไปเลย
+       ⚠️ ล้มแล้วต้องไม่ลากจอทั้งจอตาย — คืน null แล้วจอจะไม่แสดงบรรทัดนั้น */
+    (async () => {
+      try {
+        const { getStore } = await import("@netlify/blobs");
+        return await getStore("gucut-coupon").get("zort-product-counts", { type: "json" });
+      } catch {
+        return null; // ไม่มีตัวนับก็ไม่ส่งฟิลด์นี้ ดีกว่าส่งเลขที่เดาเอง
+      }
+    })(),
   ]);
+
+  /* ⚠️ วันล่าสุดมากับผลนับแล้ว — ว่าง = ยังไม่เคยถ่ายภาพสต็อกสักวัน
+      (เดิมเช็คก่อนยิงคำขอ ตอนนี้เช็คหลัง ผลลัพธ์ที่จอได้รับเหมือนเดิมทุกประการ) */
+  const day = sum?.day;
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกสักวัน" };
   const shown = shownRows ? shownRows[0] : { c: sum?.skus };
 
   /* คอลัมน์ Marketplace แบบ ZORT — โลโก้ช่องทางที่สินค้าตัวนั้นกำลังลงขายอยู่
@@ -324,19 +347,13 @@ export async function listStock(o = {}) {
      ⚠️ **ห้ามซ่อนเงียบ** — หัวจอเขียน 2,672 ทั้งที่ ZORT มี 2,898 โดยไม่บอกอะไร
         คือโรคเดียวกับที่เพิ่งแก้ในจอหมวดหมู่ (เลขบนหัวไม่ตรงกับความจริง) */
   let zc = {};
-  try {
-    const { getStore } = await import("@netlify/blobs");
-    const c = await getStore("gucut-coupon").get("zort-product-counts", { type: "json" });
-    if (c?.zortTotal) {
-      zc = {
-        zortTotal: num(c.zortTotal),
-        noSkuInZort: num(c.noSku),
-        noSkuWithStock: num(c.noSkuWithStock),
-        zortCountedAt: c.at || null,
-      };
-    }
-  } catch {
-    // ไม่มีตัวนับก็ไม่ส่งฟิลด์นี้ — จอไม่แสดงอะไร ดีกว่าส่งเลขที่เดาเอง
+  if (counts?.zortTotal) {
+    zc = {
+      zortTotal: num(counts.zortTotal),
+      noSkuInZort: num(counts.noSku),
+      noSkuWithStock: num(counts.noSkuWithStock),
+      zortCountedAt: counts.at || null,
+    };
   }
 
   let mk = { checkedMarketplaces: [], marketplacesAt: null };
