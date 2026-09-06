@@ -139,8 +139,16 @@ async function shopee() {
   if (!t) return { connected: false, detail: "ยังไม่ได้กดอนุญาต (ที่ /api/shopee/auth)" };
   // นับสินค้าที่ลงขายจริง — ใช้แคชร่วมกับคอลัมน์ Marketplace ไม่ยิงซ้ำ
   const { marketplaceListings } = await import("./marketplace-listings.mjs");
+  /* 🔴 **"นับไม่ได้" ต้องเป็น null ห้ามเป็น 0** — และเช็คจาก `checked` ไม่ใช่จาก `ml` ทั้งก้อน
+      (แก้ 6 ก.ย. 2569) `marketplaceListings()` **ดัก error รายเจ้า** ⇒ เจ้าเดียวล่ม
+      ก้อนผลยังกลับมาปกติ แค่ไม่มีรายการของเจ้านั้น · เดิมเช็คแค่ `ml ? ... : null`
+      ⇒ `ml` ไม่เป็น null ⇒ filter ได้ 0 ⇒ **จอขึ้น "สินค้าที่ลงขาย 0 รหัส"**
+      เจ้าของร้านอ่านว่า "ของหลุดจากการลงขายหมดร้าน" แล้วไปไล่แก้ผิดจุด
+      ทั้งที่ความจริงคือ token หมดอายุ / ติดโควตา = **แค่ถามไม่ได้**
+      ⇒ `checked` มีชื่อเจ้านั้น = ถามสำเร็จจริง ตัวเลขถึงจะเชื่อได้ (three-states-not-two) */
   const ml = await marketplaceListings().catch(() => null);
-  const n = ml ? Object.values(ml.listings).filter((v) => v.includes("shopee")).length : null;
+  const asked = Array.isArray(ml?.checked) && ml.checked.includes("shopee");
+  const n = asked ? Object.values(ml.listings).filter((v) => v.includes("shopee")).length : null;
   return {
     connected: true,
     ...tokenExpiry(t),
@@ -156,8 +164,16 @@ async function tiktok() {
      ⚠️ ใช้แคชตัวเดียวกับคอลัมน์ Marketplace (shopee() เรียกไปแล้ว) จึงไม่ยิงซ้ำ
      ⚠️ นับไม่ได้ให้บอกว่าเชื่อมแล้วเฉย ๆ **ห้ามใส่ 0** — 0 อ่านว่า "ไม่มีของลงขายเลย" */
   const { marketplaceListings } = await import("./marketplace-listings.mjs");
+  /* 🔴 **"นับไม่ได้" ต้องเป็น null ห้ามเป็น 0** — และเช็คจาก `checked` ไม่ใช่จาก `ml` ทั้งก้อน
+      (แก้ 6 ก.ย. 2569) `marketplaceListings()` **ดัก error รายเจ้า** ⇒ เจ้าเดียวล่ม
+      ก้อนผลยังกลับมาปกติ แค่ไม่มีรายการของเจ้านั้น · เดิมเช็คแค่ `ml ? ... : null`
+      ⇒ `ml` ไม่เป็น null ⇒ filter ได้ 0 ⇒ **จอขึ้น "สินค้าที่ลงขาย 0 รหัส"**
+      เจ้าของร้านอ่านว่า "ของหลุดจากการลงขายหมดร้าน" แล้วไปไล่แก้ผิดจุด
+      ทั้งที่ความจริงคือ token หมดอายุ / ติดโควตา = **แค่ถามไม่ได้**
+      ⇒ `checked` มีชื่อเจ้านั้น = ถามสำเร็จจริง ตัวเลขถึงจะเชื่อได้ (three-states-not-two) */
   const ml = await marketplaceListings().catch(() => null);
-  const n = ml ? Object.values(ml.listings).filter((v) => v.includes("tiktok")).length : null;
+  const asked = Array.isArray(ml?.checked) && ml.checked.includes("tiktok");
+  const n = asked ? Object.values(ml.listings).filter((v) => v.includes("tiktok")).length : null;
   const shop = t.shopName ? `ร้าน ${t.shopName}` : "เชื่อมแล้ว";
   return {
     connected: true,

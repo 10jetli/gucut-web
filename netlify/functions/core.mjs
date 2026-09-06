@@ -97,6 +97,30 @@ async function route(req, context) {
       }
     } catch { /* อ่านไม่ได้ = ไม่ให้ผ่าน */ }
   }
+  /* 🔴 **ตั๋วเปิดได้เฉพาะสองเส้นที่มันถูกออกให้ — ห้ามให้เดินต่อเข้า route อื่น**
+      (ปิดช่อง 6 ก.ย. 2569) เดิมพอ `ticket = true` แล้ว คำขอ **เดินต่อเข้าทั้งไฟล์**
+      ⇒ `POST /api/core?bundleitems=1&addproduct=1` พร้อมตั๋ว = **สร้างสินค้าใน ZORT ตัวจริง
+        โดยไม่ต้องมี x-admin-key** เพราะตัวจัดการ addproduct/addpo/addquotation/move
+        อยู่ **ก่อน** ตัวจัดการ bundleitems ในไฟล์นี้ ⇒ ชนก่อนทุกครั้ง
+      ⚠️ ที่ทำให้หนักคือปลายทาง: ZORT **ไม่เปิด API ให้ลบใบสั่งซื้อ** ⇒ ยิงพลาดแล้วแก้คืนไม่ได้
+      ⇒ ตั๋วต้องมาพร้อมพารามิเตอร์ของเส้นตัวเองเท่านั้น มีอย่างอื่นปนมา = ปฏิเสธ
+      **ห้ามถอด และเพิ่มเส้นอัปโหลดใหม่ต้องเติมชื่อใน UPLOAD_PATHS เท่านั้น
+        ห้ามเติมชื่ออื่นลง allowlist นี้** (ทางลัดวันนั้น = ช่องโหว่วันหน้า) */
+  if (ticket) {
+    const extra = [...new URL(req.url).searchParams.keys()].filter(
+      (k) => !UPLOAD_PATHS.includes(k)
+    );
+    if (extra.length) {
+      return new Response(
+        JSON.stringify({
+          error: "ตั๋วอัปโหลดใช้ได้เฉพาะเส้นของตัวเอง",
+          extra,
+          hint: "เอาพารามิเตอร์อื่นออก หรือใช้ x-admin-key แทนตั๋ว",
+        }),
+        { status: 400, headers: { "content-type": "application/json; charset=utf-8" } }
+      );
+    }
+  }
   if (!gate.ok && !ticket) {
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
@@ -122,6 +146,26 @@ async function route(req, context) {
     const n = parseInt(raw ?? "", 10);
     return Number.isFinite(n) && n > 0 ? n : null;
   })();
+  /* 🔴 **ตัวห่อ `ok:true` ที่ไม่โกหก** (เพิ่ม 6 ก.ย. 2569)
+      ก่อนหน้านี้มี 18 จุดเขียนว่า `json({ ok:true, ...(await fn()) })` (เขียนติดกันแบบนั้นตรง ๆ)
+      แต่ฟังก์ชันข้างในคืน `{error:"..."}` หรือ `{inconclusive:true}` ได้ **โดยไม่มี `ok:false`**
+      ⇒ ผลที่ล้มเหลวออกไปเป็น `{ok:true, error:"ดึงจาก ZORT ไม่ได้"}` พร้อม HTTP 200
+        จอที่เช็ค `d.ok` จะวาดตารางเปล่า = **"ใบนี้ไม่มีของ" ตอนคนยืนรับของอยู่หน้าคลัง**
+        และ `zortclaims` ตอนตัวควบคุมไม่ผ่านจะออกเป็น `{ok:true, inconclusive:true}` = เขียวหลอก
+        ทั้งที่ zort-claim-check เขียนห้ามไว้เองว่าต้องตอบ inconclusive ไม่ใช่ "ยังจริงอยู่"
+
+      ⚠️ แก้ที่ **ตัวห่อตัวเดียว** ไม่ไล่แก้ 18 จุด — ไล่ทีละจุดคือของที่ตกหล่นแน่นอน
+         เมื่อมี endpoint ใหม่ (บทเรียนเดียวกับ limitClamped ข้างบน)
+      ⚠️ **`inconclusive` ต้องไม่มีคีย์ `ok` เลย** ไม่ใช่ `ok:false` — ตามสัญญาที่ตกลงกับฝั่งจอ
+         "ผลแปลไม่ได้" ไม่ใช่ "ผลว่าไม่ผ่าน" · มีคีย์ ok เมื่อไหร่ จะมีคนอ่านเป็นคำตัดสิน
+      ⚠️ ยังตอบ **HTTP 200** โดยตั้งใจ — ตอบ 5xx แล้วตัวดักพลาดรวมของจอจะกลบข้อความไทย
+         ที่อธิบายสาเหตุจริง เหลือแต่ "เกิดข้อผิดพลาด" ซึ่งแย่กว่าเดิม */
+  const okJson = (payload, status = 200) => {
+    const p = payload && typeof payload === "object" && !Array.isArray(payload) ? payload : {};
+    if (p.inconclusive === true) return json(p, status);          // ห้ามเติม ok
+    if (typeof p.error === "string" && p.error) return json({ ok: false, ...p }, status);
+    return json({ ok: true, ...p }, status);
+  };
   const json = (obj, status = 200) => {
     let out = obj;
     if (askedLimit && obj && typeof obj === "object" && !Array.isArray(obj)) {
@@ -211,7 +255,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("dbinfo")) {
-      return json({ ok: true, ...(await d1Info()) });
+      return okJson(await d1Info());
     }
     if (url.searchParams.get("init")) {
       return json({ ok: true, init: await coreInit() });
@@ -276,7 +320,7 @@ async function route(req, context) {
        ⚠️ ตัวควบคุมไม่ผ่าน = ตอบ inconclusive **ห้ามตอบว่าทุกอย่างยังจริง** */
     if (url.searchParams.get("zortclaims")) {
       const { zortClaimCheck } = await import("../lib/zort-claim-check.mjs");
-      return json({ ok: true, ...(await zortClaimCheck()) });
+      return okJson(await zortClaimCheck());
     }
     if (url.searchParams.get("zortnoapi")) {
       const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD, ZORT_WEBHOOK } =
@@ -336,10 +380,10 @@ async function route(req, context) {
     //    ทั้งที่ API ตอบ 200 พร้อมข้อมูลครบ (เจอจริง 3 ก.ย. 2569 ตอนเปิดหน้าดู)
     //    บทเรียน: ความไม่สม่ำเสมอของรูปคำตอบ ทำให้อีกฝั่งเดาผิดโดยไม่มีอะไรฟ้อง
     if (url.searchParams.get("backupstatus")) {
-      return json({ ok: true, ...(await backupStatus()) });
+      return okJson(await backupStatus());
     }
     if (url.searchParams.get("backup")) {
-      return json({ ok: true, ...(await runBackup()) });
+      return okJson(await runBackup());
     }
     if (url.searchParams.get("restore")) {
       const r = await restore({
@@ -427,7 +471,7 @@ async function route(req, context) {
        ⚠️ ของหนึ่งม้วนติดลบทำให้รหัสความยาวหลายสิบรหัสหายจากหน้าร้านพร้อมกัน
           และ **ไม่มีอะไรฟ้องเลย** — สินค้าไม่ได้ขึ้นว่า "หมด" แต่หายไปทั้งตัว */
     if (url.searchParams.get("blocked")) {
-      return json({ ok: true, ...(await blockedByNegative()) });
+      return okJson(await blockedByNegative());
     }
     /* วางแผนสั่งม้วนใหม่ — "ของนี้พอขายอีกกี่วัน"
          GET /api/core?reorder=1[&days=90]
@@ -442,13 +486,13 @@ async function route(req, context) {
          GET /api/core?zortwarehouse=1[&sku=00894]
        ⚠️ ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม" */
     if (url.searchParams.get("zortwarehouse")) {
-      return json({ ok: true, ...(await zortWarehouseProbe({ sku: url.searchParams.get("sku") })) });
+      return okJson(await zortWarehouseProbe({ sku: url.searchParams.get("sku") }));
     }
     if (url.searchParams.get("links")) {
-      return json({ ok: true, ...(await linkStatus({ days: url.searchParams.get("days") })) });
+      return okJson(await linkStatus({ days: url.searchParams.get("days") }));
     }
     if (url.searchParams.get("reorder")) {
-      return json({ ok: true, ...(await reorderPlan({ days: url.searchParams.get("days") })) });
+      return okJson(await reorderPlan({ days: url.searchParams.get("days") }));
     }
     if (url.searchParams.get("list") === "bundles") {
       return json({
@@ -482,7 +526,7 @@ async function route(req, context) {
     // เครดิต Netlify — อะไรกินเยอะสุด (เจ้าของร้านสั่ง 3 ก.ย. 2569)
     if (url.searchParams.get("usage")) {
       const { netlifyUsage } = await import("../lib/netlify-usage.mjs");
-      return json({ ok: true, ...(await netlifyUsage()) });
+      return okJson(await netlifyUsage());
     }
     // บริการส่งสินค้า — อ่านจากกระจกออเดอร์ (ZORT ไม่มี API ขนส่งแยก)
     if (url.searchParams.get("list") === "logistics") {
@@ -541,7 +585,7 @@ async function route(req, context) {
     }
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
-      return json({ ok: true, ...(await listQuotations(url.searchParams.get("limit"))) });
+      return okJson(await listQuotations(url.searchParams.get("limit")));
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
@@ -552,11 +596,11 @@ async function route(req, context) {
           จอจะได้รู้ว่ามีเลขพัสดุ/บรรทัดสินค้าให้ใช้ไหม แทนการเดา */
     if (url.searchParams.get("transfer")) {
       const { getTransferDetail } = await import("../lib/core-purchases.mjs");
-      return json({ ok: true, ...(await getTransferDetail(url.searchParams.get("transfer"))) });
+      return okJson(await getTransferDetail(url.searchParams.get("transfer")));
     }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
-      return json({ ok: true, ...(await listReturnOrders(url.searchParams.get("limit"))) });
+      return okJson(await listReturnOrders(url.searchParams.get("limit")));
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
@@ -618,14 +662,14 @@ async function route(req, context) {
     }
     // คลังสินค้าทั้งหมด (รวมโกดัง) — คนละอย่างกับ list=branches ที่เป็นสาขาขายหน้าร้าน
     if (url.searchParams.get("list") === "warehouses") {
-      return json({ ok: true, ...(await listWarehouses()) });
+      return okJson(await listWarehouses());
     }
     // จอหมวดหมู่แบบ ZORT — หมวดจริง 42 หมวดจากทะเบียนสินค้า
     if (url.searchParams.get("list") === "categories") {
-      return json({ ok: true, ...(await listCategories()) });
+      return okJson(await listCategories());
     }
     if (url.searchParams.get("list") === "poscats") {
-      return json({ ok: true, ...(await posCats()) });
+      return okJson(await posCats());
     }
     if (url.searchParams.get("list") === "branches") {
       return json({ ok: true, branches: branches() });
@@ -649,7 +693,7 @@ async function route(req, context) {
     }
     // SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก (พร้อมเดารหัสฐานให้) — ให้จอเตือนเอาไปโชว์
     if (url.searchParams.get("list") === "missing-sku") {
-      return json({ ok: true, ...(await shopeeMissingSkus()) });
+      return okJson(await shopeeMissingSkus());
     }
     // สินค้าขายดีรวมยอดฝั่งเซิร์ฟเวอร์ — จอ /sales ใช้เติมช่อง "ยอดเงิน" (ขอโดยฝั่งจอ 2 ก.ย.)
     //   GET /api/core?list=topproducts&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15
@@ -2068,7 +2112,7 @@ async function route(req, context) {
     // ── จอ "รายการขาย" ที่ยืนได้เองโดยไม่มี ZORT ──
     const p = url.searchParams;
     if (p.get("order")) {
-      return json({ ok: true, ...(await getOrder(p.get("order"))) });
+      return okJson(await getOrder(p.get("order")));
     }
     if (p.get("list") === "stock") {
       return json({

@@ -128,6 +128,38 @@ export default async function handler(req, context) {
     at: new Date().toISOString(),
   };
 
+  /* 🔴 **ห้ามทับสำเนาที่ครบแล้วด้วยของที่แถวน้อยกว่า** (เพิ่มด่าน 6 ก.ย. 2569)
+      ของกองนี้คือ "สำเนาที่เดียวในโลก" หลังวันปิดบัญชี ZORT — ต้นทางกดดูไม่ได้อีก
+      เดิม POST เขียนทับคีย์ `t/<screen>` **ทั้งก้อนโดยไม่เทียบกับของเดิมเลย**
+      ⇒ เก็บจอ bank ครบ 46 แถวไปแล้ว วันหลังยิงซ้ำแต่ลืมตั้ง PageSize ได้ 20 แถว
+        **46 แถวเดิมหายถาวร** และ `warn` ที่ตอบกลับบอกว่าไม่ครบ **หลังจากทับไปแล้ว**
+      ⇒ คลาส fixes-can-destroy-truth: ตัวที่ตั้งใจช่วย กลับทำลายของถูกที่มีอยู่แล้ว
+      **ด่านนี้ห้ามถอด** · ตั้งใจจะทับจริง ๆ ต้องส่ง `force:true` มาด้วยมือ */
+  const prev = await store.get(`t/${screen}`, { type: "json" }).catch(() => null);
+  const force = body?.force === true;
+  if (prev && !force) {
+    const prevRows = Number(prev?.rowCount ?? 0);
+    const prevComplete = prev?.complete === true;
+    /* แพ้ทั้งสองเงื่อนไขนี้ = ของใหม่ "ด้อยกว่า" ของเดิม ⇒ ปฏิเสธ
+       ① ของเดิมครบแล้ว แต่ของใหม่ยังไม่ครบ  ② ของใหม่แถวน้อยกว่าของเดิม
+       ⚠️ เท่ากันให้ผ่าน (ยิงซ้ำจอเดิมเป็นเรื่องปกติ ไม่ควรขวาง) */
+    if ((prevComplete && !complete) || rows.length < prevRows) {
+      return json({
+        ok: false,
+        refused: true,
+        screen,
+        message:
+          `ไม่เขียนทับ — ของเดิมมี ${prevRows} แถว` +
+          (prevComplete ? " (ครบแล้ว)" : "") +
+          ` แต่ของใหม่มี ${rows.length} แถว` +
+          (complete ? " (ครบ)" : " (ยังไม่ครบ)"),
+        /* ⚠️ ต้องบอกทางออกให้ครบ ไม่งั้นคนยิงจะเดาว่าระบบพัง แล้วไปหาทางอื่นที่แย่กว่า */
+        howTo: "ตั้ง PageSize ให้ครอบคลุมแล้วยิงใหม่ · ถ้าจอนั้นมีข้อมูลน้อยลงจริง ให้ส่ง force:true",
+        previous: { rows: prevRows, complete: prevComplete, at: prev?.at ?? null },
+      }, 409);
+    }
+  }
+
   await store.setJSON(`t/${screen}`, payload, {
     metadata: {
       rows: String(rows.length),
