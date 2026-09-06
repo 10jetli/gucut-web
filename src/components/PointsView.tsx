@@ -25,14 +25,20 @@ export default function PointsView() {
          เขาจะเข้าใจว่าแต้มถูกล้าง แล้วเลิกใช้ระบบแต้มไปเลย ซึ่งเรียกกลับมายาก
       ⚠️ ทิศที่ปลอดภัยคือ "ยังไม่รู้" ไม่ใช่ "ศูนย์" — ศูนย์เป็นคำยืนยันที่ผิดได้ */
   const [failed, setFailed] = useState(false);
-  const [needLogin, setNeedLogin] = useState(false);
+  /* ⚠️ **สามสถานะเหมือนกัน**: null = ยังไม่รู้ · true = ยังไม่ได้เข้าระบบจริง ·
+      false = เข้าระบบอยู่ · เดิมเป็น boolean ⇒ ตอนถาม /api/auth ไม่สำเร็จจะกลายเป็น true
+      ⇒ จอบอกลูกค้าที่ **เข้าระบบอยู่แล้ว** ว่า "เข้าสู่ระบบเพื่อดูแต้ม"
+         เขาจะกดเข้าไปล็อกอินซ้ำ งง และคิดว่าบัญชีมีปัญหา */
+  const [needLogin, setNeedLogin] = useState<boolean | null>(null);
 
   useEffect(() => {
     Promise.all([
       fetch("/api/points").then((r) => r.json()),
-      fetch("/api/auth").then((r) => r.json()).catch(() => ({ user: null })),
+      /* ⚠️ ถามไม่ได้ ⇒ คืน null **ห้ามคืน { user: null }** เพราะนั่นแปลว่า
+         "ถามแล้ว ไม่มีใครล็อกอิน" ซึ่งเป็นคำตอบคนละอย่างกับ "ถามไม่ได้" */
+      fetch("/api/auth").then((r) => r.json()).catch(() => null),
     ])
-      .then(([p, a]) => { setD(p); setNeedLogin(!a.user); })
+      .then(([p, a]) => { setD(p); setNeedLogin(a ? !a.user : null); })
       .catch(() => { setFailed(true); setD(null); });
   }, []);
 
@@ -62,7 +68,8 @@ export default function PointsView() {
             แลกส่วนลดได้ 1 แต้ม = ฿{d.redeemValue} (เริ่มแลกที่ {d.minRedeem} แต้ม · ไม่เกิน {d.maxPercent}% ของค่าสินค้า)
           </p>
         )}
-        {needLogin && (
+        {/* ขึ้นเฉพาะตอน **รู้แน่** ว่ายังไม่ได้เข้าระบบ — ไม่รู้ = ไม่พูด */}
+        {needLogin === true && (
           <Link href="/account/login/?next=/account/points/" className="mt-4 inline-block rounded-sm bg-safety px-6 py-2.5 text-[14px] font-semibold text-white">
             เข้าสู่ระบบเพื่อดูแต้ม
           </Link>
@@ -87,7 +94,7 @@ export default function PointsView() {
         </section>
       )}
 
-      {d && !needLogin && !d.log?.length && (
+      {d && needLogin === false && !d.log?.length && (
         <p className="px-8 py-12 text-center text-[13px] leading-relaxed text-ink-300">
           ยังไม่มีประวัติแต้ม — แต้มจะเข้าหลังจากออเดอร์ถึงมือคุณแล้ว
         </p>
