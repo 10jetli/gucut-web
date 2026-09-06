@@ -365,6 +365,12 @@ async function route(req, context) {
              ⇒ ถ้าเป็นข้อนี้ **ตัดงานที่มีเส้นตายออกได้อีกหนึ่งกอง**
        ⇒ ต่อเส้นอ่านไว้ให้ยิงตรวจได้ · **ส่งของดิบ + ชื่อช่องที่ได้จริงกลับไป ไม่แกะตามชื่อที่เดาเอง**
           (เดารูปแล้วอ่านไม่เจอ จะกลายเป็น "ไม่มีข้อมูล" ซึ่งชวนให้สรุปผิดว่ายังต้องคัดมือ) */
+    /* อ่านรายละเอียดใบเสนอราคารายใบ — ใช้ตรวจว่าข้อมูลเข้าถูกช่องจริงไหมหลังยิงสร้าง
+       ⚠️ "ยิงผ่าน" ≠ "ข้อมูลเข้าถูกช่อง" — ใบแรกที่สร้างจริงได้ยอดเงิน ฿0 ทั้งที่ส่งราคาไป */
+    if (url.searchParams.get("quotation")) {
+      const { getQuotationDetail } = await import("../lib/core-purchases.mjs");
+      return okJson(await getQuotationDetail(url.searchParams.get("quotation")));
+    }
     if (url.searchParams.get("zortdocs")) {
       const { zortDocumentsRead } = await import("../lib/zort-write.mjs");
       return json(await zortDocumentsRead(url.searchParams.get("limit")));

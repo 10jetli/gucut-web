@@ -537,6 +537,45 @@ export async function listPurchaseItems(o = {}) {
  *     จอนี้ไม่มีเหตุต้องเห็นชื่อเต็ม ⇒ ส่งออกไปเต็มเมื่อไหร่ มันจะไปนอนอยู่ในไฟล์ของอีก repo
  *  ⚠️ ดึงสดทุกครั้ง ไม่ทำกระจก — เหตุผลเดียวกับใบเสนอราคา (ของไม่เยอะ และไม่ได้ใช้เทียบยอด)
  */
+/** อ่านรายละเอียดใบเสนอราคารายใบ — **อ่านอย่างเดียว**
+ *  ทำขึ้น 6 ก.ย. 2569 ตอนยิงสร้างใบจริงใบแรกแล้วพบว่า **ยอดเงินเป็น ฿0**
+ *  ทั้งที่ส่ง `pricepernumber` ไป ⇒ ต้องเห็นของที่ ZORT เก็บจริงถึงจะรู้ว่าชื่อช่องไหนถูก
+ *  ⚠️ **ห้ามเดาชื่อช่องแล้วแก้ตัวส่ง** — เดาผิดคือใบเสนอราคาราคาศูนย์ทั้งร้าน
+ *     ส่งช่องที่ ZORT คืนมาจริงกลับไปให้ดูด้วยตา แล้วค่อยตัดสิน */
+export async function getQuotationDetail(id) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const key = String(id ?? "").trim();
+  if (!key) return { error: "ต้องระบุเลขที่ใบ" };
+  const res = await fetch(
+    `${BASE}/Quotation/GetQuotationDetail?id=${encodeURIComponent(key)}`,
+    { headers: h, signal: AbortSignal.timeout(15000) }
+  ).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  if (!data) return { error: "ดึงรายละเอียดใบเสนอราคาจาก ZORT ไม่ได้" };
+  const q = data?.detail ?? data?.data ?? (Array.isArray(data?.list) ? data.list[0] : null);
+  if (!q || typeof q !== "object")
+    return { error: "ZORT ตอบมาแต่หาตัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  const lines = Array.isArray(q.list) ? q.list : Array.isArray(q.items) ? q.items : null;
+  return {
+    live: true,
+    number: String(q.number ?? ""),
+    /* ส่งช่องเงินทุกชื่อที่เป็นไปได้กลับไป **โดยไม่เลือกให้** — คนดูจะได้เห็นเองว่าช่องไหนมีค่า */
+    "เงินที่ ZORT เก็บไว้": Object.fromEntries(
+      Object.entries(q).filter(([k, v]) => /price|amount|total|net|grand/i.test(k) && v !== null)
+    ),
+    /* สามสถานะ: null = ไม่มีช่องบรรทัด · [] = ใบนี้ไม่มีของ · มีของ = ได้บรรทัดจริง */
+    lines: lines
+      ? lines.map((i) => ({
+          "ทุกช่องในบรรทัด": Object.fromEntries(
+            Object.entries(i ?? {}).filter(([, v]) => v !== null && v !== "")
+          ),
+        }))
+      : null,
+    fields: Object.keys(q).sort(),
+  };
+}
+
 export async function listReturnOrders(limit = 50) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
