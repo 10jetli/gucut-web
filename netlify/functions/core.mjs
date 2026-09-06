@@ -509,6 +509,14 @@ async function route(req, context) {
     if (url.searchParams.get("list") === "quotations") {
       return json({ ok: true, ...(await listQuotations(url.searchParams.get("limit"))) });
     }
+    /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
+       ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
+          ⇒ เลขสองจอนี้เทียบกันไม่ได้ ห้ามเอามาลบกัน (ฝั่งจอชี้เอง 6 ก.ย. 2569)
+       ⚠️ ชื่อลูกค้าถูกปิดบางส่วนมาจากท่อแล้ว — ZORT เองก็ปิดในจอนี้ */
+    if (url.searchParams.get("list") === "returnorders") {
+      const { listReturnOrders } = await import("../lib/core-purchases.mjs");
+      return json({ ok: true, ...(await listReturnOrders(url.searchParams.get("limit"))) });
+    }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
       return json({
@@ -2096,7 +2104,7 @@ async function route(req, context) {
       const known = [
         "branches", "bundleitems", "bundles", "categories", "channel-gaps", "contacts",
         "deadstock", "logistics", "missing-sku", "moves", "orderfacets", "orders",
-        "poscats", "purchaseitems", "purchases", "quotations", "sales", "stock",
+        "poscats", "purchaseitems", "purchases", "quotations", "returnorders", "sales", "stock",
         "stockcard", "topproducts", "transfers", "warehouses",
       ];
       return json(

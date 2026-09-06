@@ -459,3 +459,53 @@ export async function listPurchaseItems(o = {}) {
     rows,
   };
 }
+
+/** ใบคืนของ (Credit Note) — จอ "รายการขาย → รับคืนสินค้า" ของ ZORT
+ *
+ *  ⚠️ **เส้นนี้เกือบถูกประกาศว่าไม่มี** — ยิงชื่อเดียวไม่เจอแล้วเกือบสรุปว่า ZORT ไม่เปิด
+ *     ยิงครบ 8 ชื่อ 2 method ตามกติกาใหม่ (6 ก.ย. 2569) ถึงเจอ `ReturnOrder/GetReturnOrders`
+ *     (GET 200 · POST 405 — 405 ยืนยันอีกชั้นว่าเส้นมีจริงแค่ผิด method)
+ *     ที่ไม่มีจริง: GetReturnOrderList · GetList · list · Order/… · Buy/… · Return/GetReturns
+ *
+ *  ⚠️ **ปิดชื่อลูกค้าบางส่วนตั้งแต่ที่ท่อ ไม่ใช่ไปปิดที่จอ** (ฝั่งจอขอมา และ ZORT เองก็ปิดในจอนี้)
+ *     จอนี้ไม่มีเหตุต้องเห็นชื่อเต็ม ⇒ ส่งออกไปเต็มเมื่อไหร่ มันจะไปนอนอยู่ในไฟล์ของอีก repo
+ *  ⚠️ ดึงสดทุกครั้ง ไม่ทำกระจก — เหตุผลเดียวกับใบเสนอราคา (ของไม่เยอะ และไม่ได้ใช้เทียบยอด)
+ */
+export async function listReturnOrders(limit = 50) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const n = Math.max(1, Math.min(200, num(limit) || 50));
+  const res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=${n}`, {
+    headers: h,
+    signal: AbortSignal.timeout(15000),
+  }).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const list = Array.isArray(data?.list) ? data.list : null;
+  /* ⚠️ แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีใบสักใบ" — จอต้องเขียนคนละคำ
+      (สอง 0 ที่หน้าตาเหมือนกันแต่คนละความหมาย) */
+  if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้" };
+  return {
+    total: num(data?.count),
+    live: true,
+    rows: list.map((r) => ({
+      number: String(r?.number ?? ""),
+      reference: String(r?.reference ?? ""),
+      customer: maskName(String(r?.customername ?? "")),
+      amount: num(r?.amount),
+      status: String(r?.status ?? ""),
+      warehouse: String(r?.warehousename ?? ""),
+      date: String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10),
+      paid: String(r?.paymentstatus ?? r?.paymentStatus ?? ""),
+    })),
+  };
+}
+
+/** ปิดชื่อบางส่วน — เก็บตัวแรกกับตัวท้าย พอให้คนของร้านจำได้ว่าใคร แต่ไม่ใช่ชื่อเต็ม
+ *  ⚠️ ชื่อไทยหลายคำ ปิดทีละคำ ไม่ใช่ปิดทั้งสตริง (ไม่งั้นเหลือตัวเดียวจำอะไรไม่ได้เลย) */
+function maskName(s) {
+  return String(s || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => (w.length <= 2 ? w : `${w[0]}${"•".repeat(Math.min(w.length - 2, 4))}${w.slice(-1)}`))
+    .join(" ");
+}
