@@ -483,15 +483,46 @@ export default async function handler(req, context) {
 
     check("คลังเงาอัปเดตล่าสุด", async () => {
       if (!env.CLOUDFLARE_D1_TOKEN) return { off: true, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+      /* 🔴 **เดิมอ่าน `MAX(updated_at) FROM orders` ซึ่งตอบผิดคำถาม** (แก้ 7 ก.ย. 2569)
+          นั่นคือ "ออเดอร์เปลี่ยนล่าสุดเมื่อไหร่" **ไม่ใช่ "งานกระจกรันล่าสุดเมื่อไหร่"**
+          ตัวซิงก์เขียนเฉพาะใบที่เปลี่ยน (กันเผาโควตา D1) ⇒ ช่วงที่ร้านไม่มีออเดอร์ขยับ
+          `updated_at` ก็ไม่ขยับตาม ⇒ **ขึ้นเตือน "งานกระจกน่าจะหยุด" ทั้งที่ทุกอย่างปกติ**
+          เจอของจริงเช้านี้: เตือน "4 ชม.ที่แล้ว" · สั่งซิงก์มือแล้วทำงานปกติ เขียน 0 ใบ
+
+       🔑 **คำเตือนที่ดังตอนของปกติ = คำเตือนที่คนเรียนรู้ที่จะมองข้าม**
+          ซึ่งอันตรายกว่าไม่มีคำเตือนเลย เพราะวันที่ซิงก์ตายจริงก็จะถูกมองข้ามด้วย
+
+       ✅ **ชีพจรที่ถูกต้องมีอยู่แล้ว** — `core_meta.sync_orders` เขียนทุกรอบไม่ว่าจะมีอะไรเปลี่ยนไหม
+          และคอมเมนต์ที่ core-sync.mjs เขียนไว้ตรงเป๊ะว่าสร้างมาเพื่อแยกสองกรณีนี้:
+          "ข้อมูลไม่เปลี่ยนเพราะไม่มีอะไรขยับ" vs "ข้อมูลไม่เปลี่ยนเพราะซิงก์ตายไปแล้ว"
+          ⇒ ของถูกมีอยู่แล้ว แค่ตัวตรวจไม่ได้ใช้มัน */
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const [r] = await coreQuery(`SELECT MAX(updated_at) AS t FROM orders`);
-      if (!r?.t) return { warn: true, note: "ไม่เคยมีการอัปเดตเลย" };
-      // updated_at เป็นเวลา UTC จากฐาน — เทียบกับเวลาปัจจุบันแบบ UTC เท่านั้น
-      const mins = Math.round((Date.now() - Date.parse(`${String(r.t).replace(" ", "T")}Z`)) / 60000);
-      const when = `ล่าสุด ${mins < 60 ? `${mins} นาทีที่แล้ว` : `${Math.round(mins / 60)} ชม.ที่แล้ว`}`;
-      // งานกระจกวิ่งทุกครึ่งชั่วโมง — เงียบเกิน 2 ชม. คือผิดปกติ
-      if (mins > 120) return { warn: true, note: `${when} — งานกระจกน่าจะหยุด ควรเข้าไปดู` };
-      return { note: when };
+      const [beat] = await coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`);
+      const [chg] = await coreQuery(`SELECT MAX(updated_at) AS t FROM orders`);
+      const ago = (v) =>
+        v ? Math.round((Date.now() - Date.parse(`${String(v).replace(" ", "T")}Z`)) / 60000) : null;
+      const say = (m) => (m < 60 ? `${m} นาทีที่แล้ว` : `${Math.round(m / 60)} ชม.ที่แล้ว`);
+
+      const beatMins = ago(beat?.at);
+      const chgMins = ago(chg?.t);
+
+      /* ⚠️ ไม่มีชีพจร = **ยังตัดสินไม่ได้** ไม่ใช่ "ซิงก์ตาย" (ฐานเก่าอาจยังไม่มีแถวนี้)
+          ⇒ ถอยไปใช้สัญญาณที่อ่อนกว่า **และบอกตรง ๆ ว่ากำลังใช้ตัวไหน** */
+      if (beatMins === null) {
+        if (chgMins === null) return { warn: true, note: "ยังไม่มีทั้งชีพจรและข้อมูล — ตรวจไม่ได้" };
+        return {
+          warn: chgMins > 120,
+          note:
+            `ยังไม่มีชีพจรงานกระจก (core_meta.sync_orders) — ใช้ "ออเดอร์เปลี่ยนล่าสุด" แทน: ${say(chgMins)} ` +
+            `⚠️ สัญญาณนี้อ่อนกว่า เพราะช่วงที่ไม่มีออเดอร์ขยับก็ดูเหมือนซิงก์หยุด`,
+        };
+      }
+
+      // งานกระจกวิ่งทุกครึ่งชั่วโมง — ชีพจรเงียบเกิน 2 ชม. คือผิดปกติจริง
+      const tail = chgMins === null ? "" : ` · ออเดอร์เปลี่ยนล่าสุด ${say(chgMins)}`;
+      if (beatMins > 120)
+        return { warn: true, note: `งานกระจกรันล่าสุด ${say(beatMins)} — น่าจะหยุดจริง ควรเข้าไปดู${tail}` };
+      return { note: `งานกระจกรันล่าสุด ${say(beatMins)}${tail}` };
     }),
 
     // ⚠️ ระบบสำรองที่หยุดทำงานคือของอันตรายที่สุดในบรรดาของที่พังเงียบได้
