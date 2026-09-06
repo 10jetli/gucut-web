@@ -372,7 +372,14 @@ export async function zortEditQuotation(o = {}) {
     });
   }
 
-  const body = { id, list };
+  /* ⚠️ **ส่ง id เป็น "ตัวเลข" ไม่ใช่ "ข้อความ"** — ZORT ตอบ `Invalid ID.` ถ้าส่งเป็นข้อความ
+      (เจอจริง 6 ก.ย. 2569 · ส่ง "974075" ถูกปฏิเสธ ทั้งที่เป็นเลขใบเดียวกับที่ ZORT คืนมาเอง)
+      ตอน ZORT สร้างใบให้ มันคืน `detail.id` มาเป็น **ตัวเลข** ⇒ ส่งกลับไปให้ตรงชนิดเดิม
+      ⚠️ ยังรับ id ที่ไม่ใช่ตัวเลขไว้ด้วย เผื่อวันหน้า ZORT เปลี่ยนไปใช้รหัสตัวอักษร
+      ✅ ข้อดีของรอบที่ถูกปฏิเสธ: **ปฏิเสธทั้งใบ ไม่ได้เขียนบางส่วนทิ้งไว้**
+         ใบทดสอบยังเป็น ฿0 เท่าเดิม ไม่ได้เพี้ยนไปกว่าเดิม */
+  const idNum = Number(id);
+  const body = { id: Number.isFinite(idNum) && String(idNum) === id ? idNum : id, list };
   if (txt(o.customer)) body.customername = txt(o.customer, 160);
 
   if (!o.confirm)
@@ -396,10 +403,13 @@ export async function zortEditQuotation(o = {}) {
 export async function zortVoidQuotation(o = {}) {
   const id = txt(o.id, 40);
   if (!id) return { ok: false, error: "ต้องระบุ id ของใบ (ไม่ใช่เลขที่ใบ)" };
+  // ⚠️ ชนิดของ id ต้องเป็นตัวเลขเหมือนกัน — ดูเหตุผลเต็มใน zortEditQuotation
+  const idNum = Number(id);
+  const sendId = Number.isFinite(idNum) && String(idNum) === id ? idNum : id;
   if (!o.confirm)
-    return { ok: true, dryRun: true, id, willSend: { id },
+    return { ok: true, dryRun: true, id, willSend: { id: sendId },
       note: "โหมดซ้อม — ยังไม่ได้ยกเลิก · ยกเลิกแล้วย้อนไม่ได้ ส่ง confirm:true เมื่อแน่ใจ" };
-  const r = await zortPost("Quotation/VoidQuotation", { id });
+  const r = await zortPost("Quotation/VoidQuotation", { id: sendId });
   if (!r.ok) return { ok: false, id, unknown: !!r.unknown, error: r.error };
   return { ok: true, voided: true, id, detail: r.detail,
     message: `ยกเลิกใบเสนอราคา id ${id} แล้ว — ควรดึงรายการมาดูว่าสถานะเปลี่ยนจริง` };
