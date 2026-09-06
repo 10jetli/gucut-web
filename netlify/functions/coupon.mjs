@@ -24,10 +24,22 @@ const json = (o, s = 200) =>
 const up = (v) => String(v ?? "").trim().toUpperCase().slice(0, 40);
 const num = (v, d = 0) => (Number.isFinite(Number(v)) ? Number(v) : d);
 
+/* ⚠️ **`x-forwarded-for` ต้องอ่าน "ตัวท้าย" ไม่ใช่ตัวหน้า** (ฝั่งจอทักมา 6 ก.ย. 2569)
+    ลูกค้าส่งหัวนี้มาเองได้ ⇒ **ตัวหน้าคือค่าที่ลูกค้าพิมพ์เอง** เปลี่ยนได้ทุกครั้งที่ยิง
+    ⇒ ตัวนับที่ผูกกับตัวหน้า = ยิงเดาได้ไม่จำกัด **ตัวกันเดาเท่ากับไม่มี**
+    ตัวที่ผู้ให้บริการเติมท้ายสุดคือค่าที่ใกล้ความจริงที่สุดเท่าที่ชั้นนี้จะรู้ได้
+    ⚠️ ตัวนี้เป็น**ทางสำรองชั้นที่สาม**เท่านั้น — ปกติ `context.ip` ของ Netlify มาก่อนเสมอ */
+const lastForwardedFor = (req) => {
+  const raw = req?.headers?.get?.("x-forwarded-for");
+  if (!raw) return "";
+  const parts = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "";
+};
+
 const who = (req, context) =>
   context?.ip ||
   req.headers.get("x-nf-client-connection-ip") ||
-  req.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ||
+  lastForwardedFor(req) ||
   "unknown";
 
 // กันยิงเดาโค้ดรัว ๆ — นับแยกตาม IP

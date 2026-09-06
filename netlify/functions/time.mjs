@@ -26,10 +26,17 @@ const json = (o, s = 200) =>
 // ---------- กันเดา PIN ----------
 const MAX_TRIES = 8;                  // ผิดเกินนี้ต่อ IP
 const WINDOW_MS = 10 * 60 * 1000;     // ในช่วงเวลานี้ → พักไว้
-const clientIp = (req) =>
-  (req.headers.get("x-nf-client-connection-ip") ||
-    (req.headers.get("x-forwarded-for") || "").split(",")[0] ||
-    "?").trim();
+/* ⚠️ **อ่าน x-forwarded-for ตัวท้าย ไม่ใช่ตัวหน้า** (6 ก.ย. 2569)
+    ตัวหน้าคือค่าที่ผู้เรียกพิมพ์มาเอง เปลี่ยนได้ทุกครั้ง ⇒ ตัวกันเดา PIN เท่ากับไม่มี
+    หน้า /time/ เปิดโล่งโดยตั้งใจ (ไม่มีรหัสหลังร้าน) **ตัวกันเดาจึงเป็นด่านเดียวที่มี**
+    และ PIN 4 หลักมีแค่หมื่นแบบ ⇒ ปล่อยให้ยิงฟรีคือเดาครบในไม่กี่นาที */
+const clientIp = (req) => {
+  const direct = req.headers.get("x-nf-client-connection-ip");
+  if (direct) return direct.trim();
+  const parts = (req.headers.get("x-forwarded-for") || "")
+    .split(",").map((s) => s.trim()).filter(Boolean);
+  return parts.length ? parts[parts.length - 1] : "?";
+};
 
 /**
  * นับครั้งที่เดาผิดต่อ IP

@@ -124,8 +124,14 @@ export async function finalizeOrder({
   // ใช้ event id = เลขออเดอร์ ตรงกับที่เบราว์เซอร์ยิง ปลายทางจะรวมเป็นรายการเดียว
   later(
     sendPurchase(order, {
-      ip: req?.headers?.get("x-nf-client-connection-ip") ||
-          req?.headers?.get("x-forwarded-for")?.split(",")[0]?.trim(),
+      /* ⚠️ ตัวนี้ **ไม่ใช่ตัวกันเดา** — ส่งให้พิกเซลโฆษณาใช้จับคู่ลูกค้า
+          ทิศของความผิดต่างจากตัวกันเดา: ปลอมได้ก็แค่จับคู่โฆษณาเพี้ยน ไม่ได้เปิดช่องโจมตี
+          แต่ยังอ่านตัวท้ายเหมือนกัน เพราะตัวหน้าเป็นค่าที่ผู้เรียกพิมพ์เองล้วน ๆ */
+      ip:
+        req?.headers?.get("x-nf-client-connection-ip") ||
+        (req?.headers?.get("x-forwarded-for") || "")
+          .split(",").map((s) => s.trim()).filter(Boolean).slice(-1)[0] ||
+        undefined,
       userAgent: req?.headers?.get("user-agent") || undefined,
       sourceUrl: `${SITE_URL}/checkout/`,
     }).catch(() => {}),
