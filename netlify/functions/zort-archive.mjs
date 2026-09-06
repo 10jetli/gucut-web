@@ -94,6 +94,9 @@ export default async function handler(req, context) {
         rows: Number(meta?.metadata?.rows ?? 0),
         expected: Number(meta?.metadata?.expected ?? 0),
         complete: String(meta?.metadata?.complete ?? "") === "1",
+        /* ⚠️ 0 แถว + complete = **เปิดดูแล้วว่างจริง** ไม่ใช่ "เก็บไม่ได้"
+            ถ้าไม่แยก คนอ่านจะเห็น "0 แถว" แล้วนึกว่างานล้มเหลว */
+        emptyVerified: String(meta?.metadata?.emptyVerified ?? "") === "1",
         at: meta?.metadata?.at ?? null,
       });
     }
@@ -125,13 +128,34 @@ export default async function handler(req, context) {
 
   const head = Array.isArray(body?.head) ? body.head.map((h) => String(h)) : [];
   const rows = Array.isArray(body?.rows) ? body.rows : [];
-  if (!rows.length) return json({ error: "ไม่มีแถวส่งมา" }, 400);
+  /* ⚠️ **"จอนี้ว่างจริง" กับ "ยังไม่ได้เก็บจอนี้" เป็นคนละเรื่อง — ต้องแยกให้ขาด**
+      (เจอตอนใช้งานจริง 6 ก.ย. 2569: รายได้อื่น · รายจ่ายอื่น · รายการโอนเงิน
+       เปิดดูแล้วขึ้น "จำนวน 0 รายการ" ทั้งสามจอ = ไม่มีอะไรให้เก็บจริง ๆ)
+      เดิมส่งแถวว่างมาถูกตีกลับ ⇒ สามจอนั้นจะค้างใน `notYet` ตลอดกาล
+      ⇒ คนรอบหน้าเปิดมาเห็นก็ไปนั่งหาข้อมูลที่ไม่มีอยู่จริง **ในงานที่มีเส้นตาย**
+      ⇒ หรือแย่กว่า: นึกว่าข้อมูลหายไปตอนปิดบัญชี ทั้งที่ไม่เคยมี
+
+   🔒 **กันเอาไปใช้ปิดงานลวก ๆ** — ต้องตั้งใจส่ง `emptyConfirmed:true` **และ** `expected:0`
+      สองอย่างพร้อมกัน (เผลอส่งแถวว่างเฉย ๆ ยังถูกตีกลับเหมือนเดิม)
+   ✅ **ด่านกันเขียนทับด้านล่างครอบคลุมอยู่แล้ว** — 0 แถวย่อมน้อยกว่าของเดิมที่มีแถว
+      ⇒ ทำเครื่องหมาย "ว่าง" ทับสำเนาที่เก็บไว้แล้วไม่ได้ ต้อง force:true เท่านั้น */
+  const emptyVerified = body?.emptyConfirmed === true && Number(body?.expected ?? -1) === 0;
+  if (!rows.length && !emptyVerified)
+    return json(
+      {
+        error: "ไม่มีแถวส่งมา",
+        howTo:
+          "ถ้าจอนั้น **ว่างจริง** (หัวตารางเขียน 'จำนวน 0 รายการ') ให้ส่ง emptyConfirmed:true พร้อม expected:0",
+      },
+      400
+    );
 
   /* ⚠️ **จำนวนที่หน้าจอ ZORT บอก คือตัวหารเดียวที่เชื่อได้**
       ผู้ยิงต้องอ่านเลขนั้นมาส่งด้วย ไม่ใช่ให้เราเดาจากจำนวนแถวที่ได้รับ
       ไม่ส่งมา = เก็บได้ แต่ **ติดธงว่ายังพิสูจน์ความครบไม่ได้** */
   const expected = Number(body?.expected ?? 0);
-  const complete = expected > 0 && rows.length === expected;
+  /* "ครบ" มีสองความหมาย: เก็บได้ครบตามจำนวนที่จอบอก · หรือจอนั้นว่างจริงและยืนยันแล้ว */
+  const complete = (expected > 0 && rows.length === expected) || emptyVerified;
 
   const payload = {
     screen,
@@ -140,6 +164,7 @@ export default async function handler(req, context) {
     rowCount: rows.length,
     expected: expected || null,
     complete,
+    emptyVerified, // true = เปิดดูแล้วจอว่างจริง ≠ ยังไม่ได้เก็บ
     source: String(body?.source ?? "").slice(0, 200), // path ของจอที่อ่านมา
     at: new Date().toISOString(),
   };
@@ -181,6 +206,7 @@ export default async function handler(req, context) {
       rows: String(rows.length),
       expected: String(expected || 0),
       complete: complete ? "1" : "0",
+      emptyVerified: emptyVerified ? "1" : "0", // แยก "ว่างจริง" ออกจาก "ยังไม่ได้เก็บ" ในหน้ารายการ
       at: payload.at,
     },
   });
