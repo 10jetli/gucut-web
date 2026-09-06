@@ -61,18 +61,51 @@ export async function applyMoves(list) {
     if (!groups.has(k)) groups.set(k, { reason: r.reason, ref: r.ref, skus: [] });
     groups.get(k).skus.push(r.sku);
   }
+  /* ⚠️ **รวมทุกกลุ่มไว้ในคำสั่งเดียวด้วย OR — ห้ามกลับไปยิงทีละกลุ่ม** (แก้ 6 ก.ย. 2569)
+      เดิมยิง 1 คำขอต่อ (reason,ref) ต่อ 200 รหัส **และเรียกซ้ำสองรอบ** (before + after)
+      ⇒ คำขอ D1 = 2 × จำนวนกลุ่ม · ฐาน D1 อยู่ APAC ฟังก์ชันอยู่ US = ~286ms ต่อคำขอ
+        ใบเดียวหลาย ref (เช่น รับของ 40 ใบพร้อมกัน) = 80 คำขอเรียงกัน ≈ 23 วิ
+        **ชนเพดาน 26 วิของ Netlify** — ดู [[time-budget-is-shared]] · [[d1-in-apac-functions-in-us]]
+
+      ⚠️ **ทิศของความพังคือส่วนที่แย่ที่สุด** ถ้าหมดเวลาตอนรอบ `after`
+        แปลว่า INSERT เข้าไปครบแล้ว แต่จอเห็น 502 ⇒ คนกรอกใบใหม่ **ref ใหม่**
+        ⇒ ดัชนี UNIQUE(reason,ref,sku) จับไม่ได้ ⇒ **สต็อกบวมสองเท่าเงียบ ๆ**
+        (ตาข่ายกันซ้ำกันได้แค่ "กดปุ่มเดิม" ไม่ได้กัน "กรอกใบใหม่" — [[guard-stops-retry-not-reentry]])
+
+      ⇒ รวมเป็นคำสั่งเดียว: WHERE (กลุ่ม1) OR (กลุ่ม2) OR ... · ใช้ SQL ธรรมดาล้วน
+        ไม่พึ่งไวยากรณ์ที่ขึ้นกับรุ่นของ SQLite (เหตุผลเดิมของคอมเมนต์ข้างบน)
+      ⚠️ ยังต้องแบ่งชุดตาม **จำนวนไบต์** เพราะ D1 มีเพดานความยาวคำสั่ง (~100KB)
+        แบ่งตามจำนวนกลุ่มไม่พอ — กลุ่มเดียวที่มี 5,000 รหัสก็ยาวเกินได้
+      ⚠️ กรณีที่ร้านใช้ทุกวัน (ใบเดียว ref เดียว) ยังเป็น **1 คำขอเท่าเดิม** ไม่ได้แพงขึ้น */
+  const MAX_SQL = 60_000; // ไบต์ต่อคำสั่ง — เผื่อจากเพดานจริงไว้เยอะ
+  const preds = [];
+  for (const g of groups.values()) {
+    for (let i = 0; i < g.skus.length; i += 200) {
+      const inList = g.skus.slice(i, i + 200).map(esc).join(",");
+      preds.push(`(reason = ${esc(g.reason)} AND ref = ${esc(g.ref)} AND sku IN (${inList}))`);
+    }
+  }
   const countMine = async () => {
     let n = 0;
-    for (const g of groups.values()) {
-      for (let i = 0; i < g.skus.length; i += 200) {
-        const inList = g.skus.slice(i, i + 200).map(esc).join(",");
-        const c = await coreQuery(
-          `SELECT COUNT(*) c FROM stock_moves
-           WHERE reason = ${esc(g.reason)} AND ref = ${esc(g.ref)} AND sku IN (${inList})`
-        );
-        n += Number(c[0]?.c ?? 0);
-      }
+    let batch = [];
+    let bytes = 0;
+    const flush = async () => {
+      if (!batch.length) return;
+      const c = await coreQuery(
+        `SELECT COUNT(*) c FROM stock_moves WHERE ${batch.join(" OR ")}`
+      );
+      n += Number(c[0]?.c ?? 0);
+      batch = [];
+      bytes = 0;
+    };
+    for (const pr of preds) {
+      /* ⚠️ ท่อนเดียวยาวเกินเพดานเองก็ยังต้องยิง — ยิงแล้วพลาดดีกว่าข้ามเงียบ ๆ
+          (ข้ามไป = `before`/`after` นับขาด ⇒ `added` เพี้ยน ⇒ จอบอกว่าซ้ำทั้งที่เพิ่งเข้า) */
+      if (batch.length && bytes + pr.length > MAX_SQL) await flush();
+      batch.push(pr);
+      bytes += pr.length + 4;
     }
+    await flush();
     return n;
   };
   const before = await countMine();

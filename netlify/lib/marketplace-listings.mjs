@@ -100,7 +100,35 @@ async function lazadaSkus() {
 /** map รหัส → รายชื่อช่องทางที่กำลังลงขาย + บอกว่ารอบนี้ถามใครได้บ้าง
  *  ⚠️ แพลตฟอร์มไหนล่ม = **ไม่นับว่าเช็คแล้ว** ห้ามตีเป็น "ไม่ได้ลงขาย"
  *     ยอมให้จอบอกว่า "เช็คไม่ได้" ดีกว่าบอกผิดว่าไม่มีของลงขาย */
-export async function marketplaceListings({ fresh = false } = {}) {
+/* ⚠️ **กันสองผู้เรียกกวาดซ้อนกันภายในคำขอเดียว** (เพิ่ม 6 ก.ย. 2569)
+    `connectionsStatus` เรียก `shopee()` กับ `tiktok()` ใน Promise.all ก้อนเดียวกัน
+    และทั้งคู่เรียกตัวนี้ ⇒ **ตอนแคชหมดอายุ ทั้งคู่วิ่งเข้ามาก่อนใครจะทันเขียนแคช**
+    ⇒ กวาด gucut + Shopee + TikTok(สูงสุด 25 หน้า) + Lazada **สองรอบซ้อน**
+      แล้วเขียนแคชทับกันเอง · คอมเมนต์เดิมที่เขียนว่า "ใช้แคชร่วมกัน จึงไม่ยิงซ้ำ"
+      จริงเฉพาะตอนแคชอุ่นอยู่แล้ว ซึ่งเป็นกรณีที่ไม่มีปัญหาอยู่แล้ว
+    ⇒ จำ promise ที่กำลังวิ่งไว้ ใครมาทีหลังรอผลใบเดียวกัน
+    ⚠️ ต้องล้างทิ้งเมื่อจบ **ทั้งตอนสำเร็จและตอนพัง** ไม่งั้นความผิดพลาดครั้งเดียว
+       จะถูกแจกให้ทุกคำขอที่เหลือของฟังก์ชันตัวนั้นตลอดอายุ (โมดูลอยู่ยาวกว่าคำขอ)
+    ⚠️ กันได้แค่ **ในฟังก์ชันตัวเดียวกัน** — คนละคำขอ คนละอินสแตนซ์ ยังกวาดซ้อนได้
+       ตัวกันจริงระดับข้ามคำขอคือแคชใน Blobs ข้างล่าง ตัวนี้เป็นชั้นเสริมเท่านั้น */
+let inFlight = null;
+export async function marketplaceListings(opts = {}) {
+  if (opts.fresh) return _marketplaceListings(opts);   // ขอของสดต้องได้ของสด ไม่แชร์ใบเก่า
+  if (inFlight) return inFlight;
+  /* ⚠️ ใช้ try/finally ใน IIFE **ห้ามใช้ run.finally(...) แล้วปล่อยลอย**
+      Netlify แช่แข็งฟังก์ชันทันทีที่ตอบเสร็จ ⇒ งานที่ไม่ถูก await ตายกลางทางแบบเงียบ
+      (และ scripts/check-floating.mjs จะทำให้ build ตกด้วย ซึ่งถูกแล้ว) */
+  inFlight = (async () => {
+    try {
+      return await _marketplaceListings(opts);
+    } finally {
+      inFlight = null;
+    }
+  })();
+  return inFlight;
+}
+
+async function _marketplaceListings({ fresh = false } = {}) {
   const store = getStore("gucut-coupon");
   const cached = await store.get(CACHE_KEY, { type: "json" }).catch(() => null);
   /* ⚠️ **ธง unreliable ต้องคิดใหม่ทุกครั้ง ห้ามอ่านจากก้อนที่แคชไว้** — เจอ 4 ก.ย. 2569
