@@ -240,6 +240,64 @@ export async function zortAddPurchaseOrder(o = {}) {
     message: `สร้างใบสั่งซื้อ ${list.length} บรรทัดใน ZORT แล้ว` };
 }
 
+/** สร้างใบเสนอราคาใน ZORT — จอ "ใบเสนอราคา" (ปุ่มสร้าง) เรียกตัวนี้
+ *
+ *  ⚠️ **แก้ทีหลังไม่ได้เหมือนกัน** — ยิงตรวจ 6 ก.ย. 2569: `Quotation/UpdateQuotation` ตอบ **404**
+ *     (ฝั่งจอเข้าใจว่าใบเสนอราคาแก้ได้จึงขอทำก่อน — ข้อสันนิษฐานนั้นไม่จริง บอกไปแล้ว)
+ *     ⇒ ความเสี่ยงเท่าใบสั่งซื้อ ⇒ โหมดซ้อมเป็นค่าเริ่มต้นเหมือนกัน
+ *  📌 ชื่อฟิลด์อ้างจากฝั่งอ่านจริง `core-purchases.mjs:listQuotations`
+ *     (customername · customerphone · number · pricepernumber · reference)
+ *     ⚠️ ฝั่งอ่านไม่ใช่ข้อพิสูจน์ของฝั่งเขียน — **ต้องยิงจริงหนึ่งใบแล้วดึงกลับมาดูก่อนเชื่อ**
+ */
+export async function zortAddQuotation(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ต้องมีรายการสินค้าอย่างน้อย 1 บรรทัด" };
+  const customer = txt(o.customer, 160);
+  if (!customer) return { ok: false, error: "ต้องมีชื่อลูกค้า" };
+
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sku = txt(it?.sku, 60);
+    const qty = numOrNull(it?.qty);
+    const price = numOrNull(it?.price);
+    if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+    if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนไม่ถูกต้อง` };
+    if (it?.price !== undefined && price === null)
+      return { ok: false, error: `บรรทัดที่ ${i + 1} ราคาไม่ใช่ตัวเลข` };
+    list.push({
+      sku,
+      name: txt(it?.name, 200),
+      // ⚠️ ฟิลด์จำนวนของ ZORT ชื่อ `number` เหมือนใบซื้อ/ออเดอร์ ไม่ใช่ qty/amount
+      number: qty,
+      ...(price === null ? {} : { pricepernumber: price }),
+    });
+  }
+
+  const body = { customername: customer, list };
+  if (txt(o.phone)) body.customerphone = txt(o.phone, 40);
+  if (txt(o.note)) body.description = txt(o.note, 500);
+  if (txt(o.reference)) body.reference = txt(o.reference, 80);
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
+
+  const seen = await seenRef("quotation", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT ลองใหม่อีกครั้ง" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info,
+      message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("Quotation/AddQuotation", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("quotation", ref, { kind: "quotation", customer, lines: list.length });
+  return { ok: true, added: true, ref, lines: list.length, detail: r.detail, warn,
+    message: `สร้างใบเสนอราคาให้ ${customer} (${list.length} บรรทัด) แล้ว` };
+}
+
 /* ⚠️ **สิ่งที่ ZORT ไม่เปิด API ให้ — อย่าเขียนฟังก์ชันหลอกไว้ตรงนี้**
     การรับคืนสินค้า (ฝั่งซื้อ) · เซลเพจ · แก้ใบสั่งซื้อที่สร้างแล้ว
     ยิงตรวจแล้วได้ 404 ทั้งหมด ⇒ จอต้องเขียนว่า "ZORT ไม่เปิด API ให้"
