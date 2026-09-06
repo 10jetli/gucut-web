@@ -9,6 +9,7 @@ import { syncShopeeOrders, shopeeReconYesterdayLine } from "../lib/shopee-orders
 import { syncTiktokOrders, tiktokReconYesterdayLine } from "../lib/tiktok-orders.mjs";
 import { shopeeStockLine } from "../lib/shopee-stock.mjs";
 import { syncProducts } from "../lib/core-products.mjs";
+import { syncTransfers } from "../lib/core-purchases.mjs";
 import { stockReconDaily } from "../lib/core-stock.mjs";
 
 export default async function handler() {
@@ -92,6 +93,20 @@ export default async function handler() {
         stock: await snapshotStock().catch((e) => ({ error: String(e?.message || e) })),
         // ทะเบียนสินค้า (ชื่อ/ราคา) — วันละครั้งพอ ชื่อสินค้าแทบไม่เปลี่ยน
         products: await syncProducts().catch((e) => ({ error: String(e?.message || e) })),
+        /* 🔴 **ใบโอนสินค้า — ก่อนหน้านี้ไม่มีอะไรซิงก์ให้เลย** (เพิ่ม 7 ก.ย. 2569)
+            มีแต่เส้นสั่งมือ `/api/core?synctransfers=1` ⇒ **ไม่มีอะไรจุดชนวน**
+            ⇒ กระจกค้างอยู่ที่ใบวันที่ 1 ก.ย. ทั้งที่ ZORT มีถึง 5 ก.ย. (ตรวจ 7 ก.ย.)
+              และส่วนต่างจะโตขึ้นทุกวันไปเรื่อย ๆ โดยไม่มีอะไรฟ้อง
+            ⇒ พิสูจน์แล้ว: สั่งมือรอบเดียว ใบที่ขาดเข้ามาทันที (12,002 → 12,003)
+            🔑 **"มีเส้นให้สั่ง" ไม่เท่ากับ "จะได้ถูกสั่ง"** [[nothing-triggers-it]]
+
+         ⚠️ ใส่ไว้ใน **งานรายวัน ไม่ใช่ทุกครึ่งชั่วโมง** — ของกลุ่มนี้เบามาก
+            (ย้อน 30 วันได้ 46 ใบ · เขียนจริง 1 ใบ) การยิงถี่กว่านี้ไม่ได้อะไรเพิ่ม
+            แต่ไปกินงบเวลาของลูปที่มีเพดานอยู่แล้ว [[time-budget-is-shared]]
+         ⚠️ ย้อน 30 วันเพื่อกันใบที่แก้ย้อนหลัง — ไม่ใช่แค่ 7 วันเหมือนออเดอร์
+         ⚠️ **ไม่ช่วยเรื่องส่วนต่างเก่า 194 ใบ** ซึ่งเป็นของเก่าที่ไม่เคยถูกซิงก์
+            อันนั้นยังเป็นข้อค้างใน verify-claims ตามเดิม — คนละเรื่องกัน */
+        transfers: await syncTransfers(30).catch((e) => ({ error: String(e?.message || e) })),
       };
       // ⚠️ ต้องอยู่หลัง snapshotStock เสมอ — ตัวเทียบใช้ภาพถ่ายของ "วันนี้" เป็นวันปลาย
       //    สลับลำดับเมื่อไหร่ = เทียบกับภาพถ่ายเมื่อวานทั้งสองฝั่ง ส่วนต่างเป็นศูนย์หลอก ๆ
