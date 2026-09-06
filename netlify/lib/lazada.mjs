@@ -225,7 +225,12 @@ export async function lazadaSkuFields(sample = 3) {
 
    ⚠️ SellerSku ของ Lazada มีทั้งรหัสล้วน ("01412") และรหัส+คำต่อท้าย
       ("01929 set ลูกสูบ") ⇒ ต้องผ่านตัวจับคู่กลาง ไม่ใช่เทียบตรงตัวอย่างเดียว */
-export async function lazadaStockCompare() {
+/* ⚠️ **`full: 1` = ส่ง `diff` มาครบทุกแถว ห้ามตัด** (เพิ่ม 6 ก.ย. 2569)
+    ค่าเริ่มต้นตัดไว้ 50 แถวเพื่อให้จอโหลดเร็ว ซึ่งถูกสำหรับ "การแสดงผล"
+    แต่ **ผิดมหันต์สำหรับ "การคิดแผนดันสต็อก"** — แผนที่คิดจากตัวอย่าง 50 แถว
+    จะทิ้งรหัสที่เกินไปเงียบ ๆ โดยที่ `diffCount` ยังรายงานเลขเต็ม ⇒ ดูเหมือนครบทุกอย่าง
+    (บั๊กตัวเดียวกันนี้เคยเจอและแก้ที่ฝั่ง Shopee ไปแล้ว 5 ก.ย. 2569 — ฝั่ง Lazada ตกหล่น) */
+export async function lazadaStockCompare(o = {}) {
   const { coreReady, coreQuery } = await import("./coredb.mjs");
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const t = await validToken();
@@ -450,7 +455,12 @@ export async function lazadaStockCompare() {
         lazadaSkus: v.skus,
       })),
     negativeInCore: [...snap.values()].filter((v) => v < 0).length,
-    diff: diff.slice(0, 50),
+    /* ⚠️ **ตัดไว้ 50 เพื่อการแสดงผลเท่านั้น — ตัวคิดแผนต้องขอ `full: 1` เสมอ**
+        `diffCount` ข้างบนเป็นเลขเต็มอยู่แล้ว ⇒ ใครอ่าน `diff.length` ไปใช้แทนจะได้เลขที่
+        **น้อยกว่าความจริงแบบดูสมเหตุสมผล** และไม่มีอะไรฟ้อง (เจอจริง 6 ก.ย. 2569: แผนเห็น 50 จาก 83)
+        ⇒ ถ้าเพิ่มผู้ใช้เส้นนี้อีกในอนาคต **ต้องถามก่อนว่าเขาจะเอาไปนับหรือเอาไปโชว์** */
+    diff: o.full ? diff : diff.slice(0, 50),
+    diffTruncated: !o.full && diff.length > 50, // จอจะได้รู้ว่ากำลังดูของไม่ครบ
     missingSample,
     // ⚠️ ว่าง = สองค่านี้ตรงกันทุกตัวในรอบนี้ · ไม่ว่าง = ต้องตัดสินใจว่าจะยึดตัวไหน
     availableNotEqualQuantity: availVsQty,

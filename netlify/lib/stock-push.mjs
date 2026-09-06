@@ -132,7 +132,12 @@ async function shopeePlan() {
  */
 async function lazadaPlan() {
   const { lazadaStockCompare } = await import("./lazada.mjs");
-  const c = await lazadaStockCompare();
+  /* ⚠️ **ต้องขอ `full: 1` เสมอ — เหมือนฝั่ง Shopee** (แก้ 6 ก.ย. 2569)
+      ค่าเริ่มต้นตัด `diff` ไว้ 50 แถวเพื่อการแสดงผล ⇒ แผนเห็นแค่ 50 จาก 83
+      **33 รหัสที่ต้องดันหายจากแผนเงียบ ๆ** โดย `diffCount` ยังรายงาน 83 ตามปกติ
+      บั๊กตัวเดียวกันเคยแก้ที่ Shopee ไปแล้ว 5 ก.ย. 2569 แต่ **ฝั่ง Lazada ตกหล่น**
+      ⇒ เจอเพราะตาข่าย `bucketsAddUp` ที่เพิ่งใส่ให้ Lazada ฟ้อง false ไม่ได้เจอเพราะสังเกตเอง */
+  const c = await lazadaStockCompare({ full: 1 });
   /* 🔴 **ห้ามเช็ค `c.note` ตรงนี้อีก** (บั๊กที่เจอ 6 ก.ย. 2569)
       `note` ของ lazadaStockCompare คือ **คำอธิบายคอลัมน์ของผลที่สำเร็จ** ⇒ มีทุกรอบที่สำเร็จ
       เดิมเขียน `if (c.skip || c.note)` ⇒ **แผนดันสต็อก Lazada ไม่เคยถูกคำนวณเลยสักครั้ง**
