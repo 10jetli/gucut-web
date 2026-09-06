@@ -958,7 +958,12 @@ export async function reorderPlan(o = {}) {
     from,
     to,
     days,
-    scope: scopeAll ? "all" : "parents",
+    /* ⚠️ **เดิมมีคีย์ `scope` สองครั้งในออบเจกต์เดียว** — ตัวล่าง (ข้อความอธิบาย) ทับตัวนี้
+        ⇒ จอที่อยากรู้ว่า "กำลังดูโหมดไหน" ได้ประโยคยาว ๆ แทนคำว่า all/parents
+        ⇒ แยกเป็น `scopeMode` (ให้เครื่องอ่าน) · `scope` คงเป็นข้อความอธิบายเหมือนเดิม
+           **ไม่เปลี่ยนความหมายของ `scope`** เพราะจอฝั่ง gucut2 แสดงข้อความนั้นอยู่
+        🔑 ฟิลด์ที่เป็นคำอธิบาย ห้ามใช้ชื่อเดียวกับฟิลด์ที่ใช้ตัดสินใจ [[explain-fields-cant-decide]] */
+    scopeMode: scopeAll ? "all" : "parents",
     parents: rows.filter((r) => r.kind === "parent").length,
     items: rows.filter((r) => r.kind === "item").length,
     total: rows.length,

@@ -607,7 +607,18 @@ async function route(req, context) {
       return okJson(await linkStatus({ days: url.searchParams.get("days") }));
     }
     if (url.searchParams.get("reorder")) {
-      return okJson(await reorderPlan({ days: url.searchParams.get("days") }));
+      /* ⚠️ **ต้องส่ง `scope` ต่อด้วย** (แก้ 7 ก.ย. 2569)
+          เดิมส่งแต่ `days` ⇒ `scope=all` ที่เขียนไว้ในไลบรารี **ไม่มีทางถูกเรียกใช้เลย**
+          ยิงจริงเทียบแล้ว: ใส่ scope=all กับไม่ใส่ ได้ 92 รหัสเท่ากันเป๊ะ
+          ⇒ ฟีเจอร์ที่ตั้งใจให้ครอบทั้งคลัง (แทนที่จะครอบแค่ม้วนแม่ 92 จาก 2,672)
+            มีโค้ดครบแต่ **ไม่มีอะไรจุดชนวน** [[nothing-triggers-it]]
+          🔑 คลาสเดียวกับใบโอนสินค้าที่เพิ่งแก้ไปเมื่อกี้ — เขียนเสร็จแล้วแต่ไม่มีทางเข้าถึง */
+      return okJson(
+        await reorderPlan({
+          days: url.searchParams.get("days"),
+          scope: url.searchParams.get("scope"),
+        })
+      );
     }
     if (url.searchParams.get("list") === "bundles") {
       return json({
