@@ -332,6 +332,79 @@ export async function zortAddQuotation(o = {}) {
     message: `สร้างใบเสนอราคาให้ ${customer} (${list.length} บรรทัด) แล้ว` };
 }
 
+/**
+ * แก้ใบเสนอราคาที่มีอยู่แล้ว (Quotation/EditQuotation)
+ *
+ * 🛑 **เครื่องมือสำหรับตรวจสอบ ไม่ใช่ของใช้ประจำวัน — อ่านก่อนเรียก**
+ *   สร้างขึ้น 6 ก.ย. 2569 เพื่อพิสูจน์ว่าการส่ง `totalprice` แก้ปัญหาใบราคา ฿0 ได้จริง
+ *   โดย**ไม่ต้องสร้างเอกสารทดสอบใบใหม่ในระบบบัญชีของร้าน** (เจ้าของร้านเลือกทางนี้เอง)
+ *
+ * ⚠️ **ส่ง `list` ไป = ทับรายการสินค้าทั้งใบ ไม่ใช่แก้เฉพาะบรรทัดที่ส่ง**
+ *    ⇒ ใบที่มี 5 บรรทัด ถ้าส่งไปบรรทัดเดียว **อีก 4 บรรทัดหายทั้งใบ**
+ *    ยังไม่ได้ทดสอบพฤติกรรมนี้กับใบหลายบรรทัด — **ห้ามใช้กับใบของลูกค้าจริง**
+ *    จนกว่าจะยิงทดสอบกับใบหลายบรรทัดแล้วดึงกลับมานับบรรทัดยืนยัน
+ * ⚠️ ต้องส่ง `confirm: true` ถึงจะเขียนจริง · ไม่ส่ง = คืนสิ่งที่จะส่งให้ดูเฉย ๆ
+ * ⚠️ ไม่มีตัวกันยิงซ้ำแบบ `ref` เพราะการแก้ใบเดิมซ้ำด้วยค่าเดิม **ไม่ทำให้เกิดเอกสารเพิ่ม**
+ *    (ต่างจากการสร้างใบใหม่ซึ่งกดสองครั้ง = ได้สองใบ)
+ */
+export async function zortEditQuotation(o = {}) {
+  const id = txt(o.id, 40);
+  if (!id) return { ok: false, error: "ต้องระบุ id ของใบ (ไม่ใช่เลขที่ใบ — คนละตัวกัน)" };
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ต้องมีรายการสินค้าอย่างน้อย 1 บรรทัด" };
+
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sku = txt(it?.sku, 60);
+    const qty = numOrNull(it?.qty);
+    const price = numOrNull(it?.price);
+    if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+    if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนไม่ถูกต้อง` };
+    if (it?.price !== undefined && price === null)
+      return { ok: false, error: `บรรทัดที่ ${i + 1} ราคาไม่ใช่ตัวเลข` };
+    list.push({
+      sku,
+      name: txt(it?.name, 200),
+      number: qty,
+      // กติกาเดียวกับตอนสร้าง — ZORT ไม่คิดยอดรวมบรรทัดให้เอง (ดูเหตุผลเต็มใน zortAddQuotation)
+      ...(price === null ? {} : { pricepernumber: price, totalprice: qty * price }),
+    });
+  }
+
+  const body = { id, list };
+  if (txt(o.customer)) body.customername = txt(o.customer, 160);
+
+  if (!o.confirm)
+    return { ok: true, dryRun: true, id, willSend: body,
+      note: "โหมดซ้อม — ยังไม่ได้แก้ใน ZORT · ส่ง confirm:true เมื่อพร้อมแก้จริง" };
+
+  const r = await zortPost("Quotation/EditQuotation", body);
+  if (!r.ok) return { ok: false, id, unknown: !!r.unknown, error: r.error };
+  return { ok: true, edited: true, id, lines: list.length, detail: r.detail,
+    message: `แก้ใบเสนอราคา id ${id} (${list.length} บรรทัด) แล้ว — ` +
+             `**ต้องดึงใบกลับมาดูก่อนเชื่อว่าเข้าถูกช่อง**` };
+}
+
+/**
+ * ยกเลิกใบเสนอราคา (Quotation/VoidQuotation)
+ *
+ * 🛑 **ยกเลิกแล้วย้อนกลับไม่ได้** — ต้องส่ง `confirm: true` เสมอ
+ * ⚠️ รับ **id** ไม่ใช่เลขที่ใบ — ส่งเลขที่ใบไปจะไม่เจอใบ (หรือแย่กว่านั้นคือไปโดนใบอื่น)
+ *    ⇒ ผู้เรียกต้องหยิบ id มาจาก `list=quotations` เท่านั้น ห้ามเดาเอง
+ */
+export async function zortVoidQuotation(o = {}) {
+  const id = txt(o.id, 40);
+  if (!id) return { ok: false, error: "ต้องระบุ id ของใบ (ไม่ใช่เลขที่ใบ)" };
+  if (!o.confirm)
+    return { ok: true, dryRun: true, id, willSend: { id },
+      note: "โหมดซ้อม — ยังไม่ได้ยกเลิก · ยกเลิกแล้วย้อนไม่ได้ ส่ง confirm:true เมื่อแน่ใจ" };
+  const r = await zortPost("Quotation/VoidQuotation", { id });
+  if (!r.ok) return { ok: false, id, unknown: !!r.unknown, error: r.error };
+  return { ok: true, voided: true, id, detail: r.detail,
+    message: `ยกเลิกใบเสนอราคา id ${id} แล้ว — ควรดึงรายการมาดูว่าสถานะเปลี่ยนจริง` };
+}
+
 /* ⚠️⚠️ **บทเรียนแพงของวันนี้ (6 ก.ย. 2569): 404 ชื่อเดียว ≠ ไม่มี API**
     ZORT ใช้คำกริยาปนกันแล้วแต่โมดูล — บางที่ `Update*` บางที่ `Edit*` **ไม่มีกฎตายตัว**
     รอบแรกผมยิง `Quotation/UpdateQuotation` ได้ 404 แล้วสรุปว่า "แก้ใบเสนอราคาไม่ได้"

@@ -335,6 +335,23 @@ async function route(req, context) {
       const r = await zortAddQuotation(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* 🛑 **แก้ / ยกเลิกใบเสนอราคา — เครื่องมือตรวจสอบ ยังไม่ใช่ของให้จอเรียก**
+        สร้าง 6 ก.ย. 2569 เพื่อพิสูจน์ว่าการส่ง totalprice แก้ปัญหาใบราคา ฿0 ได้จริง
+        โดยไม่ต้องสร้างเอกสารทดสอบใบใหม่ในระบบบัญชีร้าน (เจ้าของร้านเลือกทางนี้)
+     ⚠️ ทั้งสองตัวต้องส่ง confirm:true ถึงจะเขียนจริง — ไม่ส่ง = คืนสิ่งที่จะส่งให้ดูเฉย ๆ
+     ⚠️ **รับ id ไม่ใช่เลขที่ใบ** (QT-…) — คนละตัวกัน ส่งผิดจะไม่เจอใบหรือไปโดนใบอื่น
+     ⚠️ **ห้ามต่อเข้าปุ่มบนจอจนกว่าจะทดสอบกับใบหลายบรรทัดก่อน** — ยังไม่รู้ว่า
+        การส่ง list ไปทับ จะทำให้บรรทัดที่ไม่ได้ส่งหายไหม (ดูคำเตือนเต็มใน zort-write.mjs) */
+    if (url.searchParams.get("quotedit") || url.searchParams.get("quotvoid")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const w = await import("../lib/zort-write.mjs");
+      const r = url.searchParams.get("quotvoid")
+        ? await w.zortVoidQuotation(body)
+        : await w.zortEditQuotation(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     /* ชั้นที่สาม: ตรวจว่า "คำกล่าวอ้างเรื่องความสามารถของ ZORT" ในโค้ด **ยังจริงอยู่ไหม**
        ⚠️ ต่างจาก ?zortnoapi=1 ซึ่งแค่ **อ่านสิ่งที่เราเขียนไว้** — ตัวนี้ **ยิงของจริงไปเทียบ**
        ⚠️ ห้ามเอาไปใส่ prebuild (ของนอกบ้านห้ามทำให้ build ตก) · ให้รันหลัง deploy ทุกครั้ง
