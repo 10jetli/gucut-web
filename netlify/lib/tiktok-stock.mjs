@@ -204,7 +204,10 @@ export async function tiktokStockCompare() {
 /** บรรทัดเดียวสำหรับ Telegram รายวัน (คืน null ถ้ายังเทียบไม่ได้) */
 export async function tiktokStockLine() {
   const c = await tiktokStockCompare().catch(() => null);
-  if (!c || c.skip || c.note) return null;
+  /* 🔴 **ห้ามเช็ค `c.note` ตรงนี้อีก** — เหตุผลเดียวกับใน shopee-stock.mjs
+      `note` = คำอธิบายผลที่สำเร็จ · `skip` = ทำต่อไม่ได้ **ห้ามปนกัน**
+      ฝั่ง Lazada โดนคลาสนี้จริงแล้ว 6 ก.ย. 2569 (แผนดันสต็อกไม่เคยถูกคำนวณ) */
+  if (!c || c.skip) return null;
   return (
     `🎵 สต็อก TikTok vs คลัง (${c.day}): ตรง ${c.same} · ต่าง ${c.diffCount} · ` +
     `คลังไม่รู้จัก ${c.missing} จาก ${c.tiktokSkus} รหัสที่ลงขายอยู่`
