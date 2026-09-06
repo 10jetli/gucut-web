@@ -744,9 +744,25 @@ async function route(req, context) {
       const byMonth = url.searchParams.get("by") === "month";
       const items = byMonth
         ? await coreQuery(
+            /* 🔴 **แยก "ที่ได้เงินแล้ว" ออกจาก "ยังไม่จ่าย" ในคิวรีเดียว** (6 ก.ย. 2569)
+                กราฟนี้ตัดใบยกเลิกออกแล้วก็จริง **แต่ยังรวมใบที่ยังไม่จ่าย**
+                วัดจริง 1 ม.ค.–6 ก.ย. 2569: กราฟรวม ฿5,624,334 · ในนั้นเป็นใบยังไม่จ่ายราว ฿564,000
+                เกือบทั้งหมดคือซากออเดอร์ค้างจ่ายจากร้าน Shopify ที่ปิดไปแล้ว **ไม่มีวันได้เงิน**
+                ⇒ กราฟรายได้รายเดือนที่เจ้าของร้านดู **สูงเกินจริงมาตลอด**
+                ⚠️ **ไม่หักออกจาก `amount` เอง** — จอที่เทียบกับเลขเดิมจะเพี้ยนทันที
+                   ให้ตัวเลขแยกไป แล้วให้จอเลือกใช้ (กติกาเดียวกับ totalPaidAmount)
+                ⚠️ ทำในคิวรีเดิมด้วย CASE **ไม่ยิงคิวรีที่สอง** — โควตา D1 มีจำกัด
+                   และเลขสองชุดที่มาจากคนละคิวรี มีโอกาสไม่ตรงกันเองโดยไม่มีใครรู้
+                ⚠️ ใช้ `LIKE 'pending%'` (ขึ้นต้นด้วย) **ห้ามใช้ `%ending%`**
+                   ผมเขียน `%ending%` ไปรอบแรกแล้วจับได้ตอนอ่านซ้ำ — นั่นคือการ
+                   **จัดประเภทด้วยสตริงย่อย** ซึ่งเป็นข้อห้ามของโปรเจกต์นี้
+                   (สถานะที่ลงท้ายด้วย ending คำอื่นจะถูกนับเป็น "ยังไม่จ่าย" เงียบ ๆ)
+                   ค่าจริงที่พบในฐานตอนนี้: Success · Voided · Pending */
             `SELECT substr(o.order_date,1,7) AS month,
                     SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
-                    COUNT(DISTINCT o.id) AS orders
+                    ROUND(COALESCE(SUM(CASE WHEN o.status LIKE 'pending%' THEN oi.amount ELSE 0 END),0),2) AS unpaidAmount,
+                    COUNT(DISTINCT o.id) AS orders,
+                    COUNT(DISTINCT CASE WHEN o.status LIKE 'pending%' THEN o.id END) AS unpaidOrders
              FROM order_items oi JOIN orders o ON o.id = oi.order_id
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
@@ -773,6 +789,14 @@ async function route(req, context) {
         from,
         to,
         applied: { sku: sku || null, limit, by: byMonth ? "month" : null },
+        /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
+            คำตอบชุดอื่นในไฟล์นี้ประกาศขอบเขตครบ (storeScope · shipStatusScope · freshnessNote)
+            แต่ **ตัวเลขเงินซึ่งสำคัญที่สุดกลับไม่มีอะไรกำกับ** เพราะมันดู "ชัดอยู่แล้ว"
+            ⇒ ความชัดที่ไม่ได้เขียนไว้ คือที่ที่คนสองคนเข้าใจต่างกันโดยไม่รู้ตัว */
+        amountScope: byMonth
+          ? "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** · " +
+            "อยากได้เฉพาะเงินที่ได้รับจริง ให้ใช้ amount − unpaidAmount ของเดือนนั้น"
+          : "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** (รายตัวยังไม่ได้แยกยอดค้างจ่าย)",
         items,
       });
     }
