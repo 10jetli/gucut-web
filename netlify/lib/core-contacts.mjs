@@ -53,7 +53,31 @@ export async function syncContacts(opt = {}) {
       headers: h,
       signal: AbortSignal.timeout(12000),
     }).catch(() => null);
-    const data = res?.ok ? await res.json().catch(() => null) : null;
+    /* 🔴 **แยก "ถามไม่สำเร็จ" ออกจาก "หน้านี้ไม่มีของแล้ว"** (แก้ 6 ก.ย. 2569)
+        เดิมล้มแล้วได้ `data = null` ⇒ `list = []` ⇒ `break` ⇒ ตอบ `nextPage: null`
+        ซึ่งตามเอกสารหัวฟังก์ชันแปลว่า **"ครบแล้ว"**
+        ⇒ ล้มที่หน้าแรกของรอบ = ตอบว่า "ซิงก์เสร็จ · ผู้ติดต่อทั้งหมด 0 ราย · ไม่มีอะไรเหลือ"
+          ทั้งที่ ZORT มีอยู่สองหมื่นกว่าราย · เป็นบั๊กตัวเดียวกับที่ zort-stock.mjs
+          เขียนคำเตือนไว้ยาวเหยียด แต่ไฟล์นี้ไม่ได้ทำตาม
+        ⇒ ถามไม่สำเร็จ = **ออกพร้อมธง** ให้ผู้เรียกไล่ต่อจากหน้าเดิมได้ ห้ามบอกว่าครบ */
+    const ok = !!res?.ok;
+    const data = ok ? await res.json().catch(() => null) : null;
+    if (!ok || !data) {
+      return {
+        fetched: rows.length,
+        written: 0,
+        total,
+        startPage,
+        /* ชี้กลับที่หน้าที่ล้ม ไม่ใช่หน้าถัดไป — หน้านั้นยังไม่ได้ของ */
+        nextPage: page,
+        failedAtPage: page,
+        error: `ถาม ZORT หน้า ${page} ไม่สำเร็จ (${res ? `HTTP ${res.status}` : "ต่อไม่ติด"}) — ยังไม่ครบ`,
+        /* ⚠️ ทิ้งแถวที่ได้มาก่อนหน้าในรอบนี้ **โดยตั้งใจ** (written: 0)
+            เพราะ `nextPage` ชี้กลับที่หน้าที่ล้ม ⇒ รอบหน้าจะดึงซ้ำตั้งแต่หน้านั้น
+            และการเขียนเป็น upsert ตาม id ⇒ ดึงซ้ำไม่ทำให้ข้อมูลเพี้ยน
+            เสียแค่การถามซ้ำไม่กี่หน้า แลกกับโค้ดที่มีทางออกทางเดียว ซึ่งพลาดยากกว่า */
+      };
+    }
     if (total === null) total = num(data?.count);
     const list = Array.isArray(data?.list) ? data.list : [];
     if (!list.length) break;

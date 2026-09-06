@@ -30,6 +30,8 @@ export async function syncProducts() {
 
   const all = [];
   // ดึงหลายหน้าพร้อมกันทีละก้อน — Netlify ให้ฟังก์ชันรอผลได้ 26 วินาที
+  /* ได้มาไม่ครบเพราะมีหน้าล้ม — ต้องติดไปกับผล ห้ามให้รอบที่ขาดหน้าตาเหมือนรอบเต็ม */
+  let partial = false;
   for (let start = 1; start <= MAX_PAGES; start += 5) {
     const batch = [start, start + 1, start + 2, start + 3, start + 4].filter((n) => n <= MAX_PAGES);
     const pages = await Promise.all(
@@ -42,13 +44,25 @@ export async function syncProducts() {
           .catch(() => null)
       )
     );
+    /* 🔴 **แยก "หน้านี้ล้ม" ออกจาก "หน้านี้ไม่มีของแล้ว"** (แก้ 6 ก.ย. 2569)
+        `.then(r => r.ok ? r.json() : null).catch(() => null)` ให้ `null` ทั้งสองกรณี
+        ⇒ หน้าใดหน้าหนึ่งในก้อนล้ม ⇒ `got` ไม่เต็ม ⇒ `break` ⇒ **หยุดกวาดกลางคัน**
+          แล้วตอบ `{fetched: 800, written: 12}` หน้าตาเหมือนรอบปกติทุกประการ
+        ⇒ สต็อก/ราคาของสินค้าสองพันตัวค้างเก่า **โดยไม่มีใครรู้**
+        (ไม่ถึงกับลบข้อมูล เพราะแถวที่ไม่ได้มาก็แค่ไม่ถูกอัปเดต — แต่ "ไม่ถูกอัปเดตเงียบ ๆ"
+         คือสิ่งที่กระจกทั้งอันมีไว้เพื่อป้องกัน)
+        ⇒ `null` = ล้ม (ติดธง) · `{list: []}` = จบจริง (หยุดได้)
+        แบบอย่างที่ทำถูกอยู่แล้วในไฟล์นี้: zort-stock.mjs */
     let got = 0;
+    let pagesFailed = 0;
     for (const p of pages) {
+      if (p === null) { pagesFailed++; continue; }
       const list = Array.isArray(p?.list) ? p.list : [];
       got += list.length;
       all.push(...list);
     }
-    if (got < batch.length * PAGE) break; // หน้าสุดท้ายแล้ว
+    if (pagesFailed) { partial = true; break; }   // ล้ม = หยุด แต่ **ติดธงไว้**
+    if (got < batch.length * PAGE) break;         // หน้าสุดท้ายแล้ว (จบจริง)
   }
   if (!all.length) return { error: "ดึงสินค้าจาก ZORT ไม่ได้" };
 
@@ -156,7 +170,15 @@ export async function syncProducts() {
          weight=excluded.weight, updated_at=excluded.updated_at`
     );
   }
-  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
+  /* ⚠️ `partial: true` = **รอบนี้กวาดไม่ครบเพราะมีหน้าล้ม** ไม่ใช่ "ZORT มีเท่านี้"
+      สินค้าที่ไม่ได้มายังใช้ค่าเก่าอยู่ในกระจก ⇒ สต็อก/ราคาอาจค้าง
+      จอ/ผู้เรียกต้องเขียนบอก ห้ามแสดงเป็นรอบซิงก์ปกติ */
+  return {
+    fetched: rows.length,
+    written: changed.length,
+    skipped: rows.length - changed.length,
+    partial,
+  };
 }
 
 /* ══ สินค้าเป็นชุด (Bundle) ══════════════════════════════════════════
