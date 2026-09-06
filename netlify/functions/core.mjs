@@ -255,8 +255,8 @@ async function route(req, context) {
       return json(r, r.ok ? 200 : 400);
     }
     if (url.searchParams.get("zortnoapi")) {
-      const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT } = await import("../lib/zort-write.mjs");
-      return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT, items: ZORT_NO_API });
+      const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD } = await import("../lib/zort-write.mjs");
+      return json({ ok: true, noApi: ZORT_NO_API, canButNotBuilt: ZORT_CAN_BUT_NOT_BUILT, method: ZORT_PROBE_METHOD, items: ZORT_NO_API });
     }
 
     if (url.searchParams.get("move")) {
