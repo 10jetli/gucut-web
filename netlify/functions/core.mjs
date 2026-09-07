@@ -442,6 +442,12 @@ async function route(req, context) {
           (เดารูปแล้วอ่านไม่เจอ จะกลายเป็น "ไม่มีข้อมูล" ซึ่งชวนให้สรุปผิดว่ายังต้องคัดมือ) */
     /* อ่านรายละเอียดใบเสนอราคารายใบ — ใช้ตรวจว่าข้อมูลเข้าถูกช่องจริงไหมหลังยิงสร้าง
        ⚠️ "ยิงผ่าน" ≠ "ข้อมูลเข้าถูกช่อง" — ใบแรกที่สร้างจริงได้ยอดเงิน ฿0 ทั้งที่ส่งราคาไป */
+    /* วินิจฉัย: ของที่ลูกค้าคืนแยกรายรหัส — ใช้ตอบว่าแผนสั่งซื้อสั่งเกินรหัสไหน
+       (แผนคิดจากใบขายโดยไม่หักของคืน · ยอดรวมเล็กแต่รายรหัสอาจไม่เล็ก) */
+    if (url.searchParams.get("returnskus")) {
+      const { returnsBySku } = await import("../lib/core-purchases.mjs");
+      return okJson(await returnsBySku(url.searchParams.get("days")));
+    }
     if (url.searchParams.get("quotation")) {
       const { getQuotationDetail } = await import("../lib/core-purchases.mjs");
       return okJson(await getQuotationDetail(url.searchParams.get("quotation"),

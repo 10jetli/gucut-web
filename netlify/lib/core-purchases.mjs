@@ -610,6 +610,85 @@ export async function getQuotationDetail(id, raw = false) {
   };
 }
 
+/**
+ * รวมของที่ลูกค้าคืน **แยกรายรหัสสินค้า** — ใช้ตอบว่าแผนสั่งซื้อสั่งเกินรหัสไหนบ้าง
+ *
+ * ⚠️ **ทำไมต้องมี**: `reorderPlan` คิดความต้องการจากใบขาย **โดยไม่หักของที่ลูกค้าคืน**
+ *    ⇒ รหัสที่ถูกคืนบ่อยจะถูกสั่งเกิน · ยอดรวมทั้งร้านเล็ก (90 วัน = ฿26,399)
+ *    **แต่ยอดรวมไม่ใช่เกณฑ์ที่ถูก** (ฝั่งจอชี้ 7 ก.ย. 2569) — ต้องดู **รายรหัสที่แย่ที่สุด**
+ *    รหัสไหนที่ของคืนเกิน ~10% ของยอดขายตัวเอง = แผนสั่งเกินสำหรับรหัสนั้นอย่างมีนัย
+ *
+ * ⚠️ ใบคืนในรายการรวม **ไม่มีรายการสินค้าติดมา** ⇒ ต้องดึงรายใบ
+ *    ⇒ จำกัดด้วยช่วงวัน (ค่าเริ่มต้น 90 วัน ≈ 45 ใบ) **ไม่ใช่ดึงทั้ง 682 ใบ**
+ *    ⚠️ ใบไหนดึงไม่ได้ = **นับแยกไว้ที่ `unreadable` ห้ามนับเป็นศูนย์**
+ *       ไม่งั้นรหัสที่อยู่ในใบนั้นจะดูเหมือนไม่เคยถูกคืน ซึ่งตรงข้ามกับความจริง
+ */
+export async function returnsBySku(daysRaw = 90) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const days = Math.max(7, Math.min(365, num(daysRaw) || 90));
+  const since = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
+
+  const res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=200`, {
+    headers: h,
+    signal: AbortSignal.timeout(15000),
+  }).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  const list = Array.isArray(data?.list) ? data.list : null;
+  if (!list) return { error: "ดึงรายการใบคืนจาก ZORT ไม่ได้" };
+
+  const inRange = list.filter(
+    (r) => String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10) >= since
+  );
+
+  /* ยิงรายละเอียดพร้อมกัน — ห้ามไล่เรียงกัน (เพดานเวลาฟังก์ชัน 26 วิ) */
+  const details = await Promise.all(
+    inRange.slice(0, 120).map(async (r) => {
+      const id = r?.id;
+      if (!id) return null;
+      const d = await fetch(`${BASE}/ReturnOrder/GetReturnOrderDetail?id=${encodeURIComponent(id)}`, {
+        headers: h,
+        signal: AbortSignal.timeout(12000),
+      })
+        .then((x) => (x.ok ? x.json() : null))
+        .catch(() => null);
+      return { number: r?.number, at: String(r?.returnorderdateString ?? "").slice(0, 10), d };
+    })
+  );
+
+  const bySku = new Map();
+  let unreadable = 0;
+  let lines = 0;
+  for (const got of details) {
+    if (!got) { unreadable += 1; continue; }
+    const rows = Array.isArray(got.d?.list) ? got.d.list : null;
+    if (!rows) { unreadable += 1; continue; }
+    for (const it of rows) {
+      const sku = String(it?.sku ?? "").trim();
+      if (!sku) continue;
+      lines += 1;
+      const cur = bySku.get(sku) ?? { sku, qty: 0, docs: 0, name: String(it?.name ?? "") };
+      cur.qty += num(it?.number ?? it?.qty);
+      cur.docs += 1;
+      bySku.set(sku, cur);
+    }
+  }
+
+  return {
+    days,
+    since,
+    docsInRange: inRange.length,
+    docsRead: inRange.length - unreadable,
+    /* 🔴 ห้ามกลืน — ใบที่อ่านไม่ได้แปลว่า "ยังไม่รู้" ไม่ใช่ "ไม่มีของคืน" */
+    unreadable,
+    lines,
+    skus: [...bySku.values()].sort((a, b) => b.qty - a.qty),
+    note:
+      "จำนวนที่คืน **ยังไม่ได้เทียบกับยอดขายรายรหัส** — ตัวเลขนี้ตอบแค่ 'คืนกี่ชิ้น' " +
+      "เอาไปหารด้วยยอดขายของรหัสนั้นเองถึงจะรู้ว่าแผนสั่งเกินมีนัยไหม",
+  };
+}
+
 export async function listReturnOrders(limit = 50) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
