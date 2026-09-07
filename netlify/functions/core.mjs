@@ -56,6 +56,12 @@ try {
 }
 
 export default async function handler(req, context) {
+  /* ⚠️ ตัวส่งงานเบื้องหลังให้ Netlify ถือไว้ — ใช้กับ "คืนของเก่าก่อนแล้วรีเฟรช"
+     ไม่มี `context.waitUntil` (รันในเครื่อง/รุ่นเก่า) ⇒ คืน undefined
+     แล้วตัวที่รับไปจะ **ทำแบบเดิมคือรอ** ไม่ใช่ปล่อยงานลอย
+     🔴 ห้ามเปลี่ยนเป็น `(p) => p` เด็ดขาด — นั่นคือปล่อยลอยเต็มตัว */
+  const waitUntil =
+    typeof context?.waitUntil === "function" ? context.waitUntil.bind(context) : undefined;
   return withD1Meter(() => route(req, context));
 }
 
@@ -635,6 +641,7 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           marketplaces: url.searchParams.get("marketplaces"),
+          waitUntil,
         })),
       });
     }
@@ -2358,6 +2365,7 @@ async function route(req, context) {
           offset: p.get("offset"),
           soldDays: p.get("soldDays"),
           marketplaces: url.searchParams.get("marketplaces"),
+          waitUntil,
         })),
       });
     }

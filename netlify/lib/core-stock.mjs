@@ -361,7 +361,9 @@ export async function listStock(o = {}) {
   if (o.marketplaces) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
-      const ml = await marketplaceListings({ fresh: Boolean(o.fresh) });
+      /* ส่ง waitUntil ต่อ ⇒ เปิดโหมด "คืนของเก่าก่อน" ตอนแคชหมดอายุ
+         **นี่คือจอที่วัดได้ 16.5 วิ** (7 ก.ย. 2569) — ไม่ส่ง = กลับไปช้าเหมือนเดิม */
+      const ml = await marketplaceListings({ fresh: Boolean(o.fresh), waitUntil: o.waitUntil });
       /* ⚠️ **รหัสบนแพลตฟอร์มเป็นระดับตัวเลือก แต่คลังเราเก็บรหัสฐาน**
           Shopee ขาย `00369-54T` `00369-25T` … ส่วนคลังมีแค่ `00369`
           จับคู่ตรง ๆ = ไม่ขึ้นโลโก้สักแถวเดียว (เจอจริงตอนยิงรอบแรก 3 ก.ย. 2569

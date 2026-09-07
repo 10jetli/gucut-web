@@ -42,6 +42,12 @@ const flagsFor = (checked = []) =>
 const CACHE_KEY = "marketplace-listings";
 const TTL_MS = 30 * 60e3; // ครึ่งชั่วโมง — จอนี้เปิดบ่อย ไม่ควรยิงแพลตฟอร์มทุกครั้ง
 
+/* เพดาน "เก่าได้แค่ไหน" ของโหมดคืนของเก่าไปก่อน (ดู `waitUntil` ข้างล่าง)
+   ⚠️ ต้องมีเพดาน ไม่ใช่คืนของเก่าไม่จำกัดอายุ — ถ้าแพลตฟอร์มล่มยาว
+      จอจะโชว์ผังการลงขายของเมื่อวานว่าเป็นของวันนี้ตลอดกาลโดยไม่มีอะไรฟ้อง
+   ⚠️ เกินเพดานแล้ว **ยอมให้ช้า** ดีกว่าบอกผิด */
+const MAX_STALE_MS = 6 * 3600e3;
+
 /** รหัสที่กำลังลงขายบน Shopee */
 async function shopeeSkus() {
   const { shopeeListedSkus } = await import("./shopee-stock.mjs");
@@ -115,6 +121,41 @@ let inFlight = null;
 export async function marketplaceListings(opts = {}) {
   if (opts.fresh) return _marketplaceListings(opts);   // ขอของสดต้องได้ของสด ไม่แชร์ใบเก่า
   if (inFlight) return inFlight;
+
+  /* ── คืนของเก่าไปก่อน แล้วค่อยไปเอาของใหม่เบื้องหลัง ──────────────
+     **ปัญหาที่แก้** (วัดจริง 7 ก.ย. 2569): แคชอายุครึ่งชั่วโมงกันได้เฉพาะคน
+     ที่มาตอนแคชยังอุ่น · **คนที่มาถึงตอนแคชหมดอายุพอดีต้องจ่ายค่ากวาดเต็ม**
+     วัดจากจอสินค้าจริง: `/api/web/core` ใบนั้นกิน **16.5 วินาที** ใบเดียว
+     (อีกใบในหน้าเดียวกัน 1.2 วิ) ⇒ จอค้างที่ "กำลังโหลด..." ~13 วิ
+     ⇒ ผิดคำสั่งเจ้าของร้านตรง ๆ ว่า **"สินค้า กับ สินค้าชุด ห้ามโหลดช้า"**
+     ⇒ และตัวกวาดหน้าจอของฝั่งจอถ่ายภาพก่อนถึงเวลานั้น เลยรายงานว่า **"จอว่าง"**
+        ซึ่งพาไปไล่บั๊กผิดตัว (ของจริงคือช้า ไม่ใช่พัง)
+
+     🔴 **ต้องมี `waitUntil` เท่านั้นถึงจะเปิดโหมดนี้** — Netlify แช่แข็งฟังก์ชัน
+        ทันทีที่ตอบเสร็จ · ปล่อย promise ลอย = งานรีเฟรชตายกลางทางแบบเงียบ
+        แล้วแคชจะไม่มีวันถูกเขียนใหม่ ⇒ **ทุกคนกินของเก่าตลอดกาล**
+        ไม่มี `waitUntil` ให้ทำแบบเดิม (รอ) — ช้าดีกว่าเงียบแล้วผิด
+     ⚠️ ของที่คืนไปติดธง `stale: true` + `staleMs` เสมอ **จอต้องขึ้นบอก**
+        ห้ามเอาของเก่าไปแสดงเหมือนของสด */
+  if (typeof opts.waitUntil === "function") {
+    const cached = await getStore("gucut-coupon")
+      .get(CACHE_KEY, { type: "json" })
+      .catch(() => null);
+    const age = cached?.at ? Date.now() - cached.at : Infinity;
+    if (cached?.at && age >= TTL_MS && age < MAX_STALE_MS) {
+      /* ส่งงานรีเฟรชให้ waitUntil ถือไว้ — ไม่ใช่ปล่อยลอย
+         `.catch` กันไว้เพราะงานเบื้องหลังพังไม่ควรทำให้คำขอนี้พังตาม */
+      opts.waitUntil(marketplaceListings({}).catch(() => null));
+      return {
+        ...cached,
+        unreliable: flagsFor(cached.checked || []),
+        cached: true,
+        stale: true,
+        staleMs: age,
+      };
+    }
+  }
+
   /* ⚠️ ใช้ try/finally ใน IIFE **ห้ามใช้ run.finally(...) แล้วปล่อยลอย**
       Netlify แช่แข็งฟังก์ชันทันทีที่ตอบเสร็จ ⇒ งานที่ไม่ถูก await ตายกลางทางแบบเงียบ
       (และ scripts/check-floating.mjs จะทำให้ build ตกด้วย ซึ่งถูกแล้ว) */
