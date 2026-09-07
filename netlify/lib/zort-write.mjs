@@ -711,6 +711,117 @@ export const ZORT_WEBHOOK = {
  *  ⚠️ ยังไม่รู้ว่าเป็น "เอกสารบัญชี" หรือ "ไฟล์แนบ/สลิป" ⇒ **ห้ามแกะฟิลด์ตามชื่อที่เดาเอง**
  *     ส่งของดิบ + รายชื่อช่องที่ได้จริงกลับไป ให้คนดูตัดสินเอง
  *     (เดารูปแล้วอ่านไม่เจอ จะกลายเป็น "ไม่มีข้อมูล" ซึ่งชวนสรุปผิดว่ายังต้องคัดมือ) */
+/**
+ * พิสูจน์: เอกสาร 694 ใบ (ใบเสร็จ/ใบส่งสินค้า/ใบกำกับภาษี) **สร้างใหม่จากกระจกเราได้ไหม**
+ *
+ * ที่มา: ตัวไฟล์ PDF โหลดไม่ได้ (linkurl คืน HTML — พิสูจน์แล้วทั้งรหัส API และ
+ * เบราว์เซอร์ล็อกอิน · สาเหตุยังไม่รู้) ⇒ ทางรอดคือ "สร้างใหม่จากข้อมูลต้นทาง"
+ * ซึ่งจะทำได้ก็ต่อเมื่อ **ทุกใบอ้างอิงถึงใบขาย/ใบสั่งซื้อที่กระจกเรามีครบพร้อมรายการสินค้า**
+ *
+ * วิธีพิสูจน์: ดึงสารบัญครบทุกหน้า → แยก referencenumber → เทียบกับ D1 สามชั้น
+ *   ① หัวใบมีไหม (orders / purchase_orders) ② มีรายการสินค้าไหม (order_items /
+ *   purchase_order_items) — หัวใบเฉย ๆ สร้างใบเสร็จไม่ได้
+ * ⚠️ ใบที่เทียบไม่ติด = **นับแยกพร้อมรายชื่อ ห้ามกลืน** — คำตอบ "สร้างได้ 90%"
+ *   ที่ไม่บอกว่า 10% คือใบไหน ใช้ตัดสินใจไม่ได้
+ * ⚠️ นี่พิสูจน์แค่ "ข้อมูลพอ" — **ไม่ได้พิสูจน์ว่าหน้าตา/เลขที่เอกสารตรงกับใบเดิม**
+ *   และใบกำกับภาษีที่ออกให้ลูกค้าแล้วมีประเด็นกฎหมายแยกต่างหาก (ต้องถามเจ้าของร้าน/PEAK)
+ */
+export async function zortDocCoverage() {
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+
+  /* ── ① สารบัญครบทุกหน้า — หน้าแรกเอา count ที่เหลือยิงพร้อมกัน ── */
+  const per = 100;
+  const page1 = await fetch(`${BASE}/Document/GetDocuments?limit=${per}&page=1`, {
+    headers, signal: AbortSignal.timeout(15000),
+  }).then((r) => r.json()).catch(() => null);
+  const total = num(page1?.count);
+  const rows = Array.isArray(page1?.list) ? [...page1.list] : [];
+  if (!total || !rows.length) return { ok: false, error: "อ่านสารบัญเอกสารจาก ZORT ไม่ได้" };
+  const lastPage = Math.min(12, Math.ceil(total / per));
+  const rest = await Promise.all(
+    Array.from({ length: lastPage - 1 }, (_, i) =>
+      fetch(`${BASE}/Document/GetDocuments?limit=${per}&page=${i + 2}`, {
+        headers, signal: AbortSignal.timeout(15000),
+      }).then((r) => r.json()).catch(() => null)
+    )
+  );
+  for (const d of rest) if (Array.isArray(d?.list)) rows.push(...d.list);
+  /* 🔴 ดึงไม่ครบต้องบอก — coverage ที่คิดจากสารบัญไม่ครบคือคำตอบผิดที่ดูสมบูรณ์ */
+  const indexComplete = rows.length >= total;
+
+  const docs = rows.map((r) => ({
+    header: String(r?.header ?? ""),
+    doc: String(r?.documentnumber ?? ""),
+    ref: String(r?.referencenumber ?? "").trim(),
+    reftype: num(r?.referencetype),
+  }));
+
+  /* ── ② เทียบกับกระจก — ถามเป็นชุด IN(...) ไม่ถามทีละใบ (โควตา D1) ── */
+  const { coreQuery, coreReady } = await import("./coredb.mjs");
+  if (!coreReady()) return { ok: false, error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const refs = [...new Set(docs.map((d) => d.ref).filter(Boolean))];
+  const chunks = [];
+  for (let i = 0; i < refs.length; i += 80) chunks.push(refs.slice(i, i + 80));
+
+  const inOrders = new Set();       // หัวใบขายมี
+  const withOrderItems = new Set(); // และมีรายการสินค้า
+  const inPOs = new Set();
+  const withPOItems = new Set();
+  for (const c of chunks) {
+    const ph = c.map(() => "?").join(",");
+    const [o, oi, p2, pi] = await Promise.all([
+      coreQuery(`SELECT number FROM orders WHERE number IN (${ph})`, c),
+      coreQuery(
+        `SELECT DISTINCT o.number AS number FROM orders o
+         JOIN order_items i ON i.order_id = o.id WHERE o.number IN (${ph})`, c),
+      coreQuery(`SELECT number FROM purchase_orders WHERE number IN (${ph})`, c),
+      coreQuery(
+        `SELECT DISTINCT number FROM purchase_order_items WHERE number IN (${ph})`, c),
+    ]);
+    for (const r of o ?? []) inOrders.add(String(r.number));
+    for (const r of oi ?? []) withOrderItems.add(String(r.number));
+    for (const r of p2 ?? []) inPOs.add(String(r.number));
+    for (const r of pi ?? []) withPOItems.add(String(r.number));
+  }
+
+  /* ── ③ ตัดเกรดรายใบ ── */
+  let full = 0, headerOnly = 0, missing = 0, noRef = 0;
+  const missingList = [], headerOnlyList = [];
+  for (const d of docs) {
+    if (!d.ref) { noRef += 1; missingList.push(`${d.doc} (${d.header} — ไม่มีเลขอ้างอิง)`); continue; }
+    const hasHead = inOrders.has(d.ref) || inPOs.has(d.ref);
+    const hasLines = withOrderItems.has(d.ref) || withPOItems.has(d.ref);
+    if (hasHead && hasLines) full += 1;
+    else if (hasHead) { headerOnly += 1; headerOnlyList.push(`${d.doc} → ${d.ref}`); }
+    else { missing += 1; missingList.push(`${d.doc} → ${d.ref} (${d.header})`); }
+  }
+
+  return {
+    ok: true,
+    totalDocs: total,
+    indexed: rows.length,
+    /* 🔴 สารบัญไม่ครบ = ตัวเลขทุกตัวข้างล่างเป็นของ "เท่าที่เห็น" ห้ามอ่านเป็นทั้งกอง */
+    indexComplete,
+    refsDistinct: refs.length,
+    สร้างใหม่ได้: full,
+    หัวใบมีแต่ไม่มีรายการ: headerOnly,
+    เทียบไม่ติด: missing,
+    ไม่มีเลขอ้างอิง: noRef,
+    headerOnlyList: headerOnlyList.slice(0, 40),
+    missingList: missingList.slice(0, 40),
+    verdict:
+      !indexComplete
+        ? "ยังตอบไม่ได้ — สารบัญดึงมาไม่ครบ"
+        : missing + noRef + headerOnly === 0
+          ? "ทุกใบมีข้อมูลต้นทางครบในกระจก (หัวใบ+รายการสินค้า) ⇒ สร้างใหม่ได้เชิงข้อมูล"
+          : `สร้างใหม่ได้ ${full}/${docs.length} ใบ · ที่เหลือดูรายชื่อใน missingList/headerOnlyList`,
+    note:
+      "พิสูจน์แค่ 'ข้อมูลพอสร้าง' — ไม่ได้พิสูจน์ว่าหน้าตา/เลขที่ตรงใบเดิม " +
+      "และใบกำกับภาษีที่ออกให้ลูกค้าแล้วมีประเด็นกฎหมายแยก ต้องถามเจ้าของร้าน/PEAK",
+  };
+}
+
 export async function zortDocumentsRead(limitRaw) {
   const headers = creds();
   if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
