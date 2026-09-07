@@ -339,6 +339,43 @@ const STOREFRONT = [
         : { state: "ผ่าน", why: "ไม่ได้ปิดทั้งเว็บ" };
     },
   },
+  {
+    id: "ตารางจอรับคืนมีจริงบน D1",
+    where: "netlify/lib/core-returns.mjs (ensureTables)",
+    claim: "ตาราง returns_desk / _items / _takeovers ถูกสร้างบนฐานจริงแล้ว และเส้นกล่องใบคืนอ่านได้",
+    async check() {
+      /* 🔴 **ชั้นเดียวที่จับ "SQL ถูกไวยากรณ์ SQLite แต่ D1 ไม่ยอมรับ" ได้**
+          ในเครื่องเราทดสอบกับ sqlite3 ได้ครบ 50 ข้อ — แต่นั่นพิสูจน์แค่ไวยากรณ์
+          ไม่ได้พิสูจน์ว่า D1 (ซึ่งมีข้อจำกัดของตัวเอง) ยอมสร้างตารางให้จริง
+          โดยเฉพาะ `ALTER TABLE ... ADD COLUMN` ที่รันกับตารางที่เพิ่งถูกสร้างในคำขอเดียวกัน */
+      const { status, body } = await get("list=returns-inbox&limit=1");
+      const wrong = wrongEndpoint(body, ["rows", "total", "qFields", "error"]);
+      if (wrong) return { state: "ตรวจไม่ได้", why: wrong };
+      if (body.error || body.skip) {
+        const msg = String(body.error || body.skip);
+        if (/no such table|no such column/i.test(msg)) {
+          return { state: "ไม่ผ่าน", why: `🔴 ตารางยังไม่ถูกสร้างบน D1: ${msg}` };
+        }
+        /* ⚠️ "ยังไม่ deploy" ต้องอ่านออกทันที ไม่ใช่ให้คนอ่านไปเดาเอาจากข้อความ error
+           — คนที่รันตัวนี้ตอนสามทุ่มต้องรู้ในวินาทีเดียวว่าต้องรอ deploy หรือต้องไปแก้อะไร */
+        return /ไม่รู้จัก/.test(msg)
+          ? { state: "ตรวจไม่ได้", why: `เส้นยังไม่ขึ้นเว็บจริง (ท่อตอบ "${msg}") ⇒ รอ deploy แล้วรันซ้ำ` }
+          : { state: "ตรวจไม่ได้", why: `ท่อตอบ error: ${msg}` };
+      }
+      if (!Array.isArray(body.rows)) {
+        return { state: "ตรวจไม่ได้", why: `HTTP ${status} แต่ไม่มี rows เป็นอาร์เรย์` };
+      }
+      /* ⚠️ **ตารางว่างไม่ใช่ความล้มเหลว** — ร้านอาจยังไม่มีใครคืนของสักใบ
+          สิ่งที่ข้อนี้พิสูจน์คือ "ถามฐานแล้วฐานตอบได้" ไม่ใช่ "มีข้อมูล"
+          (ถ้าตารางไม่มีจริง D1 จะตอบ error ไม่ใช่ตอบอาร์เรย์ว่าง) */
+      const fields = Array.isArray(body.qFields) ? body.qFields.length : 0;
+      return {
+        state: "ผ่าน",
+        why: `ฐานตอบได้ · ใบคืนในระบบ ${body.total ?? body.rows.length} ใบ` +
+          (fields ? ` · ช่องค้น ${fields} ช่อง` : " · ⚠️ ไม่มี qFields (ท่อรุ่นเก่า)"),
+      };
+    },
+  },
 ];
 
 const ICON = { ผ่าน: "✅", ไม่ผ่าน: "🔴", ตรวจไม่ได้: "⚪", ต้องดูด้วยตา: "👁" };
