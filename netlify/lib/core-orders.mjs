@@ -91,8 +91,14 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source }) 
     params.push(status);
   }
   if (q) {
-    where.push("(number LIKE ? OR customer LIKE ?)");
-    params.push(`%${q}%`, `%${q}%`);
+    /* tracking_no เพิ่ม 7 ก.ย. 2569 (ฝั่งจอขอ) — ผัง ZORT ให้แพ็คด้วยการยิง
+       เลขพัสดุจากใบปะหน้าเข้าช่องค้นหา ⇒ ค้นไม่เจอ = จอแพ็คสินค้าใช้แทนไม่ได้จริง
+       ✅ ยิงพิสูจน์ก่อนอ้าง (7 ก.ย. 2569 · ตัวอย่าง 200 ใบ 1 ส.ค.–6 ก.ย.):
+          ช่องทางออนไลน์มีเลขครบ 100% ทุกใบ (Shopee 62/62 · Lazada 43/43 ·
+          TikTok 12/12 · FB 9/9 · LINE 1/1) · ใบที่ไม่มีเลขเป็น POS ล้วน 73/73
+          = ขายหน้าร้านรับของเลย **ไม่มีขนส่งจริง ไม่ใช่ข้อมูลขาด** */
+    where.push("(number LIKE ? OR customer LIKE ? OR tracking_no LIKE ?)");
+    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
   }
   if (!includeCancelled) where.push(CANCEL_SQL);
   return { sql: where.join(" AND "), params };
