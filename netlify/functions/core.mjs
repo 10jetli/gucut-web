@@ -747,6 +747,11 @@ async function route(req, context) {
       const { getTransferDetail } = await import("../lib/core-purchases.mjs");
       return okJson(await getTransferDetail(url.searchParams.get("transfer")));
     }
+    /* ดึงใบคืนจาก ZORT ลงกระจก — ปิดเอกสาร 6 ใบใน doccoverage + เป็นขานอกระบบของจอรับคืน */
+    if (url.searchParams.get("syncreturns")) {
+      const { syncReturnOrders } = await import("../lib/core-purchases.mjs");
+      return okJson(await syncReturnOrders({ pages: url.searchParams.get("pages") }));
+    }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
       return okJson(await listReturnOrders(url.searchParams.get("limit")));

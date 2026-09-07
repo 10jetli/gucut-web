@@ -753,6 +753,137 @@ export async function returnsBySku(daysRaw = 90) {
   };
 }
 
+/** ตารางใบคืนสินค้าในกระจก — สร้างครั้งเดียวแล้วจำไว้ (แบบเดียวกับ purchase_orders)
+ *
+ * ⚠️ **ทำไมกระจกต้องมีใบคืน** (7 ก.ย. 2569 · เจ้าของร้านสั่งทำงานต่อกลางคืน)
+ *  1. ปิดเอกสาร 6 ใบใน `?doccoverage=1` ที่อ้างใบคืนแล้วเทียบไม่ติดเพราะเราไม่มีตาราง
+ *  2. **จอรับคืน (returns) ต้องใช้เป็น "ขานอกระบบ"** — ผลเวทีถก #4: ตัววัดที่เก็บแต่ในจอ
+ *     ตาบอดต่อ "คนเลิกใช้จอ" ⇒ ต้องมีขาที่นับจาก ZORT ซึ่งเกิดจากงานที่ร้านทำอยู่แล้ว
+ *  3. เทียบยอดคืนรายวันสองฝั่งได้ (สูตรเดียวกับกระจกออเดอร์)
+ *
+ * ⚠️ `number` เป็น PRIMARY KEY — เลขใบคืนของ ZORT ไม่ซ้ำ
+ *    แต่ **ห้ามใช้ `reference` เป็นคีย์** เพราะเป็นเลขออเดอร์แพลตฟอร์ม ซ้ำได้ข้ามใบ
+ */
+let returnTableReady = false;
+async function ensureReturnTable() {
+  if (returnTableReady) return;
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS return_orders (
+       number TEXT PRIMARY KEY, reference TEXT, customer TEXT,
+       amount REAL NOT NULL DEFAULT 0, status TEXT, warehouse TEXT,
+       return_date TEXT, paid TEXT, updated_at TEXT)`
+  );
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret_date ON return_orders(return_date)`);
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret_ref ON return_orders(reference)`);
+  returnTableReady = true;
+}
+
+/**
+ * ดึงใบคืนจาก ZORT ลงกระจก — เขียนเฉพาะใบที่เปลี่ยนจริง (โควตา D1)
+ *
+ * ⚠️ ZORT `GetReturnOrders` ให้ทีละ 200 ใบและ**เรียงใหม่ไปเก่า** ⇒ ต้องไล่หน้า
+ *    ไม่ใช่ขอ limit ใหญ่ ๆ ครั้งเดียว · เพดานหน้าไว้กันวนไม่รู้จบ ชนแล้ว**ต้องบอก**
+ *    ห้ามเงียบแล้วรายงานเหมือนดึงครบ (บทเรียนเดิมของ zortDocumentsRead)
+ * ⚠️ ยิงหน้า 2 เป็นต้นไปพร้อมกัน — ไล่เรียงกันจะชนเพดานเวลาฟังก์ชัน 26 วิ
+ */
+export async function syncReturnOrders(opt = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const h = headers();
+  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  await ensureReturnTable();
+
+  const per = 200;
+  const MAX_PAGES = Math.max(1, Math.min(30, num(opt.pages) || 12));
+  const page = async (n) =>
+    fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=${per}&page=${n}`, {
+      headers: h,
+      signal: AbortSignal.timeout(15000),
+    })
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null);
+
+  const first = await page(1);
+  const total = num(first?.count);
+  const rows = Array.isArray(first?.list) ? [...first.list] : null;
+  /* 🔴 ดึงหน้าแรกไม่ได้ = "ยังไม่รู้" ห้ามเขียนทับกระจกด้วยความว่าง
+     (บทเรียน syncPurchases 7 ก.ย.: อ่านล้มแล้วตีเป็น "ไม่มีบรรทัด" จนเขียนทับทั้งกอง) */
+  if (!rows) return { error: "ดึงใบคืนหน้าแรกจาก ZORT ไม่ได้ — ไม่แตะกระจก" };
+
+  const lastPage = Math.min(MAX_PAGES, Math.ceil(total / per) || 1);
+  const rest = await Promise.all(
+    Array.from({ length: Math.max(0, lastPage - 1) }, (_, i) => page(i + 2))
+  );
+  let pagesFailed = 0;
+  for (const d of rest) {
+    if (Array.isArray(d?.list)) rows.push(...d.list);
+    else pagesFailed += 1;
+  }
+  const hitPageCap = Math.ceil(total / per) > MAX_PAGES;
+
+  /* กันซ้ำข้ามหน้า — ข้อมูลขยับระหว่างไล่หน้าได้ */
+  const seen = new Set();
+  const uniq = [];
+  for (const r of rows) {
+    const numTxt = String(r?.number ?? "").trim();
+    if (!numTxt || seen.has(numTxt)) continue;
+    seen.add(numTxt);
+    uniq.push(r);
+  }
+
+  /* อ่านของเดิมมาเทียบก่อนเขียน — การอ่านถูกกว่าการเขียนมากบน D1 */
+  const prevRows = (await coreQuery(
+    `SELECT number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders`
+  ).catch(() => null)) ?? [];
+  const prev = new Map(prevRows.map((r) => [String(r.number), r]));
+
+  let written = 0, skipped = 0;
+  for (const r of uniq) {
+    const row = {
+      number: String(r?.number ?? ""),
+      reference: String(r?.reference ?? ""),
+      customer: String(r?.customername ?? ""),
+      amount: num(r?.amount),
+      status: String(r?.status ?? ""),
+      warehouse: String(r?.warehousename ?? ""),
+      return_date: String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10),
+      paid: String(r?.paymentstatus ?? r?.paymentStatus ?? ""),
+    };
+    const old = prev.get(row.number);
+    const same =
+      old &&
+      String(old.reference ?? "") === row.reference &&
+      String(old.customer ?? "") === row.customer &&
+      num(old.amount) === row.amount &&
+      String(old.status ?? "") === row.status &&
+      String(old.warehouse ?? "") === row.warehouse &&
+      String(old.return_date ?? "") === row.return_date &&
+      String(old.paid ?? "") === row.paid;
+    if (same) { skipped += 1; continue; }
+    await coreQuery(
+      `INSERT INTO return_orders (number, reference, customer, amount, status, warehouse, return_date, paid, updated_at)
+       VALUES (?,?,?,?,?,?,?,?,datetime('now'))
+       ON CONFLICT(number) DO UPDATE SET
+         reference=excluded.reference, customer=excluded.customer, amount=excluded.amount,
+         status=excluded.status, warehouse=excluded.warehouse, return_date=excluded.return_date,
+         paid=excluded.paid, updated_at=datetime('now')`,
+      [row.number, row.reference, row.customer, row.amount, row.status, row.warehouse, row.return_date, row.paid]
+    );
+    written += 1;
+  }
+
+  return {
+    ok: true,
+    zortTotal: total,
+    fetched: uniq.length,
+    written,
+    skipped,
+    /* 🔴 ทั้งสองธงนี้ห้ามกลืน — ชนเพดาน/หน้าล้ม = "ยังไม่ครบ" ไม่ใช่ "ครบแล้ว" */
+    hitPageCap,
+    pagesFailed,
+    complete: !hitPageCap && pagesFailed === 0 && uniq.length >= total,
+  };
+}
+
 export async function listReturnOrders(limit = 50) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
