@@ -26,6 +26,15 @@ const REF_PREFIX = "zwrite/";
     `null` · `""` · `"1,200"` (มีลูกน้ำ) ล้วนกลายเป็น 0 เงียบ ๆ ⇒ สินค้าขึ้น ZORT ราคา ฿0
     และแก้ทีหลังไม่ได้เพราะ ZORT ไม่เปิด Update API ให้ใบซื้อ
     ⇒ คืน null เมื่ออ่านไม่ออก แล้วให้ผู้เรียกตีกลับเป็น error */
+/* ตัวแปลงเลขแบบไม่พลาดเป็น NaN — ใช้ใน zortDocCoverage
+   ⚠️ เพิ่ม 7 ก.ย. 2569 หลังยิงจริงแล้วเจอ ReferenceError "num is not defined"
+   (โรคเดียวกับ waitUntil เมื่อเช้า: ชื่อที่ไม่มีอยู่จริง build ผ่านฉลุย พังตอนรัน
+   — รอบนี้ตาข่าย "ยิงของจริงหลัง deploy" จับเองก่อนมีใครใช้จอ) */
+const num = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
 const numOrNull = (v) => {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(String(v).replace(/,/g, "").trim());
