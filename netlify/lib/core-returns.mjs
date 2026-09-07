@@ -294,11 +294,27 @@ export async function listReturnsInbox({ q = "", limit = 50, offset = 0 } = {}) 
     if (!byId.has(i.return_id)) byId.set(i.return_id, []);
     byId.get(i.return_id).push(i);
   }
+  /* ประวัติการรับช่วงต้องมากับกล่องด้วย — ข้อสังเคราะห์เวที #2 คือ
+     "ทุกการรับช่วงโผล่บนจอแอดมินเป็นรายการแยก" ⇒ ถ้าส่งเฉพาะตอนเปิดใบเดี่ยว
+     แผงรายการรับช่วงของแอดมินจะ**ว่างตลอดกาล** แล้วดูเหมือนไม่เคยมีใครแย่งใบเลย
+     ซึ่งคือภาพที่ตรงข้ามกับความจริงพอดี (ฝั่งจอชี้เอง 8 ก.ย. 2569) */
+  const byTk = new Map();
+  if (rows.length) {
+    const ids = rows.map((r) => esc(r.return_id)).join(",");
+    const tks = await coreQuery(
+      `SELECT return_id, at, from_staff, to_staff, reason, note FROM returns_desk_takeovers
+        WHERE return_id IN (${ids}) ORDER BY return_id, id`
+    );
+    for (const t of tks) {
+      if (!byTk.has(t.return_id)) byTk.set(t.return_id, []);
+      byTk.get(t.return_id).push(t);
+    }
+  }
   /* ⚠️ **บอกไปเลยว่า q ค้นช่องไหน** — ฝั่งจอทักว่าสัญญาไม่เคยระบุ เลยต้องเดาหรือเลิกใช้
      เขียนไว้ในเอกสารก็ได้ แต่เอกสาร**เก่าค้างได้เงียบ ๆ** ส่วนค่านี้มาจากรายการเดียว
      กับที่ WHERE ใช้จริง ⇒ วันที่มีคนเพิ่ม/ลดช่องค้น จอรู้ทันทีโดยไม่ต้องมีใครไปตามแก้ */
   return {
-    rows: rows.map((r) => shape(r, byId.get(r.return_id) || [], null)),
+    rows: rows.map((r) => shape(r, byId.get(r.return_id) || [], byTk.get(r.return_id))),
     total, limit: lim, offset: off, qFields: Q_FIELDS,
   };
 }

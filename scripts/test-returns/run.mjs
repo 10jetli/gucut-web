@@ -139,6 +139,9 @@ console.log("\n⑬ กล่องใบคืน");
 const inbox = await R.listReturnsInbox({});
 ok(inbox.total >= 5 && Array.isArray(inbox.rows), "กล่องอ่านได้", inbox.total);
 ok(!("reconHeartbeatAt" in inbox), "ไม่มีงานเทียบจริง ⇒ ไม่ส่ง heartbeat ปลอมให้จอเขียว");
+const withTk = (await R.listReturnsInbox({})).rows.find((r) => r.returnId === r4.returnId);
+ok(withTk?.takeovers?.length === 1 && withTk.takeovers[0].to === "สมหญิง",
+  "ประวัติรับช่วงมากับกล่องด้วย (ไม่งั้นแผงแอดมินว่างตลอดกาล)", withTk?.takeovers);
 const found = await R.listReturnsInbox({ q: "SO-001" });
 ok(found.rows.length >= 2, "ค้นด้วยเลขใบขายเจอ", found.rows.length);
 
