@@ -56,16 +56,21 @@ try {
 }
 
 export default async function handler(req, context) {
-  /* ⚠️ ตัวส่งงานเบื้องหลังให้ Netlify ถือไว้ — ใช้กับ "คืนของเก่าก่อนแล้วรีเฟรช"
-     ไม่มี `context.waitUntil` (รันในเครื่อง/รุ่นเก่า) ⇒ คืน undefined
-     แล้วตัวที่รับไปจะ **ทำแบบเดิมคือรอ** ไม่ใช่ปล่อยงานลอย
-     🔴 ห้ามเปลี่ยนเป็น `(p) => p` เด็ดขาด — นั่นคือปล่อยลอยเต็มตัว */
-  const waitUntil =
-    typeof context?.waitUntil === "function" ? context.waitUntil.bind(context) : undefined;
   return withD1Meter(() => route(req, context));
 }
 
 async function route(req, context) {
+  /* ⚠️ ตัวส่งงานเบื้องหลังให้ Netlify ถือไว้ — ใช้กับ "คืนของเก่าก่อนแล้วรีเฟรช"
+     ไม่มี `context.waitUntil` (รันในเครื่อง/รุ่นเก่า) ⇒ คืน undefined
+     แล้วตัวที่รับไปจะ **ทำแบบเดิมคือรอ** ไม่ใช่ปล่อยงานลอย
+     🔴 ห้ามเปลี่ยนเป็น `(p) => p` เด็ดขาด — นั่นคือปล่อยลอยเต็มตัว
+     🔴 **ต้องประกาศในฟังก์ชันเดียวกับจุดที่ใช้** — ตอน deploy แรกประกาศไว้ใน
+        `handler` แต่จุดเรียกอยู่ใน `route()` ⇒ ReferenceError ทุกคำขอที่ขอ
+        marketplaces=1 · จอสินค้า+สินค้าชุด**พังบนเว็บจริง** เจ้าของร้านเปิดเจอเอง
+        (7 ก.ย. 2569 · พังอยู่ ~4 นาที) · `node --check` กับ build ผ่านฉลุยทั้งคู่
+        เพราะมันเป็นแค่ชื่อที่ยังไม่ถูก resolve จนกว่าจะรันถึง */
+  const waitUntil =
+    typeof context?.waitUntil === "function" ? context.waitUntil.bind(context) : undefined;
   /* ⚡ **`?ping=1` — เส้นเบาที่สุด มีไว้ "ปลุกเครื่อง" ล่วงหน้าเท่านั้น** (ฝั่งจอขอมา 6 ก.ย. 2569)
       ไม่แตะฐานข้อมูล · ไม่แตะที่เก็บข้อมูล · ไม่โหลดโมดูลเพิ่ม · ตอบทันที
 
