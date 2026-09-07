@@ -674,6 +674,46 @@ export async function returnsBySku(daysRaw = 90) {
     }
   }
 
+  /* ── เทียบกับยอดขายของรหัสนั้นเอง — ขั้นนี้คือขั้นที่ตอบคำถามจริง ──
+     ⚠️ ยอดคืนดิบตอบไม่ได้ว่า "มีนัยไหม" · 192 ชิ้นบนรหัสที่ขาย 20,000 กับ
+        192 บนรหัสที่ขาย 300 คือคนละเรื่องกันคนละโลก
+     ⚠️ ต้องกันช่วงวัน **เดียวกัน** กับที่นับของคืน ไม่งั้นตัวหารกับตัวตั้งคนละขอบเขต
+        (ดู [[numbers-need-scope]] — โดนมาแล้ว 3 ครั้งในวันเดียว) */
+  const CANCEL =
+    `o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'`;
+  const soldRows = await coreQuery(
+    `SELECT oi.sku AS sku, SUM(oi.qty) AS qty
+     FROM order_items oi JOIN orders o ON o.id = oi.order_id
+     WHERE o.order_date >= ? AND ${CANCEL}
+     GROUP BY oi.sku`,
+    [since]
+  ).catch(() => null);
+
+  /* 🔴 สามสถานะ: ดึงไม่ได้ ≠ ขายศูนย์ — [[three-states-not-two]]
+     ดึงยอดขายไม่ได้แล้วเขียน sold:0 ⇒ อัตราคืนกลายเป็น "อนันต์" ทุกรหัส
+     ⇒ ดูเหมือนพังทั้งร้าน ทั้งที่แค่ query ล้ม */
+  const soldOk = Array.isArray(soldRows);
+  const soldBy = new Map(
+    (soldOk ? soldRows : []).map((r) => [String(r.sku ?? ""), num(r.qty)])
+  );
+
+  const skus = [...bySku.values()]
+    .map((r) => {
+      const sold = soldOk ? (soldBy.get(r.sku) ?? 0) : null;
+      return {
+        ...r,
+        sold,
+        /* อัตราคืน = คืน ÷ ขาย · null เมื่อยังไม่รู้ยอดขาย หรือรหัสนั้นไม่มียอดขายในกระจก
+           ⚠️ ขาย 0 แต่คืนมี = **ไม่ใช่ 100%** แต่คือ "ของที่ขายก่อนช่วงนี้" หรือกระจกขาด
+              ⇒ ติดธง `noSales` ให้เห็น ห้ามคิดเป็นอัตรา */
+        pct: soldOk && sold > 0 ? Math.round((r.qty / sold) * 1000) / 10 : null,
+        noSales: soldOk && !(sold > 0),
+      };
+    })
+    .sort((a, b) => (b.pct ?? -1) - (a.pct ?? -1) || b.qty - a.qty);
+
+  const bad = skus.filter((r) => (r.pct ?? 0) >= 10);
+
   return {
     days,
     since,
@@ -682,10 +722,18 @@ export async function returnsBySku(daysRaw = 90) {
     /* 🔴 ห้ามกลืน — ใบที่อ่านไม่ได้แปลว่า "ยังไม่รู้" ไม่ใช่ "ไม่มีของคืน" */
     unreadable,
     lines,
-    skus: [...bySku.values()].sort((a, b) => b.qty - a.qty),
+    /* 🔴 ดึงยอดขายไม่ได้ ⇒ ทุก pct เป็น null ⇒ **ห้ามสรุปว่าไม่มีรหัสไหนเกิน 10%** */
+    soldReadable: soldOk,
+    skus,
+    overThreshold: bad.map((r) => r.sku),
+    verdict: !soldOk
+      ? "ยังตอบไม่ได้ — ดึงยอดขายรายรหัสจากกระจกไม่สำเร็จ"
+      : bad.length
+        ? `มี ${bad.length} รหัสที่ของคืนเกิน 10% ของยอดขายตัวเอง ⇒ แผนสั่งซื้อสั่งเกินสำหรับรหัสพวกนี้`
+        : "ไม่มีรหัสไหนที่ของคืนเกิน 10% ของยอดขายตัวเอง ⇒ แผนสั่งซื้อไม่ได้สั่งเกินอย่างมีนัย",
     note:
-      "จำนวนที่คืน **ยังไม่ได้เทียบกับยอดขายรายรหัส** — ตัวเลขนี้ตอบแค่ 'คืนกี่ชิ้น' " +
-      "เอาไปหารด้วยยอดขายของรหัสนั้นเองถึงจะรู้ว่าแผนสั่งเกินมีนัยไหม",
+      "ตัวตั้ง (ของคืน) มาจาก ZORT · ตัวหาร (ยอดขาย) มาจากกระจกของเรา — **คนละแหล่ง** " +
+      "ช่วงวันบังคับให้ตรงกันแล้ว แต่ถ้ากระจกขาดใบ อัตราจะสูงเกินจริง ไม่ใช่ต่ำเกินจริง",
   };
 }
 
