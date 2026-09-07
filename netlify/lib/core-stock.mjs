@@ -381,6 +381,12 @@ export async function listStock(o = {}) {
         // ⚠️ ช่องทางที่ตอบมาแล้วแต่เลขยังผิด — จอต้องขึ้นเตือนคร่อมโลโก้ ห้ามปล่อยให้ดูปกติ
         marketplacesUnreliable: ml.unreliable,
         marketplacesFailed: ml.failed,
+        /* ธง "ของเก่าระหว่างรีเฟรช" — โผล่เฉพาะตอนแคชหมดอายุแล้วคืนของเก่าไปก่อน
+           🔴 เกือบพลาด (7 ก.ย. 2569): ใส่ธงไว้ใน marketplaceListings แล้ว **แต่ก้อน mk
+              นี้คัดฟิลด์เอง ธงเลยถูกทิ้งกลางทาง จอไม่มีวันเห็น** — ฝั่งจอถามหาชื่อฟิลด์
+              ก่อนทำจอถึงจับได้ · เพิ่มฟิลด์ที่ชั้นในแล้วต้องตามดูทุกชั้นที่คัดฟิลด์ต่อ
+           จอขึ้นว่าเป็นของเก่ากี่นาทีจาก marketplacesAt ได้เลย (เวลาที่กวาดจริงครั้งล่าสุด) */
+        ...(ml.stale ? { marketplacesStale: true, marketplacesStaleMs: ml.staleMs } : {}),
       };
     } catch (e) {
       mk.marketplacesError = String(e?.message || e).slice(0, 160);
