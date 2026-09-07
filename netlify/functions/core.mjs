@@ -482,6 +482,58 @@ async function route(req, context) {
       const r = await applyMoves(moves);
       return json(r.error ? { ok: false, ...r } : { ok: true, ...r }, r.error ? 400 : 200);
     }
+    /* ── จอรับคืนสินค้าหน้าร้าน (7 ก.ย. 2569) ────────────────────────────────
+       สัญญาอยู่ที่ ~/gucut-next/lib/returns-api.ts **ที่เดียว** — เปลี่ยนรูปคำตอบต้องแก้คู่กัน
+         GET  ?list=returns-inbox[&q=]      กล่องใบคืน (จอแอดมิน)
+         GET  ?return=<returnId>            ใบเดียว (resume หลังเน็ตหลุด)
+         GET  ?returnphoto=<returnId>&i=<n> รูปยืนยัน (ผ่านรหัสหลังร้าน)
+         POST ?return-receive=1             ขั้นรับ — เซิร์ฟเวอร์ออก returnId + ล็อกใบขาย
+         POST ?return-grade=1               ประเมิน **และยิงเข้าสต็อกในคำขอเดียว**
+         POST ?return-photo=1               อัปรูปทีละใบ
+         POST ?return-takeover=1            ขอรับช่วงใบที่คนก่อนถือค้าง
+       ⚠️ **ตัวตนพนักงานมาจาก header `x-staff-pin` เท่านั้น ห้ามอ่านชื่อจาก body** */
+    if (
+      url.searchParams.get("return") ||
+      url.searchParams.get("returnphoto") ||
+      url.searchParams.get("list") === "returns-inbox" ||
+      [...url.searchParams.keys()].some((k) => k.startsWith("return-"))
+    ) {
+      const R = await import("../lib/core-returns.mjs");
+      const out = (r) => json(r?.error || r?.skip ? { ok: false, ...r } : { ok: true, ...r },
+        r?.error || r?.skip ? 400 : 200);
+
+      if (url.searchParams.get("list") === "returns-inbox") {
+        return out(await R.listReturnsInbox({
+          q: url.searchParams.get("q"),
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        }));
+      }
+      if (url.searchParams.get("returnphoto")) {
+        const img = await R.getReturnPhoto(
+          url.searchParams.get("returnphoto"), url.searchParams.get("i")
+        );
+        /* ⚠️ ส่ง data URL เป็น JSON ไม่ใช่ไฟล์รูป — จอต้องดึงผ่าน adminFetch
+           เพราะรหัสหลังร้านอยู่ในหัวข้อความ ไม่ได้อยู่ในคุกกี้ เปิด URL ตรง ๆ ในแท็บใหม่ไม่ได้
+           (กติกาเดียวกับรูปลงเวลาและใบ ลซ.๒) */
+        return img ? json({ ok: true, dataUrl: img }) : json({ ok: false, error: "ไม่พบรูป" }, 404);
+      }
+      if (url.searchParams.get("return")) {
+        return out(await R.getReturn(url.searchParams.get("return")));
+      }
+
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const staff = await R.staffFromReq(req);
+
+      if (url.searchParams.get("return-receive")) return out(await R.receiveReturn(body, staff));
+      if (url.searchParams.get("return-grade")) return out(await R.gradeReturn(body, staff));
+      if (url.searchParams.get("return-photo")) return out(await R.saveReturnPhoto(body, staff));
+      if (url.searchParams.get("return-takeover")) return out(await R.takeoverReturn(body, staff));
+      return json({ error: "ไม่รู้จักเส้นนี้ของจอรับคืน" }, 400);
+    }
+
     // ขายหน้าร้าน (POS) เข้าคลังเงาตรง ๆ ไม่ผ่าน ZORT
     //   POST   /api/core?sale=1   body {items:[{sku,name,qty,price}], day?, number?, customer?}
     //   DELETE /api/core?salevoid=<เลขที่ใบ>   (เปลี่ยนสถานะเป็น Voided ไม่ลบ)
