@@ -759,25 +759,39 @@ export async function zortDocCoverage() {
   /* 🔴 ดึงไม่ครบต้องบอก — coverage ที่คิดจากสารบัญไม่ครบคือคำตอบผิดที่ดูสมบูรณ์ */
   const indexComplete = rows.length >= total;
 
+  /* ⚠️ **ต้องเทียบด้วยสองคีย์** (บทเรียนยิงจริงรอบแรก 7 ก.ย. 2569):
+      รอบแรกเทียบแค่ referencenumber ↔ orders.number ได้ผลสุดขั้ว 4/694
+      เพราะใบขายมาร์เก็ตเพลส referencenumber เป็นเลขออเดอร์ของแพลตฟอร์ม
+      (เช่น 564792687800680 ของ Lazada) ไม่ใช่เลขใบ ZORT
+      ⇒ คีย์หลักที่ถูกคือ **referenceid ↔ orders.id** (id ภายใน ZORT ทั้งคู่)
+      ([[new-columns-need-backfill]]: "ผลสุดขั้ว 0%/100% = เทียบผิดคีย์" — ตรงเป๊ะ) */
   const docs = rows.map((r) => ({
     header: String(r?.header ?? ""),
     doc: String(r?.documentnumber ?? ""),
     ref: String(r?.referencenumber ?? "").trim(),
+    refid: String(r?.referenceid ?? "").trim(),
     reftype: num(r?.referencetype),
+    year: String(r?.documentdate ?? "").slice(0, 4) || "?",
   }));
 
   /* ── ② เทียบกับกระจก — ถามเป็นชุด IN(...) ไม่ถามทีละใบ (โควตา D1) ── */
   const { coreQuery, coreReady } = await import("./coredb.mjs");
   if (!coreReady()) return { ok: false, error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const refs = [...new Set(docs.map((d) => d.ref).filter(Boolean))];
-  const chunks = [];
-  for (let i = 0; i < refs.length; i += 80) chunks.push(refs.slice(i, i + 80));
+  const refids = [...new Set(docs.map((d) => d.refid).filter(Boolean))];
+  const chunk = (arr) => {
+    const out = [];
+    for (let i = 0; i < arr.length; i += 80) out.push(arr.slice(i, i + 80));
+    return out;
+  };
 
-  const inOrders = new Set();       // หัวใบขายมี
+  const inOrders = new Set();       // หัวใบขายมี (เทียบด้วยเลขใบ)
   const withOrderItems = new Set(); // และมีรายการสินค้า
+  const inOrderIds = new Set();     // หัวใบขายมี (เทียบด้วย referenceid — คีย์หลัก)
+  const withOrderIdItems = new Set();
   const inPOs = new Set();
   const withPOItems = new Set();
-  for (const c of chunks) {
+  for (const c of chunk(refs)) {
     const ph = c.map(() => "?").join(",");
     const [o, oi, p2, pi] = await Promise.all([
       coreQuery(`SELECT number FROM orders WHERE number IN (${ph})`, c),
@@ -793,17 +807,34 @@ export async function zortDocCoverage() {
     for (const r of p2 ?? []) inPOs.add(String(r.number));
     for (const r of pi ?? []) withPOItems.add(String(r.number));
   }
+  for (const c of chunk(refids)) {
+    const ph = c.map(() => "?").join(",");
+    const [o, oi] = await Promise.all([
+      coreQuery(`SELECT id FROM orders WHERE id IN (${ph})`, c),
+      coreQuery(
+        `SELECT DISTINCT o.id AS id FROM orders o
+         JOIN order_items i ON i.order_id = o.id WHERE o.id IN (${ph})`, c),
+    ]);
+    for (const r of o ?? []) inOrderIds.add(String(r.id));
+    for (const r of oi ?? []) withOrderIdItems.add(String(r.id));
+  }
 
   /* ── ③ ตัดเกรดรายใบ ── */
   let full = 0, headerOnly = 0, missing = 0, noRef = 0;
   const missingList = [], headerOnlyList = [];
+  /* แยกใบที่เทียบไม่ติดตามปีเอกสาร — ตอบว่า "ติดเพราะกระจกประวัติสั้น" กี่ใบ */
+  const missingByYear = {};
   for (const d of docs) {
-    if (!d.ref) { noRef += 1; missingList.push(`${d.doc} (${d.header} — ไม่มีเลขอ้างอิง)`); continue; }
-    const hasHead = inOrders.has(d.ref) || inPOs.has(d.ref);
-    const hasLines = withOrderItems.has(d.ref) || withPOItems.has(d.ref);
+    if (!d.ref && !d.refid) { noRef += 1; missingList.push(`${d.doc} (${d.header} — ไม่มีเลขอ้างอิง)`); continue; }
+    const hasHead = inOrderIds.has(d.refid) || inOrders.has(d.ref) || inPOs.has(d.ref);
+    const hasLines = withOrderIdItems.has(d.refid) || withOrderItems.has(d.ref) || withPOItems.has(d.ref);
     if (hasHead && hasLines) full += 1;
     else if (hasHead) { headerOnly += 1; headerOnlyList.push(`${d.doc} → ${d.ref}`); }
-    else { missing += 1; missingList.push(`${d.doc} → ${d.ref} (${d.header})`); }
+    else {
+      missing += 1;
+      missingByYear[d.year] = (missingByYear[d.year] ?? 0) + 1;
+      missingList.push(`${d.doc} → ${d.ref} (${d.header} · ${d.year})`);
+    }
   }
 
   return {
@@ -817,6 +848,7 @@ export async function zortDocCoverage() {
     หัวใบมีแต่ไม่มีรายการ: headerOnly,
     เทียบไม่ติด: missing,
     ไม่มีเลขอ้างอิง: noRef,
+    เทียบไม่ติดแยกตามปี: missingByYear,
     headerOnlyList: headerOnlyList.slice(0, 40),
     missingList: missingList.slice(0, 40),
     verdict:
