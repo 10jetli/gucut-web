@@ -89,6 +89,12 @@ export const SELLER = {
   name: shopField("legalName"),
   nameEn: shopField("legalNameEn"),
   taxId: shopField("taxId"),
+  /* ช่องติดต่อ — ฝั่งจอขอ 7 ก.ย. 2569 (ฟอร์ม "ข้อมูลติดต่อ" ตามผัง ZORT Setting/Detail)
+     ⚠️ เบอร์/อีเมลนี้โชว์บนหน้าร้านสาธารณะอยู่แล้ว (ท้ายเว็บ + หน้านโยบาย) ไม่ใช่ของลับ
+     ⚠️ **ห้ามเติม address เข้ามาเด็ดขาด** — ตาข่าย strip+scan ใน gen-shop-data.mjs
+        จะทำ build ตกถ้าหลุด ซึ่งถูกแล้ว (ดู [[gucut-no-public-address]]) */
+  phone: shopField("phone"),
+  email: shopField("email"),
 };
 
 export const LICENSES = need("LICENSES", parseArray("LICENSES"));
