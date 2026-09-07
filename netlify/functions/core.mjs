@@ -531,6 +531,7 @@ async function route(req, context) {
       if (url.searchParams.get("return-grade")) return out(await R.gradeReturn(body, staff));
       if (url.searchParams.get("return-photo")) return out(await R.saveReturnPhoto(body, staff));
       if (url.searchParams.get("return-takeover")) return out(await R.takeoverReturn(body, staff));
+      if (url.searchParams.get("return-cancel")) return out(await R.cancelReturn(body, staff));
       return json({ error: "ไม่รู้จักเส้นนี้ของจอรับคืน" }, 400);
     }
 

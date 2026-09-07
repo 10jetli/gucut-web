@@ -25,6 +25,8 @@ const photoStore = () => getStore({ name: "gucut-returns", consistency: "strong"
 const OPEN_STATES = ["received", "graded", "move_failed"];
 const VERDICTS = new Set(["return_in", "damage"]);
 const TAKEOVER_REASONS = new Set(["shift-change", "unreachable", "other"]);
+// ช่องที่ q ของกล่องใบคืนค้น — **ส่งกลับไปกับคำตอบทุกครั้ง** จอจะได้ไม่ต้องเดา
+const Q_FIELDS = ["return_id", "ref", "order_number", "customer", "quarantine_no"];
 
 let ready = false;
 async function ensureTables() {
@@ -40,6 +42,7 @@ async function ensureTables() {
        unmatched_note TEXT, no_photo_reason TEXT,
        photo_count INTEGER NOT NULL DEFAULT 0,
        staff TEXT, locked_by TEXT, lock_since TEXT,
+       cancel_reason TEXT, cancelled_by TEXT, cancelled_at TEXT,
        created_at TEXT DEFAULT (datetime('now')),
        last_activity_at TEXT DEFAULT (datetime('now')))`
   );
@@ -60,6 +63,12 @@ async function ensureTables() {
        from_staff TEXT, to_staff TEXT, reason TEXT NOT NULL, note TEXT)`
   );
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_rdesk_tk ON returns_desk_takeovers(return_id)`);
+  /* ⚠️ ตารางอาจถูกสร้างไปแล้วตั้งแต่ก่อนมีสามคอลัมน์นี้ (D1 จริงสร้างรอบแรกไปแล้ว)
+     `CREATE TABLE IF NOT EXISTS` **ไม่เติมคอลัมน์ให้ตารางที่มีอยู่** ⇒ ต้อง ALTER ตามเสมอ
+     ล้มก็ข้าม (แปลว่ามีอยู่แล้ว) — นี่คือทางเดียวที่ schema จะตามทันโดยไม่ต้องลบตาราง */
+  for (const col of ["cancel_reason TEXT", "cancelled_by TEXT", "cancelled_at TEXT"]) {
+    await coreQuery(`ALTER TABLE returns_desk ADD COLUMN ${col}`).catch(() => {});
+  }
   ready = true;
 }
 
@@ -76,6 +85,22 @@ export async function staffFromReq(req) {
 
 const needStaff = (staff) =>
   staff ? null : { error: "ต้องใส่ PIN พนักงานก่อน (ใช้ PIN เดียวกับหน้าลงเวลา)" };
+
+/* ── ด่านล็อก: คนที่ไม่ได้ถือใบ **เขียนไม่ได้** ────────────────────────────────
+   🔴 **ทุกเส้นที่เขียนใบต้องผ่านตัวนี้ ยกเว้น takeover (ซึ่งมีไว้แย่งโดยเปิดเผย)**
+   บทเรียน 8 ก.ย. 2569: เดิมกันแค่ตอน `receive` ⇒ พนักงานอีกคนเปิดใบขึ้นมา
+   แล้วยิง `?return-grade=1` ตรง ๆ **ผ่านฉลุย ตอบ moved** ไม่มีบันทึกการรับช่วงเลย
+   = การแย่งเงียบที่ทั้งเวทีถกออกแบบมากันพอดี · ฝั่งจอจับได้ตอนยิงประกบ
+   ⇒ **ล็อกที่กันแค่ประตูบานแรก ไม่ใช่ล็อก** ประตูอื่นเปิดโล่งอยู่
+
+   คืน `blocked: true` (ไม่ใช่ `error`) โดยตั้งใจ — จอต้องได้ `lockedBy` ไปวาดแผงรับช่วงต่อ
+   ถ้าคืนเป็น error ตัวเรียกฝั่งจอจะ throw แล้ว**ข้อมูลว่าใครถืออยู่หายไปกับ Error**
+   ⚠️ `blocked` เป็นฟิลด์ความหมายเดียว ห้ามให้จอไปอ่านข้อความอธิบายเพื่อตัดสินใจแทน */
+function lockBlock(row, staff) {
+  const holder = row?.locked_by;
+  if (!holder || holder === staff.name) return null;
+  return { blocked: true, lockedBy: holder, lockSince: row.lock_since };
+}
 
 /* ── คงเหลือคืนได้ต่อ SKU ────────────────────────────────────────────────────
    ขายไปเท่าไหร่ ลบด้วยของที่ **ยืนยันว่าลงบัญชีแล้ว** (มี move_result)
@@ -213,6 +238,9 @@ function shape(row, items, takeovers) {
   if (row.created_at) doc.createdAt = row.created_at;
   if (row.last_activity_at) doc.lastActivityAt = row.last_activity_at;
   if (row.no_photo_reason) doc.noPhotoReason = row.no_photo_reason;
+  if (row.cancel_reason) doc.cancelReason = row.cancel_reason;
+  if (row.cancelled_by) doc.cancelledBy = row.cancelled_by;
+  if (row.cancelled_at) doc.cancelledAt = row.cancelled_at;
   doc.photoCount = Number(row.photo_count) || 0;
   if (takeovers?.length) {
     doc.takeovers = takeovers.map((t) => ({
@@ -245,9 +273,7 @@ export async function listReturnsInbox({ q = "", limit = 50, offset = 0 } = {}) 
   const off = Math.max(0, Number(offset) || 0);
   const term = String(q ?? "").trim();
   const where = term
-    ? `WHERE (return_id LIKE ${esc(`%${term}%`)} OR ref LIKE ${esc(`%${term}%`)}
-             OR order_number LIKE ${esc(`%${term}%`)} OR customer LIKE ${esc(`%${term}%`)}
-             OR quarantine_no LIKE ${esc(`%${term}%`)})`
+    ? `WHERE (${Q_FIELDS.map((f) => `${f} LIKE ${esc(`%${term}%`)}`).join(" OR ")})`
     : "";
   const rows = await coreQuery(
     `SELECT * FROM returns_desk ${where} ORDER BY last_activity_at DESC LIMIT ${lim} OFFSET ${off}`
@@ -268,7 +294,13 @@ export async function listReturnsInbox({ q = "", limit = 50, offset = 0 } = {}) 
     if (!byId.has(i.return_id)) byId.set(i.return_id, []);
     byId.get(i.return_id).push(i);
   }
-  return { rows: rows.map((r) => shape(r, byId.get(r.return_id) || [], null)), total, limit: lim, offset: off };
+  /* ⚠️ **บอกไปเลยว่า q ค้นช่องไหน** — ฝั่งจอทักว่าสัญญาไม่เคยระบุ เลยต้องเดาหรือเลิกใช้
+     เขียนไว้ในเอกสารก็ได้ แต่เอกสาร**เก่าค้างได้เงียบ ๆ** ส่วนค่านี้มาจากรายการเดียว
+     กับที่ WHERE ใช้จริง ⇒ วันที่มีคนเพิ่ม/ลดช่องค้น จอรู้ทันทีโดยไม่ต้องมีใครไปตามแก้ */
+  return {
+    rows: rows.map((r) => shape(r, byId.get(r.return_id) || [], null)),
+    total, limit: lim, offset: off, qFields: Q_FIELDS,
+  };
 }
 
 /* ── เลขกักของกอง unmatched ──────────────────────────────────────────────────
@@ -329,6 +361,7 @@ export async function receiveReturn(body, staff) {
          ${esc(body?.unmatchedNote ?? "")}, ${body?.noPhotoReason ? esc(body.noPhotoReason) : "NULL"},
          ${esc(staff.name)}, ${esc(staff.name)}, datetime('now'))`
     );
+    await fillNames(items, null);
     await insertItems(returnId, items);
     // 🔴 ใบ unmatched **ไม่เข้าสต็อก**จนกว่าแอดมินจะผูกใบขาย/อนุมัติ — ไม่มี remaining ให้บอก
     return { returnId, ref, state: "received", quarantineNo: qn };
@@ -363,6 +396,23 @@ export async function receiveReturn(body, staff) {
     };
   }
 
+  /* ── โควตาคืน: ตรวจตั้งแต่ **ขั้นรับ** ไม่ใช่ไปรอตกที่ขั้นประเมิน ──────────
+     เดิมผมปล่อยผ่านขั้นนี้แล้วไปดักที่ grade ด้วยเหตุผลว่า "ด่านจริงอยู่ที่จุดเขียน"
+     ⇒ ด่านนั้นทำงานถูก **แต่สร้างใบทางตัน**: รับ ×3 ทั้งที่คืนได้ 2
+       ใบนั้น grade ไม่มีวันผ่าน แก้จำนวนก็ไม่ได้ แล้วค้างเป็นใบเปิดของใบขายนั้นตลอดกาล
+       (ฝั่งจอเจอตอนยิงประกบ 8 ก.ย. 2569 — ด่านที่ถูกต้องแต่วางผิดที่ ก็สร้างของเสียได้)
+     ⇒ **ต้องมีทั้งสองด่าน**: ขั้นรับกันไม่ให้เปิดใบที่เดินต่อไม่ได้
+       ขั้นประเมินกันของที่เปลี่ยนไประหว่างทาง (คนอื่นคืนใบขายเดียวกันจนหมดโควตา)
+
+     ⚠️ **ไม่ใช้ `error`** — ของอยู่ในมือพนักงานที่เคาน์เตอร์แล้ว เขาต้องรู้ว่าทำอะไรต่อได้
+       ส่งตัวเลขไปให้จอเสนอทางออก: รับเท่าที่คืนได้ ส่วนที่เกินเปิดเป็น **ใบกักของ**
+       (unmatched) ให้แอดมินสางทีหลัง — ซึ่งเป็นเหตุผลที่กองกักของมีอยู่ตั้งแต่แรก */
+  const room = await remainingFor(orderId);
+  const over = items
+    .filter((it) => it.qty > (room[it.sku] ?? 0))
+    .map((it) => ({ sku: it.sku, ขอคืน: it.qty, คืนได้: room[it.sku] ?? 0 }));
+  if (over.length) return { overQuota: true, over, remaining: room, orderNumber: order.number };
+
   // ใบรอบสองของใบขายเดิม — ตั้งใจให้ ref ต่างกัน จะได้ไม่ถูกดัชนี UNIQUE กลืนเป็นใบเดิม
   const used = await coreQuery(
     `SELECT ref FROM returns_desk WHERE order_id = ${esc(orderId)}`
@@ -380,6 +430,7 @@ export async function receiveReturn(body, staff) {
        ${body?.noPhotoReason ? esc(body.noPhotoReason) : "NULL"},
        ${esc(staff.name)}, ${esc(staff.name)}, datetime('now'))`
   );
+  await fillNames(items, orderId);
   await insertItems(returnId, items);
   return {
     returnId,
@@ -387,6 +438,30 @@ export async function receiveReturn(body, staff) {
     state: "received",
     remaining: await remainingFor(orderId),
   };
+}
+
+/* เติมชื่อสินค้าให้บรรทัดที่จอไม่ได้ส่งชื่อมา — จอ inbox จะได้ไม่ขึ้นขีดเปล่า ๆ
+   เอาชื่อ **จากใบขาย** ก่อนเสมอ (ชื่อ ณ วันที่ขาย) แล้วค่อยถอยไปตารางสินค้า
+   ⚠️ ชื่อเป็นของประดับสำหรับให้คนอ่านออกเท่านั้น — **ทุกอย่างที่ตัดสินใจยังยึด sku**
+      ห้ามเอาชื่อไปจับคู่สินค้าเด็ดขาด ชื่อซ้ำกันได้และเปลี่ยนได้ตลอดเวลา */
+async function fillNames(items, orderId) {
+  const need = items.filter((it) => it.sku && !it.name);
+  if (!need.length) return;
+  const list = need.map((it) => esc(it.sku)).join(",");
+  const rows = orderId
+    ? await coreQuery(
+        `SELECT sku, name FROM order_items WHERE order_id = ${esc(orderId)} AND sku IN (${list})`
+      )
+    : [];
+  const found = new Map(rows.filter((r) => r.name).map((r) => [String(r.sku), r.name]));
+  const rest = need.filter((it) => !found.has(it.sku));
+  if (rest.length) {
+    const more = await coreQuery(
+      `SELECT sku, name FROM products WHERE sku IN (${rest.map((it) => esc(it.sku)).join(",")})`
+    );
+    for (const r of more) if (r.name && !found.has(String(r.sku))) found.set(String(r.sku), r.name);
+  }
+  for (const it of need) it.name = found.get(it.sku) || "";
 }
 
 async function insertItems(returnId, items) {
@@ -407,6 +482,11 @@ export async function gradeReturn(body, staff) {
   await ensureTables();
 
   const returnId = String(body?.returnId ?? "").trim();
+  const row = (
+    await coreQuery(`SELECT locked_by, lock_since FROM returns_desk WHERE return_id = ${esc(returnId)}`)
+  )[0];
+  const blocked = row && lockBlock(row, staff);
+  if (blocked) return blocked;                    // คนอื่นถือใบอยู่ — จอพาไปขอรับช่วงก่อน
   const doc = await loadDoc(returnId);
   if (!doc) return { error: `ไม่พบใบคืน ${returnId}` };
   if (doc.state === "cancelled") return { error: "ใบนี้ถูกยกเลิกไปแล้ว" };
@@ -529,9 +609,13 @@ export async function saveReturnPhoto(body, staff) {
   if (dataUrl.length > 3_000_000) return { error: "รูปใหญ่เกินไป — ย่อก่อนส่ง (≤1400px)" };
 
   const row = (
-    await coreQuery(`SELECT state FROM returns_desk WHERE return_id = ${esc(returnId)}`)
+    await coreQuery(
+      `SELECT state, locked_by, lock_since FROM returns_desk WHERE return_id = ${esc(returnId)}`
+    )
   )[0];
   if (!row) return { error: `ไม่พบใบคืน ${returnId}` };
+  const blocked = lockBlock(row, staff);
+  if (blocked) return blocked;      // รูปก็คือการเขียนใบ — คนที่ไม่ได้ถือใบแนบรูปไม่ได้
 
   const prefix = `img/${returnId}/`;
   await photoStore().set(`${prefix}${idx}`, dataUrl);
@@ -588,6 +672,54 @@ export async function takeoverReturn(body, staff) {
   await coreQuery(
     `UPDATE returns_desk SET locked_by = ${esc(staff.name)}, lock_since = datetime('now'),
        last_activity_at = datetime('now') WHERE return_id = ${esc(returnId)}`
+  );
+  return { doc: await loadDoc(returnId) };
+}
+
+/* ── ยกเลิกใบ ────────────────────────────────────────────────────────────────
+   สัญญามีสถานะ `cancelled` มาตั้งแต่ต้น **แต่ไม่มีใครทำเส้นให้ยกเลิก** —
+   ช่องที่หลุดจากสัญญาทั้งสองฝั่งพร้อมกัน เพิ่งเห็นตอนยิงประกบ (8 ก.ย. 2569)
+   บทเรียน: **สถานะที่ไม่มีทางไปถึง = สถานะที่ยังไม่มีจริง** ต่อให้เขียนไว้ในชนิดข้อมูลแล้ว
+
+   ใครยกเลิกได้: **คนที่ถือใบอยู่** — ไม่สร้างแนวคิดสิทธิ์ใหม่ให้มีสองระบบให้หลุด
+   คนอื่นอยากยกเลิกต้อง `takeover` ก่อน ⇒ ได้บันทึกว่าใครแย่งไปเพราะอะไรฟรี ๆ
+
+   🔴 **ใบที่ลงบัญชีสต็อกไปแล้วแม้ชิ้นเดียว ยกเลิกไม่ได้** — ยกเลิกไม่ได้ถอนของออกจากคลัง
+      ปล่อยให้ยกเลิกได้ = ใบหายจากจอ แต่ของยังบวกอยู่ในสต็อก **ไม่มีอะไรฟ้องเลย**
+      ทางที่ถูกคือให้แอดมินปรับยอดด้วยใบ `<ref>-fix`                                  */
+export async function cancelReturn(body, staff) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const no = needStaff(staff);
+  if (no) return no;
+  await ensureTables();
+
+  const returnId = String(body?.returnId ?? "").trim();
+  const reason = String(body?.reason ?? "").trim();
+  if (!reason) return { error: "ต้องบอกเหตุผลที่ยกเลิก" };
+
+  const row = (
+    await coreQuery(
+      `SELECT state, locked_by, lock_since FROM returns_desk WHERE return_id = ${esc(returnId)}`
+    )
+  )[0];
+  if (!row) return { error: `ไม่พบใบคืน ${returnId}` };
+  if (row.state === "cancelled") return { doc: await loadDoc(returnId), already: true };
+  const blocked = lockBlock(row, staff);
+  if (blocked) return blocked;
+
+  const moved = await coreQuery(
+    `SELECT COUNT(*) c FROM returns_desk_items
+      WHERE return_id = ${esc(returnId)} AND move_result IS NOT NULL`
+  );
+  if (Number(moved[0]?.c ?? 0) > 0) {
+    return { error: "ใบนี้ลงบัญชีสต็อกไปแล้ว ยกเลิกไม่ได้ — ให้แอดมินปรับยอดด้วยใบ <ref>-fix แทน" };
+  }
+
+  await coreQuery(
+    `UPDATE returns_desk SET state = 'cancelled', locked_by = NULL, lock_since = NULL,
+       cancel_reason = ${esc(reason)}, cancelled_by = ${esc(staff.name)},
+       cancelled_at = datetime('now'), last_activity_at = datetime('now')
+     WHERE return_id = ${esc(returnId)}`
   );
   return { doc: await loadDoc(returnId) };
 }

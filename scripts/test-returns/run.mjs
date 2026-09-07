@@ -85,11 +85,21 @@ ok(dm.length === 2, "ของชำรุดลงสองแถว (คืน
 ok(dm.reduce((s, r) => s + r.qty, 0) === 0, "ผลสุทธิต่อสต็อกที่ขายได้ = 0", dm);
 ok(dm.some((r) => r.reason === "damage" && r.qty === -2), "มีแถว damage -2 ให้ตามหาของเสียได้", dm);
 
-console.log("\n⑨ คืนเกินจำนวนที่ขาย");
-const r4 = await R.receiveReturn({ orderId: "o2", items: [{ sku: "SKU-A", qty: 5 }] }, A);
+/* ⑨ ด่านโควตาที่ **ขั้นประเมิน** — คนละด่านกับที่ขั้นรับ (ข้อ ⑮)
+   ด่านนี้มีไว้จับ "โลกเปลี่ยนระหว่างที่ใบยังค้างอยู่" ⇒ ต้องจำลองด้วยการทำให้โควตา
+   หดลงหลังเปิดใบแล้ว **ไม่ใช่รับเกินตั้งแต่แรก** (แบบนั้นด่านขั้นรับจับไปก่อน
+   แล้วด่านนี้จะไม่เคยถูกเรียกเลย — กับดัก [[test-must-hit-the-path]] เป๊ะ ๆ) */
+console.log("\n⑨ คืนเกินจำนวนที่ขาย (ตรวจซ้ำตอนประเมิน)");
+const r4 = await R.receiveReturn({ orderId: "o2", items: [{ sku: "SKU-A", qty: 1 }] }, A);
+ok(r4.returnId && !r4.overQuota, "รับในโควตาได้ปกติ", r4);
 await R.saveReturnPhoto({ returnId: r4.returnId, index: 0, dataUrl: img }, A);
+// จำลอง: มีอีกทางหนึ่งยืนยันคืน SKU-A ของใบขาย o2 ไปแล้ว ⇒ โควตาหมดระหว่างที่ใบนี้ค้าง
+await coreQuery(`INSERT INTO returns_desk (return_id,ref,state,unmatched,order_id)
+  VALUES ('ghost','RT-GHOST','moved',0,'o2')`);
+await coreQuery(`INSERT INTO returns_desk_items (return_id,line,sku,qty,verdict,move_result)
+  VALUES ('ghost',1,'SKU-A',1,'return_in','added')`);
 const g5 = await R.gradeReturn({ returnId: r4.returnId, items: [{ sku: "SKU-A", verdict: "return_in" }] }, A);
-ok(Array.isArray(g5.over) && g5.over.length === 1, "ปฏิเสธพร้อมตัวเลข", g5);
+ok(Array.isArray(g5.over) && g5.over.length === 1, "โควตาหมดระหว่างทาง = ปฏิเสธพร้อมตัวเลข", g5);
 const none = await coreQuery(`SELECT COUNT(*) c FROM stock_moves WHERE ref='${r4.ref}'`);
 ok(none[0].c === 0, "ปฏิเสธแล้วต้องไม่ลงบัญชีแม้แถวเดียว", none);
 
@@ -131,6 +141,37 @@ ok(inbox.total >= 5 && Array.isArray(inbox.rows), "กล่องอ่าน�
 ok(!("reconHeartbeatAt" in inbox), "ไม่มีงานเทียบจริง ⇒ ไม่ส่ง heartbeat ปลอมให้จอเขียว");
 const found = await R.listReturnsInbox({ q: "SO-001" });
 ok(found.rows.length >= 2, "ค้นด้วยเลขใบขายเจอ", found.rows.length);
+
+
+console.log("\n⑭ ล็อกต้องกันทุกประตู ไม่ใช่แค่ประตูแรก");
+const L = await R.receiveReturn({ orderId: "o2", items: [{ sku: "SKU-A", qty: 1 }] }, A);
+// (o2 มีใบค้างจากข้อ ⑨ อยู่แล้ว — ใช้ใบนั้น) ล็อกอยู่กับสมหญิงจากข้อ ⑫
+const lockedId = r4.returnId;
+const pB = await R.saveReturnPhoto({ returnId: lockedId, index: 5, dataUrl: img }, A);
+ok(pB.blocked === true && pB.lockedBy === "สมหญิง", "แนบรูปโดยคนที่ไม่ได้ถือใบ = ถูกกัน", pB);
+const gB = await R.gradeReturn({ returnId: lockedId, items: [{ sku: "SKU-A", verdict: "return_in" }] }, A);
+ok(gB.blocked === true && gB.lockedBy === "สมหญิง", "ประเมินโดยคนที่ไม่ได้ถือใบ = ถูกกัน (รูที่ฝั่งจอจับได้)", gB);
+ok(!gB.state, "ถูกกันแล้วต้องไม่มี state ติดกลับไป (จอจะได้ไม่นึกว่าสำเร็จ)", gB);
+
+console.log("\n⑮ โควตาต้องกันตั้งแต่ขั้นรับ ไม่ใช่ไปตกที่ขั้นประเมิน");
+const q1 = await R.receiveReturn({ orderId: "o3", items: [{ sku: "SKU-C", qty: 99 }] }, A);
+ok(q1.overQuota === true && Array.isArray(q1.over), "รับเกินโควตา = ตีกลับพร้อมตัวเลข", q1);
+ok(!q1.returnId, "ตีกลับแล้วต้องไม่เกิดใบทางตัน", q1);
+const stuck = await coreQuery(`SELECT COUNT(*) c FROM returns_desk WHERE order_id='o3' AND state IN ('received','graded','move_failed')`);
+ok(stuck[0].c === 0, "ไม่มีใบเปิดค้างของ o3 หลงเหลือ", stuck);
+
+console.log("\n⑯ ยกเลิกใบ");
+const c0 = await R.cancelReturn({ returnId: r1.returnId, reason: "ทดสอบ" }, A);
+ok(/ลงบัญชี/.test(c0.error || ""), "ใบที่ของเข้าคลังแล้ว ยกเลิกไม่ได้", c0);
+const c1 = await R.cancelReturn({ returnId: lockedId }, B);
+ok(/เหตุผล/.test(c1.error || ""), "ต้องบอกเหตุผล", c1);
+const c2 = await R.cancelReturn({ returnId: lockedId, reason: "ลูกค้าเปลี่ยนใจ" }, A);
+ok(c2.blocked === true, "คนที่ไม่ได้ถือใบยกเลิกไม่ได้ (ต้อง takeover ก่อน)", c2);
+const c3 = await R.cancelReturn({ returnId: lockedId, reason: "ลูกค้าเปลี่ยนใจ" }, B);
+ok(c3.doc?.state === "cancelled" && c3.doc?.cancelReason === "ลูกค้าเปลี่ยนใจ", "คนถือใบยกเลิกได้ พร้อมบันทึกเหตุผล", c3.doc);
+const reopen = await R.receiveReturn({ orderId: "o2", items: [{ sku: "SKU-A", qty: 1 }] }, A);
+ok(!reopen.existing, "ยกเลิกแล้วใบขายนั้นไม่ถูกล็อกค้างอีก (เปิดใบใหม่ได้ ไม่ค้างตลอดกาล)", reopen);
+ok(reopen.overQuota === true, "…แต่ยังโดนด่านโควตาตามปกติ (o2 ถูกคืนไปหมดแล้ว)", reopen);
 
 console.log(`\n${fail ? "🔴" : "✅"} ผ่าน ${pass} · ตก ${fail}`);
 process.exit(fail ? 1 : 0);
