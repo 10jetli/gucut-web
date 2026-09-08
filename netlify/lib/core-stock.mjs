@@ -240,12 +240,24 @@ export async function listStock(o = {}) {
   // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
   //    = พิมพ์ชื่อสินค้าที่ยังไม่เคยขายแล้วหาไม่เจอ ทั้งที่มีของอยู่ในคลัง (เจอจริง 2 ก.ย. 2569)
-  const filter = q
+  let filter = q
     ? `AND (cur.sku LIKE ?
             OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = cur.sku AND p2.name LIKE ?)
             OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
     : "";
   const fParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
+  /* กรองตามหมวด — เจ้าของร้านจับได้ 8 ก.ย. 2569 ว่าชื่อหมวดใน ZORT กดเข้าไปดูสินค้าได้
+     แต่จอเรากดไม่ได้ ⇒ จอหมวดหมู่จะลิงก์มาที่จอสินค้าพร้อม ?category=<ชื่อ>
+     ⚠️ จับคู่ **ตรงตัวทั้งชื่อ** ไม่ใช่ LIKE — ชื่อหมวดมาจากตารางเดียวกัน ไม่ใช่คำค้นอิสระ
+        ("อะไหล่ MINI" LIKE จะไปกิน "อะไหล่ MINI-ONE" ด้วย — คนละหมวดกัน)
+     ⚠️ ค่าพิเศษ "(ยังไม่ได้จัดหมวดใน ZORT)" = แถวที่ category ว่าง — จอหมวดมีแถวนี้จริง */
+  const category = String(o.category ?? "").trim().slice(0, 120);
+  if (category === "(ยังไม่ได้จัดหมวดใน ZORT)") {
+    filter += ` AND (p.category IS NULL OR p.category = '')`;
+  } else if (category) {
+    filter += ` AND p.category = ?`;
+    fParams.push(category);
+  }
 
   const CTE = `
     WITH d AS (SELECT MAX(day) AS day FROM stock_snapshots),

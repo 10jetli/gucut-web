@@ -2448,6 +2448,7 @@ async function route(req, context) {
         ok: true,
         ...(await listStock({
           q: p.get("q"),
+          category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
           only: p.get("only"),
           kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),

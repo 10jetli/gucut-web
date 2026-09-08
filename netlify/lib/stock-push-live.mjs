@@ -172,7 +172,13 @@ export async function stockPushLive(body) {
   // ⑤ จดประวัติทุกรอบ — append รายการล่าสุดไว้หัวแถว เก็บ 50 รอบ
   const s = getStore({ name: "gucut-coupon", consistency: "strong" });
   const log = (await s.get("stockpush/log", { type: "json" }).catch(() => null)) || [];
-  log.unshift({ at: out.at, platform: out.platform, fired: out.fired, pushed: out.pushed, rejected: out.rejected, rows: fire });
+  /* จด **ผลรายตัวครบทุกสถานะ** ไม่ใช่แค่แถวที่ยิง (ฝั่งจอขอ 8 ก.ย. 2569 —
+     "จอจะได้เลิกบอกว่าไปดูที่อื่น") · ตัด raw ออกจาก log กันก้อนบวม เก็บแค่ why */
+  log.unshift({
+    at: out.at, platform: out.platform,
+    fired: out.fired, pushed: out.pushed, rejected: out.rejected, notSent: out.notSent,
+    rows: out.results.map(({ raw, ...r }) => r),
+  });
   await s.setJSON("stockpush/log", log.slice(0, 50));
 
   return out;
