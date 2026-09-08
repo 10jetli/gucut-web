@@ -54,25 +54,43 @@ async function lazadaWrite(path, extra) {
  *  ⚠️ ยังไม่เคยยิงจริงจนกว่า canary ตัวแรกจะผ่าน — คำตอบดิบของแพลตฟอร์ม
  *     ติดกลับไปในผลเสมอ เพื่อให้เห็นความจริง ไม่ใช่การตีความของเรา */
 async function lazadaPush(rows) {
+  /* Lazada ฝั่งเขียนเลิกรับ SellerSku แล้ว (E0501 — เจอจาก canary ตัวแรก 8 ก.ย. 2569)
+     ⇒ แปลงเป็น SkuId+ItemId ก่อนเสมอ · แปลงไม่ได้ = ไม่ยิงตัวนั้น พร้อมบอกเหตุผล */
+  const { skuIdMap } = await import("./lazada.mjs");
+  const ids = await skuIdMap();
+  const ready = [];
+  const noId = [];
+  for (const r of rows) {
+    const m = ids.get(r.sku);
+    if (m?.skuId) ready.push({ ...r, skuId: m.skuId, itemId: m.itemId });
+    else noId.push({ ...r, result: "not_sent", why: "หา SkuId บน Lazada ไม่เจอ (สินค้าอาจถูกถอด)" });
+  }
+  if (!ready.length) return noId;
   const payload = JSON.stringify({
     Request: {
       Product: {
         Skus: {
-          Sku: rows.map((r) => ({ SellerSku: r.sku, SellableQuantity: String(r.to) })),
+          Sku: ready.map((r) => ({
+            ItemId: String(r.itemId ?? ""),
+            SkuId: String(r.skuId),
+            SellableQuantity: String(r.to),
+          })),
         },
       },
     },
   });
   const r = await lazadaWrite("/product/stock/sellable/update", { payload });
-  if (r.error) return rows.map((x) => ({ ...x, result: "not_sent", why: r.error }));
+  if (r.error) return [...ready.map((x) => ({ ...x, result: "not_sent", why: r.error })), ...noId];
   const ok = r.data && String(r.data.code) === "0";
-  /* Lazada ตอบรวมทั้งชุด — สำเร็จ = ทุกตัวในชุดสำเร็จ · ปฏิเสธ = แนบคำตอบดิบทั้งก้อน
-     detail รายตัว (ถ้ามี) อยู่ใน r.data.detail */
-  return rows.map((x) => ({
-    ...x,
-    result: ok ? "pushed" : "rejected",
-    ...(ok ? {} : { why: `${r.data?.code}: ${r.data?.message || ""}`.trim(), raw: r.data }),
-  }));
+  /* Lazada ตอบรวมทั้งชุด — สำเร็จ = ทุกตัวในชุดสำเร็จ · ปฏิเสธ = แนบคำตอบดิบทั้งก้อน */
+  return [
+    ...ready.map((x) => ({
+      ...x,
+      result: ok ? "pushed" : "rejected",
+      ...(ok ? {} : { why: `${r.data?.code}: ${r.data?.message || ""}`.trim(), raw: r.data }),
+    })),
+    ...noId,
+  ];
 }
 
 /** พิสูจน์ว่าการเขียนติดจริง — **รันเทียบสดซ้ำ** แล้วดูว่ารหัสที่ยิงหายจากแผนหรือยัง

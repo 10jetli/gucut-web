@@ -174,6 +174,36 @@ export async function listedSkus() {
   return out;
 }
 
+/** ตารางแปลง SellerSku → { skuId, itemId } — จำเป็นสำหรับ API เขียนสต็อก
+ *  ที่มา (จากการยิงจริง 8 ก.ย. 2569 — canary ตัวแรกของตัวดันสต็อก):
+ *  Lazada ตอบ E0501 "The SellerSku parameter is no longer supported. Please update
+ *  your parameter to use SkuId" ⇒ ฝั่งเขียนต้องใช้ SkuId (ฝั่งอ่านยังให้ SellerSku มา) */
+export async function skuIdMap() {
+  const map = new Map();
+  const eat = (items) => {
+    for (const p of items) {
+      for (const s of p?.skus || []) {
+        const code = String(s?.SellerSku ?? "").trim();
+        if (code && !map.has(code)) {
+          map.set(code, { skuId: s?.SkuId, itemId: p?.item_id ?? p?.ItemId });
+        }
+      }
+    }
+  };
+  const first = await pageSkus(0);
+  eat(first.items);
+  if (first.total && first.items.length >= PAGE) {
+    const pages = Math.ceil(first.total / PAGE);
+    const rest = [];
+    for (let i = 1; i < pages; i++) rest.push(i * PAGE);
+    for (let i = 0; i < rest.length; i += CONCURRENCY) {
+      const got = await Promise.all(rest.slice(i, i + CONCURRENCY).map((o) => pageSkus(o)));
+      for (const g of got) eat(g.items);
+    }
+  }
+  return map;
+}
+
 /* ── ดูว่า Lazada ส่งฟิลด์อะไรมาบ้างต่อ SKU ── (5 ก.ย. 2569)
    ⚠️ **สร้างเพื่อไม่ต้องเดา** — ก่อนจะทำตัวเทียบสต็อกกับ Lazada
       ต้องรู้ก่อนว่าเขาส่ง "จำนวนคงเหลือ" มาในชื่ออะไร และมีจริงไหม
