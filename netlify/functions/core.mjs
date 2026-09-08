@@ -765,6 +765,12 @@ async function route(req, context) {
       });
     }
     // รายการสินค้าในใบซื้อ — แยกรายสินค้าแบบรายงานยอดซื้อของ ZORT
+    /* ใบสั่งซื้อรายใบ (ZORT /Buy/Details) — งานเทียบกดได้ 8 ก.ย. 2569
+       ⚠️ คนละอันกับ list=purchaseitems ซึ่งเป็นการรวมยอดรายสินค้าทั้งคลัง */
+    if (url.searchParams.get("purchase")) {
+      const { getPurchaseDetail } = await import("../lib/core-purchases.mjs");
+      return okJson(await getPurchaseDetail(url.searchParams.get("purchase")));
+    }
     if (url.searchParams.get("list") === "purchaseitems") {
       return json({
         ok: true,

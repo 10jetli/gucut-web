@@ -928,3 +928,44 @@ export async function listReturnOrders(limit = 50) {
       ผลคือไม่มีใครกล้าแก้ เพราะไม่มีใครรู้ว่ามันมีไว้ทำไม
       และเกิดอาการ "ลูกค้าคนเดียวกันโชว์คนละแบบในสองจอ" ซึ่งชวนให้คนคิดว่าระบบพัง
    จะปิดข้อมูลอะไรอีก ให้เขียน **เหตุผล + ใครสั่ง + วันที่** กำกับเสมอ ไม่งั้นห้ามปิด */
+
+/** ใบสั่งซื้อรายใบ — ตาม /Buy/Details ของ ZORT
+ *  (งานเทียบ "ZORT กดได้เราไม่" 8 ก.ย. 2569 · ฝั่งจอชี้ว่า list=purchaseitems เป็น
+ *   การรวมยอดรายสินค้า ไม่ใช่รายใบ ⇒ ต้องมีเส้นนี้แยก)
+ *  ⚠️ อ่านจาก **กระจก** ไม่ใช่ยิง ZORT สด — ใบเก่าที่ ZORT ลบไปแล้วจะยังเห็นที่นี่
+ *     ซึ่งเป็นเรื่องดี (กระจกคือหลักฐานของเรา) แต่จอต้องเขียนว่าเป็นข้อมูลกระจก
+ *     ไม่ใช่ปล่อยให้เข้าใจว่ายิงสด (ดู updatedAt เทียบกับรอบซิงก์ล่าสุด) */
+export async function getPurchaseDetail(number) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await ensureTables();
+  const no = String(number ?? "").trim().slice(0, 60);
+  if (!no) return { error: "ต้องระบุเลขที่ใบสั่งซื้อ" };
+
+  const head = (
+    await coreQuery(`SELECT * FROM purchase_orders WHERE number = ${esc(no)}`)
+  )[0];
+  if (!head) return { error: `ไม่พบใบสั่งซื้อ ${no} ในกระจก` };
+
+  const lines = await coreQuery(
+    `SELECT line, sku, name, qty, price FROM purchase_order_items
+      WHERE number = ${esc(no)} ORDER BY line`
+  );
+  /* ⚠️ **ยอดรวมของบรรทัด ≠ ยอดหัวใบเสมอไป** — หัวใบมีส่วนลด/ค่าส่ง/ภาษีที่กระจกไม่ได้เก็บ
+     ⇒ ส่งทั้งสองค่าไปให้จอ **ห้ามเลือกให้ค่าเดียว** และห้ามคิดว่าต่างกัน = ข้อมูลผิด
+     (คลาสเดียวกับใบเสนอราคาที่ท่อจงใจส่งช่องเงินทุกช่อง ไม่ตีความแทน) */
+  const lineTotal = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+  return {
+    number: head.number,
+    vendor: head.vendor || null,
+    poDate: head.po_date || null,
+    status: head.status || null,
+    paymentStatus: head.payment_status || null,
+    warehouse: head.warehouse || null,
+    note: head.note || null,
+    amount: Number(head.amount) || 0,     // ยอดหัวใบตามที่ ZORT ให้มา
+    lineTotal,                            // ผลรวมบรรทัด (คิดเอง)
+    lines,
+    updatedAt: head.updated_at || null,
+    source: "กระจกคลังเงา (ไม่ได้ยิง ZORT สด)",
+  };
+}
