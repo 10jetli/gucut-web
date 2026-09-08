@@ -62,7 +62,7 @@ export default async function handler(req, context) {
        (คลาสเดียวกับ [[stale-state-comments]] — สภาพปัจจุบันที่เขียนตายจะโกหกเสมอ)
        ⚠️ งานที่จบแล้ว **ติ๊ก done ไม่ลบแถว** — เจ้าของร้านต้องเห็นว่าอะไรเพิ่งเสร็จไป
           จอค่อยตัดสินใจเองว่าโชว์ของเสร็จกี่วันแล้วค่อยซ่อน */
-    if (body?.taskAdd || body?.taskDone || body?.taskDrop) {
+    if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady) {
       const s = store();
       const KEY = "office/tasks";
       const cur = (await s.get(KEY, { type: "json" }).catch(() => null)) || [];
@@ -78,13 +78,42 @@ export default async function handler(req, context) {
         await s.setJSON(KEY, list);
         return json({ ok: true, id });
       }
-      const id = text(body.taskDone || body.taskDrop, 40);
+      const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady, 40);
       const row = list.find((x) => x.id === id);
       if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
       if (body.taskDone) { row.done = true; row.doneAt = Date.now(); }
+      else if (body.taskUndo) {
+        /* ถอนติ๊ก — เกิดจากเหตุจริง 8 ก.ย. 2569: เจ้าของร้านมือลั่นติ๊กผิด 2 ข้อบนมือถือ
+           แล้ว**ไม่มีทางย้อนเองเลย** ต้องเรียก AI มาแก้ข้อมูลให้ · ปุ่มติ๊กที่ย้อนไม่ได้
+           บนจอสัมผัส = ระเบิดเวลา ⇒ ทุกการติ๊กต้องถอนได้เสมอ */
+        row.done = false;
+        delete row.doneAt;
+      } else if (body.taskReady) {
+        /* "พร้อมทำ — เรียก AI" (เจ้าของร้านขอเอง 8 ก.ย. 2569)
+           กดแล้ว: ติดธง ready + เด้ง Telegram เข้ากลุ่มร้าน ⇒ AI/ทีมเห็นทันทีว่า
+           เจ้าของร้านว่างและกำลังจะทำข้อไหน จะได้เตรียมพากดหรือเตรียมของรอ
+           ⚠️ กดซ้ำไม่เด้งซ้ำ (กันมือลั่นยิงสแปมใส่กลุ่ม) — ถอนธงด้วย taskUndo ได้ */
+        if (!row.ready) {
+          row.ready = true;
+          row.readyAt = Date.now();
+          const tk = process.env.TELEGRAM_BOT_TOKEN;
+          const chat = process.env.TELEGRAM_CHAT_ID;
+          if (tk && chat) {
+            // ต้อง await — Netlify แช่แข็งฟังก์ชันหลังตอบ ปล่อยลอย = แจ้งเตือนหายเงียบ
+            await fetch(`https://api.telegram.org/bot${tk}/sendMessage`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({
+                chat_id: chat,
+                text: `🙋 เจ้าของร้านกด "พร้อมทำ" งาน:\n${row.text}${row.note ? `\n(${row.note})` : ""}\n→ AI เตรียมพาทำได้เลย`,
+              }),
+            }).catch(() => {});
+          }
+        }
+      }
       else list.splice(list.indexOf(row), 1);   // taskDrop = งานที่ใส่ผิด/ไม่ต้องทำแล้ว
       await s.setJSON(KEY, list);
-      return json({ ok: true });
+      return json({ ok: true, ...(row && !body.taskDrop ? { task: row } : {}) });
     }
 
     const agent = text(body?.agent, 20);
