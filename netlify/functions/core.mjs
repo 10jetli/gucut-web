@@ -323,6 +323,28 @@ async function route(req, context) {
        ⚠️ ตัวไลบรารีตั้งใจไม่มีคำสั่งเขียนอยู่จริง ๆ (ไม่ใช่ "มีแต่ปิดไว้")
           วันที่จะดันจริงต้องเขียนไฟล์ใหม่แยก **ห้ามเติม POST ลงไฟล์นั้น**
        ⚠️ ยิง Shopee + Lazada สด ⇒ ช้าราว 10 วินาที **เป็นเส้นกดเอง ห้ามให้จอเรียกตอนเปิดหน้า** */
+    /* 🔴 ดันสต็อกจริง — เจ้าของร้านอนุมัติ 8 ก.ย. 2569 ("ทำเลย")
+       POST เท่านั้น · body {platform:"lazada", skus:[...], allowClose?} · ระบุ SKU ชัดทุกครั้ง
+       GET  ?stockpushlog=1 อ่านประวัติการยิง */
+    if (url.searchParams.get("stockpushlive")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST — ตัวนี้เขียนของจริงขึ้นแพลตฟอร์ม" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { stockPushLive } = await import("../lib/stock-push-live.mjs");
+      const r = await stockPushLive(body);
+      return okJson(r, r?.error ? 400 : 200);
+    }
+    if (url.searchParams.get("stockpushlog")) {
+      const { getStore } = await import("@netlify/blobs");
+      const log = await getStore({ name: "gucut-coupon", consistency: "strong" })
+        .get("stockpush/log", { type: "json" }).catch(() => null);
+      return json({ ok: true, log: Array.isArray(log) ? log : [] });
+    }
+    if (url.searchParams.get("stockpushverify")) {
+      const skus = String(url.searchParams.get("stockpushverify")).split(",").filter(Boolean);
+      const { lazadaReadBack } = await import("../lib/stock-push-live.mjs");
+      return okJson(await lazadaReadBack(skus));
+    }
     if (url.searchParams.get("stockpush")) {
       const { stockPushDryRun } = await import("../lib/stock-push.mjs");
       return json({
