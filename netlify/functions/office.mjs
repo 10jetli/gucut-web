@@ -56,6 +56,37 @@ export default async function handler(req, context) {
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
+    /* ── กระดานงานของเจ้าของร้าน (สั่ง 8 ก.ย. 2569: "ใส่งานที่ผมต้องทำลงด้วย") ──
+       เก็บที่เซิร์ฟเวอร์เพื่อให้ **AI เป็นคนเพิ่ม/ติ๊กจบตามเหตุการณ์จริง** ไม่ใช่
+       รายการที่พิมพ์ตายไว้ในจอ — รายการแบบนั้นจะค้างเก่าเงียบ ๆ ทันทีที่โลกขยับ
+       (คลาสเดียวกับ [[stale-state-comments]] — สภาพปัจจุบันที่เขียนตายจะโกหกเสมอ)
+       ⚠️ งานที่จบแล้ว **ติ๊ก done ไม่ลบแถว** — เจ้าของร้านต้องเห็นว่าอะไรเพิ่งเสร็จไป
+          จอค่อยตัดสินใจเองว่าโชว์ของเสร็จกี่วันแล้วค่อยซ่อน */
+    if (body?.taskAdd || body?.taskDone || body?.taskDrop) {
+      const s = store();
+      const KEY = "office/tasks";
+      const cur = (await s.get(KEY, { type: "json" }).catch(() => null)) || [];
+      const list = Array.isArray(cur) ? cur : [];
+      if (body.taskAdd) {
+        const t = text(body.taskAdd, 200);
+        if (!t) return json({ error: "งานว่างเปล่า" }, 400);
+        // กันเพิ่มซ้ำ — งานเดิมยังไม่จบ ห้ามงอกแถวใหม่ (ยิงซ้ำได้ ไม่เบิ้ล)
+        const dup = list.find((x) => !x.done && x.text === t);
+        if (dup) return json({ ok: true, duplicate: true, id: dup.id });
+        const id = `t_${Date.now().toString(36)}`;
+        list.push({ id, text: t, note: text(body.note, 300), done: false, at: Date.now() });
+        await s.setJSON(KEY, list);
+        return json({ ok: true, id });
+      }
+      const id = text(body.taskDone || body.taskDrop, 40);
+      const row = list.find((x) => x.id === id);
+      if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
+      if (body.taskDone) { row.done = true; row.doneAt = Date.now(); }
+      else list.splice(list.indexOf(row), 1);   // taskDrop = งานที่ใส่ผิด/ไม่ต้องทำแล้ว
+      await s.setJSON(KEY, list);
+      return json({ ok: true });
+    }
+
     const agent = text(body?.agent, 20);
     if (!agent || !KNOWN.has(agent)) return json({ error: "unknown agent" }, 400);
 
@@ -87,8 +118,9 @@ export default async function handler(req, context) {
       })
     );
     agents.sort((a, b) => [...KNOWN].indexOf(a.agent) - [...KNOWN].indexOf(b.agent));
+    const tasks = (await s.get("office/tasks", { type: "json" }).catch(() => null)) || [];
     // ⚠️ คนที่ยังไม่เคยส่งข่าวจะ **ไม่มีแถว** — จอต้องขึ้น "ไม่รู้" ไม่ใช่ 0
-    return json({ now: Date.now(), agents });
+    return json({ now: Date.now(), agents, tasks: Array.isArray(tasks) ? tasks : [] });
   }
 
   return json({ error: "method not allowed" }, 405);
