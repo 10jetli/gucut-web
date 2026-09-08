@@ -68,3 +68,8 @@ export default async function handler(req, context) {
     return json({ ok: false, error: String(e?.message ?? e) }, 502);
   }
 }
+
+// ⚠️ ฟังก์ชันฝั่งนี้ **ต้องประกาศ path เอง** ไม่มีกติกา /api/* กลางใน netlify.toml
+//    ลืมบรรทัดนี้ = ตกไปที่หน้า 404 ของหน้าร้าน ซึ่งตอบ **HTTP 200 พร้อม HTML**
+//    ⇒ หน้าตาเหมือน "เส้นมีจริงแต่ตอบแปลก" ไม่ใช่ "ไม่มีเส้น" (เสียเวลาไล่ผิดทาง 8 ก.ย. 2569)
+export const config = { path: "/api/notify" };
