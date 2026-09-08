@@ -1145,8 +1145,18 @@ Next.js เจอ error ระหว่างวาดหน้าจะโย�
 | สมอง | `netlify/functions/rokid-agent.mjs` → `POST /api/rokid/sse` (GET = สุขภาพ ไม่มีอะไรลับ) |
 | รู้จักสินค้า | `public/search-index.json` (มี SKU ทุกตัวเลือก) + สต็อกสด `liveStock()` จาก ZORT |
 | รู้ยอดขาย | อ่าน store `gucut-orders` ตรง ๆ เมื่อคำถามมีคำว่า ออเดอร์/ยอดขาย/วันนี้ ฯลฯ |
-| ตอบ | Claude ผ่าน Netlify AI Gateway (คู่คีย์เดียวกับ `read-id.mjs`) · ไม่มีคีย์ = ตอบตายตัวจากผลค้น |
-| คีย์ | env `ROKID_AGENT_KEY` = ค่า AK ที่กรอกบนแพลตฟอร์ม Rokid · `ROKID_MODEL` (ไม่บังคับ) |
+| ตอบ | **Claude API ตรง** ด้วย SDK `@anthropic-ai/sdk` (คีย์ `ROKID_CLAUDE_API_KEY`) · ไม่มีคีย์ → Netlify AI Gateway · ไม่มีทั้งคู่ = ตอบตายตัวจากผลค้น |
+| คีย์ | `ROKID_AGENT_KEY` = ค่า AK ที่กรอกบนแพลตฟอร์ม Rokid · `ROKID_CLAUDE_API_KEY` จาก console.anthropic.com · `ROKID_MODEL` (ค่าเริ่มต้น `claude-opus-5`) · `ROKID_EFFORT` (ค่าเริ่มต้น `low`) |
+
+**เชื่อมกับ Claude API — เจ้าของร้านสั่งเอง 8 ก.ย. 2569** *"เชื่อมแว่นตา Rokid กับ Claude api"*
+- ใช้ SDK ทางการ `client.beta.messages.stream()` · รุ่น `claude-opus-5` (รุ่นหลักปัจจุบัน) · adaptive thinking
+  ตามค่าเริ่มต้น · **ความเร็วคุมด้วย `effort: "low"` ไม่ใช่ลดรุ่น** · `maxRetries: 0` (คนใส่แว่นยืนรออยู่)
+- เปิด `fallbacks: "default"` (beta `server-side-fallback-2026-07-01`) — ตัวกรองความปลอดภัยปฏิเสธเมื่อไหร่
+  Anthropic สลับรุ่นให้เองในคำขอเดียว · ถ้ายังได้ `stop_reason: "refusal"` โดยไม่มีข้อความ → คำตอบตายตัว
+- ⚠️ **ห้ามหยิบ `ANTHROPIC_API_KEY` ที่ตั้งค้างไว้ที่ Netlify มาใช้** — คีย์นั้นยิง api.anthropic.com แล้วโดน
+  `invalid x-api-key` (บทเรียน read-id 25 ส.ค. 2569) จึงใช้คีย์เฉพาะของแว่น `ROKID_CLAUDE_API_KEY` แทน
+- ⚠️ ราคา Opus 5 $5/$25 ต่อล้านโทเค็น ≈ **$0.01 ต่อคำถาม** — จ่ายตรงกับ Anthropic ไม่ผ่านเครดิต Netlify
+- ⚠️ `@anthropic-ai/sdk` อยู่ใน `dependencies` ของ `package.json` (Netlify ต้องมีตอน bundle ฟังก์ชัน) — ไม่เหมือน sharp
 
 **ขั้นตอนที่เจ้าของร้านต้องทำเอง** (Claude ทำแทนไม่ได้ — ต้องล็อกอินบัญชี Rokid)
 1. สมัครนักพัฒนา: สากล `open.rokid.com` (สตูดิโอ `aiui-global.rokid.com/space`) · จีน `rizon.rokid.com`

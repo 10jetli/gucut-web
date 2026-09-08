@@ -22,21 +22,32 @@
 // ⚠️ คีย์ ROKID_AGENT_KEY คือด่านเดียวกันคนนอก — ทุกคำขอเผาเครดิต AI ของร้านจริง
 //    ไม่ตั้งคีย์ = ปิดทั้งระบบ (503) · ผิดเกิน 5 ครั้ง/IP พัก 15 นาที · 60 คำขอ/IP/10 นาที
 //    ตัวเลขออเดอร์/ยอดขายส่งให้เฉพาะคนที่ถือคีย์นี้ (คือแว่นของเจ้าของร้าน) — ห้ามเปิดสาธารณะ
+// ⚠️ สมองคือ Claude ผ่าน Claude API ตรง (เจ้าของร้านสั่ง 8 ก.ย. 2569 "เชื่อมแว่น Rokid กับ Claude api")
+//    ใช้ SDK ทางการ @anthropic-ai/sdk · คีย์ ROKID_CLAUDE_API_KEY จาก console.anthropic.com
+//    ไม่มีคีย์นั้นค่อยถอยไป Netlify AI Gateway (คิดเป็นเครดิต Netlify) · ไม่มีทั้งคู่ = ตอบตายตัว
+//    ⚠️ ห้ามหยิบ ANTHROPIC_API_KEY ที่ตั้งค้างไว้ที่ Netlify มาใช้ — บทเรียน read-id.mjs 25 ส.ค. 2569
+//       คีย์นั้นยิง api.anthropic.com แล้วโดน invalid x-api-key จึงใช้คีย์เฉพาะของแว่นแทน
 // ⚠️ ไม่มีคีย์ AI ก็ยังตอบได้ — ตอบแบบตายตัวจากผลค้นสินค้า+สต็อกสด (ไม่เสียเครดิต)
 // ⚠️ รูปจากกล้องแว่นมาเป็น URL (image_url) ส่งต่อให้ AI ดูได้ — ใช้ถามว่า "อันนี้รุ่นอะไร"
 //    ⚠️ ห้ามให้ AI พูดแทนว่าร้านอื่นขายของปลอม (กติกาเดียวกับไฟล์ที่ AI อ่านทุกไฟล์)
+import Anthropic from "@anthropic-ai/sdk";
 import { getStore } from "@netlify/blobs";
 import { timingSafeEqual } from "node:crypto";
 import { liveStock } from "../lib/zort-stock.mjs";
 import { SITE_HOST } from "../lib/site.mjs";
 
 const SHOP_NAME = process.env.SHOP_NAME || "GUCUT";           // ชื่อเดียวกับที่ Telegram/LINE ใช้
+// รุ่น Claude — ค่าเริ่มต้น Opus 5 (รุ่นหลักปัจจุบัน) · ความเร็วคุมด้วย effort "low" ไม่ใช่ลดรุ่น
+// ราคา $5/$25 ต่อล้านโทเค็น — คำถามหนึ่งครั้ง (~1,500 เข้า · ~100 ออก) ราว $0.01
+const MODEL = process.env.ROKID_MODEL || "claude-opus-5";
+const EFFORT = process.env.ROKID_EFFORT || "low";             // low = ตอบเร็ว เหมาะกับถามสั้น ๆ บนแว่น
 const MAX_FAILS = 5;                    // คีย์ผิดเกินนี้ พัก
 const LOCK_MS = 15 * 60 * 1000;
 const MAX_REQ = 60;                     // คำขอต่อ IP ต่อหน้าต่าง
 const WINDOW_MS = 10 * 60 * 1000;
 const AI_TIMEOUT_MS = 20000;            // เผื่อเวลาให้ Netlify (~26 วิ) กับแพลตฟอร์ม Rokid
-const MAX_TOKENS = 320;                 // จอแว่นเล็ก — ยาวกว่านี้อ่านไม่ทัน
+// จอแว่นเล็ก สีเดียว — ตั้งใจให้สั้น (ปกติ SDK แนะนำหลายหมื่น แต่ที่นี่ยาวกว่านี้อ่านไม่ทันและเกินเวลา)
+const MAX_TOKENS = 400;
 const INDEX_TTL_MS = 10 * 60 * 1000;    // จำดัชนีสินค้าไว้ในหน่วยความจำของฟังก์ชันที่ยังอุ่น
 const TOP_N = 8;
 
@@ -247,16 +258,62 @@ function readRequest(body) {
 }
 
 // ---------------------------------------------------------------------------
-// AI ผ่าน Netlify AI Gateway — คู่คีย์/ที่อยู่ต้องมาเป็นคู่ (ดูบทเรียนใน read-id.mjs)
+// ทางเชื่อม Claude — เลือกตามลำดับ
+//   1. ROKID_CLAUDE_API_KEY → Claude API ตรง (api.anthropic.com) · เปิด server-side fallback ได้
+//   2. NETLIFY_AI_GATEWAY_KEY/URL → ทางสำรอง คิดเป็นเครดิต Netlify · คู่คีย์/ที่อยู่ต้องมาเป็นคู่
+//      (Gateway บางแบบต้องต่อ /anthropic — เจอ 404 ค่อยลอง ไม่เสียเครดิต · ดูบทเรียนใน read-id.mjs)
 // ---------------------------------------------------------------------------
-function aiPair() {
+function claudeRoute() {
+  const direct = process.env.ROKID_CLAUDE_API_KEY;
+  if (direct) return { name: "claude-api", apiKey: direct, baseURL: undefined, beta: true };
   const gwKey = process.env.NETLIFY_AI_GATEWAY_KEY;
   const gwBase = process.env.NETLIFY_AI_GATEWAY_URL;
-  const pair = gwKey && gwBase
-    ? { key: gwKey, base: gwBase }
-    : { key: process.env.ANTHROPIC_API_KEY, base: process.env.ANTHROPIC_BASE_URL };
-  if (!pair.key) return null;
-  return { key: pair.key, base: (pair.base || "https://api.anthropic.com").replace(/\/+$/, "") };
+  if (gwKey && gwBase) return { name: "netlify-gateway", apiKey: gwKey, baseURL: gwBase.replace(/\/+$/, ""), beta: false };
+  return null;
+}
+
+const makeClient = (route, baseURL) =>
+  new Anthropic({ apiKey: route.apiKey, baseURL, timeout: AI_TIMEOUT_MS, maxRetries: 0 });
+
+/**
+ * ถาม Claude แบบสตรีม ส่งข้อความออกทาง emit ทีละชิ้น
+ * คืน { got, stop } · โยน error ของ SDK ออกมาให้คนเรียกตัดสิน (ถอยไปคำตอบตายตัว)
+ * ⚠️ maxRetries 0 — คนใส่แว่นยืนรออยู่ SDK ลองซ้ำเองแล้วเวลารวมทะลุเพดาน Netlify
+ */
+async function askClaude(route, system, messages, emit) {
+  const params = { model: MODEL, max_tokens: MAX_TOKENS, system, messages, output_config: { effort: EFFORT } };
+  const run = async (client) => {
+    // ทางตรง: เปิด fallbacks "default" — ถ้าตัวกรองความปลอดภัยปฏิเสธ ฝั่ง Anthropic สลับรุ่นให้เองในคำขอเดียว
+    const stream = route.beta
+      ? client.beta.messages.stream({ ...params, betas: ["server-side-fallback-2026-07-01"], fallbacks: "default" })
+      : client.messages.stream(params);
+    let got = 0;
+    for await (const ev of stream) {
+      if (ev.type === "content_block_delta" && ev.delta.type === "text_delta" && ev.delta.text) {
+        got += 1;
+        emit(ev.delta.text);
+      }
+    }
+    const final = await stream.finalMessage();
+    return { got, stop: final.stop_reason, usage: final.usage };
+  };
+  try {
+    return await run(makeClient(route, route.baseURL));
+  } catch (e) {
+    if (e instanceof Anthropic.NotFoundError && route.name === "netlify-gateway") {
+      return await run(makeClient(route, `${route.baseURL}/anthropic`));
+    }
+    throw e;
+  }
+}
+
+// บอกสาเหตุลง log แบบไม่มีความลับ — ไล่ปัญหาจาก log ฟังก์ชันได้โดยไม่ต้องเดา
+function logAiError(route, e) {
+  if (e instanceof Anthropic.AuthenticationError) console.log(`rokid ai: คีย์ของทาง ${route.name} ไม่ถูก`);
+  else if (e instanceof Anthropic.RateLimitError) console.log("rokid ai: โดนจำกัดอัตราจาก Anthropic");
+  else if (e instanceof Anthropic.APIConnectionTimeoutError) console.log(`rokid ai: เกิน ${AI_TIMEOUT_MS} ms`);
+  else if (e instanceof Anthropic.APIError) console.log(`rokid ai: API ${e.status} ${String(e.message).slice(0, 160)}`);
+  else console.log("rokid ai:", String(e?.message || e).slice(0, 160));
 }
 
 function systemPrompt({ products, stockLive, stockAt, orders, ctx }) {
@@ -266,6 +323,7 @@ function systemPrompt({ products, stockLive, stockAt, orders, ctx }) {
     `จอแว่นเล็กมากและเป็นสีเดียว คำตอบต้องสั้นที่สุด: ภาษาไทย ไม่เกิน 2 ประโยค ไม่ใช้หัวข้อ ไม่ใช้ตาราง ไม่ใช้อีโมจิ`,
     `ตัวเลขต้องมาจากข้อมูลด้านล่างเท่านั้น ห้ามเดา ถ้าไม่มีข้อมูลให้บอกว่าไม่พบ และถามกลับสั้น ๆ ว่าหมายถึงรุ่นไหน`,
     `ห้ามพูดว่าร้านอื่นขายของปลอม · ห้ามเปิดเผยข้อมูลลูกค้า (ชื่อ เบอร์ ที่อยู่)`,
+    `คนถามยืนรออยู่ตรงหน้าจอแว่น: เริ่มพิมพ์คำตอบทันที ไม่ต้องอธิบายวิธีคิด (Latency-sensitive; begin your visible answer immediately)`,
     `เวลาไทยตอนนี้ ${now.toISOString().slice(0, 16).replace("T", " ")}`,
   ];
   if (products.length) {
@@ -310,36 +368,6 @@ function toAnthropicMessages(history) {
   return msgs;
 }
 
-/** เรียก Claude แบบสตรีม — คืน Response หรือ null ถ้าเรียกไม่ได้ */
-async function askAI(pair, system, messages) {
-  const paths = pair.base.includes("/anthropic") ? ["/v1/messages"] : ["/v1/messages", "/anthropic/v1/messages"];
-  const send = (path) => fetch(`${pair.base}${path}`, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-      "x-api-key": pair.key,
-      authorization: `Bearer ${pair.key}`,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify({
-      model: process.env.ROKID_MODEL || "claude-haiku-4-5-20251001",
-      max_tokens: MAX_TOKENS,
-      stream: true,
-      system,
-      messages,
-    }),
-    signal: AbortSignal.timeout(AI_TIMEOUT_MS),
-  });
-  let r = await send(paths[0]);
-  if (r.status === 404 && paths[1]) r = await send(paths[1]);
-  if (!r.ok || !r.body) {
-    const err = await r.text().catch(() => "");
-    console.log("rokid ai fail", r.status, err.slice(0, 200));
-    return null;
-  }
-  return r;
-}
-
 // ---------------------------------------------------------------------------
 // ตัวเขียน SSE ตามโปรโตคอลของแพลตฟอร์ม Rokid
 // ---------------------------------------------------------------------------
@@ -381,28 +409,6 @@ function streamAnswer({ messageId, agentId }, produce) {
   });
 }
 
-/** อ่าน SSE ของ Anthropic แล้วส่งเฉพาะข้อความออกไป */
-async function pipeAnthropic(res, emit) {
-  const reader = res.body.getReader();
-  const dec = new TextDecoder();
-  let buf = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let i;
-    while ((i = buf.indexOf("\n\n")) >= 0) {
-      const frame = buf.slice(0, i); buf = buf.slice(i + 2);
-      const dataLine = frame.split("\n").find((l) => l.startsWith("data:"));
-      if (!dataLine) continue;
-      let ev;
-      try { ev = JSON.parse(dataLine.slice(5).trim()); } catch { continue; }
-      if (ev.type === "content_block_delta" && ev.delta?.type === "text_delta" && ev.delta.text) emit(ev.delta.text);
-      if (ev.type === "error") throw new Error(ev.error?.message || "ai error");
-    }
-  }
-}
-
 // คำตอบตายตัวตอนไม่มี AI — ยังใช้เช็คของได้ ไม่เสียเครดิต
 function plainAnswer({ hits, stockLive, orders, question }) {
   const parts = [];
@@ -428,9 +434,10 @@ export default async function handler(req, context) {
       ok: true,
       service: "rokid-agent",
       configured: !!process.env.ROKID_AGENT_KEY,
-      ai: !!aiPair(),
-      model: process.env.ROKID_MODEL || "claude-haiku-4-5-20251001",
-      hint: "ตั้ง URL นี้เป็น Custom Agent ที่แพลตฟอร์มนักพัฒนา Rokid แล้วใส่ ROKID_AGENT_KEY เป็น AK",
+      ai: claudeRoute()?.name || null,      // "claude-api" · "netlify-gateway" · null = ตอบตายตัว
+      model: MODEL,
+      effort: EFFORT,
+      hint: "ตั้ง URL นี้เป็น Custom Agent ที่แพลตฟอร์มนักพัฒนา Rokid แล้วใส่ ROKID_AGENT_KEY เป็น AK · ใส่ ROKID_CLAUDE_API_KEY ให้ Claude ตอบ",
     });
   }
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -463,19 +470,24 @@ export default async function handler(req, context) {
     try { orders = await ordersSummary(); } catch (e) { console.log("rokid orders fail", e?.message); }
   }
 
-  const pair = aiPair();
+  const route = claudeRoute();
   const plain = plainAnswer({ hits, stockLive, orders, question: reqInfo.question });
 
   return streamAnswer(reqInfo, async (emit) => {
-    if (!pair) { emit(plain); return; }
+    if (!route) { emit(plain); return; }
     const system = systemPrompt({
       products: hits.map((h) => describe(h.it, h.st)), stockLive, stockAt, orders, ctx: reqInfo.ctx,
     });
-    const res = await askAI(pair, system, toAnthropicMessages(reqInfo.history));
-    if (!res) { emit(plain); return; }
-    let got = false;
-    await pipeAnthropic(res, (t) => { got = true; emit(t); });
-    if (!got) emit(plain);
+    let out;
+    try {
+      out = await askClaude(route, system, toAnthropicMessages(reqInfo.history), emit);
+    } catch (e) {
+      logAiError(route, e);
+      emit(plain);                       // Claude ล่ม/คีย์เสีย/ช้าเกิน — ยังได้คำตอบจากผลค้น
+      return;
+    }
+    // ปฏิเสธก่อนพิมพ์อะไรออกมา (ตัวกรองความปลอดภัย) หรือไม่มีข้อความเลย → ให้คำตอบตายตัวแทนจอว่าง
+    if (!out.got) emit(out.stop === "refusal" ? `ตอบคำถามนี้ไม่ได้ · ${plain}` : plain);
   });
 }
 

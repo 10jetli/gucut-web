@@ -11,6 +11,7 @@
     "postbuild": "node scripts/ping-indexnow.mjs"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.124.0",
     "@netlify/blobs": "^10.7.12",
     "@pdf-lib/fontkit": "^1.1.1",
     "@tensorflow/tfjs-backend-cpu": "^4.22.0",
