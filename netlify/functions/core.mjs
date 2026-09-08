@@ -788,6 +788,11 @@ async function route(req, context) {
     /* ลูกค้า/ผู้ติดต่อ — เจ้าของร้านสั่งดึง 3 ก.ย. 2569
        🔒 ข้อมูลส่วนบุคคลจริง 28,250 ราย · ผ่าน adminGate เหมือนทุกเส้นทางในไฟล์นี้
        ⚠️ **ห้ามเพิ่มโหมด "เอาทั้งหมด"** เพดาน 100 แถว/ครั้งเป็นของตั้งใจ */
+    /* ภาพรวมลูกค้ารายคน — ตาม ContactDetail ของ ZORT (งานเทียบกดได้ 8 ก.ย. 2569) */
+    if (url.searchParams.get("customer")) {
+      const { getCustomerDetail } = await import("../lib/core-contacts.mjs");
+      return okJson(await getCustomerDetail(url.searchParams.get("customer")));
+    }
     if (url.searchParams.get("synccontacts")) {
       return json({
         ok: true,

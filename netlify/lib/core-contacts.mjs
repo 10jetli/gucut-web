@@ -216,3 +216,51 @@ export async function listContacts(o = {}) {
     })),
   };
 }
+
+/** ภาพรวมลูกค้ารายคน — ตาม /Contact/ContactDetail ของ ZORT (ดูภาพรวม · ซื้อ · ขาย)
+ *  เกิดจากงานเทียบ "กดได้เหมือน ZORT" 8 ก.ย. 2569 — จอผู้ติดต่อต้องกดชื่อเข้ารายคนได้
+ *
+ *  รับ `id` = รหัสผู้ติดต่อ (id/code) หรือชื่อเต็ม — จอส่งอะไรมาก็หาให้เจอ
+ *  ⚠️ **ออเดอร์ผูกกับผู้ติดต่อด้วย "ชื่อ" เท่านั้น** (orders.customer เป็นสตริงชื่อ
+ *     กระจกจาก ZORT ไม่มีคอลัมน์รหัสลูกค้า) ⇒ คนละคนชื่อซ้ำกันจะปนกัน — ข้อจำกัดที่
+ *     ต้องเขียนบอกบนจอ ไม่ใช่ซ่อน · ชื่อที่มาร์เก็ตเพลส mask (อ******ว) จับคู่ไม่ได้
+ *     โดยธรรมชาติ — จอควรบอกว่า "ชื่อถูกปิดบังจากแพลตฟอร์ม" ไม่ใช่ "ไม่มีประวัติ" */
+// เงื่อนไข 'ไม่นับใบยกเลิก' — สำเนาจาก core-orders (ไฟล์นั้นไม่ได้ export)
+// ⚠️ สามไฟล์มีสำเนาเดียวกันแล้ว (orders/stock/contacts) — แก้เงื่อนไขยกเลิกต้องแก้สามที่
+const CANCEL_SQL =
+  `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+
+export async function getCustomerDetail(idOrName) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const key = String(idOrName ?? "").trim().slice(0, 120);
+  if (!key) return { error: "ต้องระบุรหัสหรือชื่อผู้ติดต่อ" };
+
+  const contact = (
+    await coreQuery(
+      `SELECT * FROM contacts WHERE id = ${esc(key)} OR code = ${esc(key)} OR name = ${esc(key)} LIMIT 1`
+    )
+  )[0] || null;
+
+  // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
+  const name = contact?.name || key;
+  const [sums, recent] = await Promise.all([
+    coreQuery(
+      `SELECT COUNT(*) n, COALESCE(SUM(amount),0) total,
+              MIN(order_date) first_day, MAX(order_date) last_day
+         FROM orders WHERE customer = ${esc(name)} AND ${CANCEL_SQL}`
+    ),
+    coreQuery(
+      `SELECT id, source, number, channel, status, amount, order_date, tracking_no, pay_status
+         FROM orders WHERE customer = ${esc(name)}
+        ORDER BY order_date DESC, number DESC LIMIT 20`
+    ),
+  ]);
+  const s = sums[0] || {};
+  return {
+    contact,                                   // null = ไม่อยู่ในทะเบียน (แต่มีออเดอร์ได้)
+    name,
+    orders: { count: Number(s.n) || 0, total: Number(s.total) || 0,
+              firstDay: s.first_day || null, lastDay: s.last_day || null, recent },
+    matchNote: "จับคู่ออเดอร์ด้วยชื่อเต็มตรงตัว — ชื่อซ้ำกันจะปนกัน · ชื่อที่ถูก mask จับคู่ไม่ได้",
+  };
+}
