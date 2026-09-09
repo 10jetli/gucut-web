@@ -1634,20 +1634,33 @@ async function route(req, context) {
           ออเดอร์ POS ส่วนใหญ่ไม่มีชื่อลูกค้า ถ้าปล่อยให้ GROUP BY รวมกันหมด
           จะได้ "ลูกค้าอันดับ 1" ที่ซื้อ 800 ใบ ซึ่งไม่ใช่คน แต่เป็นกองของคนที่ไม่ได้ระบุชื่อ */
       const limit = Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "100", 10) || 100));
+
+      /* ⚡ **แก้ 9 ก.ย. 2569 — ยุบสองคำสั่งเหลือคำสั่งเดียว**
+         ของเดิมยิงสองครั้งกวาดช่วงเดียวกันซ้ำ: ครั้งแรกจัดกลุ่มรายลูกค้า (LIMIT n+1)
+         ครั้งที่สองหายอดรวม + `COUNT(DISTINCT <นิพจน์>)` ซึ่งแพงเป็นพิเศษ
+         ⇒ **ยอดรวมทั้งหมดคำนวณจากกลุ่มที่ได้มาแล้วได้ ไม่ต้องกวาดซ้ำ**
+            (จำนวนใบ = ผลรวมของกลุ่ม · จำนวนชื่อ = จำนวนกลุ่ม)
+         ⇒ ตัดการกวาดช่วงทิ้งไปหนึ่งรอบเต็ม ๆ
+
+         ฝั่งจอวัดมาว่า `limit` แทบไม่มีผลต่อเวลาเลย (17.6 vs 17.7 วิ) เพราะมันตัดตอนท้าย
+         **งานหนักอยู่ที่จำนวนแถวที่ต้องอ่าน ไม่ใช่จำนวนที่ส่งกลับ** ⇒ ต้องลดรอบการอ่าน
+         ⚠️ ไม่ LIMIT แล้ว = ได้กลุ่มทุกชื่อในช่วง (เคยวัดได้ ~1,036 ชื่อ) รับไหว
+            แต่ถ้าวันหนึ่งชื่อโตเป็นหลักแสน ต้องกลับมาคิดใหม่ — เขียนกำกับไว้ตรงนี้ */
       const rows = await coreQuery(
         `SELECT COALESCE(NULLIF(TRIM(customer),''),'') AS name,
                 COUNT(*) AS orders, SUM(amount) AS sales, MAX(order_date) AS lastDay
-         FROM orders WHERE ${w} GROUP BY 1 ORDER BY sales DESC LIMIT ${limit + 1}`,
+         FROM orders WHERE ${w} GROUP BY 1 ORDER BY sales DESC`,
         params
       );
       const named = rows.filter((r) => String(r.name || "") !== "").slice(0, limit);
       const blank = rows.find((r) => String(r.name || "") === "");
-      const [tot] = await coreQuery(
-        `SELECT COUNT(*) AS orders, SUM(amount) AS sales,
-                COUNT(DISTINCT COALESCE(NULLIF(TRIM(customer),''),'(ไม่ระบุ)')) AS names
-         FROM orders WHERE ${w}`,
-        params
-      );
+      const tot = {
+        orders: rows.reduce((a, r) => a + num2(r.orders), 0),
+        sales: rows.reduce((a, r) => a + num2(r.sales), 0),
+        /* จำนวนชื่อ = จำนวนกลุ่ม · กองไม่ระบุชื่อนับเป็นหนึ่งชื่อเหมือนเดิม
+           (ของเดิมใช้ COUNT(DISTINCT COALESCE(...,'(ไม่ระบุ)')) ซึ่งให้ผลเดียวกัน) */
+        names: rows.length,
+      };
       /* ช่องทางที่ลูกค้าแต่ละคนซื้อ — ฝั่งจอขอ 5 ก.ย. 2569
           ⚠️ **ห้ามใช้ GROUP_CONCAT แล้วให้จอ split ด้วยลูกน้ำ** — ชื่อช่องทางคนตั้งเอง
              วันไหนมีลูกน้ำในชื่อ ("Drop-off: X, Delivery: Y" ก็เคยมีในคอลัมน์ขนส่ง)
