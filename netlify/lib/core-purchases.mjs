@@ -901,7 +901,16 @@ export async function syncReturnOrders(opt = {}) {
       customer: String(r?.customername ?? ""),
       amount: num(r?.amount),
       status: String(r?.status ?? ""),
-      warehouse: String(r?.warehousename ?? ""),
+      /* 🔴 **บั๊กเงียบ: `warehousename` ไม่มีอยู่จริงในคำตอบของ ZORT** (แก้ 9 ก.ย. 2569)
+          ยิงของจริงแล้วช่องที่มีคือ `warehousecode` (เช่น "NEW") กับ `warehouseid`
+          ⇒ ช่องคลังในจอ **ว่างเปล่ามาตลอด** และไม่มีอะไรฟ้อง เพราะ `?? ""` กลืนให้เรียบร้อย
+          ⚠️ คลาสเดียวกับ id ที่ขาด: **เดาชื่อช่องแล้วมีค่าสำรอง = ผิดแบบเงียบสนิท**
+             เจอเพราะยิงของจริงมาดูรายชื่อช่องเท่านั้น ไม่มีทางเห็นจากการอ่านโค้ด */
+      warehouse: String(r?.warehousecode ?? ""),
+      warehouseId: String(r?.warehouseid ?? ""),
+      /* บรรทัดสินค้าติดมากับรายการอยู่แล้ว — จอไม่ต้องยิงรายใบถ้าแค่อยากรู้ว่าคืนอะไร
+         ⚠️ ส่งเป็นจำนวนบรรทัด ไม่ใช่ตัวบรรทัด เพื่อไม่ให้คำตอบบวมตอนขอ 200 ใบ */
+      lineCount: Array.isArray(r?.list) ? r.list.length : null,
       return_date: String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10),
       paid: String(r?.paymentstatus ?? r?.paymentStatus ?? ""),
     };
@@ -958,6 +967,13 @@ export async function listReturnOrders(limit = 50) {
     total: num(data?.count),
     live: true,
     rows: list.map((r) => ({
+      /* 🔴 **ต้องส่ง `id` ออกไปด้วยเสมอ** (เพิ่ม 9 ก.ย. 2569 · ฝั่งจอจับได้ก่อน push)
+          เส้นรายใบ `?returnorder=` ค้นด้วย `id` แต่รายการนี้ส่งแต่ `number` ⇒ จอกดเข้าใบไม่ได้
+          เพราะ **ไม่มีกุญแจจะส่งไป** — ไม่ใช่เพราะจอเขียนผิด
+          ⚠️ **คลาสเดียวกับ pending=1 เป๊ะ** (แก้ไปวันเดียวกัน) ⇒ กติกาถาวร:
+             **รายการใดที่มีเส้นรายใบ ต้องส่งกุญแจของเส้นนั้นออกไปด้วยเสมอ**
+             ส่งแต่ "เลขที่ใบ" ไม่พอ — เลขที่ใบใน ZORT ซ้ำกันได้ และไม่ใช่กุญแจค้น */
+      id: String(r?.id ?? ""),
       number: String(r?.number ?? ""),
       reference: String(r?.reference ?? ""),
       /* ชื่อลูกค้า **ส่งเต็ม ไม่ปิดบัง** — เจ้าของร้านชี้ขาด 6 ก.ย. 2569
