@@ -1,12 +1,12 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-06T11:08:18.792Z",
+  "generatedAt": "2026-09-09T11:46:37.974Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
   "functions": {
-    "count": 51,
+    "count": 53,
     "scheduled": [
       {
         "name": "backup-run",
@@ -52,6 +52,7 @@ export const ARCH = {
     "gucut-peak",
     "gucut-permits",
     "gucut-push",
+    "gucut-returns",
     "gucut-reviews",
     "gucut-social",
     "gucut-staff",
@@ -72,6 +73,10 @@ export const ARCH = {
       "purchase_order_items",
       "purchase_orders",
       "recon_log",
+      "return_orders",
+      "returns_desk",
+      "returns_desk_items",
+      "returns_desk_takeovers",
       "shopee_order_items",
       "shopee_orders",
       "stock_moves",
