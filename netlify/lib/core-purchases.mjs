@@ -374,6 +374,45 @@ export async function resetTransfers() {
  *     จอจะได้รู้ว่ามีเลขพัสดุให้ใช้ไหม แทนที่จะเดาจากชื่อฟังก์ชัน
  *  ⚠️ ดึงสด ไม่เก็บลงกระจก — ใช้ตอนคนกำลังยืนรับของ ต้องได้ค่าล่าสุดเสมอ
  */
+/* ── แยก "หัวใบ" ออกจาก "บรรทัดสินค้า" — ใช้ร่วมกันทั้งใบเสนอราคาและใบโอน ──
+ *
+ * 🔴 **บั๊กที่ตัวนี้เกิดมาแก้ (ฝั่งจอจับได้ 9 ก.ย. 2569)**
+ *    เดิมเขียนว่า `data.detail ?? data.data ?? data.list[0]`
+ *    แต่ ZORT **วางตัวใบไว้ที่ระดับบนสุดเลย** และ `data.list` คือ **อาร์เรย์บรรทัดสินค้า**
+ *    ⇒ ตกไปหยิบ `list[0]` = บรรทัดแรก มาเป็นทั้งใบทุกครั้ง
+ *    ⇒ `number` ที่นึกว่าเลขที่ใบ คือ **จำนวนชิ้นในบรรทัด** (TF ขึ้น "ใบโอน 37")
+ *       และกล่องเงินโชว์ `pricepernumber` = ราคาต่อหน่วย ไม่ใช่ยอดใบ
+ *    ⚠️ **มันผิดแบบดูเหมือนถูก** — หน้าจอมีเลขครบทุกช่อง ไม่มี error สักตัว
+ *       จับได้เพราะ `lines` เป็น null ทุกใบ (ของจริงต้องมีบรรทัด) เท่านั้น
+ *
+ * ⚠️ **ห้ามกลับไปใช้ `list[0]` เป็นหัวใบเด็ดขาด** ไม่ว่าจะเพิ่มเงื่อนไขอะไรก็ตาม
+ * ⚠️ **export ออกมาเพื่อให้ทดสอบได้จริง** — ไม่ใช่เพื่อให้ที่อื่นเรียกใช้
+ *    (ตัวที่ทดสอบไม่ได้ = ตัวที่ไม่มีใครรู้ว่ามันยังถูกอยู่ไหม)
+ * ⚠️ หาหัวใบไม่เจอ = **คืน null แล้วให้ผู้เรียกตอบว่าหาไม่เจอ**
+ *    ห้ามคืนบรรทัดสินค้าเป็นทางถอยกลับ — ผิดเงียบแย่กว่าตอบว่าไม่รู้
+ */
+const LINE_MARKERS = ["sku", "productid", "pricepernumber", "bundleitemid", "totalprice"];
+/** จริงเมื่อหน้าตาเป็น "บรรทัดสินค้า" ไม่ใช่หัวใบ */
+export function looksLikeLine(o) {
+  if (!o || typeof o !== "object") return false;
+  return LINE_MARKERS.some((k) => k in o);
+}
+/** หาหัวใบจากคำตอบดิบของ ZORT · คืน null ถ้าไม่เจอของที่หน้าตาเป็นหัวใบ */
+export function pickDocHeader(data) {
+  for (const cand of [data?.detail, data?.data, data]) {
+    if (!cand || typeof cand !== "object" || Array.isArray(cand)) continue;
+    if (looksLikeLine(cand)) continue;          // บรรทัดสินค้า — ข้าม
+    if (!("number" in cand) && !("id" in cand)) continue;
+    return cand;
+  }
+  return null;
+}
+/** บรรทัดสินค้าในใบ · null = ZORT ไม่ส่งช่องบรรทัดมาเลย (คนละความหมายกับ []) */
+export function docLines(doc) {
+  const l = Array.isArray(doc?.list) ? doc.list : Array.isArray(doc?.items) ? doc.items : null;
+  return l;
+}
+
 export async function getTransferDetail(id) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
@@ -387,11 +426,11 @@ export async function getTransferDetail(id) {
   if (!data) return { error: "ดึงรายละเอียดใบโอนจาก ZORT ไม่ได้" };
   /* ⚠️ ZORT วางตัวใบไว้คนละที่แล้วแต่เส้น — ลองทุกรูปที่เคยเจอในโปรเจกต์นี้
       หาไม่เจอ = **บอกว่าหาไม่เจอ** ห้ามคืนใบว่างที่หน้าตาเหมือน "ใบนี้ไม่มีของ" */
-  const t = data?.detail ?? data?.data ?? (Array.isArray(data?.list) ? data.list[0] : null);
-  if (!t || typeof t !== "object") {
-    return { error: "ZORT ตอบมาแต่หาตัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  const t = pickDocHeader(data);
+  if (!t) {
+    return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
   }
-  const lines = Array.isArray(t.list) ? t.list : Array.isArray(t.items) ? t.items : null;
+  const lines = docLines(t);
   return {
     live: true,
     number: String(t.number ?? ""),
@@ -587,13 +626,25 @@ export async function getQuotationDetail(id, raw = false) {
       ⇒ ตัวย่อที่ตีความให้เรียบร้อยแล้ว **ปิดบังโครงสร้างจริง** จนไล่ปัญหาต่อไม่ได้
       ⚠️ ห้าม log และห้ามส่งเข้า Telegram — มีชื่อ/เบอร์ลูกค้าในใบจริง */
   if (raw) return { live: true, raw: data };
-  const q = data?.detail ?? data?.data ?? (Array.isArray(data?.list) ? data.list[0] : null);
-  if (!q || typeof q !== "object")
-    return { error: "ZORT ตอบมาแต่หาตัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
-  const lines = Array.isArray(q.list) ? q.list : Array.isArray(q.items) ? q.items : null;
+  const q = pickDocHeader(data);
+  if (!q) return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  const lines = docLines(q);
   return {
     live: true,
     number: String(q.number ?? ""),
+    /* ── ช่องที่จอใช้แสดงจริง (เพิ่ม 9 ก.ย. 2569 หลังรู้โครงจริงแล้ว) ──
+       ก่อนหน้านี้ตัวนี้เป็น "เครื่องมือไล่ปัญหา" ล้วน ๆ ส่งแต่ก้อนเงินดิบให้คนอ่านเอง
+       เพราะตอนนั้น **ยังไม่รู้ว่าช่องไหนคือยอดใบ** ⇒ เดาไม่ได้ ห้ามเดา
+       ตอนนี้ยิงของจริงเห็นแล้วว่า `amount` คือยอดใบ จึงส่งเป็นช่องตรง ๆ ได้
+       ⚠️ **ยังส่งก้อนเงินดิบไปด้วยเหมือนเดิม ห้ามลบ** — วันที่ ZORT เปลี่ยนชื่อช่อง
+          จอจะเห็นว่ามีช่องอื่นโผล่มา แทนที่จะเห็น amount กลายเป็น 0 เงียบ ๆ */
+    status: String(q.status ?? ""),
+    date: String(q.quotationdateString ?? q.quotationdate ?? "").slice(0, 10),
+    customer: String(q.customername ?? ""),
+    amount: num(q.amount),
+    vatAmount: num(q.vatamount),
+    discountAmount: num(q.discountamount),
+    shippingAmount: num(q.shippingamount),
     /* ส่งช่องเงินทุกชื่อที่เป็นไปได้กลับไป **โดยไม่เลือกให้** — คนดูจะได้เห็นเองว่าช่องไหนมีค่า */
     "เงินที่ ZORT เก็บไว้": Object.fromEntries(
       Object.entries(q).filter(([k, v]) => /price|amount|total|net|grand/i.test(k) && v !== null)
@@ -601,6 +652,12 @@ export async function getQuotationDetail(id, raw = false) {
     /* สามสถานะ: null = ไม่มีช่องบรรทัด · [] = ใบนี้ไม่มีของ · มีของ = ได้บรรทัดจริง */
     lines: lines
       ? lines.map((i) => ({
+          sku: String(i?.sku ?? ""),
+          name: String(i?.name ?? ""),
+          qty: num(i?.number),                 // ⚠️ ZORT ใช้ชื่อ `number` แทนจำนวน — ตัวเดียวกับที่เคยถูกอ่านผิดเป็นเลขที่ใบ
+          unit: String(i?.unittext ?? ""),
+          pricePerUnit: num(i?.pricepernumber),
+          total: num(i?.totalprice),
           "ทุกช่องในบรรทัด": Object.fromEntries(
             Object.entries(i ?? {}).filter(([, v]) => v !== null && v !== "")
           ),
