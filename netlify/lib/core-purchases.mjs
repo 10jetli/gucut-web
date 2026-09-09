@@ -1026,3 +1026,56 @@ export async function getPurchaseDetail(number) {
     source: "กระจกคลังเงา (ไม่ได้ยิง ZORT สด)",
   };
 }
+
+/** อ่านใบคืนสินค้ารายใบ — **อ่านอย่างเดียว** (ฝั่งจอขอ 9 ก.ย. 2569)
+ *
+ * ใช้ `pickDocHeader` ตัวเดียวกับใบเสนอราคา/ใบโอน — **โดยตั้งใจ**
+ * 🔴 เส้นนี้เพิ่งเปิดใหม่ ถ้าเขียนตัวแยกหัวใบของตัวเองอีกอัน มันจะพลาดซ้ำแบบเดิมได้
+ *    (บั๊กอ่านผิดชั้น 9 ก.ย. 2569 เกิดเพราะแต่ละเส้นเดาโครงเอง) ⇒ ใช้ของกลางเสมอ
+ * ⚠️ ยังไม่เคยเห็นโครงจริงของเส้นนี้ ⇒ **คืน `fields` กลับไปด้วยเสมอ ห้ามลบ**
+ *    จอจะได้รู้ว่ามีช่องอะไรให้ใช้จริง แทนที่จะเดาจากชื่อฟังก์ชัน
+ *    และส่งช่องเงินทุกชื่อที่เป็นไปได้ไปด้วย **โดยไม่เลือกให้** จนกว่าจะเห็นของจริง
+ */
+export async function getReturnOrderDetail(id) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const key = String(id ?? "").trim();
+  if (!key) return { error: "ต้องระบุเลขที่ใบคืน" };
+  const res = await fetch(
+    `${BASE}/ReturnOrder/GetReturnOrderDetail?id=${encodeURIComponent(key)}`,
+    { headers: h, signal: AbortSignal.timeout(15000) }
+  ).catch(() => null);
+  const data = res?.ok ? await res.json().catch(() => null) : null;
+  if (!data) return { error: "ดึงรายละเอียดใบคืนจาก ZORT ไม่ได้" };
+
+  const r = pickDocHeader(data);
+  if (!r) return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  const lines = docLines(r);
+
+  return {
+    live: true,
+    number: String(r.number ?? ""),
+    status: String(r.status ?? ""),
+    date: String(r.returndateString ?? r.returndate ?? r.createdatetimeString ?? "").slice(0, 10),
+    customer: String(r.customername ?? ""),
+    reference: String(r.reference ?? ""),
+    /* ⚠️ ยังไม่ยืนยันว่าช่องไหนคือยอดใบของเส้นนี้ ⇒ **ส่งทุกช่องเงินไปให้ดูเอง ห้ามเดา**
+        (เดาผิดคือยอดคืนผิดทั้งร้าน) · เห็นของจริงเมื่อไหร่ค่อยตั้งชื่อช่องให้ */
+    "เงินที่ ZORT เก็บไว้": Object.fromEntries(
+      Object.entries(r).filter(([k, v]) => /price|amount|total|net|grand/i.test(k) && v !== null)
+    ),
+    /* สามสถานะ: null = ไม่มีช่องบรรทัด · [] = ใบนี้ไม่มีของ · มีของ = ได้บรรทัดจริง */
+    lines: lines
+      ? lines.map((i) => ({
+          sku: String(i?.sku ?? ""),
+          name: String(i?.name ?? ""),
+          qty: num(i?.number ?? i?.amount),   // ⚠️ ZORT ใช้ `number` แทนจำนวน (ตัวที่เคยถูกอ่านผิดเป็นเลขที่ใบ)
+          unit: String(i?.unittext ?? ""),
+          "ทุกช่องในบรรทัด": Object.fromEntries(
+            Object.entries(i ?? {}).filter(([, v]) => v !== null && v !== "")
+          ),
+        }))
+      : null,
+    fields: Object.keys(r).sort(),
+  };
+}

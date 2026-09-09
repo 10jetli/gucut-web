@@ -348,3 +348,65 @@ export async function snapshotStock() {
   }
   return { day, skus: entries.length };
 }
+
+/** นับใบขายของ **เดือนเดียว** จาก ZORT ตรง ๆ — ขาที่สองของจอ "กระจกครบไหม"
+ *
+ * 🔴 **ตัวนี้มีไว้ตรวจกระจก จึงห้ามอ่านจากกระจก** (ดู [[probe-shares-the-bug]])
+ *    ถ้านับจาก D1 ก็จะได้เลขเดียวกับที่กำลังจะตรวจ = ถามซ้ำ ไม่ใช่ทดสอบ
+ *
+ * 🔴 **ทำไมจอต้องการ**: จอ /core/coverage รู้แค่ "กระจกเรามีใบไหม"
+ *    แยกไม่ออกระหว่าง "ZORT ไม่มีใบเดือนนั้นจริง" กับ "เรายังไม่เคยกวาดเดือนนั้น"
+ *    สองอย่างนี้หน้าตาเหมือนกันเป๊ะ (แถวหาย) แต่ต้องทำคนละอย่าง
+ *
+ * ✅ **ไม่ต้องวนหน้า** — ยิงของจริงแล้วพบว่า ZORT คืนช่อง `count` มาให้เลย
+ *    (ยืนยัน 9 ก.ย. 2569: ส.ค. 2569 limit=1 คืน count=580 พร้อม totalAmount)
+ *    ⇒ ยิงครั้งเดียวต่อเดือน ไม่ชนเพดาน 26 วินาทีของ Netlify
+ *    ⚠️ **ห้ามเปลี่ยนไปนับ `list.length`** — นั่นคือจำนวนใบในหน้านั้น ไม่ใช่ทั้งเดือน
+ *
+ * ⚠️ **ยิงไม่สำเร็จ = คืน `error` ห้ามคืน 0 เด็ดขาด**
+ *    0 แปลว่า "ZORT ยืนยันว่าเดือนนั้นไม่มีใบ" ซึ่งเป็นคำตอบที่หนักแน่นมาก
+ *    ถ้าเอา 0 มาใช้แทน "ถามไม่สำเร็จ" จอจะบอกว่ากระจกครบทั้งที่ไม่เคยรู้เลย
+ *
+ * @param {string} ym  "YYYY-MM" (ปี ค.ศ.)
+ * @param {"z1"|"z2"} tag
+ */
+export async function zortOrderCountForMonth(ym, tag = "z1") {
+  const m = String(ym ?? "").match(/^(\d{4})-(\d{2})$/);
+  if (!m) return { error: "ym ต้องเป็น YYYY-MM (ปี ค.ศ.)" };
+  const st = stores().find((x) => x.tag === tag);
+  if (!st) return { skip: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${tag}` };
+
+  const y = Number(m[1]), mo = Number(m[2]);
+  const after = `${m[1]}-${m[2]}-01`;
+  // วันสุดท้ายของเดือนจริง — วันที่ 0 ของเดือนถัดไป (กันเดือน ก.พ. และเดือน 30 วัน)
+  const last = new Date(Date.UTC(y, mo, 0)).getUTCDate();
+  const before = `${m[1]}-${m[2]}-${String(last).padStart(2, "0")}`;
+
+  const r = await fetch(
+    `${BASE}/Order/GetOrders?orderdateafter=${after}&orderdatebefore=${before}&limit=1&page=1`,
+    {
+      headers: { storename: st.storename, apikey: st.apikey, apisecret: st.apisecret },
+      signal: AbortSignal.timeout(15000),
+    }
+  ).catch(() => null);
+  if (!r?.ok) return { error: `ZORT ตอบ ${r ? r.status : "ต่อไม่ติด"}`, ym, store: tag, from: after, to: before };
+
+  const d = await r.json().catch(() => null);
+  if (!d || typeof d.count !== "number")
+    return { error: "ZORT ตอบมาแต่ไม่มีช่อง count", ym, store: tag, fields: Object.keys(d ?? {}) };
+
+  return {
+    ok: true,
+    ym,
+    store: tag,
+    from: after,
+    to: before,
+    /* จำนวนใบทั้งเดือนตามที่ ZORT บอก — **ยังไม่หักใบยกเลิก**
+       ⚠️ จอที่เอาไปเทียบกับกระจกต้องรู้ข้อนี้: กระจกฝั่งเรากรองใบยกเลิกออกในบางจอ
+          ⇒ เลขสองฝั่งไม่ต้องเท่ากันเป๊ะก็ได้ สิ่งที่ตัดสินคือ **0 กับ ไม่ใช่ 0** */
+    zortCount: d.count,
+    zortAmount: Number(d.totalAmount) || 0,
+    countsCancelled: true,
+    source: "ZORT สด (ไม่ผ่านกระจก)",
+  };
+}

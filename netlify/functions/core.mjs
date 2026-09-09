@@ -1784,9 +1784,20 @@ async function route(req, context) {
       const store = ["z1", "z2"].includes(url.searchParams.get("store"))
         ? url.searchParams.get("store")
         : null;
-      const months = Math.max(1, Math.min(36, parseInt(url.searchParams.get("months") ?? "6", 10) || 6));
+      /* ⚠️ **เพดานขยายจาก 36 → 120 เดือน** (9 ก.ย. 2569 · ฝั่งจอทักมา)
+          ข้อมูลเริ่ม ส.ค. 2566 ⇒ เพดาน 36 เดือนกำลังจะเริ่มบังของจริง **โดยไม่มีอะไรเตือน**
+          จอ /core/coverage ต้องย้อนถึงเดือนแรกสุดเสมอ ไม่งั้นเดือนที่ถูกเพดานตัด
+          จะดูเหมือน "ไม่มีข้อมูล" ทั้งที่จริงคือ "ไม่ได้ถาม" — คนละความหมายกันคนละโลก
+          ⚠️ ของที่โตตามเวลาแบบนี้ ห้ามตั้งเพดานให้พอดีกับปัจจุบัน */
+      const months = Math.max(1, Math.min(120, parseInt(url.searchParams.get("months") ?? "6", 10) || 6));
       const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-      const from = new Date(Date.now() + 7 * 3600e3 - months * 31 * 864e5)
+      /* ⚠️ **นับถอยด้วยเดือนจริง ไม่ใช่ months × 31 วัน** (แก้ 9 ก.ย. 2569)
+          31 วันต่อเดือนทำให้ย้อนไป**ไกลเกินจริง** เดือนละ ~0-3 วันสะสม
+          (12 เดือน = เกินไป ~5 วัน · 36 เดือน = เกินไป ~2 สัปดาห์)
+          ⇒ ขอบซ้ายไม่ตรงกับต้นเดือนที่คนเข้าใจ และจอ coverage ที่เติมเดือนตามปฏิทิน
+             จะเห็นเดือนโผล่มาเกินหนึ่งเดือนโดยไม่มีใครสั่ง */
+      const _t = new Date(Date.now() + 7 * 3600e3);
+      const from = new Date(Date.UTC(_t.getUTCFullYear(), _t.getUTCMonth() - months + 1, 1))
         .toISOString()
         .slice(0, 10);
       // ⚠️ ต้องตัดใบยกเลิกออกให้ตรงกับจออื่น ไม่งั้นยอดรายเดือนไม่ตรงกับหน้ารายการขาย
@@ -1817,6 +1828,37 @@ async function route(req, context) {
       });
     }
 
+    /* ── ขาที่สองของจอ "กระจกครบไหม": **นับใบจาก ZORT โดยตรง** ──
+       GET /api/core?zortmonthly=1&ym=2566-10  (หรือ &from=YYYY-MM&to=YYYY-MM)
+
+       🔴 **ทำไมต้องมี** (ฝั่งจอขอ 9 ก.ย. 2569)
+          จอ /core/coverage รู้แค่ "กระจกเรามีใบไหม" ⇒ แยกไม่ออกระหว่าง
+          **"ZORT ไม่มีใบเดือนนั้นจริง"** กับ **"เรายังไม่เคยกวาดเดือนนั้น"**
+          สองอย่างนี้ให้หน้าตาเหมือนกันเป๊ะ (แถวหาย) แต่ต้องทำคนละอย่าง
+          ⇒ ต้องมีตัวนับที่ **ไม่ผ่านกระจก** ถึงจะตัดสินได้ (ดู [[metrics-need-outside-leg]])
+
+       ⚠️ ยิง ZORT สด ทีละเดือน — ไม่เก็บลงกระจกโดยตั้งใจ
+          (ตัวนี้มีไว้ **ตรวจกระจก** ถ้าเก็บลงกระจกก็จะกลายเป็นตรวจตัวเอง
+           ดู [[probe-shares-the-bug]])
+       ⚠️ ขอทีละเดือนเท่านั้น **ห้ามวนทั้งช่วงในคำขอเดียว** — Netlify ให้รอผลได้ ~26 วิ
+          จอเป็นคนวนทีละเดือนเอง จะได้เห็นความคืบหน้าและไม่ชนเพดาน
+       ⚠️ ZORT ตอบไม่ได้ = คืน `error` **ห้ามคืน 0** (0 แปลว่า "ไม่มีใบจริง") */
+    /* ใบคืนสินค้ารายใบ — ฝั่งจอขอ 9 ก.ย. 2569 (จอ /core/return-orders กดเข้าใบไม่ได้)
+       GET /api/core?returnorder=<id>  ⚠️ ใช้ `id` ไม่ใช่เลขที่ใบ (เลขที่ใบซ้ำกันได้) */
+    if (url.searchParams.get("returnorder")) {
+      const { getReturnOrderDetail } = await import("../lib/core-purchases.mjs");
+      return okJson(await getReturnOrderDetail(url.searchParams.get("returnorder")));
+    }
+
+    if (url.searchParams.get("zortmonthly")) {
+      const ym = String(url.searchParams.get("ym") ?? "").trim();
+      if (!/^\d{4}-\d{2}$/.test(ym))
+        return json({ error: "ต้องระบุ ym=YYYY-MM (ปี ค.ศ.)" }, 400);
+      const { zortOrderCountForMonth } = await import("../lib/core-sync.mjs");
+      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      return okJson(await zortOrderCountForMonth(ym, store));
+    }
+
     if (url.searchParams.get("pending")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
       const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
@@ -1841,8 +1883,14 @@ async function route(req, context) {
       );
       const alive = new Map(chans.map((c) => [String(c.ch), String(c.lastOrder ?? "") >= cut]));
 
+      /* 🔴 **ต้องดึง `id` มาด้วยเสมอ ห้ามส่งแต่ `number`** (เพิ่ม 9 ก.ย. 2569)
+          `number` (เลขที่ใบ) **ซ้ำกันได้จริง** และไม่ใช่กุญแจของตาราง — กุญแจคือ `id`
+          ซึ่งมี prefix ร้านนำหน้า (`z1/<number>`) ⇒ จอที่เอา number ไปเปิดใบรายใบ
+          จะได้หน้า "ไม่พบใบนี้" **ทุกใบ** (ฝั่งจอเจอของจริงที่จอแพ็คสินค้า 9 ก.ย. 2569
+          เสีย 100% ของใบ และไม่มีอะไรฟ้องเลยเพราะหน้าปลายทางตอบ 200 ตามปกติ)
+          ส่ง `source` ไปด้วย จอจะได้ไม่ต้องเดา prefix เวลาร้านที่สองเข้ามา */
       const rows = await coreQuery(
-        `SELECT number, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, order_date, amount,
+        `SELECT id, source, number, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, order_date, amount,
                 status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track
          FROM orders
          WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
@@ -1855,6 +1903,9 @@ async function route(req, context) {
         const unpaid = !/paid/i.test(String(r.pay));
         const chAlive = alive.get(String(r.ch)) !== false;
         const item = {
+          /* 🗑️ ฝั่งจอมีตัวหา id เองชั่วคราวอยู่ (lib/open-order.ts) — พอช่องนี้ขึ้นจริงแล้ว
+              ให้ถอดตัวนั้นออก จะได้กลับไปเป็นลิงก์ตรง ๆ ที่เร็วกว่าและไม่ต้องยิงเพิ่ม */
+          id: r.id, source: r.source,
           number: r.number, channel: r.ch, day: r.order_date,
           amount: r.amount, status: r.status, pay: r.pay || "(ว่าง)",
           channelLastOrder: chans.find((c) => String(c.ch) === String(r.ch))?.lastOrder ?? null,
