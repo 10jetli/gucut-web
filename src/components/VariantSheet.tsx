@@ -136,7 +136,12 @@ export default function VariantSheet({
             <div className="flex flex-wrap gap-2">
               {product.v.map((v) => {
                 const out = v.s <= 0;
-                const active = sel?.t === v.t;
+                /* ⚠️ **ห้ามเขียน `sel?.t === v.t` เฉย ๆ** — `?.` ฝั่งซ้ายกันแค่ "sel เป็น null"
+                   ไม่ได้กัน "สองฝั่งเป็น undefined เท่ากันพอดี" ซึ่ง `undefined === undefined`
+                   เป็นจริง ⇒ ยังไม่ได้เลือกอะไร + ตัวเลือกนั้นไม่มีชื่อ = ขึ้นว่า "เลือกอยู่"
+                   ตรงข้ามกับที่ตั้งใจเป๊ะ และ tsc มองไม่เห็นเพราะชนิดบอกว่าเป็น string เสมอ
+                   (ฝั่งจอเจอรูปเดียวกันจนจอขาวทั้งหน้า 9 ก.ย. 2569 — คนละไฟล์ คลาสเดียวกัน) */
+                const active = !!sel && sel.t === v.t;
                 return (
                   <button
                     key={v.t + v.k}
