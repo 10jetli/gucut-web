@@ -410,3 +410,47 @@ export async function zortOrderCountForMonth(ym, tag = "z1") {
     source: "ZORT สด (ไม่ผ่านกระจก)",
   };
 }
+
+/**
+ * นับใบทั้งเดือนของ **ทั้งสองร้านรวมกัน** — ตัวที่จอควรใช้เวลาเทียบกับกระจกแบบ "ทั้ง 2 ร้าน"
+ *
+ * 🔴 **ทำไมต้องมีตัวนี้ ไม่ปล่อยให้จอบวกเอง** (ฝั่งจอเจอของจริง 9 ก.ย. 2569)
+ *    `zortmonthly` เดิมตอบร้านเดียว (z1) เป็นค่าเริ่มต้น แต่กระจกฝั่งเราตอนเลือก
+ *    "ทั้ง 2 ร้าน" รวมสองร้าน ⇒ จอขึ้น "ZORT 367 vs เรา 1,103 ต่างกันมาก" **ทุกเดือน**
+ *    ทั้งที่ไม่มีอะไรผิดเลย · วัดจริง: ต.ค. 2566 z1=367 + z2=761 = 1,128 เทียบกระจก 1,103
+ *    ⇒ ต่างแค่ 25 ใบซึ่งคือใบยกเลิกที่ ZORT ยังนับ — ปกติทุกประการ
+ *    ⇒ ถ้าปล่อยให้แต่ละจอบวกเอง ทุกจอใหม่จะเดินลงหลุมเดิม
+ *
+ * ⚠️ **ร้านใดร้านหนึ่งถามไม่ได้ = ทั้งเดือนเป็น error ห้ามคืนผลรวมของร้านที่ได้**
+ *    ผลรวมที่ขาดไปหนึ่งร้านหน้าตาเหมือน "ZORT มีน้อยกว่าเรา" ซึ่งชี้ผิดทางทั้งหมด
+ *    (กฎ [[partial-coverage-reported-as-full]] — ครอบไม่ครบ แล้วรายงานเหมือนครอบครบ)
+ */
+export async function zortOrderCountForMonthAll(ym) {
+  const tags = stores().map((s) => s.tag);
+  if (!tags.length) return { error: "ยังไม่ได้ตั้งรหัส ZORT สักร้าน", ym };
+
+  const parts = await Promise.all(tags.map((t) => zortOrderCountForMonth(ym, t)));
+  const bad = parts.filter((p) => !p?.ok);
+  if (bad.length) {
+    return {
+      error: `ถามไม่สำเร็จ ${bad.length} ใน ${tags.length} ร้าน — ไม่คืนผลรวมบางส่วน`,
+      ym,
+      store: "all",
+      failedParts: parts.map((p, i) => ({ store: tags[i], error: p?.error ?? p?.skip ?? null })),
+    };
+  }
+
+  return {
+    ok: true,
+    ym,
+    store: "all",
+    stores: tags,
+    from: parts[0].from,
+    to: parts[0].to,
+    zortCount: parts.reduce((n, p) => n + p.zortCount, 0),
+    zortAmount: parts.reduce((n, p) => n + p.zortAmount, 0),
+    perStore: parts.map((p) => ({ store: p.store, zortCount: p.zortCount, zortAmount: p.zortAmount })),
+    countsCancelled: true,
+    source: "ZORT สด รวมทุกร้าน (ไม่ผ่านกระจก)",
+  };
+}

@@ -1854,9 +1854,19 @@ async function route(req, context) {
       const ym = String(url.searchParams.get("ym") ?? "").trim();
       if (!/^\d{4}-\d{2}$/.test(ym))
         return json({ error: "ต้องระบุ ym=YYYY-MM (ปี ค.ศ.)" }, 400);
-      const { zortOrderCountForMonth } = await import("../lib/core-sync.mjs");
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
-      return okJson(await zortOrderCountForMonth(ym, store));
+      /* 🔴 **ห้ามกลับไปใช้ค่าเริ่มต้นเงียบ ๆ** (ของเดิม: อะไรที่ไม่ใช่ "z2" ตกเป็น z1)
+         ฝั่งจอส่ง store ที่ไม่รู้จักหรือไม่ส่งเลย แล้วได้เลขร้านเดียวกลับไป
+         เอาไปเทียบกับกระจกที่รวมสองร้าน ⇒ ขึ้น "ต่างกันมาก" ทุกเดือนทั้งที่ไม่มีอะไรผิด
+         (เจอของจริง 9 ก.ย. 2569 · วัดแล้ว z1 367 + z2 761 = 1,128 เทียบกระจก 1,103)
+         ⇒ ตอนนี้ค่าที่ไม่รู้จัก **ตอบ 400 ไปเลย** และมี store=all ให้ใช้เมื่อจอเลือกทั้งสองร้าน */
+      const raw = (url.searchParams.get("store") ?? "z1").trim();
+      if (!["z1", "z2", "all"].includes(raw))
+        return json({ error: `store ต้องเป็น z1 · z2 · all (ได้มา "${raw}")` }, 400);
+      const { zortOrderCountForMonth, zortOrderCountForMonthAll } =
+        await import("../lib/core-sync.mjs");
+      return okJson(raw === "all"
+        ? await zortOrderCountForMonthAll(ym)
+        : await zortOrderCountForMonth(ym, raw));
     }
 
     if (url.searchParams.get("pending")) {
