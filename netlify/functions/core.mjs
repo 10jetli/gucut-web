@@ -1646,12 +1646,37 @@ async function route(req, context) {
          **งานหนักอยู่ที่จำนวนแถวที่ต้องอ่าน ไม่ใช่จำนวนที่ส่งกลับ** ⇒ ต้องลดรอบการอ่าน
          ⚠️ ไม่ LIMIT แล้ว = ได้กลุ่มทุกชื่อในช่วง (เคยวัดได้ ~1,036 ชื่อ) รับไหว
             แต่ถ้าวันหนึ่งชื่อโตเป็นหลักแสน ต้องกลับมาคิดใหม่ — เขียนกำกับไว้ตรงนี้ */
-      const rows = await coreQuery(
+      /* ⚡⚡ **ยุบอีกชั้น 9 ก.ย. 2569 — กวาดช่วงรอบเดียวจบ**
+         ของเดิมกวาดช่วงเดียวกัน **สองรอบ**: รอบนี้จัดกลุ่มรายลูกค้า และอีกรอบข้างล่าง
+         จัดกลุ่ม (ลูกค้า × ช่องทาง) ⇒ ทั้งที่กลุ่มละเอียดกว่า **คำนวณกลุ่มหยาบกว่าได้อยู่แล้ว**
+         ⇒ จัดกลุ่ม (ชื่อ × ช่องทาง) ครั้งเดียว แล้วรวบเป็นรายลูกค้าฝั่งนี้
+
+         รวมกับสองคอมมิตก่อนหน้า: จาก **กวาดช่วง 3 รอบ + สแกนทั้งตาราง 1 รอบ**
+         เหลือ **กวาดช่วงรอบเดียว + seek รายชื่อเป็นก้อน**
+
+         ⚠️ เกณฑ์ตัดสินว่าแก้สำเร็จ (ฝั่งจอตั้งให้ หลังพบว่ารายงานเดิมของตัวเองมาจากการยิงรอบเดียว):
+            **สำเร็จครบ 3/3 รอบ และต่ำกว่า ~15 วิ** — ไม่ใช่ "ยิงครั้งเดียวแล้วผ่าน"
+            ของเดิม days=30 ล้ม 1 ใน 3 รอบ (40.2 / 22.1 / 15.9 วิ) ⇒ ไม่เคย "ผ่าน" จริง */
+      const gRows = await coreQuery(
         `SELECT COALESCE(NULLIF(TRIM(customer),''),'') AS name,
+                COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
                 COUNT(*) AS orders, SUM(amount) AS sales, MAX(order_date) AS lastDay
-         FROM orders WHERE ${w} GROUP BY 1 ORDER BY sales DESC`,
+         FROM orders WHERE ${w} GROUP BY 1,2`,
         params
       );
+      /* รวบ (ชื่อ × ช่องทาง) → รายลูกค้า · เก็บช่องทางไว้ในตัวเดียวกันเลย ไม่ต้องยิงซ้ำ */
+      const byName = new Map();
+      for (const g of gRows) {
+        const k = String(g.name ?? "");
+        let cur = byName.get(k);
+        if (!cur) { cur = { name: k, orders: 0, sales: 0, lastDay: null, chans: [] }; byName.set(k, cur); }
+        cur.orders += num2(g.orders);
+        cur.sales += num2(g.sales);
+        if (!cur.lastDay || String(g.lastDay) > cur.lastDay) cur.lastDay = g.lastDay;
+        if (k !== "") cur.chans.push({ channel: String(g.ch), orders: num2(g.orders) });
+      }
+      for (const c of byName.values()) c.chans.sort((a, b) => b.orders - a.orders);
+      const rows = [...byName.values()].sort((a, b) => b.sales - a.sales);
       const named = rows.filter((r) => String(r.name || "") !== "").slice(0, limit);
       const blank = rows.find((r) => String(r.name || "") === "");
       const tot = {
@@ -1715,22 +1740,14 @@ async function route(req, context) {
         }
       }
 
+      /* ⚡ **คำสั่งช่องทางถูกยุบเข้ากับคำสั่งหลักแล้ว (9 ก.ย. 2569)** — ไม่ยิงซ้ำอีก
+         ช่องทางของแต่ละคนถูกเก็บไว้ตั้งแต่ตอนรวบ (ชื่อ × ช่องทาง) ข้างบน
+         ⚠️ กติกาเดิมยังอยู่ครบ: **ห้ามใช้ GROUP_CONCAT แล้วให้จอ split ด้วยลูกน้ำ**
+            ชื่อช่องทางคนตั้งเอง วันไหนมีลูกน้ำในชื่อ จอจะแตกชื่อเดียวเป็นสองช่องทางเงียบ ๆ
+            ⇒ ยังส่งเป็นอาร์เรย์เหมือนเดิม ไม่มีตัวคั่นให้พลาด */
       const chMap = new Map();
-      if (wantNames.size) {
-        const chRows = await coreQuery(
-          `SELECT TRIM(customer) AS name,
-                  COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
-                  COUNT(*) AS c
-           FROM orders WHERE ${w} AND TRIM(COALESCE(customer,'')) <> ''
-           GROUP BY 1,2 ORDER BY c DESC`,
-          params
-        );
-        for (const r of chRows) {
-          const k = String(r.name);
-          if (!wantNames.has(k)) continue;
-          if (!chMap.has(k)) chMap.set(k, []);
-          chMap.get(k).push({ channel: String(r.ch), orders: num2(r.c) });
-        }
+      for (const c of byName.values()) {
+        if (wantNames.has(c.name)) chMap.set(c.name, c.chans);
       }
 
       return json({
