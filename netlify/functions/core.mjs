@@ -1669,19 +1669,36 @@ async function route(req, context) {
             ตามนิยามของ ZORT · ถ้า MIN เฉพาะในช่วง ทุกคนจะกลายเป็นลูกค้าใหม่หมด
          ⚠️ ตัวกรองร้านยังต้องใช้ (ลูกค้า z1 กับ z2 คนละบริบท) แต่**ไม่ใส่กรอบวัน**
          ⚠️ ไม่ใช้ IN(ชื่อ) — เพดานตัวแปร D1 (บทเรียนเดิมข้างบน) ⇒ จัดกลุ่มทั้งหมดแล้วกรองฝั่งนี้ */
+      /* ⚡ **แก้ 9 ก.ย. 2569 — คำสั่งนี้เคยทำให้ทั้งจอตายด้วย D1 429**
+         ของเดิม: `GROUP BY TRIM(customer)` **ทั้งตาราง ไม่มีกรอบวัน** ⇒ สแกน 58,702 แถว
+         ทุกครั้งที่เรียก · `?days=90` ไม่ได้ทำให้เบาลงเลย ⇒ ยิ่งข้อมูลโตยิ่งช้า
+         จนวันหนึ่ง **HTTP 500 ที่ 37 วินาที · "DB exceeded its CPU time limit"**
+         โดยที่ไม่มีใครแก้โค้ดอะไรเลย (ฝั่งจอยิงเจอ 9 ก.ย.)
+
+         ของใหม่: ค้น **เฉพาะชื่อที่จะส่งกลับจริง** ด้วยดัชนีคู่ (customer, order_date)
+         ⇒ เป็นการ seek ทีละชื่อ ไม่ใช่ scan ทั้งตาราง
+
+         ⚠️ **ยังต้องแบ่งก้อน ห้ามยัดทุกชื่อลง IN ครั้งเดียว** — เพดานตัวแปรของ D1
+            เคยระเบิดมาแล้ว 5 ก.ย. (`too many SQL variables` ตอน limit=500)
+            แบ่งก้อนละ 50 ⇒ limit=500 ใช้ 10 คำสั่งเล็ก ๆ แทน 1 คำสั่งที่สแกนทั้งตาราง
+         ⚠️ จับคู่ด้วย TRIM ฝั่งนี้ เพราะฐานเก็บชื่อที่มีช่องว่างหัวท้ายได้
+            ⇒ ส่ง IN ด้วยชื่อดิบไม่ได้ · ใช้ `TRIM(customer) IN (...)` แล้วให้ดัชนีช่วยเท่าที่ช่วยได้
+            (ยังดีกว่าเดิมมาก เพราะกรอบด้วยชุดชื่อที่เล็กแทนทั้งตาราง) */
       const firstMap = new Map();
       if (wantNames.size) {
-        const fw = ["TRIM(COALESCE(customer,'')) <> ''", CANCEL];
-        const fp = [];
-        if (store) { fw.push("source = ?"); fp.push(store); }
-        const fRows = await coreQuery(
-          `SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
-           FROM orders WHERE ${fw.join(" AND ")} GROUP BY 1`,
-          fp
-        );
-        for (const r of fRows) {
-          const k = String(r.name);
-          if (wantNames.has(k)) firstMap.set(k, r.firstDay);
+        const names = [...wantNames];
+        const CHUNK = 50;
+        for (let i = 0; i < names.length; i += CHUNK) {
+          const part = names.slice(i, i + CHUNK);
+          const fw = [`TRIM(customer) IN (${part.map(() => "?").join(",")})`, CANCEL];
+          const fp = [...part];
+          if (store) { fw.push("source = ?"); fp.push(store); }
+          const fRows = await coreQuery(
+            `SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
+             FROM orders WHERE ${fw.join(" AND ")} GROUP BY 1`,
+            fp
+          );
+          for (const r of fRows) firstMap.set(String(r.name), r.firstDay);
         }
       }
 

@@ -129,6 +129,13 @@ export async function coreInit() {
       created_at TEXT DEFAULT (datetime('now')), updated_at TEXT)`,
     `CREATE INDEX IF NOT EXISTS idx_orders_date ON orders(order_date)`,
     `CREATE INDEX IF NOT EXISTS idx_orders_channel ON orders(channel)`,
+    /* ⚡ ดัชนีคู่ (ลูกค้า, วันที่) — เติม 9 ก.ย. 2569 หลังจอรายงานลูกค้า 90 วัน
+       ตอบ **HTTP 500 ที่ 37 วินาที** พร้อม `D1 429: DB exceeded its CPU time limit`
+       ต้นเหตุคือคำสั่งหา "ซื้อครั้งแรก" ที่ **ไม่มีกรอบวันเลย** ⇒ สแกนทั้งตาราง
+       (ตอนนั้น 58,702 แถว) ทุกครั้งที่เรียก · `?days=90` ไม่ได้ทำให้เบาลงสักนิด
+       ⇒ ยิ่งข้อมูลโตยิ่งช้า จนวันหนึ่งพังเอง โดยที่ไม่มีใครเปลี่ยนโค้ดอะไรเลย
+       ดัชนีนี้ทำให้ค้น MIN(order_date) ของลูกค้าทีละคนเป็นการ seek ไม่ใช่ scan */
+    `CREATE INDEX IF NOT EXISTS idx_orders_customer_date ON orders(customer, order_date)`,
     `CREATE TABLE IF NOT EXISTS order_items (
       order_id TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
       qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0,
