@@ -170,8 +170,11 @@ export default async function handler(req, context) {
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
   // ── รับรีวิวเข้า ──
+  // ยืนยันตัวได้สองทาง (10 ก.ย. 2569 — เพิ่มทางที่สองตอนสร้างตัวเก็บรายคืนขึ้นใหม่):
+  //   ① body.secret = REVIEWS_INGEST_SECRET (ทางเดิม — ตัวเก็บที่มี secret อยู่แล้วไม่ต้องแก้)
+  //   ② header x-admin-key ผ่าน adminGate (มีตัวกันเดารัวในตัว) — ตัวเก็บบนเครื่องร้าน
+  //      ใช้คีย์หลังร้านที่มีอยู่แล้วได้เลย ไม่ต้องคัด secret จาก Netlify ออกมาเก็บอีกที่
   const secret = process.env.REVIEWS_INGEST_SECRET;
-  if (!secret) return json({ error: "ยังไม่ได้ตั้ง REVIEWS_INGEST_SECRET ที่ Netlify" }, 503);
 
   let body;
   try {
@@ -179,7 +182,14 @@ export default async function handler(req, context) {
   } catch {
     return json({ error: "body ต้องเป็น JSON" }, 400);
   }
-  if (body?.secret !== secret) return json({ error: "unauthorized" }, 401);
+  const bySecret = !!secret && body?.secret === secret;
+  let byAdmin = false;
+  if (!bySecret) {
+    const gate = await adminGate(req, context);
+    if (gate.deny) return gate.deny;
+    byAdmin = gate.ok;
+  }
+  if (!bySecret && !byAdmin) return json({ error: "unauthorized" }, 401);
 
   const list = Array.isArray(body?.reviews) ? body.reviews.slice(0, 500) : null;
   if (!list) return json({ error: "ต้องส่ง reviews เป็น array" }, 400);
