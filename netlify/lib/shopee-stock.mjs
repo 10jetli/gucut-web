@@ -58,6 +58,8 @@ export async function collectShopeeItemIds(fetchPage) {
 async function shopeeStock() {
   const got = await collectShopeeItemIds((query) => shopCall("/api/v2/product/get_item_list", query));
   const ids = got.ids;
+  /* ⚠️ ไม่มี id เลย ⇒ คืนอาร์เรย์ว่างพร้อมผลตรวจความครบ · **ตัวตัดสินว่าจะหยุดหรือไม่
+     อยู่ที่ shopeeStockCompare** (ที่นี่เป็นแค่ตัวดึง ไม่ควรตัดสินใจแทนผู้เรียกทุกคน) */
   if (!ids.length) return Object.assign([], { coverage: got });
 
   /* ชื่อ + SKU ระดับสินค้า (ทีละ 50 ตามเพดาน API)
@@ -295,6 +297,23 @@ export async function shopeeStockCompare(o = {}) {
       return /no such table/i.test(msg) ? [] : { __err: msg.slice(0, 160) };
     }),
   ]);
+  /* 🔴 **ได้ 0 รายการจาก Shopee = หยุด ห้ามเดินต่อด้วยกองว่าง** (เพิ่ม 11 ก.ย. 2569)
+      รูเดียวกับฝั่ง Lazada เป๊ะ: ตัวดึงคืนกองว่างได้โดยไม่มี error (payload ไม่มี item /
+      รูปแบบเปลี่ยน) ⇒ เดินต่อจะได้ผล "ศูนย์ครบทุกช่อง" ซึ่งอ่านเหมือนทุกอย่างตรงกันดี
+      ⚠️ ศูนย์อันตรายกว่าว่างเปล่า เพราะว่างทำให้คนสงสัย แต่ศูนย์ทำให้คนสบายใจ
+      ⚠️ แยก "อ่านไม่ได้" ออกจาก "ร้านไม่มีของลงขาย" ด้วยยอดที่แพลตฟอร์มประกาศ ·
+         ไม่ได้ประกาศมา = **แยกไม่ได้ ⇒ เขียนตรง ๆ** ห้ามเดาแทนคนอ่าน */
+  if (!rows.length) {
+    const dec = rows.coverage?.declared
+    const why = Number.isFinite(dec) && dec > 0
+      ? `Shopee บอกว่ามี ${dec} สินค้า แต่เราอ่านมาได้ 0 ⇒ อ่านรายการสินค้าไม่สำเร็จ`
+      : Number.isFinite(dec) && dec === 0
+        ? "Shopee บอกเองว่าไม่มีสินค้าลงขายอยู่เลย (ไม่ใช่เราอ่านไม่ได้)"
+        : "อ่านรายการสินค้าบน Shopee ได้ 0 รายการ และแพลตฟอร์มไม่ได้บอกยอดรวมมา "
+          + "⇒ **แยกไม่ได้ว่าอ่านไม่สำเร็จ หรือร้านไม่มีของลงขายจริง**";
+    return { skip: why, shopeeRows: 0, declaredOnPlatform: Number.isFinite(dec) ? dec : null };
+  }
+
   /* ถามสูตรชุดไม่ได้ = ต้องบอกออกไป ห้ามให้ผลดูเหมือนตรวจครบ */
   const recipeErr = rec && !Array.isArray(rec) ? rec.__err : null;
   const recRows = Array.isArray(rec) ? rec : [];

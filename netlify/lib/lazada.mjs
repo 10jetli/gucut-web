@@ -260,19 +260,18 @@ export async function lazadaSkuFields(sample = 3) {
     แต่ **ผิดมหันต์สำหรับ "การคิดแผนดันสต็อก"** — แผนที่คิดจากตัวอย่าง 50 แถว
     จะทิ้งรหัสที่เกินไปเงียบ ๆ โดยที่ `diffCount` ยังรายงานเลขเต็ม ⇒ ดูเหมือนครบทุกอย่าง
     (บั๊กตัวเดียวกันนี้เคยเจอและแก้ที่ฝั่ง Shopee ไปแล้ว 5 ก.ย. 2569 — ฝั่ง Lazada ตกหล่น) */
-export async function lazadaStockCompare(o = {}) {
-  const { coreReady, coreQuery } = await import("./coredb.mjs");
-  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const t = await validToken();
-  if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Lazada" };
-
+/** ไล่หน้าสินค้า Lazada — **แยกออกมาเพื่อทดสอบได้ด้วยหน้าปลอม โดยเดินโค้ดเส้นเดียวกับของจริง**
+ *  (แพตเทิร์นเดียวกับ collectShopeeItemIds / collectTiktokStock — 11 ก.ย. 2569)
+ *  คืน { rows, declared } · `declared` = ยอดที่แพลตฟอร์มประกาศ (null = ไม่ได้บอกมา)
+ *  ⚠️ ที่นี่ **ไม่ตัดสินใจแทนผู้เรียก** — แค่เก็บของกับรายงานว่าแพลตฟอร์มบอกยอดเท่าไหร่
+ *     การตัดสินว่า "0 แถว = หยุด" อยู่ที่ lazadaStockCompare เพื่อให้เหตุผลอยู่ที่เดียว
+ *  @param fetchPage (offset) => { items, total }
+ */
+export async function collectLazadaRows(fetchPage) {
   const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
-  const { expandSku } = await import("./sku-match.mjs");
-
-  // ── ดึงสินค้าทั้งหมดจาก Lazada ──
   const rows = [];
   const eat = (items) => {
-    for (const p of items) {
+    for (const p of items || []) {
       for (const sk of p?.skus || []) {
         const code = String(sk?.SellerSku ?? "").trim();
         if (!code) continue;
@@ -285,16 +284,54 @@ export async function lazadaStockCompare(o = {}) {
       }
     }
   };
-  const first = await pageSkus(0);
-  eat(first.items);
-  if (first.total && first.items.length >= PAGE) {
+  const first = await fetchPage(0);
+  eat(first?.items);
+  const declared = Number.isFinite(Number(first?.total)) ? Number(first.total) : null;
+  if (first?.total && (first?.items?.length ?? 0) >= PAGE) {
     const pages = Math.ceil(first.total / PAGE);
     const rest = [];
     for (let i = 1; i < pages; i++) rest.push(i * PAGE);
     for (let i = 0; i < rest.length; i += CONCURRENCY) {
-      const got = await Promise.all(rest.slice(i, i + CONCURRENCY).map((o) => pageSkus(o)));
-      for (const g of got) eat(g.items);
+      const got = await Promise.all(rest.slice(i, i + CONCURRENCY).map((o) => fetchPage(o)));
+      for (const g of got) eat(g?.items);
     }
+  }
+  return { rows, declared };
+}
+
+export async function lazadaStockCompare(o = {}) {
+  const { coreReady, coreQuery } = await import("./coredb.mjs");
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const t = await validToken();
+  if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน Lazada" };
+
+  const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+  const { expandSku } = await import("./sku-match.mjs");
+
+  // ── ดึงสินค้าทั้งหมดจาก Lazada ──
+  const { rows, declared } = await collectLazadaRows(pageSkus);
+
+  /* 🔴 **ได้ 0 รายการ = หยุด ห้ามเดินต่อด้วยกองว่าง** (เพิ่ม 11 ก.ย. 2569)
+      เหตุที่ต้องมี: `pageSkus` คืน `items: d?.data?.products || []` และ `shopCall` โยน error
+      **เฉพาะตอนมี `data.code` ที่ไม่ใช่ "0"** ⇒ ถ้า Lazada ตอบ 200 พร้อม payload ที่ไม่มี
+      `data.products` (รูปแบบเปลี่ยน · ตอบผิดรูปช่วงมีปัญหาฝั่งเขา) เราจะได้กองว่างแบบเงียบสนิท
+      ⇒ เดินต่อจนจบแล้วได้ผล "สมบูรณ์ทุกคีย์แต่เป็นศูนย์ทั้งหมด" ⇒ แผนดันบอกว่า
+        **"ไม่มีอะไรต้องดัน"** ทั้งที่มีของรออยู่ · และ `bucketsAddUp` ก็ยัง true (0+0+0 === 0)
+      ⚠️ ศูนย์อันตรายกว่าว่างเปล่า เพราะ **ว่างทำให้คนสงสัย แต่ศูนย์ทำให้คนสบายใจ**
+      (CEO เจออาการนี้ของจริง 11 ก.ย. 2569 แล้วเครื่องมือที่ใช้ดูกลืนความต่างไปพอดี)
+
+      ⚠️ **แยกให้ออกระหว่าง "อ่านไม่ได้" กับ "ร้านไม่มีของลงขายจริง ๆ"**
+         แพลตฟอร์มบอกยอดมา > 0 แต่เราเก็บได้ 0 = อ่านไม่ได้แน่นอน
+         แพลตฟอร์มบอกว่า 0 = ร้านไม่มีของลงขายจริง
+         ไม่ได้บอกยอดมาเลย = **แยกไม่ได้ ⇒ เขียนตรง ๆ ว่าแยกไม่ได้ ห้ามเดาแทนคนอ่าน** */
+  if (!rows.length) {
+    const why = Number.isFinite(declared) && declared > 0
+      ? `Lazada บอกว่ามี ${declared} รายการ แต่เราอ่านมาได้ 0 ⇒ อ่านรายการสินค้าไม่สำเร็จ`
+      : Number.isFinite(declared) && declared === 0
+        ? "Lazada บอกเองว่าไม่มีสินค้าลงขายอยู่เลย (ไม่ใช่เราอ่านไม่ได้)"
+        : "อ่านรายการสินค้าบน Lazada ได้ 0 รายการ และแพลตฟอร์มไม่ได้บอกยอดรวมมา "
+          + "⇒ **แยกไม่ได้ว่าอ่านไม่สำเร็จ หรือร้านไม่มีของลงขายจริง**";
+    return { skip: why, lazadaSkus: 0, declaredOnPlatform: Number.isFinite(declared) ? declared : null };
   }
 
   // ── ภาพถ่ายสต็อกล่าสุดของเรา ──

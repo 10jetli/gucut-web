@@ -164,6 +164,21 @@ export async function tiktokStockCompare() {
   }
   const noSku = num(got.noSku);
   const rows = got.rows;
+  /* 🔴 **ได้ 0 รายการ = หยุด ห้ามเดินต่อด้วยกองว่าง** (เพิ่ม 11 ก.ย. 2569 — รูเดียวกับ Lazada/Shopee)
+      ตัวดึงคืนกองว่างได้โดยไม่มี error ถ้า payload ไม่มี products ⇒ เดินต่อจะได้
+      "ศูนย์ครบทุกช่อง" ซึ่งแผนดันจะอ่านว่า "ไม่มีอะไรต้องดัน" ⇒ อันตรายกว่าตอบว่าว่าง
+      ⚠️ แยก "อ่านไม่ได้" ออกจาก "ร้านไม่มีของลงขาย" ด้วย total_count ที่แพลตฟอร์มประกาศ
+         ไม่ได้ประกาศมา = แยกไม่ได้ ⇒ เขียนตรง ๆ ห้ามเดาแทนคนอ่าน */
+  if (!rows.length) {
+    const dec = got.apiTotal;
+    const why = Number.isFinite(dec) && dec > 0
+      ? `TikTok บอกว่ามี ${dec} สินค้า แต่เราอ่านมาได้ 0 ⇒ อ่านรายการสินค้าไม่สำเร็จ`
+      : Number.isFinite(dec) && dec === 0
+        ? "TikTok บอกเองว่าไม่มีสินค้าลงขายอยู่เลย (ไม่ใช่เราอ่านไม่ได้)"
+        : "อ่านรายการสินค้าบน TikTok ได้ 0 รายการ และแพลตฟอร์มไม่ได้บอกยอดรวมมา "
+          + "⇒ **แยกไม่ได้ว่าอ่านไม่สำเร็จ หรือร้านไม่มีของลงขายจริง**";
+    return { skip: why, tiktokSkus: 0, declaredOnPlatform: Number.isFinite(dec) ? dec : null };
+  }
 
   const dayRows = await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`);
   const day = dayRows[0]?.d;
