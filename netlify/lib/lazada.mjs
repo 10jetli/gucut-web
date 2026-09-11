@@ -134,17 +134,94 @@ export async function shopCall(path, extra = {}) {
 const PAGE = 50;
 const CONCURRENCY = 6;
 
-async function pageSkus(offset) {
-  const d = await shopCall("/products/get", {
+/* ── 🔎 ตรวจ "รูปร่าง" ของคำตอบที่ขอบระบบ ก่อนเอาไปใช้ (12 ก.ย. 2569) ──────────────
+   ทำไมต้องมี: ของเดิมเขียน `d?.data?.products || []` ⇒ **วันที่ Lazada เปลี่ยนชื่อฟิลด์
+   หรือห่อข้อมูลใหม่ แต่ยังตอบ 200 เราจะได้กองว่างเงียบ ๆ แล้วเดินต่อจนได้ผล "ศูนย์ครบทุกช่อง"
+   ซึ่งหน้าตาเหมือนคำตอบที่สมบูรณ์** (คลาสเดียวกับที่เจ็บมาสามรอบวันเดียว: lazada · shopee · tiktok)
+
+   ⚠️ ด่าน "0 แถว = หยุด" ที่ใส่ไว้ใน lazadaStockCompare จับได้เฉพาะกรณี **ว่างทั้งกอง**
+      ถ้าเขาเปลี่ยนชื่อฟิลด์ระดับแถวแต่ยังส่งของมา เราจะอ่านผิด **ทีละแถว** แบบที่ด่านนั้นมองไม่เห็น
+      ⇒ ตัวนี้จึงตรวจถึงระดับ sku ไม่ใช่แค่ว่ามีของหรือไม่มี
+
+   🔑 **ชนิดข้อมูลที่ตรวจมาจากการวัดของจริง ไม่ใช่การเดา** (ยิง /api/lazada/fields 12 ก.ย. 2569)
+      total_products: 1724 (number) · Available/quantity/price/SkuId = number จริง (ไม่ใช่สตริง)
+      SellerSku/Status/ShopSku = string
+      ⇒ ถ้าวันหนึ่งเลขกลายเป็นสตริง นั่นคือ **ของเปลี่ยน** ไม่ใช่เรื่องปกติ ⇒ ต้องหยุดให้รู้
+
+   ⚠️ `SellerSku` ว่างได้ (ของจริงมี) — โค้ดที่ใช้ข้ามแถวว่างอยู่แล้วตั้งแต่เดิม
+      ⇒ ตรวจว่า "ช่องมีอยู่และเป็นสตริง" **ไม่ใช่** ว่าต้องไม่ว่าง (คนละเรื่องกัน)
+   🚫 ไม่ลงไลบรารีตรวจ schema — กฎคือเขียนเองได้ในไม่กี่บรรทัดห้ามเพิ่มของใน package.json
+      (Netlify ต้องลงตามทุกครั้งที่ build) · ตัวนี้ ~30 บรรทัด ไม่คุ้มที่จะพึ่งของนอก */
+const MAX_REPORT = 5;   // รายงานตัวอย่างไม่เกินนี้ แล้วบอกยอดรวม — ข้อความยาวเกินคนไม่อ่าน
+
+function shapeProblems(d) {
+  const bad = [];
+  const isObj = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+  const note = (path, msg) => { if (bad.length < MAX_REPORT) bad.push(`${path} ${msg}`); };
+
+  if (!isObj(d)) return { problems: [`คำตอบทั้งก้อนไม่ใช่ออบเจกต์ (ได้ ${typeof d})`], count: 1 };
+  if (!isObj(d.data)) return { problems: [`data ${d.data === undefined ? "หาย" : `ไม่ใช่ออบเจกต์ (ได้ ${Array.isArray(d.data) ? "array" : typeof d.data})`}`], count: 1 };
+  if (!Array.isArray(d.data.products)) {
+    return { problems: [`data.products ${d.data.products === undefined ? "หาย" : `ไม่ใช่ array (ได้ ${typeof d.data.products})`}`], count: 1 };
+  }
+  /* total_products ใช้คิดจำนวนหน้า — หายแล้วจะ "ไล่หน้าเดียวแล้วจบ" โดยดูเหมือนปกติ */
+  if (typeof d.data.total_products !== "number" || !Number.isFinite(d.data.total_products)) {
+    note("data.total_products", d.data.total_products === undefined
+      ? "หาย (ใช้คิดจำนวนหน้า — หายแล้วจะไล่หน้าไม่ครบแบบเงียบ ๆ)"
+      : `ต้องเป็น number แต่ได้ ${typeof d.data.total_products}`);
+  }
+
+  let count = bad.length;
+  d.data.products.forEach((p, i) => {
+    const at = `data.products[${i}]${isObj(p) && (p.item_id ?? p.ItemId) !== undefined ? `(item ${p.item_id ?? p.ItemId})` : ""}`;
+    if (!isObj(p)) { count++; note(at, `ไม่ใช่ออบเจกต์ (ได้ ${typeof p})`); return; }
+    if (!Array.isArray(p.skus)) { count++; note(`${at}.skus`, p.skus === undefined ? "หาย" : `ไม่ใช่ array (ได้ ${typeof p.skus})`); return; }
+    p.skus.forEach((sk, j) => {
+      const sat = `${at}.skus[${j}]`;
+      if (!isObj(sk)) { count++; note(sat, `ไม่ใช่ออบเจกต์ (ได้ ${typeof sk})`); return; }
+      const name = typeof sk.SellerSku === "string" ? ` (SellerSku "${sk.SellerSku}")` : "";
+      for (const f of ["SellerSku", "Status"]) {
+        if (typeof sk[f] !== "string") {
+          count++; note(`${sat}.${f}${name}`, sk[f] === undefined ? "หาย" : `ต้องเป็น string แต่ได้ ${typeof sk[f]}`);
+        }
+      }
+      for (const f of ["Available", "quantity", "SkuId"]) {
+        if (typeof sk[f] !== "number" || !Number.isFinite(sk[f])) {
+          count++; note(`${sat}.${f}${name}`, sk[f] === undefined ? "หาย" : `ต้องเป็น number แต่ได้ ${typeof sk[f]}${typeof sk[f] === "string" ? ` ("${String(sk[f]).slice(0, 20)}")` : ""}`);
+        }
+      }
+    });
+  });
+  return { problems: bad, count };
+}
+
+/** ดึงสินค้าหนึ่งหน้า + **ตรวจรูปร่างก่อนส่งต่อ**
+ *  @param call แทนที่ได้เพื่อทดสอบ — ขอบเครือข่ายอย่างเดียว ตัวตรวจกับตัวแปลงเป็นของจริง
+ *             (แพตเทิร์นเดียวกับ collectLazadaRows/collectShopeeItemIds — กฎ test-must-hit-the-path)
+ *  🔴 รูปร่างไม่ตรง = **โยน error บอกชื่อฟิลด์** ห้ามข้ามแถวเงียบ ห้ามเดาค่าแทน
+ *     เพราะปลายทางเอาไปตอบว่า "ของเหลือเท่าไหร่ / ต้องดันสต็อกไหม" — เดาแล้วเขียนออกนอกระบบได้ */
+export async function lazadaPageSkus(offset, call = shopCall) {
+  const d = await call("/products/get", {
     filter: "live",
     limit: String(PAGE),
     offset: String(offset),
   });
+  const { problems, count } = shapeProblems(d);
+  if (problems.length) {
+    throw new Error(
+      `Lazada /products/get รูปร่างข้อมูลไม่ตรงกับที่โค้ดคาด (offset ${offset}) — ` +
+      `${count} จุด: ${problems.join(" · ")}` +
+      (count > problems.length ? ` · (แสดง ${problems.length} จุดแรก)` : "") +
+      " ⇒ หยุดไว้ก่อน ไม่เดาค่าแทน — ถ้า Lazada เปลี่ยนชื่อฟิลด์จริง ต้องแก้ที่ lazada.mjs ให้ตรงก่อน"
+    );
+  }
   return {
-    items: d?.data?.products || [],
-    total: Number(d?.data?.total_products ?? 0),
+    items: d.data.products,
+    total: d.data.total_products,
   };
 }
+
+const pageSkus = (offset) => lazadaPageSkus(offset);
 
 export async function listedSkus() {
   const out = new Set();
