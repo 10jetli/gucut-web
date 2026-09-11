@@ -65,11 +65,33 @@ export async function tiktokStock() {
   const t = await validToken();
   if (!t) return { skip: "ยังไม่ได้เชื่อมร้าน TikTok" };
   await ensureShop();
+  return collectTiktokStock((query) =>
+    shopCall(`/product/${VERSION}/products/search`, { method: "POST", query, body: { status: "ACTIVATE" } })
+  );
+}
 
+/** ตัวไล่หน้าจริง — **แยกออกมาเพื่อให้ทดสอบได้ด้วยหน้าปลอม โดยเดินโค้ดเส้นเดียวกับของจริง**
+ *
+ *  🔴 ทำไมต้องแยก (11 ก.ย. 2569): ตัวตรวจตัวเองของไฟล์นี้เคยเป็น
+ *     `same + diff.length + missing === rows.length` ซึ่ง **เขียวตลอดกาล** เพราะทุกกอง
+ *     มาจาก `rows` ตัวเดียวแล้วเทียบกับความยาวของ `rows` เอง — พิสูจน์แล้วว่าไม่มีคม:
+ *     วันที่สูตรชุดหาย 148 รหัสตกไปกอง "คลังไม่รู้จัก" ธงนั้นยัง true (คอมเมนต์ในไฟล์นี้บันทึกไว้เอง)
+ *  ⇒ ตาข่ายจริงต้องมี **ตัวหารจากนอกกอง** = `total_count` ที่ TikTok บอกมาเอง
+ *     และการพิสูจน์ว่าธงแดงได้ ต้องป้อน "หน้าเพจปลอม" เข้าลูปจริง ไม่ใช่ประกอบผลลัพธ์ด้วยมือ
+ *     (กฎ test-must-hit-the-path — เคยพลาดข้อนี้มาแล้ววันเดียวกัน)
+ *  @param fetchPage  (query) => คำตอบดิบของ TikTok หนึ่งหน้า
+ */
+export async function collectTiktokStock(fetchPage) {
   const rows = [];
   const unmapped = new Set();
   let noSku = 0;
   let pageToken = "";
+  /* 🔢 นับ "จำนวนสินค้าที่เราเดินผ่านจริง" เพื่อเทียบกับยอดที่แพลตฟอร์มประกาศ
+     ⚠️ นับเป็น **สินค้า** ไม่ใช่ sku — total_count ของ TikTok นับสินค้า ส่วน rows นับ sku
+        (สินค้าหนึ่งตัวมีได้หลาย sku) ⇒ เอาสองหน่วยนี้มาเทียบกันตรง ๆ = แดงตลอดกาล
+        ซึ่งเป็นความผิดกลับด้านของเอกลักษณ์ และแย่พอกัน */
+  let productsSeen = 0;
+  let apiTotal = null;
   /* ⚠️ **หลุดเพดานหน้าแล้วต้องโยน error ห้ามออกจากลูปเงียบ ๆ**
       คืนของบางส่วนเหมือนเป็นของครบ = ทุกตัวนับข้างล่างผิดหมดโดยไม่มีอะไรฟ้อง
       (ฝั่ง Shopee เรียนบทเรียนนี้ไปแล้วและโยน error — ของใหม่ไม่ได้ลอกส่วนนี้มา) */
@@ -78,12 +100,14 @@ export async function tiktokStock() {
     if (p === MAX_PAGES) {
       throw new Error(`สินค้า TikTok เกิน ${MAX_PAGES * 100} รหัส — ต้องขยายเพดานหน้า ไม่ใช่ตัดทิ้งเงียบ ๆ`);
     }
-    const d = await shopCall(`/product/${VERSION}/products/search`, {
-      method: "POST",
-      query: { page_size: "100", ...(pageToken ? { page_token: pageToken } : {}) },
-      body: { status: "ACTIVATE" },
-    });
+    const d = await fetchPage({ page_size: "100", ...(pageToken ? { page_token: pageToken } : {}) });
+    /* ยอดรวมที่ฝั่ง TikTok ประกาศเอง — อ่านได้จากหน้าแรกก็พอ
+       ⚠️ อ่านไม่ได้ = `null` **ห้ามแทนด้วย 0** (ไม่รู้ ≠ ไม่มี) ⇒ ธงจะเป็น null = ยังไม่ได้ตรวจ */
+    if (apiTotal === null && Number.isFinite(Number(d?.data?.total_count))) {
+      apiTotal = Number(d.data.total_count);
+    }
     for (const it of d?.data?.products ?? []) {
+      productsSeen++;
       for (const s of it?.skus ?? []) {
         const sku = String(s?.seller_sku ?? "").trim();
         // ⚠️ ทิ้งได้ แต่ **ต้องนับ** — ไม่งั้น tiktokSkus ต่ำกว่าจริงและไม่มีใครรู้ว่ามีของผูกรหัสไม่ได้
@@ -96,7 +120,12 @@ export async function tiktokStock() {
     pageToken = d?.data?.next_page_token || "";
     if (!pageToken) break;
   }
-  return { rows, unmapped: [...unmapped], noSku };
+  /* 🔎 **ตาข่ายจริง: เดินผ่านสินค้าครบตามที่แพลตฟอร์มบอกไหม**
+     ตัวตั้ง = นับจากลูปของเรา · ตัวหาร = ตัวเลขที่ TikTok ส่งมา ⇒ **คนละแหล่งจริง**
+     false = ไล่หน้าไม่ครบ/หน้าหาย ⇒ ทุกตัวนับหลังจากนี้ต่ำกว่าจริงโดยไม่มีอะไรฟ้อง
+     null = แพลตฟอร์มไม่ได้บอกยอดรวมมา ⇒ **ยังไม่ได้ตรวจ ห้ามอ่านว่าผ่าน** */
+  const sawAllProducts = apiTotal === null ? null : productsSeen === apiTotal;
+  return { rows, unmapped: [...unmapped], noSku, productsSeen, apiTotal, sawAllProducts };
 }
 
 /** ส่องชื่อฟิลด์จริงของสินค้า — **คืนเฉพาะชื่อ ไม่คืนค่า** (คู่กับ tiktokOrderShape) */
@@ -208,8 +237,19 @@ export async function tiktokStockCompare() {
     diffCount: diff.length,
     diff,
     missingSample,
-    /* ⚠️ ตัวตรวจตัวเอง — ทุกรหัสต้องตกกองใดกองหนึ่งพอดี (partial-coverage-reported-as-full) */
-    bucketsAddUp: same + diff.length + missing === rows.length,
+    /* 🔴 **เคยมีธง `bucketsAddUp: same + diff.length + missing === rows.length` ที่นี่**
+        ถอดออก 11 ก.ย. 2569 เพราะ **เขียวตลอดกาล** — ลูปข้างบนมี `continue` ครบทุกสาขา
+        ทุกแถวจึงตกกองใดกองหนึ่งพอดีโดยโครงสร้างของภาษา และตัวหารคือ `rows.length`
+        ซึ่งเป็นอาร์เรย์เดียวกับที่ลูปวน ⇒ ไม่ได้ตรวจข้อมูล แค่ตรวจว่า if/else เขียนถูก
+        หลักฐานว่าไม่มีคม: วันที่ถามตารางสูตรชุดไม่ได้ 148 รหัสตกไปกอง "คลังไม่รู้จัก"
+        ธงนั้นยัง true (ดูคอมเมนต์ของ recipeErr ข้างบน)
+        🔑 ตาข่ายจริงกับปลอมต่างกันที่ **ตัวหาร ไม่ใช่รูปสูตร** */
+    /* ✅ ตาข่ายที่มาแทน — ตัวหารมาจากนอกกอง (ยอดรวมที่ TikTok ประกาศเอง)
+        true = เดินผ่านสินค้าครบตามที่แพลตฟอร์มบอก · false = ไล่หน้าไม่ครบ **ห้ามใช้ตัวเลขต่อ**
+        null = แพลตฟอร์มไม่ได้บอกยอดรวม ⇒ ยังไม่ได้ตรวจ (ไม่ใช่ผ่าน) */
+    sawAllProducts: got.sawAllProducts,
+    productsSeen: num(got.productsSeen),
+    apiProductTotal: got.apiTotal === null || got.apiTotal === undefined ? null : num(got.apiTotal),
     /* ⚠️ ถามตารางสูตรชุดไม่ได้ ⇒ กอง "คลังไม่รู้จัก" สูงเกินจริง (สินค้าชุดตกมากองนี้หมด)
         **ห้ามอ่านตัวเลขนั้นเป็น "ของหาย"** · null = ถามได้ปกติ */
     recipeError: recipeErr,
