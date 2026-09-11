@@ -6,12 +6,13 @@
 //   GET /api/lazada/products  (ต้องมี x-admin-key) → ลองดึงสินค้าที่ลงขายจริงมาดู
 //   GET /api/lazada/fields    (ต้องมี x-admin-key) → ชื่อฟิลด์จริงที่ Lazada ส่งมาต่อ SKU
 //   GET /api/lazada/stock     (ต้องมี x-admin-key) → เทียบสต็อก Lazada กับคลังเรา (อ่านอย่างเดียว)
+//   GET /api/lazada/order?id=… (ต้องมี x-admin-key) → สถานะจริงของใบสั่งซื้อจากต้นทาง (อ่านอย่างเดียว)
 //
 // ⚠️ /callback ต้องเปิดโล่ง คนเรียกคือเซิร์ฟเวอร์ Lazada ไม่ใช่เบราว์เซอร์ของร้าน
 //    ปลอดภัยเพราะ code ใช้ได้ครั้งเดียวและต้องคู่กับ app_secret
 // ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — ต้องเช็ค gate.ok เองเสมอ
 import { adminGate } from "../lib/admin-gate.mjs";
-import { lazadaReady, authLink, exchangeCode, loadToken, validToken, listedSkus, lazadaSkuFields, lazadaStockCompare } from "../lib/lazada.mjs";
+import { lazadaReady, authLink, exchangeCode, loadToken, validToken, listedSkus, lazadaSkuFields, lazadaStockCompare, shopCall } from "../lib/lazada.mjs";
 
 const json = (obj, status = 200) =>
   new Response(JSON.stringify(obj), { status, headers: { "content-type": "application/json" } });
@@ -91,7 +92,54 @@ export default async function handler(req, context) {
     }
   }
 
-  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · products · fields · stock" }, 404);
+  /* 🔎 **ถามสถานะใบสั่งซื้อจากต้นทาง** — เกิดจากงาน 12 ก.ย. 2569
+     ปัญหา: กระจกของเราบอกว่ามีใบ Lazada ค้าง "รอจัดส่ง" 64 ใบ ย้อนไปถึง 30 วัน
+     แต่ **แยกไม่ได้ว่าค้างจริง หรือสถานะในกระจกไม่เคยขยับหลังส่ง**
+     ฟิลด์ที่เรามี (เลขพัสดุ · วันจัดส่ง · สถานะ ZORT) เหมือนกันหมดทั้งกอง
+     ที่ส่งแล้วและยังไม่ส่ง ⇒ ต้องถามเจ้าของข้อมูลตัวจริง ([[mirror-needs-outside-check]])
+
+     เส้นที่ใช้มาจากเอกสาร Lazada Open Platform (ไม่ได้เดาชื่อเส้น):
+       GET /order/get        พารามิเตอร์ `order_id`  → `data.statuses` (สถานะรวมของใบ)
+       GET /order/items/get  พารามิเตอร์ `order_id`  → สถานะรายบรรทัด (ละเอียดกว่า)
+
+     🚫 **อ่านอย่างเดียว** — ห้ามเติมคำสั่งเขียน (pack / rts / cancel) ลงในเส้นนี้เด็ดขาด
+        ตัวยิงของจริงต้องอยู่ไฟล์แยกตามกติกาเดิมของ stock-push-live.mjs
+     🔴 **คืนเฉพาะฟิลด์สถานะ ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้า** — Lazada ส่งข้อมูลผู้รับมาด้วย
+        ปลายทางของคำตอบนี้คือหน้าจอ/แชทของทีม ไม่ใช่ระบบปิด */
+  if (step === "order") {
+    const t = await validToken();
+    if (!t) return json({ error: "ยังไม่ได้เชื่อมร้าน — เปิด /api/lazada/auth ก่อน" }, 400);
+    const ids = String(url.searchParams.get("id") ?? "")
+      .split(",").map((x) => x.trim()).filter(Boolean).slice(0, 5);   // ทีละไม่กี่ใบพอ — นี่คือเครื่องมือตรวจ ไม่ใช่ตัวกวาด
+    if (!ids.length) return json({ error: "ต้องมี ?id=<เลขใบ Lazada> (คั่นด้วยจุลภาคได้ไม่เกิน 5 ใบ)" }, 400);
+    const out = [];
+    for (const id of ids) {
+      try {
+        const [head, items] = await Promise.all([
+          shopCall("/order/get", { order_id: id }),
+          shopCall("/order/items/get", { order_id: id }).catch((e) => ({ _itemsError: String(e?.message || e) })),
+        ]);
+        const d = head?.data || {};
+        out.push({
+          orderId: id,
+          statuses: d.statuses ?? null,              // ← คำตอบหลัก: สถานะจริงจากต้นทาง
+          orderNumber: d.order_number ?? null,
+          createdAt: d.created_at ?? null,
+          updatedAt: d.updated_at ?? null,
+          itemStatuses: Array.isArray(items?.data)
+            ? items.data.map((it) => ({ sku: it.sku ?? null, status: it.status ?? null, returnStatus: it.return_status ?? null }))
+            : null,
+          ...(items?._itemsError ? { itemsError: items._itemsError } : {}),
+        });
+      } catch (e) {
+        /* สามสถานะ: ตอบได้ · ถามไม่ได้ (สิทธิ์/เส้นไม่มี) · ไม่มีใบนี้ — ห้ามยุบเป็นค่าว่าง */
+        out.push({ orderId: id, error: String(e?.message || e) });
+      }
+    }
+    return json({ ok: true, readOnly: true, source: "lazada /order/get + /order/items/get", orders: out });
+  }
+
+  return json({ error: "ไม่รู้จักคำสั่งนี้ — ใช้ได้: auth · callback · status · products · fields · stock · order" }, 404);
 }
 
 export const config = { path: "/api/lazada/*" };
