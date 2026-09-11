@@ -443,13 +443,26 @@ export async function listStock(o = {}) {
         (สามสถานะ: ยังไม่รู้ ≠ ถามไม่สำเร็จ ≠ ไม่มีของจริง) */
   let pageRows = rows;
   let matchedRows = null;
+  let channelCounts = null;
   if (channel) {
     if (!mkKey) {
       return { error: `กรองช่องทางไม่ได้: ${mk.marketplacesError || "ยังไม่มีข้อมูลรายการที่ลงขาย"}` };
     }
+    /* นับ **ทุกช่องทางในรอบเดียว** ตอนที่ติดป้ายครบแล้ว — ของแถมที่ได้ฟรี
+       เพราะเราถือชุดเต็มอยู่ในมือแล้ว ⇒ จอยิงคำขอเดียวได้ทั้งแถวของแท็บที่เปิดอยู่
+       **และเลขบนแท็บอื่นทุกอัน** (ไม่ต้องยิงห้ารอบ และไม่ต้องกวาดเองอีก)
+       ⚠️ นับจากชุดเดียวกับที่กรอง ⇒ เลขบนแท็บกับแถวที่เห็นมาจากแหล่งเดียวกันเสมอ
+          (กับดักที่เจอซ้ำในโปรเจกต์นี้: ตัวเลขในวงเล็บกับแถวจริงมาคนละชุด) */
+    const tags = new Map(rows.map((r) => [r, mkKey.tagsOf(String(r.sku)) || []]));
+    const counted = { shopee: 0, lazada: 0, tiktok: 0, gucut: 0, none: 0 };
+    for (const t of tags.values()) {
+      if (!t.length) counted.none++;
+      for (const name of t) if (name in counted) counted[name]++;
+    }
+    channelCounts = counted;
     const tagged = rows.filter((r) => {
-      const tags = mkKey.tagsOf(String(r.sku)) || [];
-      return channel === "none" ? tags.length === 0 : tags.includes(channel);
+      const t = tags.get(r) || [];
+      return channel === "none" ? t.length === 0 : t.includes(channel);
     });
     matchedRows = tagged.length;
     pageRows = tagged.slice(offset, offset + limit);
@@ -463,6 +476,11 @@ export async function listStock(o = {}) {
     /* สะท้อนค่าที่ **ใช้จริง** — จอเช็คได้ว่าท่อรับตัวกรองนี้แล้วหรือยัง
        (ท่อรุ่นเก่าไม่มีคีย์นี้ ⇒ จอรู้ทันทีว่าเลขที่ได้เป็นของทั้งคลัง ไม่ใช่ของช่องทางนั้น) */
     ...(channel ? { channel } : {}),
+    /* เลขของทุกแท็บ — มีเฉพาะตอนกรองช่องทาง (ตอนนั้นเท่านั้นที่เราถือชุดเต็ม)
+       ⚠️ นับข้ามช่องทางได้ ⇒ ผลรวมมากกว่าจำนวนรหัสทั้งคลังเป็นเรื่องปกติ
+          (รหัสเดียวลงหลายช่องทางพร้อมกันได้ · วัดจริง 11 ก.ย.: รวม 4,376 จาก 2,672 รหัส)
+          จอต้องไม่เอาผลรวมนี้ไปโชว์เป็น "ทั้งหมด" */
+    ...(channelCounts ? { channelCounts } : {}),
     only: o.only && only ? o.only : null,
     kind: o.kind && kind ? o.kind : null,
     // ⚠️ **`only` กับ `kind` ต้องปฏิบัติคนละแบบ — พลาดตรงนี้ได้แท็บที่โกหก**
