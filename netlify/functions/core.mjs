@@ -1652,7 +1652,7 @@ async function route(req, context) {
          ⇒ จัดกลุ่ม (ชื่อ × ช่องทาง) ครั้งเดียว แล้วรวบเป็นรายลูกค้าฝั่งนี้
 
          รวมกับสองคอมมิตก่อนหน้า: จาก **กวาดช่วง 3 รอบ + สแกนทั้งตาราง 1 รอบ**
-         เหลือ **กวาดช่วงรอบเดียว + seek รายชื่อเป็นก้อน**
+         เหลือกวาดช่วงรอบเดียวสำหรับยอด/ช่องทาง (การค้นประวัติแก้ต่อ 11 ก.ย. ด้านล่าง)
 
          ⚠️ เกณฑ์ตัดสินว่าแก้สำเร็จ (ฝั่งจอตั้งให้ หลังพบว่ารายงานเดิมของตัวเองมาจากการยิงรอบเดียว):
             **สำเร็จครบ 3/3 รอบ และต่ำกว่า ~15 วิ** — ไม่ใช่ "ยิงครั้งเดียวแล้วผ่าน"
@@ -1706,38 +1706,23 @@ async function route(req, context) {
             จอใช้แยก "ลูกค้าใหม่" (ซื้อครั้งแรกอยู่ในช่วงที่เลือก) ออกจาก "ลูกค้าเก่าซื้อซ้ำ"
             ตามนิยามของ ZORT · ถ้า MIN เฉพาะในช่วง ทุกคนจะกลายเป็นลูกค้าใหม่หมด
          ⚠️ ตัวกรองร้านยังต้องใช้ (ลูกค้า z1 กับ z2 คนละบริบท) แต่**ไม่ใส่กรอบวัน**
-         ⚠️ ไม่ใช้ IN(ชื่อ) — เพดานตัวแปร D1 (บทเรียนเดิมข้างบน) ⇒ จัดกลุ่มทั้งหมดแล้วกรองฝั่งนี้ */
-      /* ⚡ **แก้ 9 ก.ย. 2569 — คำสั่งนี้เคยทำให้ทั้งจอตายด้วย D1 429**
-         ของเดิม: `GROUP BY TRIM(customer)` **ทั้งตาราง ไม่มีกรอบวัน** ⇒ สแกน 58,702 แถว
-         ทุกครั้งที่เรียก · `?days=90` ไม่ได้ทำให้เบาลงเลย ⇒ ยิ่งข้อมูลโตยิ่งช้า
-         จนวันหนึ่ง **HTTP 500 ที่ 37 วินาที · "DB exceeded its CPU time limit"**
-         โดยที่ไม่มีใครแก้โค้ดอะไรเลย (ฝั่งจอยิงเจอ 9 ก.ย.)
-
-         ของใหม่: ค้น **เฉพาะชื่อที่จะส่งกลับจริง** ด้วยดัชนีคู่ (customer, order_date)
-         ⇒ เป็นการ seek ทีละชื่อ ไม่ใช่ scan ทั้งตาราง
-
-         ⚠️ **ยังต้องแบ่งก้อน ห้ามยัดทุกชื่อลง IN ครั้งเดียว** — เพดานตัวแปรของ D1
-            เคยระเบิดมาแล้ว 5 ก.ย. (`too many SQL variables` ตอน limit=500)
-            แบ่งก้อนละ 50 ⇒ limit=500 ใช้ 10 คำสั่งเล็ก ๆ แทน 1 คำสั่งที่สแกนทั้งตาราง
-         ⚠️ จับคู่ด้วย TRIM ฝั่งนี้ เพราะฐานเก็บชื่อที่มีช่องว่างหัวท้ายได้
-            ⇒ ส่ง IN ด้วยชื่อดิบไม่ได้ · ใช้ `TRIM(customer) IN (...)` แล้วให้ดัชนีช่วยเท่าที่ช่วยได้
-            (ยังดีกว่าเดิมมาก เพราะกรอบด้วยชุดชื่อที่เล็กแทนทั้งตาราง) */
+         ⚠️ ไม่ผูกตัวแปรทีละชื่อ — เพดาน D1 เคยพังตอน limit=500 */
+      /* ⚡ แก้ 11 ก.ย. 2569: EXPLAIN ใน SQLite จำลองพบว่า TRIM(customer) IN (...)
+         ใช้ดัชนี (customer, order_date) seek ไม่ได้ ⇒ แบ่ง 50 ชื่อ = สแกนทั้งตารางซ้ำถึง 10 รอบ
+         ส่งรายชื่อเป็น JSON bind เดียวให้ json_each (D1 รองรับ) ⇒ สแกนประวัติครั้งเดียว
+         ยัง GROUP เฉพาะชื่อที่จะส่งกลับ, ยัง TRIM แบบ SQLite, ไม่เพิ่มคอลัมน์/ดัชนีหรือ backfill
+         ผล D1 จริงต้องให้ผู้รีวิววัด 3 รอบ ไม่ใช้เวลา SQLite ในเครื่องแทน */
       const firstMap = new Map();
       if (wantNames.size) {
-        const names = [...wantNames];
-        const CHUNK = 50;
-        for (let i = 0; i < names.length; i += CHUNK) {
-          const part = names.slice(i, i + CHUNK);
-          const fw = [`TRIM(customer) IN (${part.map(() => "?").join(",")})`, CANCEL];
-          const fp = [...part];
-          if (store) { fw.push("source = ?"); fp.push(store); }
-          const fRows = await coreQuery(
-            `SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
-             FROM orders WHERE ${fw.join(" AND ")} GROUP BY 1`,
-            fp
-          );
-          for (const r of fRows) firstMap.set(String(r.name), r.firstDay);
-        }
+        const fw = ["TRIM(customer) IN (SELECT value FROM json_each(?))", CANCEL];
+        const fp = [JSON.stringify([...wantNames])];
+        if (store) { fw.push("source = ?"); fp.push(store); }
+        const fRows = await coreQuery(
+          `SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
+           FROM orders WHERE ${fw.join(" AND ")} GROUP BY 1`,
+          fp
+        );
+        for (const r of fRows) firstMap.set(String(r.name), r.firstDay);
       }
 
       /* ⚡ **คำสั่งช่องทางถูกยุบเข้ากับคำสั่งหลักแล้ว (9 ก.ย. 2569)** — ไม่ยิงซ้ำอีก
@@ -1780,30 +1765,32 @@ async function route(req, context) {
         /* ── กราฟแนวโน้มรายเดือน: ลูกค้าใหม่ / ซื้อซ้ำ / ไม่ระบุชื่อ ── (ฝั่งจอขอ 6 ก.ย. 2569)
            "ใหม่" = เดือนนั้นเป็นเดือนที่ซื้อครั้งแรกทั้งประวัติ (นิยาม ZORT) · นับเป็น "คน" ไม่ใช่ "ใบ"
            ⚠️ ใบไม่ระบุชื่อแยกกองต่างหาก (นับเป็นใบ เพราะไม่รู้ว่าเป็นกี่คน) **ห้ามเอาไปบวกกับสองกองแรก**
-           ⚠️ subquery MIN ข้างในไม่ใส่กรอบวันโดยตั้งใจ — เหตุผลเดียวกับ firstDay ข้างบน */
+           ⚠️ กลุ่ม MIN ข้างในไม่ใส่กรอบวันโดยตั้งใจ — เหตุผลเดียวกับ firstDay ข้างบน */
         monthly: await (async () => {
           const mw = ["o.order_date >= ?", "o.order_date <= ?", CANCEL.replace(/status/g, "o.status")];
           if (store) mw.push("o.source = ?");
-          const storeCond = store ? "AND f.source = ?" : "";
-          /* ⚠️ **ลำดับพารามิเตอร์ต้องตรงกับลำดับ `?` ในตัวหนังสือ SQL ไม่ใช่ลำดับที่เราคิด**
-              subquery สองตัวอยู่ใน SELECT ซึ่งมาก่อน WHERE ⇒ store, store ต้องมาก่อน from, today
-              (เกือบผูกเป็น [from, today, store, store, store] ตอนเขียนรอบแรก — เดือนจะถูกกรองด้วยชื่อร้าน
-               และร้านถูกกรองด้วยวันที่ แบบเงียบ ๆ ไม่มี error เพราะชนิดข้อมูลใน SQLite หลวม) */
-          const mp = store ? [store, store, from, today, store] : [from, today];
+          const storeCond = store ? "AND source = ?" : "";
+          /* ⚡ EXPLAIN เดิมพบ correlated MIN สองตัวค้นประวัติซ้ำต่อใบโดย seek ชื่อไม่ได้
+             จัดกลุ่มวันแรกครั้งเดียวแล้ว LEFT JOIN ด้วยชื่อ ⇒ ไม่ค้นประวัติใหม่รายออเดอร์
+             ห้ามใช้ firstMap ข้างบนแทน: monthly ต้องนับทุกชื่อ ไม่ใช่แค่ top limit
+             ⚠️ bind ร้านใน derived table มาก่อนวัน/ร้านใน WHERE ของ o */
+          const mp = store ? [store, from, today, store] : [from, today];
           const rows = await coreQuery(
             `SELECT substr(o.order_date,1,7) AS month,
                     COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
-                      AND substr((SELECT MIN(f.order_date) FROM orders f
-                                  WHERE TRIM(f.customer) = TRIM(o.customer) ${storeCond}
-                                    AND f.status NOT LIKE '%cancel%' AND f.status NOT LIKE '%void%' AND f.status NOT LIKE '%ยกเลิก%'),1,7) = substr(o.order_date,1,7)
+                      AND substr(f.firstDay,1,7) = substr(o.order_date,1,7)
                       THEN TRIM(o.customer) END) AS newCustomers,
                     COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
-                      AND substr((SELECT MIN(f.order_date) FROM orders f
-                                  WHERE TRIM(f.customer) = TRIM(o.customer) ${storeCond}
-                                    AND f.status NOT LIKE '%cancel%' AND f.status NOT LIKE '%void%' AND f.status NOT LIKE '%ยกเลิก%'),1,7) < substr(o.order_date,1,7)
+                      AND substr(f.firstDay,1,7) < substr(o.order_date,1,7)
                       THEN TRIM(o.customer) END) AS repeatCustomers,
                     SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) = '' THEN 1 ELSE 0 END) AS unnamedOrders
-             FROM orders o WHERE ${mw.join(" AND ")}
+             FROM orders o
+             LEFT JOIN (
+               SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
+               FROM orders WHERE ${CANCEL} ${storeCond} AND TRIM(COALESCE(customer,'')) <> ''
+               GROUP BY 1
+             ) f ON f.name = TRIM(o.customer)
+             WHERE ${mw.join(" AND ")}
              GROUP BY 1 ORDER BY 1`,
             mp
           ).catch((e) => ({ error: String(e?.message || e).slice(0, 160) }));
@@ -1948,7 +1935,9 @@ async function route(req, context) {
           ส่ง `source` ไปด้วย จอจะได้ไม่ต้องเดา prefix เวลาร้านที่สองเข้ามา */
       const rows = await coreQuery(
         `SELECT id, source, number, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, order_date, amount,
-                status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track
+                status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track,
+                SUM(CASE WHEN COALESCE(pay_status,'') LIKE '%paid%' THEN 1 ELSE 0 END)
+                  OVER () AS must_ship_total
          FROM orders
          WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
          ORDER BY order_date DESC`,
@@ -1996,6 +1985,11 @@ async function route(req, context) {
           ฝั่งจอรู้ได้เพราะบังเอิญเอา counts มาเทียบความยาวรายการ ซึ่งไม่ควรต้องบังเอิญ
           (ถ้าวันหลังมีจอไล่เคลียร์ใบผี คนจะเคลียร์ 50 ใบแล้วนึกว่าจบ) */
       const SHOW = 50;
+      /* ตัวหารของ `ต้องส่งของ` ต้องมาจากนอกกอง JS จริง ๆ — ใช้ window count ที่ฐานคำนวณ
+         ก่อน ORDER/LIMIT จึงยังฟ้องได้ ถ้าวันหลัง SQL ถูกตัดแต่รายการฝั่งนี้ไม่รู้ตัว
+         ไม่เพิ่ม D1 round-trip และใช้ LIKE '%paid%' ให้ตรงกับ /paid/i ที่แบ่งกองด้านบน
+         (รวมคำอย่าง Unpaid เหมือนพฤติกรรมเดิม แม้ชื่อสถานะจะชวนสับสน) */
+      const mustShipTotal = Number(rows[0]?.must_ship_total || 0);
       const cut50 = (a) => ({
         shown: Math.min(a.length, SHOW),
         total: a.length,
@@ -2041,7 +2035,11 @@ async function route(req, context) {
         /* ⚠️ สามคีย์นี้เป็น **รายการเพื่อแสดงผล** — `รอจ่ายอยู่` กับ `ใบผี` ถูกตัดที่ 50
             ดูจำนวนจริงที่ `counts` และ `listMeta` · ห้ามเอาไปนับหรือสรุปแทนทั้งกอง */
         listMeta: {
-          ต้องส่งของ: { shown: buckets["ต้องส่งของ"].length, total: buckets["ต้องส่งของ"].length, truncated: false },
+          ต้องส่งของ: {
+            shown: buckets["ต้องส่งของ"].length,
+            total: mustShipTotal,
+            truncated: buckets["ต้องส่งของ"].length < mustShipTotal,
+          },
           รอจ่ายอยู่: (({ rows, ...m }) => m)(cut50(buckets["รอจ่ายอยู่"])),
           ใบผี: (({ rows, ...m }) => m)(cut50(buckets["ใบผี"])),
         },
@@ -2563,11 +2561,10 @@ async function route(req, context) {
       return okJson(await getOrder(p.get("order")));
     }
     if (p.get("list") === "stock") {
-      return json({
-        ok: true,
-        ...(await listStock({
+      const r = await listStock({
           q: p.get("q"),
           category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
+          channel: p.get("channel"),
           only: p.get("only"),
           kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),
@@ -2576,8 +2573,8 @@ async function route(req, context) {
           soldDays: p.get("soldDays"),
           marketplaces: url.searchParams.get("marketplaces"),
           waitUntil,
-        })),
-      });
+        });
+      return okJson(r, r?.error ? 400 : 200);
     }
     /* ── เบา: เอาแค่ป้ายชื่อร้าน + ยอดแยกช่องทาง ──
        ยิง D1 2 รอบ แทนที่จะเป็น 11 รอบของ list=orders
