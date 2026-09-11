@@ -21,35 +21,28 @@ const CANCEL = `o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND 
     คำอธิบายว่าทำไมต้องตัดท้าย และทำไมมันคือ "การเดา" อยู่ในไฟล์นั้นทั้งหมด */
 import { expandSku, buildSkuIndex } from "./sku-match.mjs";
 
-/** 🔎 **ตัวตรวจตัวเอง — เทียบ "ของที่ส่งออกไปจริง" กับ "ยอดนับที่ประกาศไว้"**
+/* 🔴 **เคยมีธง `listsAddUp` ที่นี่ — ถอดออกแล้ว 11 ก.ย. 2569 เพราะมันเขียวตลอดกาล**
  *
- *  🔴 รุ่นแรกของธงนี้ (11 ก.ย. 2569) **เขียวตลอดกาล** เพราะเขียนเป็น
- *     `Math.min(L,limit) + Math.max(0,L-limit) === L` ซึ่งเป็นเอกลักษณ์ทางคณิตศาสตร์
- *     ไม่มีค่า L ไหนทำให้เป็นเท็จได้เลย ⇒ หยิบ L ตัวเดียวกันมาคำนวณทั้งสองข้าง
- *     = **ถามคำถามเดิมซ้ำ ไม่ใช่การทดสอบ** (CEO จับได้ตอนรีวิว · กฎ probe-shares-the-bug)
+ *  ประวัติย่อ (เก็บไว้เพื่อไม่ให้ใครเขียนซ้ำ):
+ *  · รุ่นแรก: `Math.min(L,limit) + Math.max(0,L-limit) === L` — เอกลักษณ์ทางคณิตศาสตร์
+ *  · รุ่นสอง: ย้ายไปอ่านผ่านคีย์ของวัตถุคำตอบ (`out.hidden.length + out.hiddenTruncated
+ *    === out.counts.hidden`) คิดว่า "เทียบข้ามฝั่ง" แล้ว — **ยังเป็นเอกลักษณ์เดิมเป๊ะ**
+ *    เพราะทั้งสามคีย์เป็นนิพจน์ของอาร์เรย์ `hidden` ตัวเดียวกัน: counts.hidden = hidden.length ·
+ *    hidden = hidden.slice(0,limit) · hiddenTruncated = max(0, hidden.length-limit)
+ *    การอ่านผ่าน `out.*` ไม่ได้เปลี่ยนที่มาของตัวเลขเลย
+ *  · และการทดสอบที่ "พิสูจน์ว่าแดงได้" ก็หลอกตัวเอง — มันป้อน **วัตถุที่ประกอบด้วยมือ**
+ *    ซึ่งโค้ดเส้นนี้ไม่มีทางผลิตออกมาได้ (กฎ test-must-hit-the-path)
  *
- *  รุ่นนี้อ่านจาก **วัตถุคำตอบที่กำลังจะส่งออก** ทั้งสองฝั่ง:
- *    ฝั่ง ก: อาร์เรย์ที่ตัดแล้ว (`out.hidden`) + เลขที่บอกว่าตัดไป (`out.hiddenTruncated`)
- *    ฝั่ง ข: ยอดนับที่จอเอาไปโชว์ (`out.counts.hidden`)
- *  สองฝั่งนี้ถูกคำนวณคนละจุดในโค้ด ⇒ วันที่มีใครแก้ข้างใดข้างหนึ่ง
- *  (เปลี่ยน limit · เปลี่ยนวิธีตัด · เปลี่ยนตัวนับ) ธงจะเป็นเท็จทันที
- *  ⚠️ **พิสูจน์แล้วว่าแดงได้จริง** ก่อนใช้งาน — ทดสอบด้วยของเสียที่จงใจทำให้ฝั่งหนึ่งผิด
+ *  🔑 บทเรียน: ความต่างระหว่างตาข่ายจริงกับตาข่ายปลอม **อยู่ที่ตัวหาร ไม่ใช่รูปสูตร**
+ *     ของจริงในโปรเจกต์นี้ที่จับของได้มาแล้วคือ `bucketsAddUp` ของ stock-push.mjs:139/216
+ *     ซึ่งเทียบกับ `platformSkus` ที่มาจาก **ตัวนับของแพลตฟอร์ม** ไม่ใช่ความยาวอาร์เรย์ตัวเอง
+ *
+ *  ⚠️ จะใส่ตาข่ายที่นี่จริง ต้องหาตัวหารจากนอกกอง เช่น `listedOnChannel` (จำนวนรหัสที่
+ *     แพลตฟอร์มบอก) เทียบกับผลรวมของกองที่จับคู่ได้ + กองที่จับคู่ไม่ได้
+ *     **แต่ต้องคิดเรื่องหลายรหัสบนแพลตฟอร์มชี้รหัสฐานเดียวกันก่อน** (เคสเดียวกับ
+ *     oneToMany ของ Lazada) ⇒ ยังไม่ทำในใบนี้ ดีกว่าใส่ตาข่ายที่ไม่มีคมอีกใบ
+ *  🚫 **ห้ามใส่ธงที่ทุกข้างของการเทียบคำนวณจากอาร์เรย์เดียวกัน** — เขียวตลอดกาลแน่นอน
  */
-function listsAddUp(out) {
-  const pairs = [
-    ["hidden", "hiddenTruncated"],
-    ["listedNoStock", "listedNoStockTruncated"],
-    ["unknownOnChannel", "unknownOnChannelTruncated"],
-  ];
-  return pairs.every(([key, cut]) => {
-    const sent = Array.isArray(out[key]) ? out[key].length : null;
-    const dropped = Number(out[cut]);
-    const declared = Number(out.counts?.[key]);
-    // ⚠️ อ่านค่าไหนไม่ได้ = **ตรวจไม่ได้ ต้องถือว่าไม่ผ่าน** ห้ามตีความว่าผ่าน
-    if (sent === null || !Number.isFinite(dropped) || !Number.isFinite(declared)) return false;
-    return sent + dropped === declared;
-  });
-}
 
 export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
@@ -182,8 +175,5 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
       "listedNoStock = ลงขายอยู่แต่ของหมด · " +
       "unknownOnChannel = รหัสบนแพลตฟอร์มที่คลังเราไม่รู้จัก",
   };
-  /* ติดธงหลังประกอบคำตอบเสร็จ — ต้องอ่านจากค่าที่ส่งออกจริงเท่านั้น
-     ถ้าคำนวณจากตัวแปรต้นทางอีกรอบ จะกลายเป็นการถามคำถามเดิมซ้ำเหมือนรุ่นแรก */
-  out.listsAddUp = listsAddUp(out);
   return out;
 }
