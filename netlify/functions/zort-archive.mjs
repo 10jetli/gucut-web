@@ -135,6 +135,9 @@ export default async function handler(req, context) {
         rows: Number(meta?.metadata?.rows ?? 0),
         expected: Number(meta?.metadata?.expected ?? 0),
         complete: String(meta?.metadata?.complete ?? "") === "1",
+        /* ค่าว่าง = สำเนาที่เก็บก่อนวันที่เพิ่มช่องนี้ ⇒ ส่ง null ให้จอแยก
+           "ไม่รู้ว่าใครบอกตัวเลข" ออกจาก "รู้ว่าคนกรอก" ได้ */
+        expectedFrom: String(meta?.metadata?.expectedFrom ?? "") || null,
         /* ⚠️ 0 แถว + complete = **เปิดดูแล้วว่างจริง** ไม่ใช่ "เก็บไม่ได้"
             ถ้าไม่แยก คนอ่านจะเห็น "0 แถว" แล้วนึกว่างานล้มเหลว */
         emptyVerified: String(meta?.metadata?.emptyVerified ?? "") === "1",
@@ -233,6 +236,10 @@ export default async function handler(req, context) {
     rows,
     rowCount: rows.length,
     expected: expected || null,
+    /* ใครเป็นคนบอกตัวเลขที่เอามาเทียบ — **จอต้องเอาไปเขียนกำกับ ห้ามโชว์คำว่า "ครบ" ลอย ๆ**
+       "คนกรอก" = คนอ่านเลขจากจอ ZORT มาพิมพ์ (ทางเดียวที่มี) ·
+       "ยืนยันว่าจอว่าง" = กรณี emptyConfirmed · null = ยังพิสูจน์ความครบไม่ได้ */
+    expectedFrom: emptyVerified ? "ยืนยันว่าจอว่าง" : expected > 0 ? "คนกรอก" : null,
     complete,
     emptyVerified, // true = เปิดดูแล้วจอว่างจริง ≠ ยังไม่ได้เก็บ
     source: String(body?.source ?? "").slice(0, 200), // path ของจอที่อ่านมา
@@ -276,6 +283,8 @@ export default async function handler(req, context) {
       rows: String(rows.length),
       expected: String(expected || 0),
       complete: complete ? "1" : "0",
+      // ⚠️ metadata เก็บได้แต่สตริง — หน้ารายการอ่านช่องนี้ไปเขียนกำกับ
+      expectedFrom: payload.expectedFrom ?? "",
       emptyVerified: emptyVerified ? "1" : "0", // แยก "ว่างจริง" ออกจาก "ยังไม่ได้เก็บ" ในหน้ารายการ
       at: payload.at,
     },
@@ -288,6 +297,7 @@ export default async function handler(req, context) {
     screen,
     rows: rows.length,
     expected: expected || null,
+    expectedFrom: payload.expectedFrom,   // ผู้ยิงจะได้เห็นว่าเราเทียบกับตัวเลขของใคร
     complete,
     warn: complete
       ? null
