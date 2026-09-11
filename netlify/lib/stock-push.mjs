@@ -26,8 +26,18 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 /** แปลงผลเทียบสต็อกของแพลตฟอร์มหนึ่ง → แผนการดัน
  *  @param rows  [{ sku, name, platformQty, coreQty, known }]
  *               known=false แปลว่าคลังเราไม่รู้จักรหัสนี้ (ห้ามเดาเป็น 0)
+ *  @param full  true = ใส่คีย์ `push` ที่เป็น **รายการเต็ม** ลงไปด้วย
+ *
+ *  🔴 **ทำไมต้องมีสองโหมด** (11 ก.ย. 2569 — บทเรียนที่แพงที่สุดของไฟล์นี้)
+ *     `pushSample` ถูกตั้งมาเพื่อ "ตัวอย่างพอให้เห็นภาพ" บนจอ (25 แถว)
+ *     แต่ตัวยิงจริงไปใช้มันเป็น **ฐานของการยิง** ⇒ วันที่กองงานโตเกิน 25
+ *     ตัวยิงเห็นแผนไม่ครบ · ด่านกันพลาดใน stock-push-live เลยปฏิเสธทั้งรอบ
+ *     (ยิงไม่ออกเลยวันที่ wouldPush=76) **โค้ดไม่ได้เปลี่ยนสักตัวอักษร ข้อมูลโตข้ามเส้นเอง**
+ *  ⇒ กฎที่ได้: **เลขที่ตั้งไว้เพื่อการแสดงผล ห้ามเอาไปใช้ตัดสินใจ**
+ *  ⚠️ `pushSample` ต้องคงไว้เหมือนเดิมทุกตัวอักษร — จอใช้อยู่ และขนาดคำตอบของ
+ *     เส้นสาธารณะต้องไม่โตขึ้น (`?stockpush=1` **ห้ามส่ง full**)
  */
-function planFrom(rows) {
+function planFrom(rows, full = false) {
   const push = [];
   const skipNegative = [];
   const skipUnknown = [];
@@ -79,6 +89,12 @@ function planFrom(rows) {
     bucketsAddUp: same + push.length + skipNegative.length + skipUnknown.length === rows.length,
     // ตัวอย่างพอให้เห็นภาพ — **ตัวนับข้างบนนับจากของทั้งหมด ไม่ได้นับจากตัวอย่างนี้**
     pushSample: push.slice(0, 25),
+    /* รายการเต็มสำหรับ "คนที่ต้องตัดสินใจ" (ตัวยิงจริง) — ไม่ใช่สำหรับแสดงผล
+       ⚠️ มีเฉพาะตอนขอ full ⇒ เส้นสาธารณะไม่มีคีย์นี้ ขนาดคำตอบเท่าเดิม */
+    /* ⚠️ `=== true` ไม่ใช่ truthy — สตริง "false" เป็นจริงในภาษานี้ และโปรเจกต์นี้
+       เคยเจ็บกับเคสนั้นมาแล้ว (fallthrough:"false") ⇒ ทุกธงที่เปลี่ยนความหมายของคำตอบ
+       ต้องเทียบแบบเข้ม ทั้งที่นี่และที่ stockPushDryRun */
+    ...(full === true ? { push } : {}),
     skipNegativeSample: skipNegative.slice(0, 15),
     skipUnknownSample: skipUnknown.slice(0, 15),
   };
@@ -89,7 +105,7 @@ function planFrom(rows) {
  *  ⚠️ `diff` ของตัวนั้นมีเฉพาะรหัสที่ "ไม่ตรงกัน" · รหัสที่ตรงกันอยู่ในตัวนับ `same`
  *     ⇒ ตัวเลข platformSkus ต้องเอามาจากตัวนับ ไม่ใช่ `diff.length`
  */
-async function shopeePlan() {
+async function shopeePlan(full) {
   const { shopeeStockCompare } = await import("./shopee-stock.mjs");
   /* ⚠️ ต้องขอ full:1 เสมอ — ค่าเริ่มต้นของตัวเทียบตัด diff ไว้ 50 ตัวเพื่อการแสดงผล
       แผนดันที่คิดจากตัวอย่าง = รหัสที่เกิน 50 หายจากแผนเงียบ ๆ (เจอจริง 5 ก.ย. 2569:
@@ -111,7 +127,7 @@ async function shopeePlan() {
       sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
     })),
   ];
-  const p = planFrom(rows);
+  const p = planFrom(rows, full);
   /* ⚠️ `same` ที่ได้จาก planFrom นับจากแถวที่ส่งเข้าไปเท่านั้น (ซึ่งเป็นแถวที่ต่างกัน)
       ของจริงต้องเอาตัวนับ `same` ของตัวเทียบมาใช้ ไม่งั้นจะได้ 0 แล้วดูเหมือนไม่มีอะไรตรงเลย */
   p.same = num(c.same);
@@ -130,7 +146,7 @@ async function shopeePlan() {
  *     กอง "เดาว่าเป็นตัวเดียวกันจากรหัสฐาน" (matchedByBase) **ห้ามเอามาดัน**
  *     เพราะเป็นการเดา ดันผิดคือแก้ที่หน้าร้านลูกค้าไม่ได้
  */
-async function lazadaPlan() {
+async function lazadaPlan(full) {
   const { lazadaStockCompare } = await import("./lazada.mjs");
   /* ⚠️ **ต้องขอ `full: 1` เสมอ — เหมือนฝั่ง Shopee** (แก้ 6 ก.ย. 2569)
       ค่าเริ่มต้นตัด `diff` ไว้ 50 แถวเพื่อการแสดงผล ⇒ แผนเห็นแค่ 50 จาก 83
@@ -158,7 +174,7 @@ async function lazadaPlan() {
     coreQty: num(d.core),
     known: true,
   }));
-  const p = planFrom(rows);
+  const p = planFrom(rows, full);
   p.platformSkus = num(c.lazadaSkus);
   p.skipUnknown = num(c.missing);
 
@@ -210,7 +226,7 @@ async function lazadaPlan() {
  *  ⚠️ ตัวเลขที่ TikTok ให้คือของที่ **ลงขายอยู่ (ACTIVATE)** เท่านั้น
  *     "ไม่เจอ" จึงแปลว่า "ไม่ได้ลงขายอยู่ตอนนี้" ไม่ใช่ "ไม่เคยขายบน TikTok"
  */
-async function tiktokPlan() {
+async function tiktokPlan(full) {
   const { tiktokStockCompare } = await import("./tiktok-stock.mjs");
   const c = await tiktokStockCompare();
   /* ✅ เคยถูกอยู่แล้วเหมือน Shopee (เส้นสำเร็จไม่มี `note`) — ไม่ได้แก้เพราะพัง
@@ -227,7 +243,7 @@ async function tiktokPlan() {
       sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
     })),
   ];
-  const p = planFrom(rows);
+  const p = planFrom(rows, full);
   // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
   p.same = num(c.same);
   p.platformSkus = num(c.tiktokSkus);
@@ -239,9 +255,16 @@ async function tiktokPlan() {
 
 /** แผนการดันสต็อก — อ่านอย่างเดียวทั้งหมด
  *  @param platform "shopee" | "lazada" | "tiktok" | "all"
+ *  @param full     true = ใส่คีย์ `push` (รายการเต็ม) ลงในแผนของแต่ละเจ้า
+ *
+ *  🔴 **`full` เป็นของ "ผู้เรียกข้างใน" เท่านั้น — เส้น `?stockpush=1` ห้ามส่งมา**
+ *     เหตุผลสองชั้น: ① คำตอบสาธารณะต้องไม่โตขึ้น (จอไม่ได้ใช้รายการเต็ม)
+ *     ② คนที่ยิงเส้นอ่านเล่น ๆ ไม่ควรได้ของที่ใช้ตัดสินใจยิงจริง
+ *     ⇒ ตัวยิงจริง (stock-push-live.mjs) เรียก { full: true } แล้วใช้ `p.push`
  */
 export async function stockPushDryRun(o = {}) {
   const want = String(o.platform ?? "all").toLowerCase();
+  const full = o.full === true;   // ต้องเป็น true แท้ ๆ — สตริง "false" ต้องไม่ผ่าน
   const out = { mode: "ซ้อมอย่างเดียว — ไม่เขียนอะไรกลับแพลตฟอร์ม" };
 
   /* ⚠️ **ต้องวิ่งสามเจ้าพร้อมกัน ห้ามไล่ทีละเจ้า** (แก้ 6 ก.ย. 2569)
@@ -265,9 +288,9 @@ export async function stockPushDryRun(o = {}) {
           เป็นคนละเรื่อง** — รวมเป็นข้อความเดียวเมื่อไหร่ คนอ่านจะไปแก้ผิดจุด */
   const guard = (e) => ({ error: String(e?.message || e).slice(0, 200) });
   const [sh, lz, tk] = await Promise.all([
-    want === "shopee" || want === "all" ? shopeePlan().catch(guard) : undefined,
-    want === "lazada" || want === "all" ? lazadaPlan().catch(guard) : undefined,
-    want === "tiktok" || want === "all" ? tiktokPlan().catch(guard) : undefined,
+    want === "shopee" || want === "all" ? shopeePlan(full).catch(guard) : undefined,
+    want === "lazada" || want === "all" ? lazadaPlan(full).catch(guard) : undefined,
+    want === "tiktok" || want === "all" ? tiktokPlan(full).catch(guard) : undefined,
   ]);
   if (sh !== undefined) out.shopee = sh;
   if (lz !== undefined) out.lazada = lz;
