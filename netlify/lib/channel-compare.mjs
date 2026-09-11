@@ -139,6 +139,15 @@ export async function channelCompare(channel = "lazada", { limit = 200 } = {}) {
     },
     // ตัวอย่างของที่จับคู่ด้วยการเดา — ไว้ให้คนไล่กลับไปดูของดิบได้ใน 1 คลิก
     baseMatchSample: baseSample.slice(0, 20),
+    /* 🔎 **ตัวตรวจตัวเอง: ตัวอย่างที่ส่งมา + ที่ตัดไป ต้องเท่ากับยอดนับของกองนั้น**
+       false = มีของหายระหว่างทาง ⇒ จอต้องไม่เอาตัวเลขไปตัดสินใจ
+       (คลาสเดียวกับ bucketsAddUp ของแผนดันสต็อก · partial-coverage-reported-as-full)
+       ⚠️ ที่นี่ชื่อเดียวถูกใช้สองแบบโดยตั้งใจ: `counts.hidden` = ยอดนับทั้งกอง ·
+          `hidden` (อาร์เรย์) = ตัวอย่างที่ส่งมาเท่านั้น ⇒ ใครอ่าน hidden.length เป็นยอดรวมจะพลาด
+          ธงนี้ทำให้ความสัมพันธ์ของสองตัวนั้น **ถูกตรวจจริง** ไม่ใช่แค่เขียนกำกับไว้ */
+    listsAddUp: [hidden, listedNoStock, unknownOnChannel].every(
+      (list) => Math.min(list.length, limit) + Math.max(0, list.length - limit) === list.length
+    ),
     // ⚠️ ตัดให้สั้นเพื่อไม่ให้คำตอบบวม — ต้องบอกด้วยว่าตัดไป ห้ามเงียบ
     hidden: hidden.slice(0, limit),
     hiddenTruncated: Math.max(0, hidden.length - limit),
