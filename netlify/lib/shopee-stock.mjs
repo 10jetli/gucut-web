@@ -27,20 +27,38 @@ async function inChunks(items, size, fn) {
 }
 
 /** อ่านสต็อกทุก SKU ที่ขายอยู่บน Shopee (รวมระดับตัวเลือกสินค้า) */
-async function shopeeStock() {
+/** ไล่หน้ารายการสินค้า — **แยกออกมาเพื่อทดสอบได้ด้วยหน้าปลอม โดยเดินโค้ดเส้นเดียวกับของจริง**
+ *  คืน { ids, declared, sawAll } · `declared` = ยอดที่ Shopee ประกาศ (null = ไม่ได้บอกมา)
+ *
+ *  🔴 ทำไมต้องมีตัวนับเทียบ (11 ก.ย. 2569): ไฟล์นี้ **ไม่มีตาข่ายกันไล่หน้าไม่ครบเลย**
+ *     ถ้า has_next_page หลุดหรือ API ตอบหน้าเปล่ากลางทาง ⇒ ได้รายการบางส่วน
+ *     แล้วทุกตัวนับข้างล่าง (same · missing · diffCount) ต่ำกว่าจริงทั้งหมด **โดยไม่มีอะไรฟ้อง**
+ *     ⇒ ตัวหารต้องมาจากนอกกอง = ยอดที่แพลตฟอร์มประกาศ ไม่ใช่ความยาวอาร์เรย์ของตัวเอง
+ */
+export async function collectShopeeItemIds(fetchPage) {
   const ids = [];
+  let declared = null;
   let offset = 0;
   for (let p = 0; p < 25; p++) {
-    const d = await shopCall("/api/v2/product/get_item_list", {
-      offset: String(offset),
-      page_size: "100",
-      item_status: "NORMAL",
-    });
+    const d = await fetchPage({ offset: String(offset), page_size: "100", item_status: "NORMAL" });
+    /* ยอดรวมที่ Shopee ประกาศเอง — อ่านจากหน้าแรกพอ
+       ⚠️ อ่านไม่ได้ = null **ห้ามแทนด้วย 0** (ไม่รู้ ≠ ไม่มี) */
+    if (declared === null && Number.isFinite(Number(d?.response?.total_count))) {
+      declared = Number(d.response.total_count);
+    }
     for (const it of d?.response?.item ?? []) ids.push(it.item_id);
     if (!d?.response?.has_next_page) break;
     offset += 100;
   }
-  if (!ids.length) return [];
+  /* true = ได้ครบตามที่แพลตฟอร์มบอก · false = ไล่หน้าไม่ครบ **ห้ามใช้ตัวเลขต่อ**
+     null = แพลตฟอร์มไม่ได้บอกยอดรวม ⇒ ยังไม่ได้ตรวจ (ไม่ใช่ผ่าน) */
+  return { ids, declared, sawAll: declared === null ? null : ids.length === declared };
+}
+
+async function shopeeStock() {
+  const got = await collectShopeeItemIds((query) => shopCall("/api/v2/product/get_item_list", query));
+  const ids = got.ids;
+  if (!ids.length) return Object.assign([], { coverage: got });
 
   /* ชื่อ + SKU ระดับสินค้า (ทีละ 50 ตามเพดาน API)
      ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
@@ -91,7 +109,11 @@ async function shopeeStock() {
     }
     return null;
   });
-  return rows;
+  /* ⚠️ แนบผลตรวจความครบไปกับอาร์เรย์ (ไม่เปลี่ยนสัญญาเดิมของฟังก์ชันนี้ที่คืนอาร์เรย์)
+     ผู้เรียกที่อยากรู้ว่า "ไล่หน้าครบไหม" อ่าน `rows.coverage` ได้
+     ⚠️ JSON.stringify ไม่เก็บ property ของอาร์เรย์ ⇒ ผู้เรียกต้องยกขึ้นคำตอบเอง
+        (shopeeStockCompare ทำให้แล้ว) · เขียนกำกับเพราะจุดนี้มองไม่เห็นจากปลายทาง */
+  return Object.assign(rows, { coverage: got });
 }
 
 /** บรรทัดสรุปสำหรับ Telegram ยามตี 1 — คืน null ถ้ายังตรวจไม่ได้
@@ -261,7 +283,13 @@ export async function shopeeStockCompare(o = {}) {
           เดิมกลืนเป็น `[]` ทั้งสองกรณี ⇒ D1 สะดุดชั่วคราว ⇒ สูตรชุดหายทั้งกอง
           ⇒ โซ่ตัดขาย/ชุด KINGKONG ตกไปเป็น "คลังไม่รู้จัก" ⇒ Telegram รายวันส่งว่า
             "คลังไม่รู้จัก 148 จาก 1,926 รหัสที่ลงขายอยู่" **ทั้งที่คลังรู้จักครบ**
-          และตัวตรวจตัวเอง `bucketsAddUp` ยังเป็น true (ทุกกองบวกได้ครบ) ⇒ ไม่มีอะไรฟ้อง
+          และตัวตรวจตัวเองของไฟล์ฝั่ง TikTok (`bucketsAddUp`) ยังเป็น true ⇒ ไม่มีอะไรฟ้อง
+          🔴 **แก้ข้อความ 11 ก.ย. 2569 — ไฟล์นี้ไม่เคยมี `bucketsAddUp` เลย**
+             ข้อความเดิมเขียนเหมือนไฟล์นี้มีตาข่ายตัวนั้นอยู่ ⇒ คนอ่านจะเชื่อว่ามีคนเฝ้าอยู่
+             ซึ่ง**อันตรายกว่าการไม่มีตาข่ายเฉย ๆ** (ตาข่ายในจินตนาการทำให้ไม่มีใครไปสร้างของจริง)
+             ตอนนี้ไฟล์นี้มี `sawAllItems` แทน ซึ่งเทียบกับยอดที่ Shopee ประกาศ (นอกกอง)
+             แต่ **มันตรวจแค่ "ไล่หน้าครบไหม" ไม่ได้ตรวจว่าทุกแถวตกกองครบ**
+             ของหลังนั้นตรวจที่ stock-push.mjs:139 ซึ่งใช้ platformSkus เป็นตัวหาร
           ⇒ ไม่มีตาราง = ถอยไปวิธีเดิมเงียบ ๆ ได้ · ถามไม่ได้ = **ต้องติดธงไปกับผล** */
       const msg = String(e?.message || e);
       return /no such table/i.test(msg) ? [] : { __err: msg.slice(0, 160) };
@@ -355,6 +383,13 @@ export async function shopeeStockCompare(o = {}) {
         เป็นกับดัก "ตัวอย่างไม่ใช่ตัวแทน" ตัวที่ 6 ของวันเดียวกัน) */
     diff: o.full ? diff : diff.slice(0, 50),
     diffTruncated: !o.full && diff.length > 50,
+    /* ✅ ตาข่ายจริง — **ตัวหารมาจากนอกกอง** (ยอดสินค้าที่ Shopee ประกาศเอง)
+        true = ไล่หน้ารายการสินค้าครบ · false = ไม่ครบ ⇒ ทุกตัวนับข้างบนต่ำกว่าจริง **ห้ามใช้ต่อ**
+        null = Shopee ไม่ได้บอกยอดรวมมา ⇒ ยังไม่ได้ตรวจ (ไม่ใช่ผ่าน)
+        ⚠️ ตรวจแค่ "ไล่หน้าครบไหม" ไม่ได้ตรวจว่าทุกแถวตกกองครบ (อันนั้นอยู่ที่ stock-push.mjs:139) */
+    sawAllItems: rows.coverage?.sawAll ?? null,
+    itemsSeen: rows.coverage?.ids?.length ?? null,
+    shopeeItemTotal: rows.coverage?.declared ?? null,
   };
 }
 
