@@ -47,6 +47,32 @@ const pct = (v) => {
 const text = (v, max = 60) =>
   typeof v === "string" && v.trim() ? v.trim().slice(0, max) : null;
 
+/* ── เจ้าของงานบนกระดาน (ท่านประธานสั่ง 11 ก.ย. 2569: "แยกงานเป็นของใครของมัน
+   และใส่ส่วนของผมลงไปด้วย") ──
+   🔴 **"ประธาน" เป็นกลุ่มจริงกลุ่มหนึ่ง ไม่ใช่กองที่เหลือ** — จอวางไว้บนสุดเสมอ
+   ⚠️ ค่าอื่นนอกรายการนี้ **ตีกลับ 400** ไม่ใช่รับไว้เงียบ ๆ — กระดานที่มีเจ้าของมั่ว
+      แย่กว่ากระดานที่ไม่มีเจ้าของ เพราะคนอ่านจะเชื่อว่ามีคนรับไปแล้ว */
+const OWNERS = new Set(["ประธาน", "gucut", "gucut2", "codex", "g1"]);
+
+/** เดาเจ้าของจากข้อความของงานเก่า — **ใช้ตอนกวาดย้อนหลังเท่านั้น**
+ *  🔴 การเดาอยู่ที่ท่อที่เดียว (จอห้ามเดาเอง) ⇒ ทุกจอที่อ่านเส้นนี้เห็นผลเหมือนกันเสมอ
+ *  กติกา: อ่านจากวงเล็บเหลี่ยมหน้าข้อความ · ไม่มีวงเล็บ = งานของท่านประธาน
+ *         ยกเว้น "[รอ push 21:00]" ซึ่งเป็นคิวของ CEO (gucut) ไม่ใช่ของท่าน
+ *  ⚠️ วงเล็บที่ไม่รู้จักให้ตกเป็นของท่านประธาน — เพราะงานที่ไม่มีใครรับ ต้องมีคนเห็น
+ *     ไม่ใช่หายไปอยู่กลุ่มที่ไม่มีใครเปิดดู */
+function guessOwner(t) {
+  const s = String(t || "");
+  const m = s.match(/\[([^\]]+)\]/);
+  if (!m) return "ประธาน";
+  const tag = m[1].trim().toLowerCase();
+  if (tag === "gucut2") return "gucut2";
+  if (tag === "codex") return "codex";
+  if (tag === "g1") return "g1";
+  if (tag.includes("push")) return "gucut";     // "รอ push 21:00" = คิวของ CEO
+  if (tag === "gucut") return "gucut";
+  return "ประธาน";
+}
+
 export default async function handler(req, context) {
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
@@ -70,11 +96,22 @@ export default async function handler(req, context) {
       if (body.taskAdd) {
         const t = text(body.taskAdd, 200);
         if (!t) return json({ error: "งานว่างเปล่า" }, 400);
+        /* เจ้าของงาน: ส่งมาก็ตรวจ ไม่ส่งก็เดาจากข้อความด้วยกติกาเดียวกับตอนกวาดย้อนหลัง
+           ⚠️ ส่งค่าที่ไม่รู้จัก = 400 · **ห้ามเงียบแล้วยัดให้ประธาน** ไม่งั้นคนยิงจะไม่รู้ตัว
+              ว่าพิมพ์ชื่อผิด แล้วงานไปโผล่ผิดกลุ่มโดยดูปกติทุกประการ */
+        let owner = guessOwner(t);
+        if (body.owner !== undefined) {
+          const o = text(body.owner, 20);
+          if (!o || !OWNERS.has(o)) {
+            return json({ error: `owner ต้องเป็นหนึ่งใน ${[...OWNERS].join(" / ")}` }, 400);
+          }
+          owner = o;
+        }
         // กันเพิ่มซ้ำ — งานเดิมยังไม่จบ ห้ามงอกแถวใหม่ (ยิงซ้ำได้ ไม่เบิ้ล)
         const dup = list.find((x) => !x.done && x.text === t);
         if (dup) return json({ ok: true, duplicate: true, id: dup.id });
         const id = `t_${Date.now().toString(36)}`;
-        list.push({ id, text: t, note: text(body.note, 300), done: false, at: Date.now() });
+        list.push({ id, text: t, note: text(body.note, 300), owner, done: false, at: Date.now() });
         await s.setJSON(KEY, list);
         return json({ ok: true, id });
       }
@@ -152,9 +189,26 @@ export default async function handler(req, context) {
       })
     );
     agents.sort((a, b) => [...KNOWN].indexOf(a.agent) - [...KNOWN].indexOf(b.agent));
-    const tasks = (await s.get("office/tasks", { type: "json" }).catch(() => null)) || [];
+    const raw = (await s.get("office/tasks", { type: "json" }).catch(() => null)) || [];
+    let tasks = Array.isArray(raw) ? raw : [];
+
+    /* ── กวาดย้อนหลัง: เติม owner ให้แถวเก่าที่ยังไม่มี แล้วเขียนกลับครั้งเดียว ──
+       ทำไมเติมที่นี่: ไม่ต้องมีเส้นใหม่ให้ใครต้องจำว่าต้องยิง และ **รันซ้ำได้ไม่พัง**
+       (รอบถัดไปไม่มีแถวไหนขาดแล้ว ก็ไม่เขียนอะไรเลย)
+       🔴 **แถวที่มี owner อยู่แล้วห้ามทับ** — ของที่คนตั้งใจย้ายกลุ่มไว้ต้องไม่ถูกเดาทับ
+       ⚠️ ต้อง await การเขียน — Netlify แช่แข็งฟังก์ชันทันทีที่ตอบ ปล่อยลอย = เขียนไม่ลง
+          แล้วจะกวาดใหม่ทุกคำขอไปตลอดกาลโดยไม่มีอะไรฟ้อง
+       ⚠️ เขียนล้มไม่ทำให้คำขอล้ม — จอยังได้ owner ที่เดาไว้ในรอบนี้ไปแสดงตามปกติ */
+    const missing = tasks.filter((t) => t && typeof t === "object" && !t.owner);
+    if (missing.length) {
+      tasks = tasks.map((t) =>
+        t && typeof t === "object" && !t.owner ? { ...t, owner: guessOwner(t.text) } : t
+      );
+      try { await s.setJSON("office/tasks", tasks); } catch { /* เขียนไม่ลง = รอบหน้ากวาดใหม่ */ }
+    }
+
     // ⚠️ คนที่ยังไม่เคยส่งข่าวจะ **ไม่มีแถว** — จอต้องขึ้น "ไม่รู้" ไม่ใช่ 0
-    return json({ now: Date.now(), agents, tasks: Array.isArray(tasks) ? tasks : [] });
+    return json({ now: Date.now(), agents, tasks });
   }
 
   return json({ error: "method not allowed" }, 405);
