@@ -56,7 +56,7 @@ node scripts/check-leaks.mjs
 git diff --check
 ```
 
-ใช้ Node 26.8.1 / `node:sqlite` โดยไม่ติดตั้ง dependency ใหม่ ตัวทดสอบรัน daily/bycustomer
+ใช้ Node 20.15.0 + system `sqlite3` โดยไม่ติดตั้ง dependency ใหม่ ตัวทดสอบรัน daily/bycustomer
 block จริงผ่าน injected SQLite query เทียบ JSON ทุกฟิลด์กับซอร์สฐาน `445a1a5`
 ไม่ import coredb ที่ใช้คีย์ และบล็อก fetch; ไม่ครอบ auth/HTTP/D1/network layer
 ต้องมี commit ฐานนี้อยู่ใน git history เพื่อรัน oracle

@@ -3,9 +3,10 @@
 // node scripts/test-bycustomer-cpu.mjs [--explain] [--bench]
 // Production measurements: ~/gucut-next/scripts/measure-core.mjs (reviewer only).
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { DatabaseSync } from "node:sqlite";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
@@ -33,20 +34,42 @@ const before = route(baseline);
 const after = route(source);
 
 function database() {
-  const db = new DatabaseSync(":memory:");
+  const dir = mkdtempSync(join(tmpdir(), "bycustomer-cpu-"));
+  const path = join(dir, "fixture.sqlite");
   const statements = [...schema.matchAll(/`(CREATE (?:TABLE|INDEX) IF NOT EXISTS (?:orders|idx_orders_\w+)\b[^`]+)`/g)];
   assert.ok(statements.length >= 4, "use actual orders schema and indexes");
-  for (const [, sql] of statements) db.exec(sql);
-  return db;
+  execFileSync("sqlite3", [path], { input: statements.map(([, sql]) => `${sql};`).join("\n") });
+  const execute = (sql) => execFileSync("sqlite3", ["-json", path], {
+    input: sql, encoding: "utf8", maxBuffer: 16 * 1024 * 1024,
+  });
+  return {
+    all(sql, params = []) {
+      let i = 0;
+      const bound = sql.replaceAll("?", () => sqliteLiteral(params[i++]));
+      assert.equal(i, params.length, "all SQL parameters must be bound");
+      const out = execute(bound).trim();
+      return out ? JSON.parse(out) : [];
+    },
+    get(sql, params = []) { return this.all(sql, params)[0]; },
+    exec(sql) { execute(sql); },
+    close() { rmSync(dir, { recursive: true, force: true }); },
+  };
+}
+function sqliteLiteral(value) {
+  if (value === null || value === undefined) return "NULL";
+  if (typeof value === "number") return Number.isFinite(value) ? String(value) : "NULL";
+  return `'${String(value).replaceAll("'", "''")}'`;
 }
 function insert(db, entries) {
-  const stmt = db.prepare("INSERT INTO orders(id,source,number,channel,status,amount,customer,order_date) VALUES(?,?,?,?,?,?,?,?)");
-  db.exec("BEGIN");
-  for (const [i, r] of entries.entries()) stmt.run(String(i), r.source ?? "z1", String(i),
+  const rows = entries.map((r, i) => [String(i), r.source ?? "z1", String(i),
     r.channel === undefined ? "online" : r.channel, r.status === undefined ? "paid" : r.status,
-    r.amount ?? 1, r.name === undefined ? "ลูกค้า" : r.name, r.day === undefined ? "2026-09-10" : r.day);
-  db.exec("COMMIT");
-  db.exec("ANALYZE");
+    r.amount ?? 1, r.name === undefined ? "ลูกค้า" : r.name, r.day === undefined ? "2026-09-10" : r.day]);
+  const inserts = [];
+  for (let i = 0; i < rows.length; i += 500) {
+    inserts.push("INSERT INTO orders(id,source,number,channel,status,amount,customer,order_date) VALUES\n" +
+      rows.slice(i, i + 500).map((row) => `(${row.map(sqliteLiteral).join(",")})`).join(",\n") + ";");
+  }
+  db.exec(`BEGIN;\n${inserts.join("\n")}\nCOMMIT;\nANALYZE;`);
 }
 function stage(sql) {
   if (sql.includes("AS newCustomers")) return "monthly";
@@ -62,11 +85,11 @@ async function run(fn, db, query, { explain = false, fail = "", timings = null, 
     queries?.push({ label, binds: params.length });
     if (explain) {
       console.log(`  ${label} (${params.length} binds): ${sql.replace(/\s+/g, " ").trim()}`);
-      for (const r of db.prepare(`EXPLAIN QUERY PLAN ${sql}`).all(...params)) console.log(`    ${r.detail}`);
+      for (const r of db.all(`EXPLAIN QUERY PLAN ${sql}`, params)) console.log(`    ${r.detail}`);
     }
     if (fail === label) throw new Error(`injected ${label} failure`);
     const t0 = performance.now();
-    const rows = db.prepare(sql).all(...params);
+    const rows = db.all(sql, params);
     if (timings) timings[label] = (timings[label] ?? 0) + performance.now() - t0;
     return rows;
   }, (x) => JSON.parse(JSON.stringify(x)), FixedDate);
@@ -103,7 +126,7 @@ const fixture = [
   ...['O\'Brien "ร้าน" \\ สาขา', "'); DROP TABLE orders; --", "123", "ลูกค้า 🪚\nบรรทัดสอง"].map((name) => ({ name })),
 ];
 const db = database();
-console.log(`SQLite ${db.prepare("SELECT sqlite_version() AS v").get().v}; local synthetic data only`);
+console.log(`SQLite ${db.get("SELECT sqlite_version() AS v").v}; local synthetic data only`);
 for (const q of cases) assert.deepStrictEqual(await run(after, db, q), await run(before, db, q), `empty: ${q}`);
 insert(db, fixture);
 for (const q of cases) assert.deepStrictEqual(await run(after, db, q), await run(before, db, q), q);

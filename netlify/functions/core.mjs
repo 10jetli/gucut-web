@@ -2550,11 +2550,10 @@ async function route(req, context) {
       return okJson(await getOrder(p.get("order")));
     }
     if (p.get("list") === "stock") {
-      return json({
-        ok: true,
-        ...(await listStock({
+      const r = await listStock({
           q: p.get("q"),
           category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
+          channel: p.get("channel"),
           only: p.get("only"),
           kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),
@@ -2563,8 +2562,8 @@ async function route(req, context) {
           soldDays: p.get("soldDays"),
           marketplaces: url.searchParams.get("marketplaces"),
           waitUntil,
-        })),
-      });
+        });
+      return okJson(r, r?.error ? 400 : 200);
     }
     /* ── เบา: เอาแค่ป้ายชื่อร้าน + ยอดแยกช่องทาง ──
        ยิง D1 2 รอบ แทนที่จะเป็น 11 รอบของ list=orders
