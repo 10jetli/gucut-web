@@ -16,6 +16,22 @@
 //    · ค่าที่เทียบคือ availablestock (ของว่างขาย) ไม่ใช่ของในมือ — ออเดอร์ที่จองของไว้ก็ทำให้ต่างได้
 //    · ขายหน้าร้าน/โอนของ/รับของเข้า ที่ไม่ได้ผ่านออเดอร์ จะโผล่เป็นส่วนต่างเสมอ
 //      จนกว่าจะมีหน้าปรับมือเขียนลง stock_moves
+/* 🏷️ **คีย์นับแถวมาตรฐานของไฟล์นี้ — เพิ่มใหม่ 11 ก.ย. 2569 (CEO สั่ง ห้าม rename)**
+     rowsMatched  = จำนวนแถวที่ **เข้าเงื่อนไขทั้งหมด** (ตัวที่เอาไปทำเลขหน้า/บอกว่ามีอีกกี่ตัว)
+     rowsReturned = จำนวนแถวที่ **ส่งกลับไปในคำตอบนี้จริง**
+   🔴 **ทำไมไม่ใช้ชื่อ `matched` เปล่า ๆ ตามที่สั่งไว้ตอนแรก**: ไฟล์นี้มี `matched` อยู่แล้ว
+      ในคำตอบของ stockRecon ซึ่งหมายถึง "จำนวน SKU ที่สต็อกตรงกับ ZORT" (diff = 0)
+      ⇒ ใช้ชื่อซ้ำจะได้ชื่อเดียวสองความหมายในท่อเดียวกัน ซึ่งเป็นบั๊กคลาสเดียวกับที่งานนี้
+         ตั้งใจจะแก้ตั้งแต่แรก (field-answers-other-question) · แจ้ง CEO แล้ว
+   ทำไมต้องมี: คีย์ `shown` เดิม **คนละความหมายข้ามเส้น** (ฝั่งจอจับได้ 11 ก.ย.)
+     · list=stock      → shown = จำนวนแถวของแท็บ (218) ไม่ใช่จำนวนที่ส่งกลับ (200)
+     · list=stockcard  → shown = จำนวนที่ส่งกลับจริง
+     · list=dormant    → shown = จำนวนที่ส่งกลับจริง
+   ⇒ ใครอ่านชื่อแล้วเดาความหมายจะพลาดทันที (คลาส field-answers-other-question)
+   🔴 **ห้าม rename `shown` และห้ามแก้ค่าของมัน** — จอเก่ากับท่อใหม่อยู่ด้วยกันเสมอตอน deploy
+      เปลี่ยนความหมายของชื่อเดิม = จอเก่าตีความผิดเงียบ ๆ ⇒ เพิ่มฟิลด์ใหม่ที่มีความหมายเดียว
+   ⚠️ `shown` ถือเป็นของเลิกใช้ **ของใหม่ห้ามอ่าน** ให้ใช้ matched/returned เท่านั้น */
+
 import { coreQuery, coreReady } from "./coredb.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -198,6 +214,20 @@ export async function listStock(o = {}) {
          เพราะฝั่งเราไม่รู้ `day` แล้วตอนประกอบคำสั่ง — เดิมคิดเป็น UTC ในจาวาสคริปต์
          ผลลัพธ์เท่ากันเป๊ะ (ทั้งสองทางเป็นการลบวันจากวันที่ล้วน ไม่เกี่ยวกับเวลาในวัน)
       ⚠️ **ห้ามแยกกลับไปยิงถามวันล่าสุดก่อนอีก** */
+  /* ── กรองตามช่องทางขาย (จอมาร์เก็ตเพลส) — เพิ่ม 11 ก.ย. 2569 ──
+     เดิมจอต้องกวาดทั้งคลัง 14 หน้า (2,672 แถว) มานับเองในเบราว์เซอร์ เพราะไม่มีตัวกรองนี้
+     🔴 **กรองใน SQL ไม่ได้** — ป้ายช่องทางไม่ได้อยู่ในฐาน D1 แต่มาจากรายการที่ลงขายจริง
+        (Blobs · marketplace-listings) แล้วจับคู่ด้วย sku-match ในจาวาสคริปต์
+        ⇒ ต้องดึงแถวที่เข้าเงื่อนไขอื่นให้ครบก่อน แล้วค่อยติดป้าย → กรอง → แบ่งหน้าในหน่วยความจำ
+        (ยังดีกว่าเดิมมาก: จากเบราว์เซอร์ยิง 14 รอบ เหลือเซิร์ฟเวอร์ทำรอบเดียว)
+     ⚠️ ค่าที่ไม่รู้จัก **ต้องตีกลับ ห้ามเงียบแล้วไม่กรอง** — คนอ่านจะนึกว่ากรองแล้ว
+        แล้วเชื่อตัวเลขที่เป็นของทั้งคลัง */
+  const CHANNELS = ["shopee", "lazada", "tiktok", "gucut", "none"];
+  const channel = String(o.channel ?? "").trim().toLowerCase();
+  if (channel && !CHANNELS.includes(channel)) {
+    return { error: `channel ต้องเป็นหนึ่งใน ${CHANNELS.join(" / ")}` };
+  }
+
   const soldDays = Math.max(1, Math.min(90, num(o.soldDays) || 30));
   const sinceMod = `-${soldDays} days`;
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
@@ -330,7 +360,7 @@ export async function listStock(o = {}) {
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
-     ORDER BY ${sort} LIMIT ${limit} OFFSET ${offset}`,
+     ORDER BY ${sort} ${channel ? "" : `LIMIT ${limit} OFFSET ${offset}`}`,
     [sinceMod, ...fParams]
   ),
     /* จำนวนที่ ZORT มีจริง — คนละแหล่งกับฐานเรา (Netlify Blobs) จึงยิงคู่กันไปเลย
@@ -370,7 +400,8 @@ export async function listStock(o = {}) {
 
   let mk = { checkedMarketplaces: [], marketplacesAt: null };
   let mkKey = null;
-  if (o.marketplaces) {
+  // กรองตามช่องทาง = ต้องมีป้ายช่องทางเสมอ ⇒ เปิดให้เองแม้ผู้เรียกไม่ได้ขอ marketplaces มา
+  if (o.marketplaces || channel) {
     try {
       const { marketplaceListings } = await import("./marketplace-listings.mjs");
       /* ส่ง waitUntil ต่อ ⇒ เปิดโหมด "คืนของเก่าก่อน" ตอนแคชหมดอายุ
@@ -405,11 +436,33 @@ export async function listStock(o = {}) {
     }
   }
 
+  /* ── กรองตามช่องทาง + แบ่งหน้าในหน่วยความจำ ──
+     ทำหลังติดป้ายเสมอ (ป้ายมาจาก mkKey ซึ่งเพิ่งสร้างข้างบน)
+     ⚠️ ติดป้ายไม่ได้ (Blobs ล่ม/ยังไม่เคยกวาด) **ห้ามตอบว่าไม่มีสินค้าในช่องทางนั้น** —
+        คำตอบจะกลายเป็นคำยืนยันที่ผิด ⇒ ตีกลับเป็น error ให้จอเขียนว่ายังตอบไม่ได้
+        (สามสถานะ: ยังไม่รู้ ≠ ถามไม่สำเร็จ ≠ ไม่มีของจริง) */
+  let pageRows = rows;
+  let matchedRows = null;
+  if (channel) {
+    if (!mkKey) {
+      return { error: `กรองช่องทางไม่ได้: ${mk.marketplacesError || "ยังไม่มีข้อมูลรายการที่ลงขาย"}` };
+    }
+    const tagged = rows.filter((r) => {
+      const tags = mkKey.tagsOf(String(r.sku)) || [];
+      return channel === "none" ? tags.length === 0 : tags.includes(channel);
+    });
+    matchedRows = tagged.length;
+    pageRows = tagged.slice(offset, offset + limit);
+  }
+
   return {
     day,
     soldDays,
     limit,
     offset,
+    /* สะท้อนค่าที่ **ใช้จริง** — จอเช็คได้ว่าท่อรับตัวกรองนี้แล้วหรือยัง
+       (ท่อรุ่นเก่าไม่มีคีย์นี้ ⇒ จอรู้ทันทีว่าเลขที่ได้เป็นของทั้งคลัง ไม่ใช่ของช่องทางนั้น) */
+    ...(channel ? { channel } : {}),
     only: o.only && only ? o.only : null,
     kind: o.kind && kind ? o.kind : null,
     // ⚠️ **`only` กับ `kind` ต้องปฏิบัติคนละแบบ — พลาดตรงนี้ได้แท็บที่โกหก**
@@ -426,13 +479,18 @@ export async function listStock(o = {}) {
     // ⬇️ สองตัวนี้นับข้าม kind เสมอ (ดูเหตุผลที่ตัวแปร aside)
     services: num(aside?.services), // จำนวน "บริการ" — จอเอาไปบอกว่าซ่อนไปกี่ตัว
     inactive: num(aside?.inactive), // จำนวนที่ปิดใช้งาน (ตอนนี้ 0 ทั้งคลัง — แท็บจะว่าง ต้องเขียนบอก)
-    shown: num(shown?.c), // จำนวนแถวของแท็บที่เลือกอยู่ — เอาไปทำเลขหน้า
+    shown: num(shown?.c), // ⚠️ เลิกใช้ (ความหมายกำกวม) — ค่าเดิมไม่แตะ ดูคำอธิบายท้ายไฟล์
+    /* ชื่อใหม่ความหมายเดียว — shown เดิมหมายถึง "แถวของแท็บทั้งหมด" จึงเท่ากับ rowsMatched
+       ⚠️ กรองช่องทางแล้ว ต้องนับจากชุดที่กรองแล้วเท่านั้น — ใช้เลขของแท็บเดิมจะเกินจริง
+          แล้วจอจะทำเลขหน้าเกินจำนวนที่มี (กดหน้าถัดไปเจอหน้าว่าง) */
+    rowsMatched: channel ? matchedRows : num(shown?.c),
+    rowsReturned: pageRows.length,
     ...zc, // ZORT มีกี่ตัว · เราขาดไปกี่ตัวเพราะไม่มีรหัส (ห้ามซ่อนเงียบ)
     value: num(sum?.value), // ราคาขายรวม — **ไม่ใช่ตัวที่ ZORT โชว์**
     valueCost: num(sum?.value_cost), // ราคาทุนรวม — ตัวนี้ตรงกับ "มูลค่าสินค้าทั้งหมด" ของ ZORT
     noCostSkus: num(sum?.no_cost), // ยังไม่ได้กรอกราคาทุน ⇒ valueCost ต่ำกว่าจริงเท่านี้รหัส
     ...mk,
-    rows: rows.map((r) => ({
+    rows: pageRows.map((r) => ({
       sku: r.sku,
       name: r.name || "",
       qty: num(r.qty),
@@ -684,7 +742,9 @@ export async function stockCard(o = {}) {
     // ⚠️ สะท้อน **ค่าที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
     applied: { sku, kind, limit },
     total, // จำนวนจริงทั้งหมดในตัวกรองนี้ (ไม่ใช่จำนวนที่แสดง)
-    shown,
+    shown, // ⚠️ เลิกใช้ — ที่เส้นนี้มันหมายถึง "ที่ส่งกลับจริง" ซึ่งคนละความหมายกับ list=stock
+    rowsMatched: total,
+    rowsReturned: shown,
     counts, // แยกตามแหล่ง — จอเขียนได้ว่า "ขาย N · ซื้อ M · ปรับ K"
     /* ⚠️ มีชื่ออยู่ในนี้ = แหล่งนั้น **ดึงไม่สำเร็จ ไม่ใช่ไม่มีข้อมูล**
         จอต้องเขียนกำกับว่าตัวเลขไม่ครบ **ห้ามโชว์ 0 เฉย ๆ** ไม่งั้นกลายเป็นคำยืนยันที่ผิด */
@@ -835,7 +895,9 @@ export async function channelGaps(o = {}) {
     enoughHistory: enough,
     // ⚠️ total = **มาร์เก็ตเพลสทั้งหมดหลังกรอง** ไม่ใช่จำนวนแถวที่คืน
     total: marketplace.length,
-    shown: page.length,
+    shown: page.length, // ⚠️ เลิกใช้ — ดูคำอธิบาย matched/returned
+    rowsMatched: marketplace.length,
+    rowsReturned: page.length,
     truncated: marketplace.length > offset + page.length,
     // จำนวนที่ถูกกรองออก — **บอกไปด้วย ห้ามกรองเงียบ**
     excluded: {
