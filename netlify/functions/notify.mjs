@@ -10,10 +10,19 @@
 //       แล้วจะลืมแน่นอน) ให้ฝั่งนั้นยิงมาที่นี่ด้วย `x-admin-key` ที่มันถืออยู่แล้ว
 //       ⇒ **คีย์ Telegram มีเจ้าของที่เดียวตลอดไป**
 //
-// POST /api/notify   body: { "text": "…" }   header: x-admin-key
+// POST /api/notify   body: { "text": "…", "replyMarkup"?: {…} }   header: x-admin-key
 //   ตอบ { ok:true, sent:true } เมื่อ Telegram รับจริง
 //   ตอบ { ok:false, error } เมื่อส่งไม่ออก — **ห้ามตอบ ok ตอนส่งไม่ได้**
 //   ผู้เรียกต้องเอาค่านี้ไปรายงานต่อ ไม่ใช่กลืน (ดู [[three-states-not-two]])
+//
+// ➕ **ช่อง `replyMarkup` — เพิ่ม 12 ก.ย. 2569 (CEO มอบให้ฝั่งจอเติม)**
+//    ใครใช้: ตัวถามคนแพ็กว่า "ของหมดบนชั้นหรือเปล่า" (ปุ่มสองปุ่มในกลุ่มเดิม)
+//    ทำไมต้องมาเพิ่มที่นี่: คีย์ Telegram อยู่ที่ project นี้ที่เดียว (เหตุผลเดียวกับที่ไฟล์นี้เกิดมา)
+//    ⚠️ **เพิ่มอย่างเดียว** — ไม่ส่งช่องนี้มา พฤติกรรมเดิมเหมือนเดิมทุกตัวอักษร
+//    ⚠️ ส่งมาเป็นอย่างอื่นที่ไม่ใช่ object ⇒ **ตีกลับ 400** ห้ามเงียบแล้วส่งข้อความไร้ปุ่ม
+//       ข้อความที่ควรมีปุ่มแต่ไม่มี = คนอ่านไม่รู้ว่าต้องทำอะไร แล้วคิดว่าระบบพัง
+//    🔴 **ปุ่มมีค่าก็ต่อเมื่อมีตัวรับ callback ที่ตอบกลับได้** — ไม่งั้นกดแล้วค้างหมุน
+//       ซึ่งแย่กว่าไม่มีปุ่ม · ผู้เรียกต้องรู้เรื่องนี้เอง ไฟล์นี้ตรวจให้ไม่ได้
 import { adminGate } from "../lib/admin-gate.mjs";
 
 const json = (o, s = 200) =>
@@ -35,6 +44,11 @@ export default async function handler(req, context) {
   }
   const text = String(body?.text ?? "").trim();
   if (!text) return json({ error: "ต้องมีช่อง text" }, 400);
+  /* ปุ่ม (ไม่บังคับ) — ตรวจรูปร่างที่นี่ ดีกว่าปล่อยให้ Telegram ปฏิเสธทั้งใบแล้วเราเดาสาเหตุ */
+  const markup = body?.replyMarkup;
+  if (markup !== undefined && (typeof markup !== "object" || markup === null || Array.isArray(markup))) {
+    return json({ error: "replyMarkup ต้องเป็น object ของ Telegram (เช่น {inline_keyboard:[[...]]})" }, 400);
+  }
   /* กันข้อความยาวเกินขีดของ Telegram (4096) — ตัดเองดีกว่าให้ปลายทางปฏิเสธทั้งใบ */
   const msg = text.length > 4000 ? text.slice(0, 3990) + "\n…(ตัดท้าย)" : text;
 
@@ -55,6 +69,7 @@ export default async function handler(req, context) {
         text: msg,
         parse_mode: String(body?.parseMode ?? "HTML"),
         disable_web_page_preview: true,
+        ...(markup ? { reply_markup: markup } : {}),
       }),
       signal: AbortSignal.timeout(12000),
     });
@@ -63,7 +78,9 @@ export default async function handler(req, context) {
     if (!r.ok || !d?.ok) {
       return json({ ok: false, error: d?.description || `Telegram ตอบ HTTP ${r.status}` }, 502);
     }
-    return json({ ok: true, sent: true });
+    /* คืน message_id มาด้วยเมื่อมีปุ่ม — ผู้เรียกต้องใช้แก้ข้อความ/ถอดปุ่มตอนมีคนตอบแล้ว
+       (ไม่มีปุ่มก็คืนได้ ไม่เสียหาย · เพิ่มช่อง ไม่ได้เปลี่ยนของเดิม) */
+    return json({ ok: true, sent: true, messageId: d?.result?.message_id ?? null });
   } catch (e) {
     return json({ ok: false, error: String(e?.message ?? e) }, 502);
   }
