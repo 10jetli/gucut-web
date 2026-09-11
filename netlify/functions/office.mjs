@@ -200,15 +200,24 @@ export default async function handler(req, context) {
           แล้วจะกวาดใหม่ทุกคำขอไปตลอดกาลโดยไม่มีอะไรฟ้อง
        ⚠️ เขียนล้มไม่ทำให้คำขอล้ม — จอยังได้ owner ที่เดาไว้ในรอบนี้ไปแสดงตามปกติ */
     const missing = tasks.filter((t) => t && typeof t === "object" && !t.owner);
+    let backfilled = 0;
     if (missing.length) {
       tasks = tasks.map((t) =>
         t && typeof t === "object" && !t.owner ? { ...t, owner: guessOwner(t.text) } : t
       );
-      try { await s.setJSON("office/tasks", tasks); } catch { /* เขียนไม่ลง = รอบหน้ากวาดใหม่ */ }
+      try {
+        await s.setJSON("office/tasks", tasks);
+        backfilled = missing.length;
+      } catch { /* เขียนไม่ลง = รอบหน้ากวาดใหม่ · จอยังได้ค่าที่เดาไว้รอบนี้ */ }
     }
 
+    /* 🔎 **ตัวกวาดต้องประกาศตัวเมื่อมันทำงาน** (กฎ fallbacks-must-announce)
+       มีคีย์ `backfilled` = รอบนี้เขียน Blobs จริงกี่แถว · **ไม่มีคีย์เลย = ไม่ได้เขียนอะไร**
+       ทำไมต้องมี: ตัวกวาดอยู่ใน GET ⇒ ถ้ามันเผลอเขียนทุกครั้งที่มีคนเปิดกระดาน
+       จะกลายเป็นเขียน Blobs ทุกครั้งที่ท่านประธานเปิดจอ **โดยไม่มีอะไรฟ้อง**
+       ⇒ ยิง GET สองรอบติดกัน: รอบแรกมีคีย์นี้ รอบสองต้องไม่มี = หลักฐานว่ากวาดครั้งเดียวจบ */
     // ⚠️ คนที่ยังไม่เคยส่งข่าวจะ **ไม่มีแถว** — จอต้องขึ้น "ไม่รู้" ไม่ใช่ 0
-    return json({ now: Date.now(), agents, tasks });
+    return json({ now: Date.now(), agents, tasks, ...(backfilled ? { backfilled } : {}) });
   }
 
   return json({ error: "method not allowed" }, 405);
