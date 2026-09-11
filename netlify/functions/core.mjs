@@ -1935,7 +1935,9 @@ async function route(req, context) {
           ส่ง `source` ไปด้วย จอจะได้ไม่ต้องเดา prefix เวลาร้านที่สองเข้ามา */
       const rows = await coreQuery(
         `SELECT id, source, number, COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch, order_date, amount,
-                status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track
+                status, COALESCE(pay_status,'') AS pay, COALESCE(tracking_no,'') AS track,
+                SUM(CASE WHEN COALESCE(pay_status,'') LIKE '%paid%' THEN 1 ELSE 0 END)
+                  OVER () AS must_ship_total
          FROM orders
          WHERE source = ? AND ${NOTDONE} AND ${NOTCANCEL}
          ORDER BY order_date DESC`,
@@ -1983,6 +1985,11 @@ async function route(req, context) {
           ฝั่งจอรู้ได้เพราะบังเอิญเอา counts มาเทียบความยาวรายการ ซึ่งไม่ควรต้องบังเอิญ
           (ถ้าวันหลังมีจอไล่เคลียร์ใบผี คนจะเคลียร์ 50 ใบแล้วนึกว่าจบ) */
       const SHOW = 50;
+      /* ตัวหารของ `ต้องส่งของ` ต้องมาจากนอกกอง JS จริง ๆ — ใช้ window count ที่ฐานคำนวณ
+         ก่อน ORDER/LIMIT จึงยังฟ้องได้ ถ้าวันหลัง SQL ถูกตัดแต่รายการฝั่งนี้ไม่รู้ตัว
+         ไม่เพิ่ม D1 round-trip และใช้ LIKE '%paid%' ให้ตรงกับ /paid/i ที่แบ่งกองด้านบน
+         (รวมคำอย่าง Unpaid เหมือนพฤติกรรมเดิม แม้ชื่อสถานะจะชวนสับสน) */
+      const mustShipTotal = Number(rows[0]?.must_ship_total || 0);
       const cut50 = (a) => ({
         shown: Math.min(a.length, SHOW),
         total: a.length,
@@ -2028,7 +2035,11 @@ async function route(req, context) {
         /* ⚠️ สามคีย์นี้เป็น **รายการเพื่อแสดงผล** — `รอจ่ายอยู่` กับ `ใบผี` ถูกตัดที่ 50
             ดูจำนวนจริงที่ `counts` และ `listMeta` · ห้ามเอาไปนับหรือสรุปแทนทั้งกอง */
         listMeta: {
-          ต้องส่งของ: { shown: buckets["ต้องส่งของ"].length, total: buckets["ต้องส่งของ"].length, truncated: false },
+          ต้องส่งของ: {
+            shown: buckets["ต้องส่งของ"].length,
+            total: mustShipTotal,
+            truncated: buckets["ต้องส่งของ"].length < mustShipTotal,
+          },
           รอจ่ายอยู่: (({ rows, ...m }) => m)(cut50(buckets["รอจ่ายอยู่"])),
           ใบผี: (({ rows, ...m }) => m)(cut50(buckets["ใบผี"])),
         },
