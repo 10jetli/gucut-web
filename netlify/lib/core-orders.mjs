@@ -9,7 +9,7 @@
 // ⚠️ ค่าจากผู้ใช้ผูกด้วย ? เสมอ (ไม่ใช่ esc()) — ตัวเลขน้อย ไม่ชนเพดาน ~100 params ของ D1
 //    ต่างจากตัว sync ที่ยัดทีละร้อยแถวจนต้องฝังค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
-import { readStatus, groupsFromCounts } from "./order-status.mjs";
+import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -172,6 +172,45 @@ export async function listOrderFacets(o = {}) {
     /* ⚠️ **บอกให้ชัดว่าตัวนี้ไม่มีอะไร** ไม่งั้นจอที่เผลอเรียกตัวนี้แทน list=orders
         จะเห็น rows หายไปแล้วนึกว่า "ช่วงนี้ไม่มีออเดอร์" ซึ่งเป็นคนละเรื่องกันคนละขั้ว */
     note: "ตัวนี้ตอบแค่ป้ายชื่อร้านกับยอดแยกช่องทาง — ไม่มี rows · total · byStatus โดยตั้งใจ (ต้องการของพวกนั้นให้ใช้ list=orders)",
+  };
+}
+
+/** 🔑 **เหตุผลที่สถานะว่าง — กติกามีที่เดียว** (แยกออกมา 12 ก.ย. 2569)
+ *  เดิมนิพจน์นี้ถูกเขียนซ้ำสองที่: ฝั่งแถว กับ ฝั่งนับกอง ⇒ ตัวทดสอบจับได้ว่าสองฝั่ง
+ *  ให้คำตอบคนละอย่างได้ถ้าใครแก้ข้างเดียว (เจอจริงตอนทำเทสให้เดินผ่านโค้ดจริง)
+ *  ⇒ ค่าปริยาย "none_expected" อยู่ที่นี่ที่เดียว ห้ามเขียน `|| "none_expected"` ที่อื่นอีก
+ *  คืน null เมื่อใบนั้น **มี** สถานะจากแพลตฟอร์ม (ไม่ใช่เคสว่าง) */
+export function blankReasonFor(integrationStatus, channel, chanMap = new Map()) {
+  if (String(integrationStatus ?? "") !== "") return null;
+  return chanMap.get(String(channel || "(ไม่ระบุ)")) || "none_expected";
+}
+
+/** เติมช่องสถานะให้แถวหนึ่งแถว — **แยกออกมาเพื่อให้ทดสอบได้โดยไม่ต้องมีฐานข้อมูล**
+ *
+ *  🔴 ทำไมต้องแยก (12 ก.ย. 2569): ตัวทดสอบรุ่นแรกของผม **เลียนแบบ** ตรรกะตรงนี้เอง
+ *     ⇒ ตอนลองทำให้พัง (ให้แถวกลับไปใช้ชื่อเก่า / ถอด blankReason) **เทสยังเขียว**
+ *     เพราะมันไม่ได้เดินผ่านโค้ดจริงสักบรรทัด = ด่านที่ไม่มีคม (กฎ test-must-hit-the-path)
+ *     ⇒ ยกออกมาเป็นฟังก์ชัน แล้วให้ทั้งของจริงและเทสเรียกตัวนี้ตัวเดียวกัน
+ *  @param chanMap Map<ช่องทาง, เหตุผลที่สถานะว่าง> — ท่อคิดมาให้แล้ว จอห้ามเดาเอง
+ */
+export function decorateOrderRow(r, chanMap = new Map()) {
+  const s = readStatus(r.integrationStatus);
+  /* 🔴 **ชื่อกองของแถว ต้องเป็นชื่อเดียวกับที่ประกาศในรายการสรุป** (แก้ 12 ก.ย. 2569)
+      ของเดิมแถวส่ง `blank` เฉย ๆ แต่รายการสรุปประกาศ `blank_none_expected`
+      ⇒ จอที่กรองแถวด้วยชื่อจากรายการสรุป **ไม่เจอแถวกลุ่มนี้เลย และเงียบ**
+      ⇒ ใช้ `groupKeyOf` ตัวเดียวกับที่รายการสรุปใช้ **ห้ามเขียนเงื่อนไขซ้ำที่นี่**
+      (สองจอที่อ่าน `blank` อยู่ก่อนหน้านี้รอดทั้งคู่ เพราะเขียนเผื่อไว้ — CEO ตรวจแล้ว
+       แต่ **ของที่รอดโดยบังเอิญ ไม่เท่ากับของที่ไม่ต้องแก้**)
+      ⚠️ `blankReason` ยังต้องอยู่คู่กันเสมอ — ค่าดิบต้องไม่หายไปเพราะประกอบชื่อให้แล้ว */
+  const blankReason = blankReasonFor(r.integrationStatus, r.channel, chanMap);
+  return {
+    ...r,
+    shipStatus: s.th,
+    shipStatusGroup: groupKeyOf(s.group, blankReason),
+    shipStatusKnown: s.known,
+    ...(s.platform ? { shipStatusFrom: s.platform } : {}),
+    ...(s.unverified ? { shipStatusUnverified: true } : {}),
+    ...(blankReason ? { blankReason } : {}),
   };
 }
 
@@ -364,20 +403,7 @@ export async function listOrders(o = {}) {
     /* ⚠️ ส่ง **ค่าที่แปลแล้ว + ค่าดิบ** คู่กันเสมอ (ฝั่งจอขอ 4 ก.ย. 2569)
         จอโชว์ shipStatus ให้คนอ่าน · เก็บ integrationStatus ไว้ตอนไล่ปัญหา
         ค่าที่ตัวแปลไม่รู้จักจะได้ group "unknown" ⇒ **จอต้องโชว์ถังนี้ ห้ามซ่อน** */
-    rows: rows.map((r) => {
-      const s = readStatus(r.integrationStatus);
-      return {
-        ...r,
-        shipStatus: s.th,
-        shipStatusGroup: s.group,
-        shipStatusKnown: s.known,
-        ...(s.platform ? { shipStatusFrom: s.platform } : {}),
-        ...(s.unverified ? { shipStatusUnverified: true } : {}),
-        ...(String(r.integrationStatus ?? "") === ""
-          ? { blankReason: chanMap.get(String(r.channel || "(ไม่ระบุ)")) || "none_expected" }
-          : {}),
-      };
-    }),
+    rows: rows.map((r) => decorateOrderRow(r, chanMap)),
     /* ⚠️ **ต้องนับที่ฐานข้อมูล ไม่ใช่จากแถวที่ตัดหน้ามาแล้ว** — ฝั่งจอจับได้ 4 ก.ย. 2569
         เดิมเขียน groupStatuses(rows) ซึ่ง rows ผ่าน LIMIT/OFFSET มาแล้ว = หน้าละ 50 ใบ
         แต่คอมเมนต์เขียนว่า "ของช่วงที่กรองอยู่" ⇒ **ป้ายผิดขอบเขต**
@@ -395,8 +421,8 @@ export async function listOrders(o = {}) {
     shipStatusGroups: groupsFromCounts(
       statusCountsRaw.map((r) => ({
         ...r,
-        blankReason:
-          String(r.st ?? "") === "" ? chanMap.get(String(r.ch)) || "none_expected" : null,
+        /* ใช้ฟังก์ชันกลางตัวเดียวกับฝั่งแถว — ห้ามเขียนนิพจน์ซ้ำที่นี่ */
+        blankReason: blankReasonFor(r.st, r.ch, chanMap),
       }))
     ),
     shipStatusScope: "ทั้งช่วงที่กรองอยู่ (ไม่ใช่เฉพาะหน้าที่แสดง)",
