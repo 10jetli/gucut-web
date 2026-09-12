@@ -18,6 +18,16 @@
 //   ④ **ห้ามให้อะไรเขียนรายชื่อนี้เองอัตโนมัติ** (CEO สั่ง) — ปิดร้านเป็นเรื่องธุรกิจที่
 //      ท่านประธานเท่านั้นรู้ · ตัวตรวจ "เงียบนานแล้วยังไม่อยู่ในรายชื่อ" **เสนอได้ แต่คนต้องกดเอง**
 //
+// 🔴 **คีย์เป็น "ร้าน + ช่องทาง" ไม่ใช่ชื่อช่องทางเปล่า ๆ** (ตัดสิน 12 ก.ย. 2569)
+//    หลักฐานจากของจริง — ชื่อช่องทางเดียวกันซ้ำข้ามร้านได้ และสองตัวมีชีวิตไม่เท่ากัน:
+//      TIKTOK ของ **z1** ใบล่าสุด 11 ก.ย. 2569 — **ยังขายอยู่**
+//      TIKTOK ของ **z2** ใบล่าสุด 22 ก.พ. 2569 — เงียบ 202 วัน
+//    ⇒ ถ้าคีย์เป็นชื่อช่องทางเปล่า ๆ วันที่ปิด TIKTOK ของ z2 **จะไปปิด TIKTOK ของ z1 ที่ยังขายอยู่ด้วย**
+//       แล้วออเดอร์ที่ขายได้จริงจะถูกติดป้ายว่าเป็นของร้านที่ปิดแล้ว
+//    ⚠️ **คนรอบหน้าจะเห็นคีย์ยาวแล้วอยากย่อให้สั้น** — ตัวอย่าง TIKTOK สองร้านข้างบนคือเหตุผล
+//       ที่ห้ามย่อ · เก็บเป็นโครงซ้อน { "<ร้าน>": { "<ช่องทาง>": {...} } } เพื่อไม่ต้องมีตัวคั่น
+//       (ตัวคั่นใด ๆ มีวันชนกับชื่อช่องทางจริง ซึ่งมีทั้งเว้นวรรค @ อิโมจิ และภาษาไทย)
+//
 // 🔴 **closedAt กับ recordedAt ต้องแยกกัน ห้ามยุบเป็นช่องเดียว** (CEO จับได้ 12 ก.ย. 2569)
 //    ผมเกือบใส่ closedAt = วันนี้ ซึ่งเป็น **วันที่เรารู้** ไม่ใช่วันที่ร้านปิด
 //    ถ้าใส่แบบนั้น: (ก) ได้ข้อเท็จจริงปลอมในฐานทันที (ข) กติกา "ใบลงวันที่หลังวันปิดต้องเตือน"
@@ -48,22 +58,39 @@ export async function saveClosedChannels(map) {
   await store().setJSON(KEY, map);
 }
 
-/** ช่องทางนี้ปิดไปแล้วหรือยัง — **เทียบตรงตัวเท่านั้น** */
-export const isClosedChannel = (map, channel) =>
-  Object.prototype.hasOwnProperty.call(map || {}, String(channel ?? ""));
+/** ช่องทางของร้านนี้ปิดไปแล้วหรือยัง — **เทียบตรงตัวทั้งร้านและชื่อช่องทาง**
+ *  ⚠️ ต้องส่ง store มาด้วยทุกครั้ง · ชื่อช่องทางเดียวกันต่างร้านคือคนละช่องทาง (ดูเหตุผลหัวไฟล์) */
+export const isClosedChannel = (map, store, channel) =>
+  Object.prototype.hasOwnProperty.call((map || {})[String(store ?? "")] || {}, String(channel ?? ""));
+
+/** อ่านรายการของช่องทางหนึ่ง — คืน null ถ้าไม่อยู่ในรายชื่อ */
+export const getClosedChannel = (map, store, channel) =>
+  ((map || {})[String(store ?? "")] || {})[String(channel ?? "")] ?? null;
+
+/** แผ่เป็นรายการแถว — ให้จอ/รายงานวนง่าย ๆ โดยไม่ต้องรู้โครงซ้อน */
+export function listClosedChannels(map) {
+  const out = [];
+  for (const [store, chans] of Object.entries(map || {})) {
+    for (const [channel, rec] of Object.entries(chans || {})) out.push({ store, channel, ...rec });
+  }
+  return out;
+}
 
 /** เพิ่ม/แก้รายการหนึ่งช่องทาง
  *  @param closedAt วันที่ร้านปิดจริง (YYYY-MM-DD) หรือ **null เมื่อยังไม่รู้**
  *  ⚠️ ไม่รับ undefined — ผู้เรียกต้องตัดสินใจว่า "รู้" หรือ "ไม่รู้" ให้ชัด */
-export function putClosedChannel(map, { channel, closedAt, note = "", by = "", now = thaiToday() }) {
+export function putClosedChannel(map, { store, channel, closedAt, note = "", by = "", now = thaiToday() }) {
+  const st = String(store ?? "").trim();
   const ch = String(channel ?? "").trim();
+  /* 🔴 ไม่ส่งร้านมา = ตีกลับ ห้านเดาว่าเป็นร้านหลัก — ดูเหตุผล TIKTOK สองร้านที่หัวไฟล์ */
+  if (!st) return { error: "ต้องระบุร้าน (store) — ชื่อช่องทางเดียวกันต่างร้านคือคนละช่องทาง" };
   if (!ch) return { error: "ต้องระบุชื่อช่องทาง (ตรงตัวเหมือนในข้อมูล)" };
   if (ch.length > 60) return { error: "ชื่อช่องทางยาวเกิน 60 ตัวอักษร" };
   if (closedAt !== null && !DAY.test(String(closedAt ?? ""))) {
     return { error: "closedAt ต้องเป็น YYYY-MM-DD หรือ null (null = ยังไม่รู้วันปิด) — ห้ามเว้นว่าง" };
   }
-  const next = { ...(map || {}) };
-  next[ch] = {
+  const next = { ...(map || {}), [st]: { ...((map || {})[st] || {}) } };
+  next[st][ch] = {
     closedAt: closedAt === null ? null : String(closedAt),
     recordedAt: now,                 // วันที่ "เราบันทึก" — คนละเรื่องกับวันที่ร้านปิด
     by: String(by ?? "").slice(0, 40),
@@ -72,11 +99,13 @@ export function putClosedChannel(map, { channel, closedAt, note = "", by = "", n
   return { map: next };
 }
 
-export function removeClosedChannel(map, channel) {
+export function removeClosedChannel(map, store, channel) {
+  const st = String(store ?? "").trim();
   const ch = String(channel ?? "").trim();
-  const next = { ...(map || {}) };
-  if (!Object.prototype.hasOwnProperty.call(next, ch)) return { error: "ไม่มีช่องทางนี้ในรายชื่อ" };
-  delete next[ch];
+  if (!isClosedChannel(map, st, ch)) return { error: "ไม่มีช่องทางนี้ของร้านนี้ในรายชื่อ" };
+  const next = { ...(map || {}), [st]: { ...((map || {})[st] || {}) } };
+  delete next[st][ch];
+  if (!Object.keys(next[st]).length) delete next[st];   // ร้านที่ไม่เหลือช่องทาง ไม่ต้องเก็บกุญแจเปล่า
   return { map: next };
 }
 

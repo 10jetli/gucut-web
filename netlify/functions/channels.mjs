@@ -3,8 +3,11 @@
 // CEO อนุมัติที่เก็บตามที่เสนอ 12 ก.ย. 2569 · กติกาทั้งหมดอยู่ที่ netlify/lib/closed-channels.mjs
 //
 //   GET    /api/channels                         → รายชื่อที่ปิดแล้ว + ช่องทางที่เงียบนาน (ข้อเสนอ)
-//   POST   /api/channels  {channel, closedAt|null, note?, by?}  → เพิ่ม/แก้
-//   DELETE /api/channels?channel=…               → ถอนออกจากรายชื่อ (แก้กรณีบันทึกผิด)
+//   POST   /api/channels  {store, channel, closedAt|null, note?, by?}  → เพิ่ม/แก้
+//   DELETE /api/channels?store=…&channel=…       → ถอนออกจากรายชื่อ (แก้กรณีบันทึกผิด)
+//
+// 🔴 **ต้องระบุร้านทุกครั้ง** — ชื่อช่องทางซ้ำข้ามร้านได้จริง (TIKTOK มีทั้ง z1 ที่ยังขายอยู่
+//    และ z2 ที่เงียบ 202 วัน) ⇒ คีย์เป็น ร้าน+ช่องทาง · เหตุผลเต็มอยู่ที่ lib/closed-channels.mjs
 //
 // 🔴 **ไฟล์ใหม่แยกออกมาโดยตั้งใจ — ไม่แตะ core.mjs** (Codex ถืออยู่ 12 ก.ย. 2569)
 // 🔴 **ห้ามให้เส้นนี้เขียนรายชื่อเองอัตโนมัติ** (CEO สั่ง) — ปิดร้านเป็นเรื่องธุรกิจที่
@@ -14,7 +17,8 @@
 //       (ใบ ZAMA ใบสุดท้าย 21 ก.พ. 2569 ⇒ ปิดไม่ก่อนวันนั้น แต่ปิดวันไหนต้องให้ท่านยืนยัน)
 import { adminGate } from "../lib/admin-gate.mjs";
 import {
-  loadClosedChannels, saveClosedChannels, putClosedChannel, removeClosedChannel, thaiToday,
+  loadClosedChannels, saveClosedChannels, putClosedChannel, removeClosedChannel,
+  listClosedChannels, isClosedChannel, thaiToday,
 } from "../lib/closed-channels.mjs";
 
 const json = (o, s = 200) =>
@@ -39,7 +43,8 @@ async function silentChannels(closed, days = 90) {
   const all = rows.map((r) => ({
     store: r.source, channel: String(r.ch), lastOrder: r.lastOrder,
     silentDays: ageOf(r.lastOrder), orders: Number(r.orders) || 0,
-    inClosedList: Object.prototype.hasOwnProperty.call(closed, String(r.ch)),
+    /* เทียบทั้งร้านและชื่อช่องทาง — เทียบชื่อเดียวจะได้คำตอบผิดสำหรับชื่อที่ซ้ำข้ามร้าน */
+    inClosedList: isClosedChannel(closed, r.source, String(r.ch)),
   }));
   return {
     newestOrderAnywhere: all.reduce((m, r) => (r.lastOrder > (m ?? "") ? r.lastOrder : m), null),
@@ -78,7 +83,8 @@ export default async function handler(req, context) {
     return json({
       ok: true,
       closedChannels: closed,
-      count: Object.keys(closed).length,
+      closedList: listClosedChannels(closed),   // แผ่เป็นแถว ให้ผู้อ่านไม่ต้องรู้โครงซ้อน
+      count: listClosedChannels(closed).length,
       survey,
       rules:
         "เทียบชื่อช่องทางตรงตัวเท่านั้น (ห้าม includes) · ห้ามกรองแถวของช่องทางที่ปิดทิ้ง " +
@@ -92,6 +98,9 @@ export default async function handler(req, context) {
     if (!body || typeof body !== "object") return json({ error: "อ่าน body เป็น JSON ไม่ได้" }, 400);
     /* ⚠️ ต้องส่ง closedAt มาให้ชัดว่า "รู้" (วันที่) หรือ "ไม่รู้" (null)
        ไม่ส่งมาเลย = ตีกลับ ไม่เดาแทน (เดาแทนครั้งเดียวได้ข้อเท็จจริงปลอมถาวร) */
+    if (!body.store) {
+      return json({ error: "ต้องส่ง store มาด้วย (z1/z2) — ชื่อช่องทางเดียวกันต่างร้านคือคนละช่องทาง" }, 400);
+    }
     if (!("closedAt" in body)) {
       return json({ error: "ต้องส่ง closedAt มาด้วย — ใส่วันที่ (YYYY-MM-DD) ถ้ารู้ หรือ null ถ้ายังไม่รู้" }, 400);
     }
@@ -102,20 +111,21 @@ export default async function handler(req, context) {
     const r = putClosedChannel(closed, body);
     if (r.error) return json({ error: r.error }, 400);
     await saveClosedChannels(r.map);
-    return json({ ok: true, closedChannels: r.map, saved: body.channel });
+    return json({ ok: true, closedChannels: r.map, saved: { store: body.store, channel: body.channel } });
   }
 
   if (req.method === "DELETE") {
     const ch = url.searchParams.get("channel");
-    if (!ch) return json({ error: "ต้องมี ?channel=" }, 400);
+    const st = url.searchParams.get("store");
+    if (!ch || !st) return json({ error: "ต้องมี ?store= และ ?channel=" }, 400);
     let closed;
     try { closed = await loadClosedChannels(); } catch (e) {
       return json({ error: `อ่านรายชื่อเดิมไม่สำเร็จ: ${String(e?.message ?? e)}` }, 503);
     }
-    const r = removeClosedChannel(closed, ch);
+    const r = removeClosedChannel(closed, st, ch);
     if (r.error) return json({ error: r.error }, 404);
     await saveClosedChannels(r.map);
-    return json({ ok: true, closedChannels: r.map, removed: ch });
+    return json({ ok: true, closedChannels: r.map, removed: { store: st, channel: ch } });
   }
 
   return json({ error: "ใช้ได้เฉพาะ GET · POST · DELETE" }, 405);
