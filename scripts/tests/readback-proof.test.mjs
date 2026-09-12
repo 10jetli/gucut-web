@@ -41,6 +41,9 @@ console.log('① เกณฑ์หลักของงาน: รหัสท�
   ok('🔴 ไม่มีรายการเต็ม ⇒ unknown ทั้งหมด', (noFull.unknown || []).length === 3 && !noFull.landed.length, JSON.stringify(noFull).slice(0, 140))
   ok('🔴 ห้ามมีรหัสไหนถูกตอบว่า landed เลย', (noFull.landed || []).length === 0)
   ok('บอกเหตุผลว่าทำไมตรวจไม่ได้', /รายการเต็ม/.test(noFull.unknown?.[0]?.why || ''), noFull.unknown?.[0]?.why)
+  /* 🔑 ต้องมี **รหัสเหตุผลที่เครื่องอ่านได้** ไม่ใช่มีแต่ข้อความ (CEO สั่ง)
+     ⇒ คนอ่านผลแยกได้ว่า unknown แต่ละตัวมาจากเหตุผลไหน โดยไม่ต้องแกะข้อความด้วย includes() */
+  ok('unknown มีรหัสเหตุผล no_full_plan', noFull.unknown?.every((u) => u.reason === 'no_full_plan'), JSON.stringify(noFull.unknown?.[0]))
 }
 
 console.log('② ของที่ตรงกันแล้วจริง ⇒ ยัง landed เหมือนเดิม')
@@ -59,6 +62,11 @@ console.log('③ 🔴 "ไม่อยู่ในแผน" ไม่ได้�
   const why = Object.fromEntries((r.unknown || []).map((u) => [u.sku, u.why]))
   ok('รหัสที่ข้ามเพราะคลังติดลบ ⇒ unknown', /ติดลบ/.test(why.NEG || ''), JSON.stringify(r).slice(0, 160))
   ok('รหัสที่คลังไม่รู้จัก ⇒ unknown', /ไม่รู้จัก/.test(why.UNK || ''))
+  const byReason = Object.fromEntries((r.unknown || []).map((u) => [u.sku, u.reason]))
+  ok('🔑 รหัสเหตุผลแยกสองแบบออกจากกัน',
+     byReason.NEG === 'skipped_negative' && byReason.UNK === 'skipped_unknown', JSON.stringify(byReason))
+  ok('มีสรุปจำนวนแยกตามเหตุผล', r.unknownByReason?.skipped_negative === 1 && r.unknownByReason?.skipped_unknown === 1,
+     JSON.stringify(r.unknownByReason))
   ok('ของที่ตรงกันจริงยัง landed', r.landed.includes('OK'))
   ok('🔴 ของที่ถูกข้ามต้องไม่อยู่ใน landed', !r.landed.includes('NEG') && !r.landed.includes('UNK'))
 }
@@ -83,6 +91,8 @@ console.log('⑤ 🔴 รายการกองที่ถูกข้าม�
   const r = await lazadaReadBack(['OK'], { dryRun: async () => short })
   ok('รหัสที่ไม่อยู่ในรายการใด ๆ ⇒ unknown (ไม่ใช่ landed)', (r.unknown || []).length === 1 && !r.landed.length, JSON.stringify(r).slice(0, 170))
   ok('เหตุผลบอกตัวเลขรายการ/ตัวนับให้เห็น', /ไม่รู้จัก 1\/25/.test(r.unknown?.[0]?.why || ''), r.unknown?.[0]?.why)
+  ok('รหัสเหตุผลเป็น skip_lists_incomplete (แยกจากสองแบบข้างบน)',
+     r.unknown?.[0]?.reason === 'skip_lists_incomplete', r.unknown?.[0]?.reason)
   const r2 = await lazadaReadBack(['U1'], { dryRun: async () => short })
   ok('รหัสที่เจอในรายการ ยังตอบเหตุผลเฉพาะได้ปกติ', /ไม่รู้จักรหัสนี้/.test((r2.unknown || [])[0]?.why || ''), JSON.stringify(r2).slice(0, 140))
 }

@@ -146,22 +146,27 @@ export async function lazadaReadBack(skus, deps = {}) {
   if (!p || p.skip) return { error: `เทียบซ้ำไม่ได้: ${p?.skip || "ไม่มีข้อมูล"}` };
 
   const asked = skus.map(String);
-  const unknownAll = (why) => ({
+  /* 🔑 **ทุก unknown ต้องมีรหัสเหตุผลที่เครื่องอ่านได้ ไม่ใช่มีแต่ข้อความ** (CEO สั่ง 12 ก.ย. 2569)
+     เหตุผลสามแบบต้องแยกจากกันในผลลัพธ์: ถูกข้ามเพราะติดลบ · คลังไม่รู้จักรหัส · รายการไม่ครบ
+     ไม่งั้นคนอ่านแยกไม่ออกว่าตัวไหนหายเพราะอะไร แล้วต้องยิงใหม่ทั้งชุด
+     ⚠️ และมีรหัสแล้ว **ห้ามให้ใครไปจัดประเภทจากข้อความ `why` ด้วย includes()**
+        (กฎ no-substring-classification — ข้อความเปลี่ยนได้ รหัสเปลี่ยนไม่ได้โดยไม่มีใครรู้) */
+  const unknownAll = (reason, why) => ({
     landed: [], notLanded: [],
-    unknown: asked.map((sku) => ({ sku, why })),
+    unknown: asked.map((sku) => ({ sku, reason, why })),
     note: "ตรวจไม่ได้ — ห้ามอ่านว่าผ่าน",
   });
   /* ① ไม่มีรายการเต็ม = ตรวจไม่ได้ทั้งก้อน (ท่อรุ่นเก่า หรือมีคนถอด full ออก) */
   if (!Array.isArray(p.push)) {
-    return unknownAll("ท่อไม่ได้ส่งรายการเต็ม (คีย์ push) มา — ตัวอย่าง 25 แถวใช้ยืนยันไม่ได้");
+    return unknownAll("no_full_plan", "ท่อไม่ได้ส่งรายการเต็ม (คีย์ push) มา — ตัวอย่าง 25 แถวใช้ยืนยันไม่ได้");
   }
   /* ② ด่านเดียวกับตัวยิงจริง: แผนที่ถือไว้ต้องครบตามจำนวนที่ควรมี */
   if ((p.wouldPush ?? 0) > p.push.length) {
-    return unknownAll(`แผนสดไม่ครบ: ถือไว้ ${p.push.length} แถว จากที่ควรมี ${p.wouldPush}`);
+    return unknownAll("plan_incomplete", `แผนสดไม่ครบ: ถือไว้ ${p.push.length} แถว จากที่ควรมี ${p.wouldPush}`);
   }
   /* ③ กองที่ถูกข้ามต้องมีรายการเต็มด้วย ไม่งั้นแยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ออก */
   if (!Array.isArray(p.skipNegativeFull) || !Array.isArray(p.skipUnknownFull)) {
-    return unknownAll("ท่อไม่ได้ส่งรายการเต็มของกองที่ถูกข้าม — แยก 'ตรงกันแล้ว' จาก 'ถูกข้าม' ไม่ได้");
+    return unknownAll("no_skip_lists", "ท่อไม่ได้ส่งรายการเต็มของกองที่ถูกข้าม — แยก 'ตรงกันแล้ว' จาก 'ถูกข้าม' ไม่ได้");
   }
 
   const still = new Map(p.push.map((r) => [String(r.sku), r]));
@@ -182,11 +187,12 @@ export async function lazadaReadBack(skus, deps = {}) {
   for (const sku of asked) {
     const r = still.get(sku);
     if (r) { notLanded.push({ sku, ยังต้องดัน: `${r.from}→${r.to}` }); continue; }
-    if (skippedNeg.has(sku)) { unknown.push({ sku, why: "ถูกข้ามเพราะคลังเราติดลบ ⇒ ไม่เคยถูกเทียบ" }); continue; }
-    if (skippedUnk.has(sku)) { unknown.push({ sku, why: "ถูกข้ามเพราะคลังเราไม่รู้จักรหัสนี้ ⇒ ไม่เคยถูกเทียบ" }); continue; }
+    if (skippedNeg.has(sku)) { unknown.push({ sku, reason: "skipped_negative", why: "ถูกข้ามเพราะคลังเราติดลบ ⇒ ไม่เคยถูกเทียบ" }); continue; }
+    if (skippedUnk.has(sku)) { unknown.push({ sku, reason: "skipped_unknown", why: "ถูกข้ามเพราะคลังเราไม่รู้จักรหัสนี้ ⇒ ไม่เคยถูกเทียบ" }); continue; }
     if (!skipListsComplete) {
       unknown.push({
         sku,
+        reason: "skip_lists_incomplete",
         why:
           `รายการกองที่ถูกข้ามไม่ครบ (ข้ามติดลบ ${p.skipNegativeFull.length}/${p.skipNegative ?? 0} · ` +
           `ไม่รู้จัก ${p.skipUnknownFull.length}/${p.skipUnknown ?? 0}) ⇒ แยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ได้`,
@@ -197,6 +203,10 @@ export async function lazadaReadBack(skus, deps = {}) {
   }
   return {
     landed, notLanded, ...(unknown.length ? { unknown } : {}),
+    /* สรุปจำนวนแยกตามรหัสเหตุผล — ผู้อ่านไม่ต้องวนนับเอง และไม่ต้องแกะจากข้อความ */
+    ...(unknown.length
+      ? { unknownByReason: unknown.reduce((a, u) => ({ ...a, [u.reason]: (a[u.reason] ?? 0) + 1 }), {}) }
+      : {}),
     checkedAgainst: { wouldPush: p.wouldPush, planRows: p.push.length, skipNegative: p.skipNegative, skipUnknown: p.skipUnknown },
     note: "landed = ไม่อยู่ในแผนสดและไม่ได้ถูกข้าม ⇒ เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว · unknown = ตรวจไม่ได้ ห้ามอ่านว่าผ่าน",
   };
