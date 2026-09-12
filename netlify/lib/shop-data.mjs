@@ -2,7 +2,7 @@
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า · ต้นทางจริงคือ src/lib/shop.ts กับ src/lib/licenses.ts
 // ⚠️ ไม่มีที่อยู่ผู้ผลิตในไฟล์นี้โดยตั้งใจ (ดูเหตุผลใน scripts/gen-shop-data.mjs)
 export const SHOP_DATA = {
-  "generatedAt": "2026-09-11T15:05:08.653Z",
+  "generatedAt": "2026-09-12T03:18:28.389Z",
   "seller": {
     "name": "บริษัท ศีตกาล เทรดดิ้ง จำกัด",
     "nameEn": "SITAKAN TRADING CO., LTD.",
