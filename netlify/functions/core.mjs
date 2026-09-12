@@ -1393,6 +1393,11 @@ async function route(req, context) {
           เดิมเขียนแยกกัน (env ของร้าน 1 · WHERE source='z1' คนละที่)
           ถ้าวันไหนแก้ที่หนึ่งลืมอีกที่ = ยิงถาม ZORT ร้าน A แล้วเทียบกับกระจกร้าน B
           ⇒ "ไม่ตรงกันทั้งหมด" ทั้งที่ข้อมูลอาจถูกทุกใบ (เจอมาแล้วตอนเทียบผิดคีย์) */
+      const { shippingFieldsChanged, ordercheckCoverage, validateOrdercheckWindow, readOrdercheckPage } =
+        await import("../lib/ordercheck-shipping.mjs");
+      const startedAt = new Date().toISOString();
+      if (url.searchParams.has("store") && !["z1", "z2"].includes(url.searchParams.get("store")))
+        return json({ error: "store ต้องเป็น z1 หรือ z2" }, 400);
       const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
       const st =
         store === "z2"
@@ -1410,17 +1415,21 @@ async function route(req, context) {
         return json({ error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` }, 503);
       /* รับ from/to ตรง ๆ ด้วย — ต้องตรวจช่วงเก่า ๆ ได้ ไม่ใช่แค่ "ย้อน N วันจากวันนี้"
          ⚠️ ขอทีเดียวยาว ๆ จะเกิน 26 วินาที ⇒ ไล่ทีละเดือนเอง (กติกาเดียวกับ sync) */
-      const ymd = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? "")) ? String(v) : null);
-      const back = Math.max(1, Math.min(90, parseInt(url.searchParams.get("days") ?? "14", 10) || 14));
-      const from =
-        ymd(url.searchParams.get("from")) ||
-        new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
-      const to =
-        ymd(url.searchParams.get("to")) ||
-        new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      let window;
+      try {
+        window = validateOrdercheckWindow(url.searchParams);
+      } catch (error) {
+        return json({ error: error.message }, 400);
+      }
+      const { from, to } = window;
 
       const zort = new Map();
       let truncated = false;
+      let declaredTotal = null;
+      let rowsFetched = 0;
+      let pagesRead = 0;
+      let countStable = true;
+      let allCountsPresent = true;
       for (let page = 1; page <= 10; page++) {
         const r = await fetch(
           `https://open-api.zortout.com/v4/Order/GetOrders?orderdateafter=${from}&orderdatebefore=${to}&limit=200&page=${page}`,
@@ -1434,8 +1443,12 @@ async function route(req, context) {
             ⇒ ยิงไม่สำเร็จ = **โยนออกไป** ให้ผู้เรียกเห็นว่าเทียบไม่ได้
               ห้ามคืนผลบางส่วนที่หน้าตาเหมือนผลเต็ม */
         if (!r.ok) throw new Error(`ZORT ตอบ ${r.status} ที่หน้า ${page} — เทียบไม่ได้ ห้ามใช้ผลรอบนี้`);
-        const d = await r.json().catch(() => ({}));
-        const chunk = Array.isArray(d.list) ? d.list : [];
+        const { chunk, total } = readOrdercheckPage(await r.json());
+        pagesRead++;
+        rowsFetched += chunk.length;
+        if (total === null) allCountsPresent = false;
+        if (page === 1) declaredTotal = total;
+        else if (total !== declaredTotal) countStable = false;
         /* ⚠️ **กุญแจต้องเป็น `number` ไม่ใช่ `id` ของ ZORT** — รอบแรกผมใช้ `o.id`
             แล้วได้ผลว่า "ไม่ตรงกันทั้ง 768 ใบ" ซึ่งดูเหมือนหายนะ แต่ความจริงคือ
             **กระจกเก็บกุญแจเป็น `<ร้าน>/<เลขที่ใบ>` ไม่เคยเก็บ id ของ ZORT เลย**
@@ -1449,6 +1462,7 @@ async function route(req, context) {
             // ⚠️ คอลัมน์ที่เพิ่งเพิ่มต้องเข้ามาอยู่ในตัวเทียบด้วย ไม่งั้นกระจกเพี้ยนได้เงียบ ๆ
             //    ตลอดไป — ตัวเทียบที่ไม่ครอบคลุมคอลัมน์ใหม่ = ตาข่ายที่หยุดอัปเดต
             integ: String(o.integrationStatus ?? ""),
+            shipping: o,
           });
         }
         if (chunk.length < 200) break;
@@ -1460,12 +1474,22 @@ async function route(req, context) {
           ไม่กรอง = ใบของอีกร้านโผล่มาเป็น "กระจกมี แต่ ZORT ไม่มี" ทั้งกอง */
       const mine = await coreQuery(
         `SELECT number, status, COALESCE(pay_status,'') AS pay,
-                COALESCE(integration_status,'') AS integ FROM orders
+                COALESCE(integration_status,'') AS integ,
+                ship_channel, ship_name, ship_date, is_cod FROM orders
          WHERE source = ? AND order_date >= ? AND order_date <= ?`,
         [store, from, to]
       );
       const mirror = new Map(mine.map((r) => [String(r.number), r]));
 
+      const coverage = ordercheckCoverage({ declaredTotal, uniqueOrders: zort.size, rowsFetched, truncated });
+      coverage.pagesRead = pagesRead;
+      coverage.countStable = countStable;
+      if (!countStable || rowsFetched !== zort.size) coverage.zortReadComplete = false;
+      else if (!allCountsPresent) coverage.zortReadComplete = null;
+      const complete = coverage.zortReadComplete === true;
+      const shippingCounts = { shipChannel: 0, shipName: 0, shipDate: 0, isCod: 0 };
+      const staleShipping = [];
+      let matchedOrders = 0;
       const missingInMirror = []; // ZORT มี · กระจกไม่มี  ← ทางที่ 2 จับได้ทางเดียว
       const staleStatus = []; // มีทั้งคู่ · สถานะไม่ตรง
       const stalePay = []; // มีทั้งคู่ · สถานะจ่ายเงินไม่ตรง
@@ -1475,6 +1499,12 @@ async function route(req, context) {
         if (!m) {
           missingInMirror.push({ number: z.number, zortStatus: z.status });
           continue;
+        }
+        matchedOrders++;
+        const changed = shippingFieldsChanged(z.shipping, m);
+        if (changed.length) {
+          staleShipping.push({ number: z.number, fields: changed });
+          for (const field of changed) shippingCounts[field]++;
         }
         if (String(m.status) !== z.status) {
           staleStatus.push({ number: z.number, mirror: String(m.status), zort: z.status });
@@ -1495,11 +1525,13 @@ async function route(req, context) {
         .map((r) => ({ number: String(r.number), mirrorStatus: String(r.status) }));
 
       return json({
-        ok: true,
+        ok: complete,
+        partial: !complete,
+        coverage: { ...coverage, matchedOrders, startedAt, finishedAt: new Date().toISOString() },
         // ⚠️ ต้องบอกว่าตรวจร้านไหน ไม่งั้นผลของสองร้านหน้าตาเหมือนกันเป๊ะ แยกไม่ออก
         store,
         storeName: store === "z2" ? "ceojet (หน้าร้าน POS)" : "ศีตกาล เทรดดิ้ง (ตัวที่คิดภาษี)",
-        window: { from, to, days: back },
+        window,
         truncated, // ⚠️ ชนเพดานหน้า = ตัวเลขไม่ครบ ห้ามเงียบ
         counts: {
           zortOrders: zort.size,
@@ -1508,19 +1540,25 @@ async function route(req, context) {
           staleStatus: staleStatus.length,
           stalePay: stalePay.length,
           staleInteg: staleInteg.length,
-          extraInMirror: extraInMirror.length,
+          extraInMirror: complete ? extraInMirror.length : null,
+          staleShipping: staleShipping.length,
+          shippingFields: shippingCounts,
         },
         sample: {
           missingInMirror: missingInMirror.slice(0, 15),
           staleStatus: staleStatus.slice(0, 15),
           stalePay: stalePay.slice(0, 15),
           staleInteg: staleInteg.slice(0, 15),
-          extraInMirror: extraInMirror.slice(0, 15),
+          extraInMirror: complete ? extraInMirror.slice(0, 15) : [],
+          // ชื่อผู้รับอาจเป็นข้อมูลส่วนตัว: ส่งเฉพาะเลขใบและชื่อฟิลด์ที่ต่าง
+          staleShipping: staleShipping.slice(0, 15),
         },
         note:
           "เทียบสองทาง: ZORT→กระจก (missingInMirror = ใบหายทั้งใบ) และ " +
           "กระจก↔ZORT (staleStatus/stalePay = มีใบแต่ค่าเก่า) · " +
-          "ไม่เจออะไรในช่วงนี้ ไม่ได้แปลว่ากระจกดี ต้องขยายช่วงวันและอธิบายส่วนต่างให้ได้",
+          "staleShipping นับใบไม่ซ้ำ เฉพาะใบที่พบทั้งสองฝั่ง · " +
+          "partial=true คือยังยืนยันอ่านครบไม่ได้ ตัวเลขต่างเป็นของส่วนที่อ่านได้เท่านั้น · " +
+          "สองระบบอ่านต่างเวลา ไม่ใช่ snapshot เดียวกัน ไม่เจอความต่างไม่ได้รับรองทุกช่วงวัน",
       });
     }
 
