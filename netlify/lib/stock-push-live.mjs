@@ -122,20 +122,84 @@ async function lazadaPush(rows) {
 /** พิสูจน์ว่าการเขียนติดจริง — **รันเทียบสดซ้ำ** แล้วดูว่ารหัสที่ยิงหายจากแผนหรือยัง
  *  เลขตรงกันแล้ว = ไม่โผล่ใน diff อีก = การเขียน "ไปถึงหน้าร้านจริง" ไม่ใช่แค่ API ตอบ ok
  *  (แน่นกว่าอ่านเลขดิบ เพราะใช้ตัวเทียบชุดเดียวกับที่ใช้วางแผน — ไม่มีสองมาตรฐาน) */
-export async function lazadaReadBack(skus) {
-  const { stockPushDryRun } = await import("./stock-push.mjs");
-  const plan = await stockPushDryRun({ platform: "lazada" });
+/* 🔴 **บั๊กที่แก้ตรงนี้ 12 ก.ย. 2569 — ตัวที่มีหน้าที่พิสูจน์ความจริง กลับโกหกได้เองแบบเงียบที่สุด**
+   ของเดิม: `new Map((p.push || p.pushSample || []).map(...))` แล้วถือว่า "ไม่อยู่ในแผน = landed"
+   ⇒ แต่ **คีย์ `push` ไม่มีอยู่จริง** เพราะไม่ได้ขอ `full` ⇒ ตกไปใช้ `pushSample` (25 แถว) **ทุกครั้ง**
+   ⇒ รหัสที่อยู่เกินแถวที่ 25 จะถูกตอบว่า **landed โดยไม่เคยถูกตรวจเลย**
+   วัดจริง 12 ก.ย. ~11:40 (CEO ยิง): lazada wouldPush 21 (พอดี) · **shopee 34 · tiktok 33**
+   ⇒ สองเจ้านั้นเกินเพดานตัวอย่างอยู่แล้ววันนี้
+   ⚠️ และมันเงียบเป็นพิเศษเพราะ **ยิ่งของเยอะยิ่งผิดบ่อย** ⇒ พังตอนที่เราต้องการมันที่สุดพอดี
+
+   กติกาใหม่ (CEO สั่ง):
+   ① ใช้ **รายการเต็ม** เท่านั้น · ไม่มีรายการเต็ม ⇒ **ปฏิเสธที่จะตอบ** 🚫 ห้ามตกไปใช้ตัวอย่าง
+   ② สามสถานะต่อรหัส: `landed` · `notLanded` · **`unknown` พร้อมเหตุผลว่าทำไมตรวจไม่ได้**
+   ③ ใช้ตัวเทียบชุดเดียวกับตอนวางแผน (stockPushDryRun) เหมือนเดิม — ไม่มีมาตรฐานที่สอง
+
+   ⚠️ และ "ไม่อยู่ในแผน" **ไม่ได้แปลว่า landed เสมอ** — รหัสอาจถูกข้ามเพราะคลังเราติดลบ
+      หรือคลังไม่รู้จักรหัสนั้น ⇒ ของเดิมตอบ landed ให้ทั้งสองเคสนั้นด้วย
+      ⇒ ตอนนี้ดูจาก `skipNegativeFull`/`skipUnknownFull` (ท่อส่งมาตอนขอ full) แล้วตอบ unknown
+   @param deps.dryRun ฉีดแผนได้เพื่อทดสอบ — แทนที่แค่ขอบที่ต้องยิงออกนอก */
+export async function lazadaReadBack(skus, deps = {}) {
+  const dryRun = deps.dryRun || (await import("./stock-push.mjs")).stockPushDryRun;
+  const plan = await dryRun({ platform: "lazada", full: true });
   const p = plan?.lazada;
   if (!p || p.skip) return { error: `เทียบซ้ำไม่ได้: ${p?.skip || "ไม่มีข้อมูล"}` };
-  const still = new Map((p.push || p.pushSample || []).map((r) => [String(r.sku), r]));
+
+  const asked = skus.map(String);
+  const unknownAll = (why) => ({
+    landed: [], notLanded: [],
+    unknown: asked.map((sku) => ({ sku, why })),
+    note: "ตรวจไม่ได้ — ห้ามอ่านว่าผ่าน",
+  });
+  /* ① ไม่มีรายการเต็ม = ตรวจไม่ได้ทั้งก้อน (ท่อรุ่นเก่า หรือมีคนถอด full ออก) */
+  if (!Array.isArray(p.push)) {
+    return unknownAll("ท่อไม่ได้ส่งรายการเต็ม (คีย์ push) มา — ตัวอย่าง 25 แถวใช้ยืนยันไม่ได้");
+  }
+  /* ② ด่านเดียวกับตัวยิงจริง: แผนที่ถือไว้ต้องครบตามจำนวนที่ควรมี */
+  if ((p.wouldPush ?? 0) > p.push.length) {
+    return unknownAll(`แผนสดไม่ครบ: ถือไว้ ${p.push.length} แถว จากที่ควรมี ${p.wouldPush}`);
+  }
+  /* ③ กองที่ถูกข้ามต้องมีรายการเต็มด้วย ไม่งั้นแยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ออก */
+  if (!Array.isArray(p.skipNegativeFull) || !Array.isArray(p.skipUnknownFull)) {
+    return unknownAll("ท่อไม่ได้ส่งรายการเต็มของกองที่ถูกข้าม — แยก 'ตรงกันแล้ว' จาก 'ถูกข้าม' ไม่ได้");
+  }
+
+  const still = new Map(p.push.map((r) => [String(r.sku), r]));
+  const skippedNeg = new Set(p.skipNegativeFull.map((r) => String(r.sku)));
+  const skippedUnk = new Set(p.skipUnknownFull.map((r) => String(r.sku)));
+  /* 🔴 **รายการกองที่ถูกข้าม อาจไม่ครบจริง — และมันทำให้คำตอบ landed เชื่อไม่ได้**
+     (ไล่ตามข้อ 3 ที่ CEO สั่งให้หาว่ามีที่อื่นใช้ตัวอย่างตัดสินใจอีกไหม — เจอของจริง)
+     ต้นทาง: `shopeePlan`/`lazadaPlan` ประกอบแถวกอง "คลังไม่รู้จัก" จาก `c.missingSample`
+     ซึ่งตัวเทียบตัดไว้ 20 แถว · ตัวนับ `skipUnknown` ถูกแก้ให้ใช้เลขจริงแล้ว (ถูกต้อง)
+     **แต่ตัวรายการยังเป็นตัวอย่าง** ⇒ รหัสที่ถูกข้ามเกินแถวที่ 20 จะไม่อยู่ใน skipUnknownFull
+     ⇒ ถ้าไม่ดักไว้ มันจะหลุดไปกอง landed = ตอบว่าผ่านให้รหัสที่ไม่เคยถูกเทียบ (บั๊กเดิมคนละหน้าตา)
+     ⇒ เทียบความยาวรายการกับตัวนับจริง · ไม่ครบ = **ตอบ landed ไม่ได้** (รหัสที่เจอในรายการยังตอบได้ปกติ) */
+  const skipListsComplete =
+    p.skipNegativeFull.length >= (p.skipNegative ?? 0) && p.skipUnknownFull.length >= (p.skipUnknown ?? 0);
   const landed = [];
   const notLanded = [];
-  for (const sku of skus.map(String)) {
+  const unknown = [];
+  for (const sku of asked) {
     const r = still.get(sku);
-    if (r) notLanded.push({ sku, ยังต้องดัน: `${r.from}→${r.to}` });
-    else landed.push(sku);
+    if (r) { notLanded.push({ sku, ยังต้องดัน: `${r.from}→${r.to}` }); continue; }
+    if (skippedNeg.has(sku)) { unknown.push({ sku, why: "ถูกข้ามเพราะคลังเราติดลบ ⇒ ไม่เคยถูกเทียบ" }); continue; }
+    if (skippedUnk.has(sku)) { unknown.push({ sku, why: "ถูกข้ามเพราะคลังเราไม่รู้จักรหัสนี้ ⇒ ไม่เคยถูกเทียบ" }); continue; }
+    if (!skipListsComplete) {
+      unknown.push({
+        sku,
+        why:
+          `รายการกองที่ถูกข้ามไม่ครบ (ข้ามติดลบ ${p.skipNegativeFull.length}/${p.skipNegative ?? 0} · ` +
+          `ไม่รู้จัก ${p.skipUnknownFull.length}/${p.skipUnknown ?? 0}) ⇒ แยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ได้`,
+      });
+      continue;
+    }
+    landed.push(sku);
   }
-  return { landed, notLanded, note: "landed = เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว" };
+  return {
+    landed, notLanded, ...(unknown.length ? { unknown } : {}),
+    checkedAgainst: { wouldPush: p.wouldPush, planRows: p.push.length, skipNegative: p.skipNegative, skipUnknown: p.skipUnknown },
+    note: "landed = ไม่อยู่ในแผนสดและไม่ได้ถูกข้าม ⇒ เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว · unknown = ตรวจไม่ได้ ห้ามอ่านว่าผ่าน",
+  };
 }
 
 /**

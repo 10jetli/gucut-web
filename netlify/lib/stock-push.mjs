@@ -37,7 +37,9 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
  *  ⚠️ `pushSample` ต้องคงไว้เหมือนเดิมทุกตัวอักษร — จอใช้อยู่ และขนาดคำตอบของ
  *     เส้นสาธารณะต้องไม่โตขึ้น (`?stockpush=1` **ห้ามส่ง full**)
  */
-function planFrom(rows, full = false) {
+/* ⚠️ export เพื่อให้ตัวทดสอบเรียก **ตัววางแผนตัวจริง** ได้ (ไม่ต้องประกอบคำตอบด้วยมือ)
+   — ตัวทดสอบที่ประกอบแผนเองจะไม่มีวันเจอบั๊กของตัววางแผน (กฎ test-must-hit-the-path) */
+export function planFrom(rows, full = false) {
   const push = [];
   const skipNegative = [];
   const skipUnknown = [];
@@ -94,7 +96,12 @@ function planFrom(rows, full = false) {
     /* ⚠️ `=== true` ไม่ใช่ truthy — สตริง "false" เป็นจริงในภาษานี้ และโปรเจกต์นี้
        เคยเจ็บกับเคสนั้นมาแล้ว (fallthrough:"false") ⇒ ทุกธงที่เปลี่ยนความหมายของคำตอบ
        ต้องเทียบแบบเข้ม ทั้งที่นี่และที่ stockPushDryRun */
-    ...(full === true ? { push } : {}),
+    /* ⚠️ กองที่ถูกข้ามก็ต้องส่ง **รายการเต็ม** ตอนขอ full ด้วย (เพิ่ม 12 ก.ย. 2569)
+       เหตุผล: ตัวพิสูจน์ว่าการเขียนถึงหน้าร้านจริง (lazadaReadBack) ต้องแยกให้ออกว่า
+       "รหัสนี้ไม่อยู่ในแผนเพราะเลขตรงกันแล้ว" กับ "ไม่อยู่เพราะถูกข้าม (ติดลบ/ไม่รู้จัก)"
+       ⇒ ถ้ามีแต่ตัวอย่าง 15 แถว มันจะตอบว่า landed ให้รหัสที่ถูกข้าม **โดยไม่เคยตรวจ**
+       (คลาสเดียวกับที่ pushSample เคยทำ — เลขเพื่อการแสดงผลถูกเอาไปตัดสินใจ) */
+    ...(full === true ? { push, skipNegativeFull: skipNegative, skipUnknownFull: skipUnknown } : {}),
     skipNegativeSample: skipNegative.slice(0, 15),
     skipUnknownSample: skipUnknown.slice(0, 15),
   };
