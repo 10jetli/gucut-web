@@ -1604,8 +1604,8 @@ async function route(req, context) {
        ⚠️ ต้องมีทางสั่งเอง ไม่งั้นทดสอบไม่ได้เลยจนกว่าจะถึงตี 3 ครึ่ง
           และงานตามเวลาที่ทดสอบไม่ได้ = งานที่ไม่มีใครรู้ว่าพังตั้งแต่เมื่อไหร่ */
     if (url.searchParams.get("tokens")) {
-      const { refreshAllTokens } = await import("./token-refresh.mjs");
-      return json({ ok: true, tokens: await refreshAllTokens() });
+      const { refreshAllTokens, tokenRefreshResponse } = await import("./token-refresh.mjs");
+      return json(tokenRefreshResponse(await refreshAllTokens()));
     }
 
     /* ── ยอดขายรายเดือน ── (5 ก.ย. 2569)

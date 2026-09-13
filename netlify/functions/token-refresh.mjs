@@ -106,9 +106,24 @@ export async function refreshAllTokens() {
   return out;
 }
 
+/* `ok:true` หมายถึงตัวงานวิ่งจนตอบได้เท่านั้น ไม่ได้หมายความว่าทุกตลาดต่ออายุผ่าน
+   ห้ามให้ผู้เรียกต้องไล่เดา `tokens.*.ok` เอง เพราะจอเก่าจะเห็น 200/ok แล้วเขียวทันที
+   เก็บชื่อกับเหตุผลไว้ชั้นบนเพื่อให้ใช้ข้อมูลของเจ้าที่ผ่านต่อได้ แต่ไม่สรุปว่า "ครบ" */
+export function tokenRefreshResponse(tokens) {
+  const failed = Object.entries(tokens || {}).filter(([, value]) => !value?.ok);
+  if (!failed.length) return { ok: true, tokens };
+  return {
+    ok: true,
+    partial: true,
+    failedParts: failed.map(([key]) => key),
+    failedWhy: Object.fromEntries(failed.map(([key, value]) => [key, value?.why || "ต่ออายุไม่สำเร็จ"])),
+    tokens,
+  };
+}
+
 export default async function handler() {
   const r = await refreshAllTokens();
-  return new Response(JSON.stringify({ ok: true, tokens: r }), {
+  return new Response(JSON.stringify(tokenRefreshResponse(r)), {
     headers: { "content-type": "application/json; charset=utf-8" },
   });
 }

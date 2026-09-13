@@ -30,7 +30,13 @@ export default async function handler(req, context) {
 
   const store = getStore({ name: "gucut-orders", consistency: "strong" });
   let blobs = [];
-  try { ({ blobs } = await store.list({ prefix: "o/" })); } catch { return json({ list: [] }); }
+  try {
+    ({ blobs } = await store.list({ prefix: "o/" }));
+  } catch (e) {
+    /* อ่านรายชื่อไม่ออก = ยังไม่รู้ว่ามีใบคืนหรือไม่ ห้ามปลอมเป็น list ว่าง
+       ผู้ดึงไปต้องแยก 503 นี้ออกจาก `{ list: [] }` ซึ่งแปลว่าอ่านครบแล้วไม่มีจริง */
+    return json({ error: `อ่านรายการใบคืนจากที่เก็บไม่ได้: ${String(e?.message || e).slice(0, 200)}` }, 503);
+  }
 
   const list = [];
   let unreadable = 0;
