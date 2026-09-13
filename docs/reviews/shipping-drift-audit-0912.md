@@ -38,3 +38,7 @@ Codex ไม่ได้ใช้คีย์หรือรันสคริ�
 
 ทดสอบ local: `node scripts/tests/ordercheck-shipping.test.mjs` รันบล็อก route จริงด้วย I/O จำลอง
 ครอบคลุม union, privacy, ร้าน/วันที่, schema, total เปลี่ยน, ใบซ้ำ, count หาย และเพดาน 10 หน้า
+
+บันทึกสถานะ ณ 13 Sep 2026: ตัวเทียบสี่ฟิลด์ (ordercheck-shipping) deploy ขึ้น production แล้ว
+เมื่อ 2026-09-13 08:11 ICT (x-core-build 2026-09-13T01:11:29Z) · จำนวน drift จริงยังไม่ถูกนับ
+รอผู้รีวิวรัน scripts/check-ordercheck-shipping.mjs ด้วยคีย์หลังร้าน · เขียนจาก g1 เป็นงานพิสูจน์การย้ายเครื่อง
