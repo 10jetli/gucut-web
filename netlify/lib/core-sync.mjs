@@ -108,7 +108,8 @@ export async function syncOrders(days = 3, range = {}) {
     const prev = new Map(
       (
         await coreQuery(
-          `SELECT id, channel, status, amount, customer, order_date, tracking_no, pay_status, integration_status,
+          `SELECT id, channel, status, amount, customer, order_date, tracking_no,
+                  ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status,
                   bill_discount, ship_amount FROM orders
            WHERE source = ? AND order_date >= ? AND order_date <= ?`,
           [st.tag, after, before]
@@ -129,6 +130,12 @@ export async function syncOrders(days = 3, range = {}) {
         //    (เจอแบบเดียวกันมาแล้วกับรายการสินค้าในใบซื้อ — เขียนเฉพาะใบที่เปลี่ยน
         //     ทำให้ใบที่นิ่งแล้วไม่เคยได้ข้อมูลใหม่เลยสักครั้ง)
         String(p.tracking_no ?? "") === String(o.trackingno ?? "").slice(0, 60) &&
+        // สี่ฟิลด์นี้ถูกเขียนตั้งแต่เพิ่มคอลัมน์ แต่ก่อนหน้านี้ไม่ได้อยู่ใน prev/same()
+        // ⇒ ใบที่หัวเดิมนิ่งถูกข้าม แม้ ZORT เปลี่ยนหรือเติมข้อมูลขนส่งภายหลัง
+        String(p.ship_channel ?? "") === String(o.shippingchannel ?? "").slice(0, 120) &&
+        String(p.ship_name ?? "") === String(o.shippingname ?? "").slice(0, 120) &&
+        String(p.ship_date ?? "") === String(o.shippingdateString ?? o.shippingdate ?? "").slice(0, 10) &&
+        (Number(p.is_cod) ? 1 : 0) === (o.isCOD ? 1 : 0) &&
         String(p.pay_status ?? "") === String(o.paymentstatus ?? "").slice(0, 40) &&
         // ⚠️ ต้องอยู่ในเงื่อนไขนี้ด้วย ไม่งั้นใบที่หัวใบไม่เปลี่ยนจะไม่เคยได้ค่าใหม่เลย
         String(p.integration_status ?? "") === String(o.integrationStatus ?? "").slice(0, 40) &&
