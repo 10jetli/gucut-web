@@ -43,6 +43,7 @@ console.log('① ชื่อกองของแถว ต้องเป็�
     { st: 'PROCESSED', c: 8 },          // ค่าที่ตัวแปลไม่รู้จัก ⇒ unknown
   ]
   const declared = new Set(groupsFromCounts(counts).map((g) => g.group))
+  const unknown = groupsFromCounts(counts).find((g) => g.group === 'unknown')
   const rows = [
     rowGroup('confirmed', null), rowGroup('delivered', null),
     rowGroup('', 'none_expected'), rowGroup('', 'source_empty'),
@@ -50,6 +51,11 @@ console.log('① ชื่อกองของแถว ต้องเป็�
   ]
   const extra = rows.filter((g) => !declared.has(g))
   ok('ทุกชื่อกองในแถวมีอยู่ในรายการที่ประกาศ', extra.length === 0, `หลุด: ${[...new Set(extra)].join(', ')}`)
+  /* 🔴 แค่มีชื่อถัง unknown ยังไม่พอ: เคยเจอแถว Shopee `PROCESSED` 8 ใบ
+     ลงถัง unknown ถูกแล้ว แต่การ์ดสรุปบอก 0 ใบ = คนเปิดจอเห็นสองความจริงพร้อมกัน
+     ด่านนี้ต้องยืนยันทั้งเส้นแปลสถานะ + การรวมจำนวนจากผล GROUP BY จริง */
+  ok('🔴 Shopee PROCESSED 8 ใบต้องทำให้ตัวสรุป unknown = 8',
+     unknown?.count === 8, JSON.stringify(unknown))
   ok('แถวที่ไม่มีสถานะแบบ "ไม่มีใครบอก" ได้ชื่อเต็ม', rowGroup('', 'none_expected') === 'blank_none_expected')
   ok('แถวที่ไม่มีสถานะแบบ "ต้นทางไม่ส่งมา" ได้ชื่อเต็ม', rowGroup('', 'source_empty') === 'blank_source_empty')
   ok('🔴 แถวต้องไม่ส่งชื่อ "blank" เปล่า ๆ อีก (นั่นคือบั๊กเดิม)', !rows.includes('blank'))
