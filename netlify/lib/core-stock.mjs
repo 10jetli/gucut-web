@@ -267,6 +267,17 @@ export async function listStock(o = {}) {
   const kind =
     { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[o.kind] || "";
 
+  // 🛡️ บั๊ก A (13 ก.ย. 2569): only=/kind= ที่ "ส่งค่ามาแต่แปลไม่ออก" เดิมตกเงียบเป็น "ไม่กรอง"
+  //    ⇒ คืนทั้งคลัง 2,672 แถว · คนขอ only=negative (คำที่เดาก่อนเสมอ เพราะช่องผลชื่อ `negative`)
+  //    ได้ของทั้งคลังกลับไปโดยเชื่อว่านั่นคือรายการติดลบ · ค่าจริงคือ only=neg
+  //    (พลาดกันทั้ง CEO/gucut2/codex ตอนตรวจ 13 ก.ย.) ⇒ ต้องตอบ error ไม่ใช่เมินเงียบ
+  //    ว่าง/ไม่ส่ง = ไม่กรอง = ถูกต้อง จึงเช็คเฉพาะกรณี "ส่งมาแต่ไม่ตรงค่าที่รับ"
+  //    listStock คืน {error} ⇒ core.mjs (okJson r?.error?400) แปลงเป็น 400 ให้เอง
+  if (o.only && !only)
+    return { error: `ไม่รู้จักตัวกรอง only="${o.only}"`, accepts: ["out", "neg", "low", "active", "inactive"] };
+  if (o.kind && !kind)
+    return { error: `ไม่รู้จักตัวกรอง kind="${o.kind}"`, accepts: ["goods", "service"] };
+
   // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
   //    = พิมพ์ชื่อสินค้าที่ยังไม่เคยขายแล้วหาไม่เจอ ทั้งที่มีของอยู่ในคลัง (เจอจริง 2 ก.ย. 2569)
