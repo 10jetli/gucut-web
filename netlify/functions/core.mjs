@@ -47,6 +47,18 @@ import {
    ⚠️ ต้องอยู่นอกฟังก์ชัน — ไว้ในฟังก์ชันจะสุ่มใหม่ทุกคำขอแล้ววัดอะไรไม่ได้เลย */
 const INSTANCE_ID = Math.random().toString(36).slice(2, 10);
 
+/* ค่าตัวกรองที่ส่งมาแต่ไม่รู้จัก ต้องหยุดตรงประตู ไม่ใช่ถอยไปค่าเริ่มต้นเงียบ ๆ
+   เพราะ `store=all` ที่เส้นรับร้านเดียวเคยตกเป็น z1 แล้วคนอ่านผลเชื่อว่าครบทั้งสองร้าน */
+function coreStoreParam(params, defaultStore = null) {
+  if (!params.has("store")) return { store: defaultStore };
+  const store = params.get("store");
+  if (store === "z1" || store === "z2") return { store };
+  return {
+    error: `store ต้องเป็น z1 หรือ z2 (ได้มา "${String(store)}")`,
+    accepts: ["z1", "z2"],
+  };
+}
+
 let CORE_BUILD = "";
 try {
   const m = await import("../lib/arch-data.mjs");
@@ -1626,10 +1638,10 @@ async function route(req, context) {
        ⚠️ ทั้งสองตัวใช้ตัวกรองชุดเดียวกับจอรายการขาย (ตัดใบยกเลิก) และบอกขอบเขตร้านกลับไป
           ไม่งั้นตัวเลขคนละจอไม่ตรงกัน แล้วจะเถียงกันไม่จบว่าใครถูก */
     if (url.searchParams.get("daily") || url.searchParams.get("bycustomer")) {
+      const storeParam = coreStoreParam(url.searchParams);
+      if (storeParam.error) return json(storeParam, 400);
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
-        ? url.searchParams.get("store")
-        : null;
+      const store = storeParam.store;
       const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
       const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
       const from = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
@@ -1852,10 +1864,10 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("monthly")) {
+      const storeParam = coreStoreParam(url.searchParams);
+      if (storeParam.error) return json(storeParam, 400);
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
-        ? url.searchParams.get("store")
-        : null;
+      const store = storeParam.store;
       /* ⚠️ **เพดานขยายจาก 36 → 120 เดือน** (9 ก.ย. 2569 · ฝั่งจอทักมา)
           ข้อมูลเริ่ม ส.ค. 2566 ⇒ เพดาน 36 เดือนกำลังจะเริ่มบังของจริง **โดยไม่มีอะไรเตือน**
           จอ /core/coverage ต้องย้อนถึงเดือนแรกสุดเสมอ ไม่งั้นเดือนที่ถูกเพดานตัด
@@ -1942,8 +1954,10 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("pending")) {
+      const storeParam = coreStoreParam(url.searchParams, "z1");
+      if (storeParam.error) return json(storeParam, 400);
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      const store = storeParam.store;
       const dormantDays = Math.max(
         7,
         Math.min(365, parseInt(url.searchParams.get("dormant") ?? "30", 10) || 30)
@@ -2093,8 +2107,10 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("cardguess")) {
+      const storeParam = coreStoreParam(url.searchParams, "z1");
+      if (storeParam.error) return json(storeParam, 400);
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      const store = storeParam.store;
       const NOTDONE = `status NOT LIKE '%Success%' AND status NOT LIKE '%สำเร็จ%'`;
       const NOTCANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
       const noTrack = `COALESCE(tracking_no,'') = ''`;

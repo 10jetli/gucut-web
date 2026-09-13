@@ -11,6 +11,10 @@ import { fileURLToPath } from "node:url";
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const source = readFileSync(new URL("../netlify/functions/core.mjs", import.meta.url), "utf8");
+const helperStart = source.indexOf("function coreStoreParam(");
+const helperEnd = source.indexOf("\n\nlet CORE_BUILD", helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, "daily/bycustomer must use the shared store validator");
+const coreStoreParam = new Function(`${source.slice(helperStart, helperEnd)}\nreturn coreStoreParam;`)();
 // Frozen pre-fix oracle: keep comparisons independent of future HEAD/main changes.
 const baseline = execFileSync("git", ["show", "445a1a5:netlify/functions/core.mjs"], { cwd: root, encoding: "utf8" });
 const schema = readFileSync(new URL("../netlify/lib/coredb.mjs", import.meta.url), "utf8");
@@ -28,7 +32,7 @@ function route(text) {
   assert.ok(start >= 0 && end > start, "daily/bycustomer route boundaries must exist");
   const code = text.slice(start, end).replace('const { coreQuery } = await import("../lib/coredb.mjs");', "");
   assert.ok(!code.includes("import("), "never load real coreQuery/credentials");
-  return new AsyncFunction("url", "coreQuery", "json", "Date", code);
+  return new AsyncFunction("url", "coreQuery", "json", "Date", "coreStoreParam", code);
 }
 const before = route(baseline);
 const after = route(source);
@@ -92,11 +96,11 @@ async function run(fn, db, query, { explain = false, fail = "", timings = null, 
     const rows = db.all(sql, params);
     if (timings) timings[label] = (timings[label] ?? 0) + performance.now() - t0;
     return rows;
-  }, (x) => JSON.parse(JSON.stringify(x)), FixedDate);
+  }, (x) => JSON.parse(JSON.stringify(x)), FixedDate, coreStoreParam);
 }
 
 const cases = [];
-for (const store of ["", "&store=z1", "&store=z2", "&store=invalid"]) {
+for (const store of ["", "&store=z1", "&store=z2"]) {
   for (const days of [7, 30, 90, 400]) {
     for (const limit of [1, 100, 500]) cases.push(`bycustomer=1&days=${days}&limit=${limit}${store}`);
   }
@@ -126,6 +130,8 @@ const fixture = [
   ...['O\'Brien "ร้าน" \\ สาขา', "'); DROP TABLE orders; --", "123", "ลูกค้า 🪚\nบรรทัดสอง"].map((name) => ({ name })),
 ];
 const db = database();
+const invalidStore = await run(after, db, "bycustomer=1&store=all");
+assert.equal(invalidStore.error.includes("store ต้องเป็น z1 หรือ z2"), true);
 console.log(`SQLite ${db.get("SELECT sqlite_version() AS v").v}; local synthetic data only`);
 for (const q of cases) assert.deepStrictEqual(await run(after, db, q), await run(before, db, q), `empty: ${q}`);
 insert(db, fixture);

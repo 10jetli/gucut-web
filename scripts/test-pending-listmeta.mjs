@@ -8,6 +8,10 @@ import { join } from "node:path";
 
 const source = readFileSync(new URL("../netlify/functions/core.mjs", import.meta.url), "utf8");
 const schemaSource = readFileSync(new URL("../netlify/lib/coredb.mjs", import.meta.url), "utf8");
+const helperStart = source.indexOf("function coreStoreParam(");
+const helperEnd = source.indexOf("\n\nlet CORE_BUILD", helperStart);
+assert.ok(helperStart >= 0 && helperEnd > helperStart, "pending must use the shared store validator");
+const coreStoreParam = new Function(`${source.slice(helperStart, helperEnd)}\nreturn coreStoreParam;`)();
 const START = '    if (url.searchParams.get("pending")) {';
 const END = '    if (url.searchParams.get("cardguess")) {';
 const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
@@ -24,7 +28,7 @@ function pendingRoute(text) {
   const block = text.slice(start, end)
     .replace('const { coreQuery } = await import("../lib/coredb.mjs");', "");
   assert.ok(!block.includes("import("), "fixture must never load real coredb/credentials");
-  return new AsyncFunction("url", "coreQuery", "json", "Date", block);
+  return new AsyncFunction("url", "coreQuery", "json", "Date", "coreStoreParam", block);
 }
 
 function literal(value) {
@@ -54,9 +58,9 @@ function fixture() {
   };
 }
 
-async function run(route, db) {
-  return route(new URL("http://fixture.invalid/api/core?pending=1&store=z1"),
-    (sql, params) => db.query(sql, params), (body, status = 200) => ({ body, status }), FixedDate);
+async function run(route, db, query = "pending=1&store=z1") {
+  return route(new URL(`http://fixture.invalid/api/core?${query}`),
+    (sql, params) => db.query(sql, params), (body, status = 200) => ({ body, status }), FixedDate, coreStoreParam);
 }
 
 const db = fixture();
@@ -73,6 +77,11 @@ const healthy = await run(pendingRoute(source), db);
 assert.equal(healthy.status, 200);
 assert.equal(healthy.body["ต้องส่งของ"].length, 60);
 assert.deepStrictEqual(healthy.body.listMeta["ต้องส่งของ"], { shown: 60, total: 60, truncated: false });
+
+/* `all` เคยตกกลับ z1 แล้วดูเหมือนคำตอบครบทั้งสองร้าน; ต้องหยุดก่อนยิง SQL */
+const invalid = await run(pendingRoute(source), db, "pending=1&store=all");
+assert.equal(invalid.status, 400);
+assert.match(invalid.body.error, /store ต้องเป็น z1 หรือ z2/);
 
 // Inject a defect into executable route SQL—not into the returned object. Window total remains 60,
 // while the route receives only 50 rows, so this proves the real flag can turn red.
