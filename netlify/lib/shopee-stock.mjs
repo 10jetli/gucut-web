@@ -363,7 +363,7 @@ export async function shopeeStockCompare(o = {}) {
       viaRecipe += 1;
       const ours = Math.floor(num(snap.get(rec.base)) / rec.per);
       if (ours === r.qty) same += 1;
-      else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, gap: ours - r.qty, via: "สูตรชุด" });
+      else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: snap.get(r.sku) ?? null, gap: ours - r.qty, via: "สูตรชุด" });
       continue;
     }
     if (!snap.has(r.sku)) {
@@ -376,7 +376,7 @@ export async function shopeeStockCompare(o = {}) {
     }
     const ours = snap.get(r.sku);
     if (ours === r.qty) same += 1;
-    else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, gap: ours - r.qty });
+    else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: ours, gap: ours - r.qty });
   }
   diff.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
   return {

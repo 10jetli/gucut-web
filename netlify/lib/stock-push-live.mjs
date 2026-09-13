@@ -137,7 +137,7 @@ async function lazadaPush(rows) {
 
    ⚠️ และ "ไม่อยู่ในแผน" **ไม่ได้แปลว่า landed เสมอ** — รหัสอาจถูกข้ามเพราะคลังเราติดลบ
       หรือคลังไม่รู้จักรหัสนั้น ⇒ ของเดิมตอบ landed ให้ทั้งสองเคสนั้นด้วย
-      ⇒ ตอนนี้ดูจาก `skipNegativeFull`/`skipUnknownFull` (ท่อส่งมาตอนขอ full) แล้วตอบ unknown
+      ⇒ ตอนนี้ดูจาก `skipNegativeFull`/`skipUnknownFull`/`skipConflictFull` (ท่อส่งมาตอนขอ full) แล้วตอบ unknown
    @param deps.dryRun ฉีดแผนได้เพื่อทดสอบ — แทนที่แค่ขอบที่ต้องยิงออกนอก */
 export async function lazadaReadBack(skus, deps = {}) {
   const dryRun = deps.dryRun || (await import("./stock-push.mjs")).stockPushDryRun;
@@ -147,7 +147,7 @@ export async function lazadaReadBack(skus, deps = {}) {
 
   const asked = skus.map(String);
   /* 🔑 **ทุก unknown ต้องมีรหัสเหตุผลที่เครื่องอ่านได้ ไม่ใช่มีแต่ข้อความ** (CEO สั่ง 12 ก.ย. 2569)
-     เหตุผลสามแบบต้องแยกจากกันในผลลัพธ์: ถูกข้ามเพราะติดลบ · คลังไม่รู้จักรหัส · รายการไม่ครบ
+     เหตุผลต้องแยกจากกันในผลลัพธ์: ติดลบ · ไม่รู้จักรหัส · ยอดขัดแย้งกับสูตร · รายการไม่ครบ
      ไม่งั้นคนอ่านแยกไม่ออกว่าตัวไหนหายเพราะอะไร แล้วต้องยิงใหม่ทั้งชุด
      ⚠️ และมีรหัสแล้ว **ห้ามให้ใครไปจัดประเภทจากข้อความ `why` ด้วย includes()**
         (กฎ no-substring-classification — ข้อความเปลี่ยนได้ รหัสเปลี่ยนไม่ได้โดยไม่มีใครรู้) */
@@ -165,12 +165,13 @@ export async function lazadaReadBack(skus, deps = {}) {
     return unknownAll("plan_incomplete", `แผนสดไม่ครบ: ถือไว้ ${p.push.length} แถว จากที่ควรมี ${p.wouldPush}`);
   }
   /* ③ กองที่ถูกข้ามต้องมีรายการเต็มด้วย ไม่งั้นแยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ออก */
-  if (!Array.isArray(p.skipNegativeFull) || !Array.isArray(p.skipUnknownFull)) {
+  if (!Array.isArray(p.skipNegativeFull) || !Array.isArray(p.skipUnknownFull) || !Array.isArray(p.skipConflictFull)) {
     return unknownAll("no_skip_lists", "ท่อไม่ได้ส่งรายการเต็มของกองที่ถูกข้าม — แยก 'ตรงกันแล้ว' จาก 'ถูกข้าม' ไม่ได้");
   }
 
   const still = new Map(p.push.map((r) => [String(r.sku), r]));
   const skippedNeg = new Set(p.skipNegativeFull.map((r) => String(r.sku)));
+  const skippedConflict = new Set(p.skipConflictFull.map((r) => String(r.sku)));
   const skippedUnk = new Set(p.skipUnknownFull.map((r) => String(r.sku)));
   /* 🔴 **รายการกองที่ถูกข้าม อาจไม่ครบจริง — และมันทำให้คำตอบ landed เชื่อไม่ได้**
      (ไล่ตามข้อ 3 ที่ CEO สั่งให้หาว่ามีที่อื่นใช้ตัวอย่างตัดสินใจอีกไหม — เจอของจริง)
@@ -180,7 +181,8 @@ export async function lazadaReadBack(skus, deps = {}) {
      ⇒ ถ้าไม่ดักไว้ มันจะหลุดไปกอง landed = ตอบว่าผ่านให้รหัสที่ไม่เคยถูกเทียบ (บั๊กเดิมคนละหน้าตา)
      ⇒ เทียบความยาวรายการกับตัวนับจริง · ไม่ครบ = **ตอบ landed ไม่ได้** (รหัสที่เจอในรายการยังตอบได้ปกติ) */
   const skipListsComplete =
-    p.skipNegativeFull.length >= (p.skipNegative ?? 0) && p.skipUnknownFull.length >= (p.skipUnknown ?? 0);
+    p.skipNegativeFull.length >= (p.skipNegative ?? 0) && p.skipUnknownFull.length >= (p.skipUnknown ?? 0) &&
+    p.skipConflictFull.length >= (p.skipConflict ?? 0);
   const landed = [];
   const notLanded = [];
   const unknown = [];
@@ -189,13 +191,14 @@ export async function lazadaReadBack(skus, deps = {}) {
     if (r) { notLanded.push({ sku, ยังต้องดัน: `${r.from}→${r.to}` }); continue; }
     if (skippedNeg.has(sku)) { unknown.push({ sku, reason: "skipped_negative", why: "ถูกข้ามเพราะคลังเราติดลบ ⇒ ไม่เคยถูกเทียบ" }); continue; }
     if (skippedUnk.has(sku)) { unknown.push({ sku, reason: "skipped_unknown", why: "ถูกข้ามเพราะคลังเราไม่รู้จักรหัสนี้ ⇒ ไม่เคยถูกเทียบ" }); continue; }
+    if (skippedConflict.has(sku)) { unknown.push({ sku, reason: "skipped_conflict", why: "ยอด SKU ติดลบแต่สูตรยังประกอบได้ ⇒ พักให้คนตรวจ" }); continue; }
     if (!skipListsComplete) {
       unknown.push({
         sku,
         reason: "skip_lists_incomplete",
         why:
           `รายการกองที่ถูกข้ามไม่ครบ (ข้ามติดลบ ${p.skipNegativeFull.length}/${p.skipNegative ?? 0} · ` +
-          `ไม่รู้จัก ${p.skipUnknownFull.length}/${p.skipUnknown ?? 0}) ⇒ แยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ได้`,
+          `ไม่รู้จัก ${p.skipUnknownFull.length}/${p.skipUnknown ?? 0} · ขัดแย้ง ${p.skipConflictFull.length}/${p.skipConflict ?? 0}) ⇒ แยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ได้`,
       });
       continue;
     }
@@ -207,7 +210,7 @@ export async function lazadaReadBack(skus, deps = {}) {
     ...(unknown.length
       ? { unknownByReason: unknown.reduce((a, u) => ({ ...a, [u.reason]: (a[u.reason] ?? 0) + 1 }), {}) }
       : {}),
-    checkedAgainst: { wouldPush: p.wouldPush, planRows: p.push.length, skipNegative: p.skipNegative, skipUnknown: p.skipUnknown },
+    checkedAgainst: { wouldPush: p.wouldPush, planRows: p.push.length, skipNegative: p.skipNegative, skipUnknown: p.skipUnknown, skipConflict: p.skipConflict },
     note: "landed = ไม่อยู่ในแผนสดและไม่ได้ถูกข้าม ⇒ เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว · unknown = ตรวจไม่ได้ ห้ามอ่านว่าผ่าน",
   };
 }
