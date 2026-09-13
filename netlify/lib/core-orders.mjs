@@ -448,8 +448,8 @@ export async function getOrder(id) {
   return { order, items };
 }
 
-/** รายชื่อช่องทางทั้งหมดที่เคยเห็น — ไว้ทำตัวเลือกในกล่องกรอง */
-export async function listChannels(source = null) {
+/** รายชื่อช่องทางที่เคยเห็น พร้อมหลักฐานว่าเงียบหรือยัง — ไว้ทำตัวเลือกในกล่องกรอง */
+export async function listChannels(source = null, dormantDays = 30) {
   if (!coreReady()) return [];
   /* ⚠️ **รายชื่อช่องทางต้องเคารพตัวกรองร้านด้วย** (ฝั่งจอชี้ 4 ก.ย. 2569)
       ถ้าไม่กรอง เลือกร้าน ceojet แล้วกล่องช่องทางยังขึ้น Lazada-gucut · Shopee-gucut ·
@@ -459,13 +459,23 @@ export async function listChannels(source = null) {
       ⚠️ ตัวกรองที่ครอบคลุมไม่เท่ากันระหว่าง "ตัวเลือก" กับ "ผลลัพธ์" คือกับดักประจำ —
          ตัวเลือกต้องมาจากขอบเขตเดียวกับที่ผลลัพธ์จะถูกกรอง */
   const src = ["z1", "z2"].includes(String(source)) ? String(source) : null;
+  const days = Math.max(7, Math.min(365, num(dormantDays) || 30));
+  const dormantCutoff = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
   const rows = await coreQuery(
-    `SELECT channel, COUNT(*) AS orders FROM orders
+    `SELECT channel, MAX(order_date) AS lastOrder, COUNT(*) AS orders FROM orders
      WHERE channel IS NOT NULL AND channel <> ''${src ? " AND source = ?" : ""}
      GROUP BY channel ORDER BY orders DESC LIMIT 40`,
     src ? [src] : []
   );
-  return rows.map((r) => r.channel);
+  /* ⚠️ วันล่าสุดต้องมาจากฐานทั้งประวัติ ไม่ใช่จากแถวหน้าแรกของ list=orders
+     ไม่งั้นช่องทางที่เก่าถูก LIMIT ตัดจะดูเหมือนเพิ่งขาย และกองรอจัดส่งของร้านปิดจะจมต่อไป */
+  return rows.map((r) => ({
+    channel: r.channel,
+    lastOrder: r.lastOrder ?? null,
+    orders: num(r.orders),
+    alive: String(r.lastOrder ?? "") >= dormantCutoff,
+    dormantCutoff,
+  }));
 }
 
 /** จอ "บริการส่งสินค้า" แบบ ZORT — เลขพัสดุ · วันที่ · ผู้รับ · ขนส่ง · สถานะ · เลขออเดอร์
