@@ -27,7 +27,16 @@ const MAP = {
 
   // ── Lazada (ตัวพิมพ์เล็ก) ──
   pending: { th: "รอยืนยัน", platform: "lazada", group: "waiting_confirm" },
-  confirmed: { th: "ยืนยันแล้ว", platform: "lazada", group: "waiting_ship" },
+  /* 🔴 **`confirmed` ของ Lazada = หลังส่งถึงแล้ว ไม่ใช่ "รอจัดส่ง"** (แก้ 13 ก.ย. 2569 · CEO g1 · งานกระดาน t_mtxros3m)
+      เดิมจัดเป็น waiting_ship ⇒ กองรอจัดส่งย้อน 1 ปีได้ 2,944 ใบ **มากกว่ากองสำเร็จ** (2,888) ซึ่งเป็นไปไม่ได้
+      หลักฐานจากข้อมูลจริงทั้งปี (Lazada 3,198 ใบ ดึงครบไม่ซ้ำ):
+        confirmed 2,853 ใบ — มีเลขพัสดุ **2,853** · มีวันส่ง **2,853** · ZORT Success **2,853** ⇒ ยังไม่ส่ง **0 ใบ**
+        20 วันล่าสุด: confirmed อายุใบกลาง 13 วัน **แก่กว่า** delivered (10 วัน) · shipped กลาง 1 วัน
+        ช่องทางอื่นไม่มีกองนี้: Shopee รอจัดส่ง 2 · TikTok 0
+      ⚠️ **เอกสาร Lazada ไม่ได้บอกความหมาย** — GetOrders (readme.io) ไม่มีค่า confirmed ในรายการเลย
+         ⇒ ติด unverified: true (ความหมายอนุมานจากข้อมูล ไม่ใช่จากเอกสาร) แบบเดียวกับ TikTok
+         ที่พิสูจน์แล้วแน่ ๆ คือ **"ไม่ใช่รอจัดส่ง"** · ที่ยังอนุมานคือ "ส่งถึง/ผู้ซื้อยืนยันรับ" */
+  confirmed: { th: "ยืนยันรับแล้ว", platform: "lazada", group: "done", unverified: true },
   ready_to_ship: { th: "รอจัดส่ง", platform: "lazada", group: "waiting_ship" },
   shipped: { th: "จัดส่งแล้ว", platform: "lazada", group: "shipping" },
   delivered: { th: "ส่งถึงแล้ว", platform: "lazada", group: "done" },
