@@ -2591,6 +2591,12 @@ async function route(req, context) {
       const { shopeeUnlistedStock } = await import("../lib/shopee-stock.mjs");
       return json({ ok: true, unlisted: await shopeeUnlistedStock() });
     }
+    /* GET ?shipreport=1 — ตัวอย่างรายงานเช้า "ออเดอร์จ่ายแล้วยังไม่ส่ง" **ไม่ส่ง Telegram**
+       ตัวส่งจริงคือฟังก์ชันตามเวลา netlify/functions/ship-report.mjs (07:10 น.) */
+    if (url.searchParams.get("shipreport")) {
+      const { shipReport } = await import("../lib/ship-report.mjs");
+      return json({ ok: true, report: await shipReport({ send: false }) });
+    }
     if (url.searchParams.get("snapshot")) {
       return json({ ok: true, snapshot: await snapshotStock() });
     }
