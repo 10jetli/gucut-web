@@ -558,6 +558,7 @@ export async function lazadaStockCompare(o = {}) {
         matchedAs: key === r.sku ? "ตรงตัว" : `ตัดท้ายเป็น ${key}`,
         lazada: r.available,
         core: ours,
+        directQty: viaBundle.has(r.sku) ? (snap.get(r.sku) ?? null) : ours,
         gap: ours - r.available,
       });
   }

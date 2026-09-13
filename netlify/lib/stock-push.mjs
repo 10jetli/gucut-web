@@ -24,7 +24,7 @@
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** แปลงผลเทียบสต็อกของแพลตฟอร์มหนึ่ง → แผนการดัน
- *  @param rows  [{ sku, name, platformQty, coreQty, known }]
+ *  @param rows  [{ sku, name, platformQty, coreQty, directQty, known }]
  *               known=false แปลว่าคลังเราไม่รู้จักรหัสนี้ (ห้ามเดาเป็น 0)
  *  @param full  true = ใส่คีย์ `push` ที่เป็น **รายการเต็ม** ลงไปด้วย
  *
@@ -43,6 +43,7 @@ export function planFrom(rows, full = false) {
   const push = [];
   const skipNegative = [];
   const skipUnknown = [];
+  const skipConflict = [];
   let same = 0;
 
   for (const r of rows) {
@@ -54,6 +55,12 @@ export function planFrom(rows, full = false) {
     const from = num(r.platformQty);
     if (to < 0) {
       skipNegative.push({ sku: r.sku, name: r.name, platformQty: from, coreQty: to });
+      continue;
+    }
+    // สูตรประกอบได้ไม่ยืนยันว่าภาระติดลบของ SKU ตัวเองถูกหักในฐานแล้ว
+    // พักให้คนตรวจ ห้ามเดาว่าต้องหักซ้ำหรือยึดจำนวนที่ประกอบได้
+    if (r.directQty != null && r.directQty < 0 && to >= 0) {
+      skipConflict.push({ sku: r.sku, name: r.name, directQty: r.directQty, buildable: to, platformQty: from });
       continue;
     }
     if (to === from) {
@@ -86,9 +93,10 @@ export function planFrom(rows, full = false) {
     down: by("down").length,
     skipNegative: skipNegative.length,
     skipUnknown: skipUnknown.length,
+    skipConflict: skipConflict.length,
     /* ⚠️ **ตัวตรวจตัวเอง** — ทุกรหัสต้องตกกองใดกองหนึ่งพอดี
         บวกไม่ครบเมื่อไหร่ = มีของหายระหว่างทาง (partial-coverage-reported-as-full) */
-    bucketsAddUp: same + push.length + skipNegative.length + skipUnknown.length === rows.length,
+    bucketsAddUp: same + push.length + skipNegative.length + skipUnknown.length + skipConflict.length === rows.length,
     // ตัวอย่างพอให้เห็นภาพ — **ตัวนับข้างบนนับจากของทั้งหมด ไม่ได้นับจากตัวอย่างนี้**
     pushSample: push.slice(0, 25),
     /* รายการเต็มสำหรับ "คนที่ต้องตัดสินใจ" (ตัวยิงจริง) — ไม่ใช่สำหรับแสดงผล
@@ -98,12 +106,13 @@ export function planFrom(rows, full = false) {
        ต้องเทียบแบบเข้ม ทั้งที่นี่และที่ stockPushDryRun */
     /* ⚠️ กองที่ถูกข้ามก็ต้องส่ง **รายการเต็ม** ตอนขอ full ด้วย (เพิ่ม 12 ก.ย. 2569)
        เหตุผล: ตัวพิสูจน์ว่าการเขียนถึงหน้าร้านจริง (lazadaReadBack) ต้องแยกให้ออกว่า
-       "รหัสนี้ไม่อยู่ในแผนเพราะเลขตรงกันแล้ว" กับ "ไม่อยู่เพราะถูกข้าม (ติดลบ/ไม่รู้จัก)"
+       "รหัสนี้ไม่อยู่ในแผนเพราะเลขตรงกันแล้ว" กับ "ไม่อยู่เพราะถูกข้าม (ติดลบ/ไม่รู้จัก/ยอดขัดแย้งกับสูตร)"
        ⇒ ถ้ามีแต่ตัวอย่าง 15 แถว มันจะตอบว่า landed ให้รหัสที่ถูกข้าม **โดยไม่เคยตรวจ**
        (คลาสเดียวกับที่ pushSample เคยทำ — เลขเพื่อการแสดงผลถูกเอาไปตัดสินใจ) */
-    ...(full === true ? { push, skipNegativeFull: skipNegative, skipUnknownFull: skipUnknown } : {}),
+    ...(full === true ? { push, skipNegativeFull: skipNegative, skipUnknownFull: skipUnknown, skipConflictFull: skipConflict } : {}),
     skipNegativeSample: skipNegative.slice(0, 15),
     skipUnknownSample: skipUnknown.slice(0, 15),
+    skipConflictSample: skipConflict.slice(0, 15),
   };
 }
 
@@ -127,7 +136,7 @@ async function shopeePlan(full) {
   const rows = [
     // รหัสที่ตัวเลขไม่ตรง — รู้ทั้งสองฝั่ง
     ...(c.diff || []).map((d) => ({
-      sku: d.sku, name: d.name, platformQty: num(d.shopee), coreQty: num(d.core), known: true,
+      sku: d.sku, name: d.name, platformQty: num(d.shopee), coreQty: num(d.core), directQty: d.directQty ?? null, known: true,
     })),
     // รหัสที่คลังเราไม่รู้จัก — **ต้องนับด้วย ห้ามตกหล่น** (ของจริง 15 รหัส)
     ...(c.missingSample || []).map((m) => ({
@@ -143,7 +152,7 @@ async function shopeePlan(full) {
       ⇒ ตัวนับ skipUnknown ต้องเอาเลขจริงมาจาก `missing` ไม่ใช่ความยาวของตัวอย่าง
       (การตัดตัวอย่างเป็นเรื่องการแสดงผล ห้ามให้ไปลดตัวนับ) */
   p.skipUnknown = num(c.missing);
-  p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown === p.platformSkus;
+  p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.skipConflict === p.platformSkus;
   p.day = c.day;
   return p;
 }
@@ -179,6 +188,7 @@ async function lazadaPlan(full) {
     name: d.name,
     platformQty: num(d.lazada ?? d.platform ?? d.available),
     coreQty: num(d.core),
+    directQty: d.directQty ?? null,
     known: true,
   }));
   const p = planFrom(rows, full);
@@ -221,7 +231,7 @@ async function lazadaPlan(full) {
   /* ✅ ตอนนี้บวกได้ครบแล้ว ⇒ เลิกใช้ null · **ตัวตรวจต้องมีจริง ไม่ใช่ยอมแพ้แล้วบอกว่าไม่ได้ตรวจ**
       บวกไม่ครบเมื่อไหร่ = มีของหายระหว่างทาง ห้ามดันจนกว่าจะรู้ว่าหายไปไหน */
   p.bucketsAddUp =
-    p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.excludedGuess + p.excludedOneToMany ===
+    p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.skipConflict + p.excludedGuess + p.excludedOneToMany ===
     p.platformSkus;
   p.day = c.day;
   return p;
@@ -244,7 +254,7 @@ async function tiktokPlan(full) {
 
   const rows = [
     ...(c.diff || []).map((d) => ({
-      sku: d.sku, name: d.name, platformQty: num(d.tiktok), coreQty: num(d.core), known: true,
+      sku: d.sku, name: d.name, platformQty: num(d.tiktok), coreQty: num(d.core), directQty: d.directQty ?? null, known: true,
     })),
     ...(c.missingSample || []).map((m) => ({
       sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
@@ -255,7 +265,7 @@ async function tiktokPlan(full) {
   p.same = num(c.same);
   p.platformSkus = num(c.tiktokSkus);
   p.skipUnknown = num(c.missing);
-  p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown === p.platformSkus;
+  p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.skipConflict === p.platformSkus;
   p.day = c.day;
   return p;
 }
