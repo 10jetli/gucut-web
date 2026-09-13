@@ -189,6 +189,11 @@ export default async function handler(req, context) {
       couponCode: clean(body.couponCode, 40) || null,
       discount,
       pointsUsed: plan.points || 0,
+      /* 🔴 **เบอร์บัญชีที่แลกแต้ม — จดตั้งแต่ตอนสั่ง** (แก้ 14 ก.ย. 2569 · t_mtxys8je · Codex พบ)
+          ส่วนลดคิดจากแต้มของคนที่ล็อกอินตอนนี้ ⇒ ตอนหักต้องหักคนเดียวกันเสมอ
+          เดิมไม่จด แล้วไปหาคนจากคุกกี้ของ "คำขอที่มายืนยันเงินเข้า" ⇒ webhook/ตัวกวาดไม่มีคุกกี้ = ไม่หัก ·
+          คนอื่นเปิดลิงก์เช็คสถานะขณะล็อกอิน = หักบัญชีคนนั้น · มาจากเซสชันฝั่งเซิร์ฟเวอร์เท่านั้น ห้ามรับจาก body */
+      buyerPhone: buyer?.phone || null,
       pointDiscount,
       subtotal,
       shipping,
@@ -585,12 +590,11 @@ export async function markOrderPaid(order, store, req, context) {
     await store.setJSON("beam-first-paid", { at: Date.now(), orderId: order.id }).catch(() => {});
   }
 
-  const buyer = await currentUser(req, usersStore())
-    .then((r) => r?.user ?? null)
-    .catch(() => null);
-
+  /* ⚠️ **ห้ามหาผู้ซื้อจากคุกกี้ของคำขอนี้** (แก้ 14 ก.ย. 2569 · t_mtxys8je)
+      คนที่มายืนยันเงินเข้าไม่ใช่ผู้ซื้อเสมอ — webhook ของ Beam · ตัวกวาดตามเวลา · ใครก็ได้ที่ถือลิงก์เช็คสถานะ
+      finalizeOrder หักแต้ม/นับโค้ดจาก `order.buyerPhone` ที่จดไว้ตอนสั่งแทน */
   return finalizeOrder({
-    order, store, usersStore, buyer, slip: null, req, context, zortAddOrder,
+    order, store, usersStore, buyer: null, slip: null, req, context, zortAddOrder,
   });
 }
 

@@ -47,21 +47,26 @@ export async function finalizeOrder({
   // ไม่งั้นโค้ดจำนวนจำกัดจะหมดทั้งที่ยังไม่มีใครจ่ายเงินสักคน
   /* ⚠️ **ทุกขั้นที่มีผลข้างเคียงต้องบันทึกลงถังทันทีหลังทำ** — ธงในหน่วยความจำไม่นับ
       ตายตอนบันทึกท้ายสุด = กู้แล้วนับโค้ดซ้ำ / หักแต้มลูกค้าซ้ำ (เทส paid-recovery จับได้ 14 ก.ย. 2569) */
+  /* 🔴 **บัญชีผู้ซื้อ = `order.buyerPhone` ที่จดตอนสั่งเท่านั้น** (แก้ 14 ก.ย. 2569 · t_mtxys8je)
+      ห้ามใช้ `buyer` ที่ส่งเข้ามา — มาจากคุกกี้ของคำขอที่มายืนยันเงิน ซึ่งอาจเป็น webhook (ไม่มีใคร)
+      หรือคนอื่นที่เปิดลิงก์เช็คสถานะ (หักผิดบัญชี) · ใบเก่าที่ไม่มี buyerPhone ⇒ ไม่หักเดา ติดธงแทน */
+  const payer = order.buyerPhone ? { phone: order.buyerPhone } : null;
+
   if (!order.steps.coupon) {
-    if (order.couponCode) await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
+    if (order.couponCode) await markUsed(order.couponCode, payer, usersStore()).catch(() => {});
     order.steps.coupon = true;
     await save();
   }
 
   // หักแต้มที่แลกไป (แต้มที่จะ "ได้" จากบิลนี้ รอจนออเดอร์สำเร็จก่อน)
   if (order.pointsUsed > 0 && !order.steps.points) {
-    if (buyer) {
+    if (payer) {
       /* ⚠️ แต้มคือเงินของลูกค้า ⇒ **จดก่อนหัก** (หักได้อย่างมากครั้งเดียว)
           ตายระหว่างจดกับหัก = แต้มไม่ถูกหัก (ร้านเสียส่วนลดหนึ่งครั้ง) ดีกว่าหักลูกค้าซ้ำ */
       order.steps.points = true;
       delete order.pointsPending;
       await save();
-      await addPoints(usersStore(), buyer.phone, -order.pointsUsed,
+      await addPoints(usersStore(), payer.phone, -order.pointsUsed,
         `ใช้แลกส่วนลด ฿${order.pointDiscount || 0}`, order.id).catch(() => {});
     } else {
       /* ไม่รู้ว่าเป็นบัญชีไหน (ตัวกวาดตามเวลาไม่มีคุกกี้ลูกค้า) ⇒ **ห้ามหักเดา** ติดธงให้เห็นแทน
