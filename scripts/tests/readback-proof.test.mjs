@@ -103,5 +103,24 @@ console.log('⑥ ตัวเทียบหยุด (skip) ⇒ error ไม่
   ok('ได้ error', !!r.error && !r.landed, JSON.stringify(r).slice(0, 120))
 }
 
+console.log('⑦ ตอบไม่ได้ทั้งกระดาน ⇒ ต้องติดธง inconclusive (ตัวห่อ okJson จะได้ไม่เติม ok)')
+{
+  /* 🔴 กติกาที่ตกลงกับฝั่งจอ: "ผลแปลไม่ได้" ≠ "ผลว่าไม่ผ่าน"
+     ⇒ inconclusive:true และ **ต้องไม่มีคีย์ ok เลย** — ok ถูกเติมโดย okJson ใน core.mjs
+     ซึ่งมีกติกานี้อยู่แล้ว (บรรทัด 242) แต่ฝั่งเราไม่เคยติดธงให้มันเห็น */
+  /* ท่อส่งแผนแบบไม่มีรายการเต็ม (เหมือนของจริงตอนแผนสดกลับมาไม่ครบ) */
+  const rows = [row('A', 1, 9)]
+  const noFull = await lazadaReadBack(['A'], { dryRun: dryRunOf(rows, false) })
+  ok('ท่อไม่ส่งรายการเต็ม ⇒ inconclusive = true', noFull.inconclusive === true, JSON.stringify(noFull).slice(0, 140))
+  ok('และต้องไม่มีคีย์ ok ติดมาเองจากฝั่งเรา', !('ok' in noFull))
+
+  /* กองผสม: รหัสหนึ่งอยู่ในแผน (ตัดสินได้ = notLanded) อีกรหัสไม่มีในแผนเลย */
+  const mixed = await lazadaReadBack(['A', 'ไม่มีในแผน'], { dryRun: dryRunOf(rows, true) })
+  const conclusive = (mixed.landed?.length ?? 0) + (mixed.notLanded?.length ?? 0)
+  ok('มีบางรหัสที่ตัดสินได้ ⇒ **ห้าม** ติดธง inconclusive (ผลบางส่วนยังใช้ได้)',
+     conclusive > 0 && !('inconclusive' in mixed),
+     `ตัดสินได้ ${conclusive} · ธง=${mixed.inconclusive}`)
+}
+
 console.log(fail === 0 ? '\n✅ ผ่านทุกข้อ' : `\n❌ ตก ${fail} ข้อ`)
 process.exit(fail === 0 ? 0 : 1)

@@ -151,7 +151,13 @@ export async function lazadaReadBack(skus, deps = {}) {
      ไม่งั้นคนอ่านแยกไม่ออกว่าตัวไหนหายเพราะอะไร แล้วต้องยิงใหม่ทั้งชุด
      ⚠️ และมีรหัสแล้ว **ห้ามให้ใครไปจัดประเภทจากข้อความ `why` ด้วย includes()**
         (กฎ no-substring-classification — ข้อความเปลี่ยนได้ รหัสเปลี่ยนไม่ได้โดยไม่มีใครรู้) */
+  /* 🔴 **ตอบไม่ได้ทั้งกระดาน ⇒ ต้องติดธง `inconclusive` มาด้วย** (13 ก.ย. 2569)
+     ตัวห่อ okJson ใน core.mjs มีกติกาอยู่แล้วว่า inconclusive ⇒ **ไม่เติมคีย์ ok เลย**
+     แต่ของเดิมที่นี่ไม่เคยติดธงนั้น ⇒ คำตอบจึงออกไปเป็น `{ok:true, …, note:"ตรวจไม่ได้"}`
+     ซึ่งอ่านได้ว่า "สำเร็จ" ทั้งที่แปลว่า "ไม่รู้" — เจอของจริงตอนตรวจหลัง deploy 13 ก.ย.
+     ⚠️ ไม่ใช่ `ok:false` — "ผลแปลไม่ได้" ไม่ใช่ "ผลว่าไม่ผ่าน" (สัญญากับฝั่งจอ) */
   const unknownAll = (reason, why) => ({
+    inconclusive: true,
     landed: [], notLanded: [],
     unknown: asked.map((sku) => ({ sku, reason, why })),
     note: "ตรวจไม่ได้ — ห้ามอ่านว่าผ่าน",
@@ -202,6 +208,9 @@ export async function lazadaReadBack(skus, deps = {}) {
     landed.push(sku);
   }
   return {
+    /* ธงนี้ติดเฉพาะตอน **ไม่มีรหัสไหนได้คำตัดสินเลย** — มีบางตัวตัดสินได้ = ไม่ใช่ inconclusive
+       (ผลบางส่วนยังใช้ได้ ห้ามทิ้งทั้งกระดานเพราะบางตัวตอบไม่ได้) */
+    ...(landed.length + notLanded.length === 0 && unknown.length ? { inconclusive: true } : {}),
     landed, notLanded, ...(unknown.length ? { unknown } : {}),
     /* สรุปจำนวนแยกตามรหัสเหตุผล — ผู้อ่านไม่ต้องวนนับเอง และไม่ต้องแกะจากข้อความ */
     ...(unknown.length
