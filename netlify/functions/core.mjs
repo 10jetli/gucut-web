@@ -2585,6 +2585,12 @@ async function route(req, context) {
     if (url.searchParams.get("stockcompare")) {
       return json({ ok: true, stock: await shopeeStockCompare() });
     }
+    /* GET ?shopeeunlisted=1 — สินค้าที่ถอดจากหน้าร้าน Shopee (UNLIST) คลังเรามีของกี่รายการ
+       อ่านอย่างเดียว · หน่วยหลักคือ "สินค้า" (ตรงกับเลข UNLIST ที่ Shopee โชว์) พร้อมแยกรหัสให้ด้วย */
+    if (url.searchParams.get("shopeeunlisted")) {
+      const { shopeeUnlistedStock } = await import("../lib/shopee-stock.mjs");
+      return json({ ok: true, unlisted: await shopeeUnlistedStock() });
+    }
     if (url.searchParams.get("snapshot")) {
       return json({ ok: true, snapshot: await snapshotStock() });
     }

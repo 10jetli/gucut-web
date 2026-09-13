@@ -35,12 +35,12 @@ async function inChunks(items, size, fn) {
  *     แล้วทุกตัวนับข้างล่าง (same · missing · diffCount) ต่ำกว่าจริงทั้งหมด **โดยไม่มีอะไรฟ้อง**
  *     ⇒ ตัวหารต้องมาจากนอกกอง = ยอดที่แพลตฟอร์มประกาศ ไม่ใช่ความยาวอาร์เรย์ของตัวเอง
  */
-export async function collectShopeeItemIds(fetchPage) {
+export async function collectShopeeItemIds(fetchPage, status = "NORMAL") {
   const ids = [];
   let declared = null;
   let offset = 0;
   for (let p = 0; p < 25; p++) {
-    const d = await fetchPage({ offset: String(offset), page_size: "100", item_status: "NORMAL" });
+    const d = await fetchPage({ offset: String(offset), page_size: "100", item_status: status });
     /* ยอดรวมที่ Shopee ประกาศเอง — อ่านจากหน้าแรกพอ
        ⚠️ อ่านไม่ได้ = null **ห้ามแทนด้วย 0** (ไม่รู้ ≠ ไม่มี) */
     if (declared === null && Number.isFinite(Number(d?.response?.total_count))) {
@@ -55,8 +55,9 @@ export async function collectShopeeItemIds(fetchPage) {
   return { ids, declared, sawAll: declared === null ? null : ids.length === declared };
 }
 
-async function shopeeStock() {
-  const got = await collectShopeeItemIds((query) => shopCall("/api/v2/product/get_item_list", query));
+/* status: "NORMAL" (ค่าเดิม ทุกผู้เรียกเดิมไม่ต้องแก้) · "UNLIST" = สินค้าที่ถอดออกจากหน้าร้าน */
+async function shopeeStock(status = "NORMAL") {
+  const got = await collectShopeeItemIds((query) => shopCall("/api/v2/product/get_item_list", query), status);
   const ids = got.ids;
   /* ⚠️ ไม่มี id เลย ⇒ คืนอาร์เรย์ว่างพร้อมผลตรวจความครบ · **ตัวตัดสินว่าจะหยุดหรือไม่
      อยู่ที่ shopeeStockCompare** (ที่นี่เป็นแค่ตัวดึง ไม่ควรตัดสินใจแทนผู้เรียกทุกคน) */
@@ -93,6 +94,7 @@ async function shopeeStock() {
           // seller_stock = จำนวนที่ผู้ขายตั้งไว้ (ตัวที่ ZORT ดันมา) ไม่ใช่ยอดที่ถูกจองไว้
           const qty = num(m?.stock_info_v2?.seller_stock?.[0]?.stock);
           rows.push({
+            itemId: id,
             sku: String(m.model_sku || "").trim(),
             name: `${b.item_name || ""} ${m.model_name || ""}`.trim().slice(0, 120),
             qty,
@@ -101,6 +103,7 @@ async function shopeeStock() {
       } else {
         const s = d?.response?.tier_variation?.length ? null : b;
         rows.push({
+          itemId: id,
           sku: String(b.item_sku || "").trim(),
           name: String(b.item_name || "").slice(0, 120),
           qty: num(s?.stock_info_v2?.seller_stock?.[0]?.stock),
@@ -116,6 +119,111 @@ async function shopeeStock() {
      ⚠️ JSON.stringify ไม่เก็บ property ของอาร์เรย์ ⇒ ผู้เรียกต้องยกขึ้นคำตอบเอง
         (shopeeStockCompare ทำให้แล้ว) · เขียนกำกับเพราะจุดนี้มองไม่เห็นจากปลายทาง */
   return Object.assign(rows, { coverage: got });
+}
+
+/** รวมผล "สินค้าที่ถอดจากหน้าร้าน Shopee คลังเรามีของไหม" — ฟังก์ชันล้วน (ทดสอบด้วยข้อมูลปลอมได้)
+ *  @param rows    [{ itemId, sku, name, qty }] จาก shopeeStock("UNLIST")
+ *  @param snap    Map<sku, { qty }> ภาพถ่ายสต็อกคลังเรา
+ *  @param recipe  Map<skuชุด, [{ sku, qty }]> สูตรชุดจาก ZORT
+ *
+ *  🔴 **หน่วยต้องแยกเสมอ** — Shopee โชว์ UNLIST เป็น "สินค้า" (135) แต่คลังนับเป็น "รหัส"
+ *     สินค้าหนึ่งตัวมีหลายตัวเลือก ⇒ ห้ามเอาจำนวนรหัสไปเทียบกับ 135 ตรง ๆ
+ *     สินค้า "มีของ" = มีตัวเลือกอย่างน้อยหนึ่งตัวที่คลังมีของ
+ *  ⚠️ **ไม่รู้ ≠ ไม่มี** — รหัสว่าง/คลังไม่รู้จัก/สูตรมีชิ้นส่วนที่ไม่รู้จัก ⇒ "unknown" ห้ามนับเป็นศูนย์
+ *  ⚠️ ของชุดใช้ buildable จากสูตร (แบบเดียวกับ stockcompare และสูตรที่ ZORT ใช้)
+ *     ตัวเลือกความยาวหลายตัวดึงม้วนเดียวกัน ⇒ **ห้ามบวกจำนวนข้ามตัวเลือก** ใช้ได้แค่ "มี/ไม่มี"
+ */
+export function summarizeUnlisted(rows, snap, recipe) {
+  const skuState = (sku) => {
+    if (!sku) return { state: "unknown", why: "ไม่ได้กรอกรหัสบน Shopee", have: null, via: null };
+    const parts = recipe.get(sku);
+    if (parts?.length) {
+      const cans = parts.map((p) =>
+        p.qty > 0 && snap.has(p.sku) ? Math.max(0, Math.floor(num(snap.get(p.sku).qty) / p.qty)) : null
+      );
+      if (cans.some((c) => c === null))
+        return { state: "unknown", why: "สูตรชุดมีชิ้นส่วนที่คลังไม่รู้จัก", have: null, via: "สูตรชุด" };
+      const have = Math.min(...cans);
+      return { state: have > 0 ? "stock" : "none", have, via: "สูตรชุด" };
+    }
+    if (!snap.has(sku)) return { state: "unknown", why: "คลังไม่รู้จักรหัสนี้", have: null, via: null };
+    const have = num(snap.get(sku).qty);
+    return { state: have > 0 ? "stock" : "none", have, via: "ตรงตัว" };
+  };
+
+  const items = new Map();
+  const skus = { stock: 0, none: 0, unknown: 0 };
+  for (const r of rows) {
+    const s = skuState(String(r.sku || "").trim());
+    skus[s.state] += 1;
+    if (!items.has(r.itemId)) items.set(r.itemId, { itemId: r.itemId, name: r.name, variants: [] });
+    items.get(r.itemId).variants.push({ sku: r.sku || null, shopeeQty: num(r.qty), ...s });
+  }
+
+  const byItem = { stock: [], none: [], unknown: [] };
+  for (const it of items.values()) {
+    const st = it.variants.some((v) => v.state === "stock")
+      ? "stock"
+      : it.variants.some((v) => v.state === "none")
+        ? "none"
+        : "unknown";
+    byItem[st].push(it);
+  }
+  return {
+    items: items.size,
+    itemsWithStock: byItem.stock.length,
+    itemsNoStock: byItem.none.length,
+    itemsUnknown: byItem.unknown.length,
+    skus: rows.length,
+    skusWithStock: skus.stock,
+    skusNoStock: skus.none,
+    skusUnknown: skus.unknown,
+    withStock: byItem.stock.map((it) => ({
+      itemId: it.itemId,
+      name: it.name,
+      variantsWithStock: it.variants.filter((v) => v.state === "stock").map((v) => ({ sku: v.sku, have: v.have, via: v.via })),
+    })),
+    unknown: byItem.unknown.map((it) => ({ itemId: it.itemId, name: it.name, why: [...new Set(it.variants.map((v) => v.why))] })),
+  };
+}
+
+/** GET ?shopeeunlisted=1 — อ่านอย่างเดียว ไม่เขียนอะไรกลับ Shopee */
+export async function shopeeUnlistedStock() {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  if (!(await validToken())) return { skip: "ยังไม่ได้เชื่อมร้าน Shopee" };
+  const day = (await coreQuery(`SELECT MAX(day) AS d FROM stock_snapshots`))[0]?.d;
+  if (!day) return { skip: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
+  const snap = new Map(
+    (await coreQuery(`SELECT sku, qty FROM stock_snapshots WHERE day = ?`, [day])).map((r) => [
+      String(r.sku).trim(),
+      { qty: num(r.qty) },
+    ])
+  );
+  const recipe = new Map();
+  let recipeAt = null;
+  for (const r of await coreQuery(`SELECT bundle_sku, sku, qty, MAX(at) AS at FROM bundle_items GROUP BY bundle_sku, sku, qty`)) {
+    const k = String(r.bundle_sku).trim();
+    if (!recipe.has(k)) recipe.set(k, []);
+    recipe.get(k).push({ sku: String(r.sku).trim(), qty: num(r.qty) });
+    if (!recipeAt || String(r.at) > recipeAt) recipeAt = String(r.at);
+  }
+
+  const rows = await shopeeStock("UNLIST");
+  const cov = rows.coverage || {};
+  /* ⚠️ ไล่หน้าไม่ครบ ⇒ ตัวนับทุกตัวต่ำกว่าจริง **ห้ามส่งเลขออกไปเหมือนผลสมบูรณ์** */
+  if (cov.sawAll === false)
+    return { skip: `ไล่รายการ UNLIST ไม่ครบ (ได้ ${cov.ids?.length ?? "?"} จากที่ Shopee ประกาศ ${cov.declared})` };
+  return {
+    stockDay: day,
+    recipeAt,
+    declaredByShopee: cov.declared ?? null,
+    sawAll: cov.sawAll ?? null,
+    ...summarizeUnlisted(rows, snap, recipe),
+    note:
+      "items = สินค้า (หน่วยเดียวกับเลข UNLIST บน Shopee) · skus = ตัวเลือก · " +
+      "สินค้ามีของ = มีตัวเลือกอย่างน้อยหนึ่งตัวที่คลังมีของ · unknown = ไม่รู้ ไม่ใช่ไม่มี · " +
+      "ตัวเลือกความยาวโซ่ดึงม้วนเดียวกัน ห้ามบวก have ข้ามตัวเลือก",
+  };
 }
 
 /** บรรทัดสรุปสำหรับ Telegram ยามตี 1 — คืน null ถ้ายังตรวจไม่ได้
