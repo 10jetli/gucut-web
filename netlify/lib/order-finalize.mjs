@@ -24,22 +24,54 @@ import { SITE_URL } from "./site.mjs";
 export async function finalizeOrder({
   order, store, usersStore, buyer, slip, req, context, zortAddOrder,
 }) {
-  if (order.done) return order;      // ทำไปแล้ว อย่าทำซ้ำ
-  order.done = true;
+  if (order.done) return order;      // ทำครบแล้ว อย่าทำซ้ำ
+
+  /* 🔴 **จดทีละขั้น แล้วตั้ง done ตอนจบเท่านั้น** (แก้ 14 ก.ย. 2569 · งานกระดาน t_mtxys7hn · Codex พบ)
+      เดิมตั้ง `done = true` ตั้งแต่บรรทัดแรก แล้วบันทึกลงถังพร้อมผล ZORT
+      ⇒ ฟังก์ชันตายหลังบันทึก (ZORT ช้า 9 วิ · หมดเวลา) = โค้ดส่วนลด/แต้ม/แจ้งเตือน ไม่เคยถูกทำ
+         แต่ธง done อยู่ในถังแล้ว ⇒ ใครมาเรียกซ้ำก็ออกไปทันที **ค้างเงียบตลอดกาล**
+      ⇒ ตอนนี้แต่ละขั้นมีธงของตัวเองใน `order.steps` · ขั้นที่ทำแล้วไม่ทำซ้ำ (สำคัญสุดคือ ZORT —
+         ส่งซ้ำ = เอกสารซ้ำ ลูกน้องแพ็คของสองรอบ) · `done` ตั้งหลังจดครบทุกขั้นเท่านั้น
+      ⚠️ ยังไม่กันการเรียกพร้อมกันสองทางในวินาทีเดียว (webhook + หน้าจอลูกค้า) — ความเสี่ยงเดิม ไม่ได้เพิ่ม */
+  order.steps = order.steps || {};
+  const save = () => store.setJSON(`o/${order.id}`, order);
 
   // ส่งเข้า ZORT ให้ตัดสต็อกเอง — พังก็ไม่ล้มออเดอร์ แค่ติดธงให้ร้านกดส่งซ้ำได้
-  order.zort = await zortAddOrder(order);
-  await store.setJSON(`o/${order.id}`, order);
+  if (!order.steps.zort) {
+    order.zort = await zortAddOrder(order);
+    order.steps.zort = true;
+    await save();
+  }
 
   // นับโควตาโค้ดส่วนลด "ตอนออเดอร์เป็นจริง" เท่านั้น
   // ไม่งั้นโค้ดจำนวนจำกัดจะหมดทั้งที่ยังไม่มีใครจ่ายเงินสักคน
-  if (order.couponCode) await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
+  /* ⚠️ **ทุกขั้นที่มีผลข้างเคียงต้องบันทึกลงถังทันทีหลังทำ** — ธงในหน่วยความจำไม่นับ
+      ตายตอนบันทึกท้ายสุด = กู้แล้วนับโค้ดซ้ำ / หักแต้มลูกค้าซ้ำ (เทส paid-recovery จับได้ 14 ก.ย. 2569) */
+  if (!order.steps.coupon) {
+    if (order.couponCode) await markUsed(order.couponCode, buyer, usersStore()).catch(() => {});
+    order.steps.coupon = true;
+    await save();
+  }
 
   // หักแต้มที่แลกไป (แต้มที่จะ "ได้" จากบิลนี้ รอจนออเดอร์สำเร็จก่อน)
-  if (buyer && order.pointsUsed > 0) {
-    await addPoints(usersStore(), buyer.phone, -order.pointsUsed,
-      `ใช้แลกส่วนลด ฿${order.pointDiscount || 0}`, order.id).catch(() => {});
+  if (order.pointsUsed > 0 && !order.steps.points) {
+    if (buyer) {
+      /* ⚠️ แต้มคือเงินของลูกค้า ⇒ **จดก่อนหัก** (หักได้อย่างมากครั้งเดียว)
+          ตายระหว่างจดกับหัก = แต้มไม่ถูกหัก (ร้านเสียส่วนลดหนึ่งครั้ง) ดีกว่าหักลูกค้าซ้ำ */
+      order.steps.points = true;
+      delete order.pointsPending;
+      await save();
+      await addPoints(usersStore(), buyer.phone, -order.pointsUsed,
+        `ใช้แลกส่วนลด ฿${order.pointDiscount || 0}`, order.id).catch(() => {});
+    } else {
+      /* ไม่รู้ว่าเป็นบัญชีไหน (ตัวกวาดตามเวลาไม่มีคุกกี้ลูกค้า) ⇒ **ห้ามหักเดา** ติดธงให้เห็นแทน
+         เดิมข้ามเงียบ ๆ · เรื่องหักผิดบัญชีเป็นงานแยก t_mtxys8je */
+      order.pointsPending = true;
+    }
   }
+
+  order.done = true;
+  await save();
 
   const jobs = [];
   const later = (p) => (context?.waitUntil ? context.waitUntil(p) : jobs.push(p));

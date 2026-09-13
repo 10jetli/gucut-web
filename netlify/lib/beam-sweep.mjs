@@ -37,11 +37,25 @@ export async function sweepBeamOrders() {
 
   let checked = 0;
   const paid = [];
+  const recovered = [];
   for (const b of blobs) {
     const o = await store.get(b.key, { type: "json" }).catch(() => null);
-    if (!o || o.paid || o.status === "cancelled") continue;
-    if (!o.beam?.chargeId) continue;
+    if (!o || o.status === "cancelled") continue;
     if ((o.at || 0) < cutoff) continue;
+
+    /* 🔴 **ใบที่ "จ่ายแล้วแต่ยังไม่ done" ต้องกวาดด้วย** (แก้ 14 ก.ย. 2569 · t_mtxys7hn)
+        เดิม `if (o.paid) continue` ⇒ ใบที่ฟังก์ชันตายหลังบันทึก paid ไม่มีชั้นไหนเก็บเลย
+        ไม่ต้องถาม Beam ซ้ำ (รู้แล้วว่าจ่าย) · finalizeOrder จำขั้นที่ทำแล้ว ไม่ส่ง ZORT ซ้ำ */
+    if (o.paid) {
+      if (o.done) continue;
+      checked++;
+      try {
+        await markOrderPaid(o, store, null, null);
+        recovered.push(o.id);
+      } catch { /* รอบหน้าเอาใหม่ */ }
+      continue;
+    }
+    if (!o.beam?.chargeId) continue;
 
     checked++;
     try {
@@ -56,5 +70,6 @@ export async function sweepBeamOrders() {
       /* ถาม Beam ไม่ได้ตอนนี้ — รอบหน้าเอาใหม่ */
     }
   }
-  return { checked, paid };
+  // recovered = ใบที่จ่ายแล้วแต่งานหลังรับเงินค้าง แล้วรอบนี้เดินต่อให้ (ควรเป็นว่างเกือบตลอด — มีเลขเมื่อไหร่ให้ดูว่าอะไรทำฟังก์ชันตาย)
+  return { checked, paid, recovered };
 }

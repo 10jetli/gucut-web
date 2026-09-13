@@ -274,7 +274,10 @@ export default async function handler(req, context) {
     const o = oid ? await store.get(`o/${oid}`, { type: "json" }).catch(() => null) : null;
     if (!o || !o.checkToken || o.checkToken !== tok) return json({ error: "not found" }, 404);
 
-    if (!o.paid && o.beam?.chargeId) {
+    if (o.paid && !o.done) {
+      // จ่ายแล้วแต่งานหลังรับเงินค้าง (ฟังก์ชันรอบก่อนตาย) ⇒ เดินต่อให้ครบ ไม่ต้องถาม Beam ซ้ำ
+      try { await markOrderPaid(o, store, req, context); } catch { /* รอบหน้า/ตัวกวาดเอาใหม่ */ }
+    } else if (!o.paid && o.beam?.chargeId) {
       try {
         const c = await getCharge(o.beam.chargeId);
         if (chargePaid(c)) await markOrderPaid(o, store, req, context);
@@ -565,16 +568,22 @@ async function zortAddOrder(order) {
  *    ตัวกันอยู่ที่ธง done ใน finalizeOrder
  */
 export async function markOrderPaid(order, store, req, context) {
-  if (order.paid) return order;
-  order.paid = true;
-  order.paidAt = Date.now();
-  order.status = "new";
-  await store.setJSON(`o/${order.id}`, order);
+  /* 🔴 **"จ่ายแล้ว" ไม่ได้แปลว่า "ทำงานหลังรับเงินครบแล้ว"** (แก้ 14 ก.ย. 2569 · t_mtxys7hn)
+      เดิม `if (order.paid) return` ⇒ ใบที่บันทึก paid แล้วแต่ฟังก์ชันตายก่อน finalizeOrder จบ
+      ถูกตาข่ายทั้ง 3 ชั้นข้ามหมด (webhook · หน้าจอลูกค้า · ตัวกวาด) = ลูกค้าจ่ายแล้ว ร้านไม่รู้ ไม่มี ZORT
+      ⇒ ออกได้เฉพาะเมื่อ paid **และ** done · paid แต่ยังไม่ done = เดินงานต่อจากขั้นที่ค้าง */
+  if (order.paid && order.done) return order;
+  if (!order.paid) {
+    order.paid = true;
+    order.paidAt = Date.now();
+    order.status = "new";
+    await store.setJSON(`o/${order.id}`, order);
 
-  // จดไว้ว่าเคยมีเงินเข้าจริงแล้ว — หน้าสถานะระบบใช้ตัวนี้เตือน
-  // ว่ายังไม่เคยมีใครจ่ายเงินสำเร็จเลยสักครั้ง (แปลว่ายังไม่ได้ทดสอบจ่ายจริง)
-  // ถูกกว่าการไล่อ่านออเดอร์ทุกใบมานับ และเตือนเองโดยไม่ต้องมีใครจำ
-  await store.setJSON("beam-first-paid", { at: Date.now(), orderId: order.id }).catch(() => {});
+    // จดไว้ว่าเคยมีเงินเข้าจริงแล้ว — หน้าสถานะระบบใช้ตัวนี้เตือน
+    // ว่ายังไม่เคยมีใครจ่ายเงินสำเร็จเลยสักครั้ง (แปลว่ายังไม่ได้ทดสอบจ่ายจริง)
+    // ถูกกว่าการไล่อ่านออเดอร์ทุกใบมานับ และเตือนเองโดยไม่ต้องมีใครจำ
+    await store.setJSON("beam-first-paid", { at: Date.now(), orderId: order.id }).catch(() => {});
+  }
 
   const buyer = await currentUser(req, usersStore())
     .then((r) => r?.user ?? null)
