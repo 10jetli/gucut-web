@@ -399,6 +399,18 @@ async function route(req, context) {
        POST ?addwarehouse=1 body {ref, code, name, address?}                        ⇒ ZORT Warehouse/AddWarehouse
        ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · **ยังไม่เคยยิงจริงทั้งคู่** · ผิด method = 405
        ⚠️ "เพิ่มหมวดหมู่" ไม่มีเส้น — ZORT ไม่เปิด API (ดู ZORT_NO_API) · งานกระดาน t_mu0m99go */
+    /* POST ?addsale=1  body {ref, number?, day?, status?, customer?, phone?, address?, channel?, warehouse?,
+                            items:[{sku, name, qty, price}], discount?, shipping?, paid?, paymentMethod?, cod?, note?}
+       ⇒ ZORT Order/AddOrder "ขายจริง" · ⚠️ ต่างจาก ?sale=1 (createSale) ที่บันทึกลงคลังเงาอย่างเดียว ไม่ถึง ZORT
+       ⚠️ ท่อคิดเงินเอง (totalprice · amount) ไม่เชื่อตัวเลขจากจอ · โหมดซ้อมเป็นค่าเริ่มต้น · ยังไม่เคยยิงจริง */
+    if (url.searchParams.get("addsale")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddSale } = await import("../lib/zort-write.mjs");
+      const r = await zortAddSale(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("addbundle") || url.searchParams.get("addwarehouse")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

@@ -208,6 +208,92 @@ export async function zortAddProduct(o = {}) {
     message: `เพิ่มสินค้า ${sku} เข้า ZORT แล้ว` };
 }
 
+/** สร้างรายการขายเข้า ZORT จริง (sale-create "ขายจริง") — ต่างจาก createSale ใน pos.mjs ที่เขียนลงคลังเงาอย่างเดียว
+ *  ⚠️ **ชื่อช่องจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/order · อ่าน 14 ก.ย. 2569)
+ *     บังคับ: number · amount (Net) · list[{sku, name, number, pricepernumber, totalprice}]
+ *     ไม่บังคับ: orderdate (yyyy-MM-dd) · status (Pending|Success) · reference · description · saleschannel ·
+ *                warehousecode · isCOD · shippingamount · discount (String เช่น "50.00") ·
+ *                paymentamount + paymentmethod + paymentdate (yyyy-MM-dd HH:mm) · customer*
+ *  🔴 **เงินคิดที่ท่อเสมอ ไม่เชื่อตัวเลขจากจอ** (กฎ zort-sends-all-money-fields: ZORT ไม่ derive ให้บนใบเสนอราคา)
+ *     totalprice = จำนวน × ราคา · amount = รวมบรรทัด − ส่วนลด + ค่าส่ง · บรรทัดไม่มีราคา = ปฏิเสธทั้งใบ
+ *     (วัดจริง 14 ก.ย.: ออเดอร์เว็บ 3 ใบที่ไม่ส่ง totalprice ZORT คิดยอดบรรทัดให้ — แต่เอกสารระบุว่าบังคับ จึงส่งเสมอ)
+ *  ⚠️ ออเดอร์เว็บ (orders.mjs) ส่งส่วนลดเป็น `discountamount` · เอกสารเขียน `discount` (String) — ที่นี่ยึดเอกสาร **ยังไม่ได้ยิงยืนยัน**
+ *  ⚠️ **ยังไม่เคยยิงจริง** · โหมดซ้อมเป็นค่าเริ่มต้น · ต้อง confirm:true + ref · งานกระดาน t_mu0m97e5/sale-create */
+export async function zortAddSale(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const number = txt(o.number, 60) || ref;
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ต้องมีรายการสินค้าอย่างน้อย 1 บรรทัด" };
+
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sku = txt(it?.sku, 60);
+    const name = txt(it?.name, 200);
+    const qty = numOrNull(it?.qty);
+    const price = numOrNull(it?.price);
+    if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+    if (!name) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มีชื่อสินค้า (ZORT บังคับ name)` };
+    if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนไม่ถูกต้อง` };
+    if (price === null || price < 0)
+      return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มีราคา — ZORT บังคับ และห้ามเดาเป็นศูนย์` };
+    list.push({ sku, name, number: qty, pricepernumber: price, totalprice: r2(qty * price) });
+  }
+  const discount = o.discount === undefined ? 0 : numOrNull(o.discount);
+  const shipping = o.shipping === undefined ? 0 : numOrNull(o.shipping);
+  if (discount === null || discount < 0) return { ok: false, error: "ส่วนลดต้องเป็นตัวเลขไม่ติดลบ (บาท)" };
+  if (shipping === null || shipping < 0) return { ok: false, error: "ค่าส่งต้องเป็นตัวเลขไม่ติดลบ" };
+  const linesTotal = r2(list.reduce((s, l) => s + l.totalprice, 0));
+  if (discount > linesTotal) return { ok: false, error: `ส่วนลด ${discount} มากกว่ายอดสินค้า ${linesTotal}` };
+  const amount = r2(linesTotal - discount + shipping);
+
+  const body = {
+    number, amount, list,
+    orderdate: DAY_RE.test(String(o.day)) ? o.day : new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10),
+    status: o.status === "Success" ? "Success" : "Pending",
+  };
+  if (discount > 0) body.discount = discount.toFixed(2);
+  if (shipping > 0) body.shippingamount = shipping;
+  if (txt(o.customer)) body.customername = txt(o.customer, 160);
+  if (txt(o.phone)) body.customerphone = txt(o.phone, 40);
+  if (txt(o.address)) body.customeraddress = txt(o.address, 300);
+  if (txt(o.channel)) body.saleschannel = txt(o.channel, 80);
+  if (txt(o.warehouse)) body.warehousecode = txt(o.warehouse, 30);
+  if (txt(o.note)) body.description = txt(o.note, 500);
+  if (o.cod === true) body.isCOD = true;
+
+  if (o.paid !== undefined) {
+    const paid = numOrNull(o.paid);
+    if (paid === null || paid < 0) return { ok: false, error: "ยอดชำระ (paid) ต้องเป็นตัวเลขไม่ติดลบ" };
+    if (paid > 0) {
+      const method = txt(o.paymentMethod, 60);
+      if (!method) return { ok: false, error: "ส่งยอดชำระมาแล้วต้องบอกวิธีชำระ (paymentMethod) — ZORT บังคับ" };
+      if (paid > amount) return { ok: false, error: `ยอดชำระ ${paid} มากกว่ายอดสุทธิ ${amount}` };
+      body.paymentamount = paid;
+      body.paymentmethod = method;
+      body.paymentdate = new Date(Date.now() + 7 * 3600e3).toISOString().replace("T", " ").slice(0, 16);
+    }
+  }
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body, linesTotal,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · เงินคิดที่ท่อ (ไม่ใช้ตัวเลขจากจอ) · ส่ง confirm:true เมื่อพร้อม" };
+
+  const seen = await seenRef("sale", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบขายนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("Order/AddOrder", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("sale", ref, { kind: "sale", number, amount, lines: list.length });
+  return { ok: true, added: true, ref, number, amount, detail: r.detail, warn,
+    message: `บันทึกรายการขาย ${number} ยอด ฿${amount} เข้า ZORT แล้ว` };
+}
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 /** เพิ่มสินค้าเป็นชุดเข้า ZORT — จอ "เพิ่มสินค้าเป็นชุดใหม่" (soon: bundle-add) · งานกระดาน t_mu0m99go
  *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/bundle · อ่าน 14 ก.ย. 2569)
  *     POST Bundle/AddBundle · body: name · sku · sellprice (String) · sell_vat_status? (Int) ·
