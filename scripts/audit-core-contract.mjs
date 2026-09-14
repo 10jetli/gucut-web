@@ -1,0 +1,58 @@
+#!/usr/bin/env node
+// ตรวจสัญญา /api/core หลัง deploy โดยไม่สร้างหรือลบข้อมูล
+// ผู้รีวิวรัน: GUCUT_CORE_AUDIT_KEY='...' node scripts/audit-core-contract.mjs
+
+const key = process.env.GUCUT_CORE_AUDIT_KEY;
+if (!key) {
+  console.error("ต้องกำหนด GUCUT_CORE_AUDIT_KEY — ไม่อ่าน key จากไฟล์ในเครื่อง");
+  process.exit(2);
+}
+
+const base = process.env.GUCUT_CORE_AUDIT_URL ?? "https://gucut.com/api/core";
+const reads = [
+  "",
+  "sync=1&days=1",
+  "shopeesync=1&days=1",
+  "recon=1",
+  "snapshot=1",
+  "stock=1&days=1",
+  "stockcompare=1",
+  "list=missing-sku&limit=1",
+  "list=orders&limit=1",
+  "list=stock&limit=1",
+  "list=moves&limit=1",
+];
+
+async function request(query, method, body) {
+  const url = query ? `${base}?${query}` : base;
+  const response = await fetch(url, {
+    method,
+    headers: { "x-admin-key": key, ...(body ? { "content-type": "application/json" } : {}) },
+    ...(body ? { body: JSON.stringify(body) } : {}),
+    signal: AbortSignal.timeout(90_000),
+  });
+  return { status: response.status, body: await response.json().catch(() => null) };
+}
+
+let failed = 0;
+for (const query of reads) {
+  const get = await request(query, "GET");
+  const post = await request(query, "POST");
+  const del = await request(query, "DELETE");
+  const bad = get.status !== 200 || post.status !== 405 || del.status !== 405;
+  console.log(`${bad ? "FAIL" : "PASS"} ${query || "(หน้าแรก)"}`, { get: get.status, post: post.status, delete: del.status });
+  if (bad) failed += 1;
+}
+
+// body ว่างและ id ที่ไม่ใช่เลขต้องถูกปฏิเสธก่อนเขียนข้อมูล
+for (const [query, method, body] of [
+  ["move=1", "POST", {}],
+  ["movedel=not-a-number", "DELETE", undefined],
+]) {
+  const result = await request(query, method, body);
+  const bad = result.status !== 400;
+  console.log(`${bad ? "FAIL" : "PASS"} ${method} ?${query}`, { status: result.status, body: result.body });
+  if (bad) failed += 1;
+}
+
+process.exitCode = failed ? 1 : 0;
