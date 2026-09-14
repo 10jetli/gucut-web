@@ -840,7 +840,7 @@ async function route(req, context) {
     }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
-      return okJson(await listReturnOrders(url.searchParams.get("limit")));
+      return okJson(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page")));
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {

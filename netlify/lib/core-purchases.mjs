@@ -950,11 +950,15 @@ export async function syncReturnOrders(opt = {}) {
   };
 }
 
-export async function listReturnOrders(limit = 50) {
+export async function listReturnOrders(limit = 50, page = 1) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
-  const res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=${n}`, {
+  /* 🔴 **ต้องส่ง page ต่อให้ ZORT** (แก้ 14 ก.ย. 2569 · งานกระดาน t_mtzx0wp4)
+      เดิมส่งแค่ limit ⇒ ได้ 200 ใบล่าสุดจาก 688 เสมอ · ใครไล่ offset=200,400… ได้ชุดเดิมซ้ำทุกหน้า
+      แล้วเชื่อว่าครบ (วัดจริง: 8 หน้า 1,600 แถว ไม่ซ้ำแค่ 200) · ท่า page= เดียวกับ syncReturnOrders ที่ใช้งานจริงอยู่ */
+  const p = Math.max(1, Math.min(50, num(page) || 1));
+  const res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=${n}&page=${p}`, {
     headers: h,
     signal: AbortSignal.timeout(15000),
   }).catch(() => null);
@@ -965,6 +969,8 @@ export async function listReturnOrders(limit = 50) {
   if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้" };
   return {
     total: num(data?.count),
+    page: p,
+    pages: Math.max(1, Math.ceil(num(data?.count) / n)),
     live: true,
     rows: list.map((r) => ({
       /* 🔴 **ต้องส่ง `id` ออกไปด้วยเสมอ** (เพิ่ม 9 ก.ย. 2569 · ฝั่งจอจับได้ก่อน push)
