@@ -180,9 +180,15 @@ export async function listContacts(o = {}) {
         "— ตั้งใจกันการไล่ดึงข้อมูลลูกค้าทั้งฐานทีละหน้า",
     };
   }
-  const filter = q
-    ? `AND (name LIKE ${esc(`%${q}%`)} OR phone LIKE ${esc(`%${q}%`)} OR code LIKE ${esc(`%${q}%`)})`
-    : "";
+  /* ➕ ตัวกรองมีเบอร์/มีอีเมล (15 ก.ย. 2569 · gucut2 เจอลิงก์ "ค้นหาขั้นสูง" เป็นของประดับ เพราะท่อรับแต่ q)
+      ⚠️ **ตัวกรองไม่นับเป็นคำค้น** — ด่าน DEEP ข้างบนยังบังคับเหมือนเดิม ไม่งั้นกลายเป็นช่องกวาดทั้งฐาน
+      ⚠️ ไม่ทำตัวกรอง type — 15 ก.ย. นับ 500 แถวแรกเป็น "Undefined" ทุกแถว ⇒ ส่ง byType ของทั้งฐานให้ดูก่อน */
+  const withPhone = o.withPhone === "1" || o.withPhone === true;
+  const withEmail = o.withEmail === "1" || o.withEmail === true;
+  const filter =
+    (q ? `AND (name LIKE ${esc(`%${q}%`)} OR phone LIKE ${esc(`%${q}%`)} OR code LIKE ${esc(`%${q}%`)})` : "") +
+    (withPhone ? ` AND COALESCE(phone,'') <> ''` : "") +
+    (withEmail ? ` AND COALESCE(email,'') <> ''` : "");
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c,
             SUM(CASE WHEN COALESCE(phone,'') <> '' THEN 1 ELSE 0 END) AS with_phone,
@@ -192,8 +198,10 @@ export async function listContacts(o = {}) {
   );
   const rows = await coreQuery(
     `SELECT id, type, name, code, phone, email, branch_name AS branchName, tax_id AS taxId, address
-     FROM contacts WHERE 1=1 ${filter} ORDER BY name LIMIT ${limit} OFFSET ${offset}`
+     FROM contacts WHERE 1=1 ${filter} ORDER BY name, id LIMIT ${limit} OFFSET ${offset}`
   );
+  // นับชนิดของทั้งฐาน (ไม่ผูกตัวกรอง) — ใช้ตัดสินว่าตัวกรองชนิดมีประโยชน์ไหม · เป็นตัวเลขนับ ไม่มีข้อมูลรายคน
+  const byType = await coreQuery(`SELECT COALESCE(type,'') AS type, COUNT(*) AS c FROM contacts GROUP BY 1 ORDER BY c DESC`).catch(() => null);
   const mask = (v) => {
     const s = String(v ?? "");
     return s.length > 4 ? `${"•".repeat(Math.max(0, s.length - 4))}${s.slice(-4)}` : s;
@@ -205,6 +213,8 @@ export async function listContacts(o = {}) {
     withTax: num(sum?.with_tax),
     limit,
     offset,
+    applied: { q: q || null, withPhone, withEmail },
+    byType: byType ? byType.map((r) => ({ type: r.type, count: num(r.c) })) : null,
     // ⚠️ ข้อความนี้ต้องขึ้นบนจอ — คนใช้ต้องรู้ว่ากำลังดูข้อมูลส่วนบุคคลอยู่
     note:
       "ข้อมูลส่วนบุคคลของลูกค้า — เปิดดูได้เฉพาะผู้มีรหัสหลังร้าน · " +

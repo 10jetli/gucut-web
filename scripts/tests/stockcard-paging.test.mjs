@@ -58,3 +58,19 @@ test('เกินความลึกสูงสุด ⇒ depthCapped + hasM
   assert.equal(r.offsetRequested, STOCKCARD_MAX_DEPTH);
   assert.equal(r.hasMore, false);
 });
+
+test('ลำดับรอง: แถววันเดียวกันเรียงเหมือนเดิมทุกคำขอ แม้ฐานคืนลำดับต่างกัน', async () => {
+  const saved = [...SALES];
+  SALES.length = 0;
+  SALES.push(
+    { date: '2026-09-10', kind: 'ขาย', ref: 'A', qty: -1 },
+    { date: '2026-09-10', kind: 'ขาย', ref: 'C', qty: -1 },
+    { date: '2026-09-10', kind: 'ขาย', ref: 'B', qty: -1 },
+  );
+  const r1 = await stockCard({ sku: 'X', kind: 'sale', limit: 50 });
+  SALES.reverse();
+  const r2 = await stockCard({ sku: 'X', kind: 'sale', limit: 50 });
+  SALES.length = 0; SALES.push(...saved);
+  assert.deepEqual(refs(r1), refs(r2), 'ลำดับต้องไม่ขึ้นกับลำดับที่ฐานคืนมา');
+  assert.deepEqual(refs(r1), ['C', 'B', 'A']);
+});

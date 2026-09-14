@@ -1008,6 +1008,9 @@ async function route(req, context) {
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          // ตัวกรอง 15 ก.ย. 2569 — ไม่นับเป็นคำค้น (ด่านกันกวาดทั้งฐานยังบังคับ)
+          withPhone: url.searchParams.get("withphone") ?? undefined,
+          withEmail: url.searchParams.get("withemail") ?? undefined,
         })),
       });
     }

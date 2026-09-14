@@ -939,6 +939,20 @@ export async function syncReturnOrders(opt = {}) {
     written += 1;
   }
 
+  const complete = !hitPageCap && pagesFailed === 0 && uniq.length >= total;
+  /* ชีพจรซิงก์ใบคืน (15 ก.ย. 2569) — จอยอดขายหักคืนจากตารางนี้ ต้องรู้ว่าสดแค่ไหน
+      ⚠️ เดิม syncReturnOrders **ไม่มีงานตามเวลาเรียกเลย** มีแต่ ?syncreturnorders สั่งมือ [[nothing-triggers-it]]
+      v = "complete" | "incomplete" (ชนเพดานหน้า/หน้าล้ม) · ดึงหน้าแรกไม่ได้ = return ก่อนถึงนี่ ⇒ ไม่จด (ชีพจรเก่าลงให้เห็น)
+      ⚠️ จดไม่สำเร็จ = กลืนแบบตั้งใจ (ท่าเดียวกับ sync_orders) ซิงก์ห้ามล้มเพราะชีพจร */
+  try {
+    await coreQuery(
+      `INSERT INTO core_meta (k,v,at) VALUES ('sync_returns', ?, datetime('now'))
+       ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`,
+      [complete ? "complete" : "incomplete"]
+    );
+  } catch {
+    // ไม่ทำอะไร — ดูคำอธิบายข้างบน
+  }
   return {
     ok: true,
     zortTotal: total,
@@ -948,7 +962,7 @@ export async function syncReturnOrders(opt = {}) {
     /* 🔴 ทั้งสองธงนี้ห้ามกลืน — ชนเพดาน/หน้าล้ม = "ยังไม่ครบ" ไม่ใช่ "ครบแล้ว" */
     hitPageCap,
     pagesFailed,
-    complete: !hitPageCap && pagesFailed === 0 && uniq.length >= total,
+    complete,
   };
 }
 

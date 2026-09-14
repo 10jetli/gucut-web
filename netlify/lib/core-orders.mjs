@@ -243,7 +243,7 @@ export async function listOrders(o = {}) {
   const wAll = buildWhere({ from, to, channel, q, includeCancelled: true });
   const [
     sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, byStatus,
-    beatRows, chgRows, rngRows,
+    beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
   ] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
@@ -306,6 +306,29 @@ export async function listOrders(o = {}) {
     coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`).catch(() => []),
     coreQuery(`SELECT MAX(updated_at) AS at FROM orders`).catch(() => []),
     coreQuery(`SELECT MAX(updated_at) AS at FROM orders WHERE ${w.sql}`, w.params).catch(() => []),
+    /* ── ใบคืนของใบขายในขอบเขตเดียวกัน (15 ก.ย. 2569 · จอยอดขายขอ returnedAmount · t_mu1bkqes) ──
+        จับคู่ return_orders.reference = orders.number (วิธีเดียวกับที่ gucut2 วัด 14 ก.ย.)
+        ⚠️ ใช้ IN (SELECT …) ไม่ใช่ JOIN — สองตารางมีคอลัมน์ชื่อซ้ำ (status · amount · customer)
+           และ w.sql เขียนชื่อคอลัมน์ไม่มีคำนำหน้า ⇒ JOIN จะอ่านคอลัมน์ผิดตารางหรือล้ม
+        ⚠️ ขอบเขต = ใบคืนของ "ใบขายที่อยู่ในตัวกรองนี้" (วันที่ขาย · ร้าน · ช่องทาง · สถานะ · คำค้น)
+           ไม่ใช่ "ใบคืนที่ออกในช่วงนี้" — คนละคำถาม · ใบคืนยกเลิกไม่นับ
+        ⚠️ ตารางยังไม่มี/อ่านไม่ได้ ⇒ null (ไม่รู้) ห้ามเป็น 0 */
+    coreQuery(
+      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s FROM return_orders
+       WHERE reference IN (SELECT number FROM orders WHERE ${w.sql})
+         AND COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%'`,
+      w.params
+    ).catch(() => null),
+    /* ใบคืนที่ออกในช่วงวันนี้ แต่หาใบขายต้นทางในกระจกไม่เจอ — ไม่รู้ว่าเป็นของช่องทาง/ร้านไหน
+        ⇒ ไม่ถูกหักในตัวเลขข้างบน ต้องบอกจอว่ามีกี่ใบ (ไม่ผูกตัวกรองร้าน/ช่องทาง เพราะไม่รู้) */
+    coreQuery(
+      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s FROM return_orders r
+       WHERE r.return_date >= ? AND r.return_date <= ?
+         AND COALESCE(r.status,'') NOT LIKE '%void%' AND COALESCE(r.status,'') NOT LIKE '%cancel%'
+         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.number = r.reference)`,
+      [from, to]
+    ).catch(() => null),
+    coreQuery(`SELECT v, at FROM core_meta WHERE k = 'sync_returns'`).catch(() => null),
   ]);
   const sum = sumRows?.[0];
 
@@ -377,6 +400,16 @@ export async function listOrders(o = {}) {
         0
       )
     ),
+    /* ยอดคืน — ดูคำอธิบายขอบเขตที่ query · null = อ่านตารางใบคืนไม่ได้ (ไม่ใช่ไม่มีใบคืน) */
+    returnedCount: retRows ? num(retRows[0]?.c) : null,
+    returnedAmount: retRows ? num(retRows[0]?.s) : null,
+    returnsScope:
+      "returnedAmount = ใบคืน (ไม่รวมยกเลิก) ของใบขายที่อยู่ในตัวกรองนี้ จับคู่ return_orders.reference = orders.number · " +
+      "ยอดหลังหักคืน = totalAmount − returnedAmount · unmatchedReturns = ใบคืนที่ออกในช่วงวันนี้แต่หาใบขายต้นทางไม่เจอ (ไม่ถูกหัก · ไม่ผูกตัวกรองร้าน/ช่องทาง)",
+    unmatchedReturns: retOrphanRows ? { count: num(retOrphanRows[0]?.c), amount: num(retOrphanRows[0]?.s) } : null,
+    // ชีพจรซิงก์ใบคืน (UTC) · null = ยังไม่เคยซิงก์/อ่านไม่ได้ ⇒ ยอดคืนเชื่อไม่ได้ว่าสด
+    returnsSyncedAtUtc: retBeatRows?.[0]?.at ?? null,
+    returnsSyncComplete: retBeatRows?.[0] ? String(retBeatRows[0].v) === "complete" : null,
     totalUnpaidAmount: Math.round(
       (byStatus || []).reduce((s, x) => s + (/pending/i.test(String(x.status)) ? num(x.amount) : 0), 0)
     ),

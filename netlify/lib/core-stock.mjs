@@ -747,7 +747,7 @@ export async function stockCard(o = {}) {
                   o.number AS ref, o.customer AS party, -oi.qty AS qty, oi.amount AS amount
            FROM order_items oi JOIN orders o ON o.id = oi.order_id
            WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}${range("o.order_date")}
-           ORDER BY o.order_date DESC LIMIT ${depth}`
+           ORDER BY o.order_date DESC, o.number DESC, oi.line DESC LIMIT ${depth}`
         )
       : none(),
     wantBuy
@@ -756,7 +756,7 @@ export async function stockCard(o = {}) {
                   i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
            FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
            WHERE i.sku = ${esc(sku)}${range("po.po_date")}
-           ORDER BY po.po_date DESC LIMIT ${depth}`
+           ORDER BY po.po_date DESC, i.number DESC, i.line DESC LIMIT ${depth}`
         )
       : none(),
     wantAdjust
@@ -764,7 +764,7 @@ export async function stockCard(o = {}) {
           `SELECT date(at, '+7 hours') AS date, 'ปรับ (ของเราเอง)' AS kind, reason AS status,
                   ref AS ref, '' AS party, qty AS qty, NULL AS amount
            FROM stock_moves WHERE sku = ${esc(sku)}${range("date(at, '+7 hours')")}
-           ORDER BY at DESC LIMIT ${depth}`
+           ORDER BY at DESC, ref DESC, id DESC LIMIT ${depth}`
         ).catch(() => FAILED)
       : none(),
     /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
@@ -790,7 +790,13 @@ export async function stockCard(o = {}) {
   ]);
 
   const rows = [...saleRows, ...buyRows, ...adjRows];
-  rows.sort((a, b) => String(b.date ?? "").localeCompare(String(a.date ?? "")));
+  /* ⚠️ ลำดับรอง (15 ก.ย. 2569) — แถววันเดียวกันต้องเรียงเหมือนเดิมทุกคำขอ ไม่งั้นแถวที่รอยต่อหน้า
+      สลับกันระหว่างหน้า ⇒ ส่งออกได้ซ้ำหนึ่ง หายหนึ่ง โดยจำนวนรวมยังตรง (ยิง 00313 ไม่เจอ แต่ไม่ได้ล็อกไว้) */
+  rows.sort((a, b) =>
+    String(b.date ?? "").localeCompare(String(a.date ?? "")) ||
+    String(b.ref ?? "").localeCompare(String(a.ref ?? "")) ||
+    String(a.kind ?? "").localeCompare(String(b.kind ?? ""))
+  );
 
   const failed = [];
   if (adjRows === FAILED || adjCnt === FAILED) failed.push("adjust");
