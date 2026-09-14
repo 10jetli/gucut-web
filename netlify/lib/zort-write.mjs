@@ -1102,7 +1102,9 @@ export async function zortAddPurchaseOrder(o = {}) {
   }
   if (txt(o.note)) body.description = txt(o.note, 500);
 
-  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+  /* linesTotal ให้จอเทียบยอดที่ท่อคิดกับยอดที่จอคิด (gucut2 ขอ 14 ก.ย. 2569 · งานกระดาน t_mu11n7mh)
+     ⚠️ null = มีบรรทัดไม่มีราคา ท่อไม่คิดยอดหัวใบ ⇒ ห้ามให้เป็น 0 (จอจะขึ้นเตือนผิดทาง) */
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body, linesTotal: body.amount ?? null,
     note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
 
   const seen = await seenRef("po", ref);
@@ -1191,7 +1193,8 @@ export async function zortAddQuotation(o = {}) {
   if (txt(o.note)) body.description = txt(o.note, 500);
   if (txt(o.reference)) body.reference = txt(o.reference, 80);
 
-  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+  /* linesTotal: ดูเหตุผลที่ zortAddPurchaseOrder (t_mu11n7mh) · null = มีบรรทัดไม่มีราคา ห้ามให้เป็น 0 */
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body, linesTotal: body.amount ?? null,
     note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
 
   const seen = await seenRef("quotation", ref);
