@@ -1637,6 +1637,9 @@ export async function zortWarehouseProbe(o = {}) {
         firstSku: list?.[0]?.sku ?? null,
         firstStock: list?.[0]?.stock ?? null,
         firstAvailable: list?.[0]?.availablestock ?? null,
+        // ⚠️ ไม่มี list = คำตอบผิดพลาด ไม่ใช่ "ว่าง" — เก็บรหัส/ข้อความของ ZORT ไว้ดูสาเหตุ (22:48 KLD/ANJ ได้แบบนี้)
+        resCode: j ? String(j?.res?.resCode ?? j?.resCode ?? "") || null : null,
+        resDesc: j ? String(j?.res?.resDesc ?? j?.resDesc ?? "").slice(0, 160) || null : null,
         raw: j ? null : String(text).slice(0, 200),
       });
     } catch (e) {
@@ -1667,6 +1670,8 @@ export async function zortWarehouseProbe(o = {}) {
           detail.push({
             warehousecode: wh || null, status: r.status,
             idMatched: Boolean(p), stock: p?.stock ?? null, availablestock: p?.availablestock ?? null,
+            resCode: p ? null : String(j?.res?.resCode ?? j?.resCode ?? "") || null,
+            resDesc: p ? null : String(j?.res?.resDesc ?? j?.resDesc ?? "").slice(0, 160) || null,
             warehouseFields: p ? Object.keys(p).filter((k) => /wareh|branch|คลัง/i.test(k)) : null,
           });
         } catch (e) {
@@ -1684,14 +1689,20 @@ export async function zortWarehouseProbe(o = {}) {
   /* ⚠️ **ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม"**
       ZORT เมินพารามิเตอร์ที่ไม่รู้จักแล้วคืนข้อมูลชุดเดิม ซึ่งอ่านเผิน ๆ เหมือนสำเร็จ */
   const base = out[0];
-  const filtered = out.slice(1, 6).filter((x) => x.ok);
+  /* 🔴 นับเฉพาะท่าที่ได้ list จริงทั้งสองฝั่ง — 22:48 ตัวตัดสินรุ่นก่อนนับ "KLD ไม่มี list" เป็น "ตัวเลขเปลี่ยน"
+      แล้วขึ้นว่าตัวกรองมีผล ทั้งที่คือคำตอบผิดพลาด ⇒ ท่าที่ไม่มี list ไปอยู่ใน unanswered แยก */
+  const tried = out.slice(1, 6);
+  const filtered = tried.filter((x) => x.ok && x.count !== null && base?.count !== null);
+  const unanswered = tried.filter((x) => !x.ok || x.count === null).map((x) => ({ name: x.name, resCode: x.resCode, resDesc: x.resDesc }));
   const changed = filtered.some(
     (x) => x.firstSku !== base?.firstSku || x.firstStock !== base?.firstStock || x.total !== base?.total
   );
   return {
     verdict: changed
-      ? "ตัวกรองคลังมีผลจริง — เปลี่ยนคลังแล้วตัวเลขเปลี่ยน"
-      : "ยังไม่พบว่าตัวกรองคลังมีผล — ทุกท่าคืนข้อมูลชุดเดิม (ZORT น่าจะเมินพารามิเตอร์)",
+      ? "ตัวกรองคลังมีผลจริง — เปลี่ยนคลังแล้วตัวเลขเปลี่ยน (นับเฉพาะท่าที่ได้รายการจริง)"
+      : "ยังไม่พบว่าตัวกรองคลังมีผล — ท่าที่ได้รายการคืนข้อมูลชุดเดิม",
+    // ท่าที่ ZORT ไม่คืนรายการ — "ถามไม่สำเร็จ" ไม่ใช่ "สต็อกคลังนี้ว่าง"
+    unanswered,
     note:
       "ตอบ 200 ไม่ได้แปลว่าใช้ได้ — ต้องเปลี่ยนคลังแล้วตัวเลขเปลี่ยนจริงถึงจะแปลว่าตัวกรองทำงาน · " +
       "ดู warehouseFields ด้วย ถ้ามีช่องชื่อคล้ายคลังโผล่มา แปลว่าข้อมูลรายคลังอาจซ่อนอยู่ในคำตอบเดิม",
@@ -1705,6 +1716,7 @@ export async function zortWarehouseProbe(o = {}) {
           ? "ท่ารายตัว: ตัวกรองคลังมีผล — GetProductDetail เปลี่ยนคลังแล้วตัวเลขเปลี่ยน"
           : "ท่ารายตัว: ยังไม่พบว่าตัวกรองคลังมีผล — ทุกคลังคืนตัวเลขชุดเดิม",
     productId: productIdFound,
+    detailUnanswered: detail.filter((x) => x.warehousecode && !x.idMatched).map((x) => ({ warehousecode: x.warehousecode, resCode: x.resCode, resDesc: x.resDesc })),
     detail,
   };
 }
