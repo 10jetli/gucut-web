@@ -1599,13 +1599,19 @@ export async function zortWarehouseProbe(o = {}) {
     { name: "GetProducts + warehouseid=1", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehouseid=1` },
     { name: "GetProducts + warehousecode=NEW", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehousecode=NEW` },
     { name: "GetProducts + warehouse=NEW", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehouse=NEW` },
+    /* ➕ 14 ก.ย. 2569: รอบ 5 ก.ย. เทียบแค่ NEW กับฐาน — NEW คือโกดังหลักที่ของเกือบทั้งหมดอยู่
+       ⇒ ต่อให้ตัวกรองทำงาน NEW ก็ได้ผลเท่าฐาน = **ตัวทดสอบแยกแยะไม่ได้** · 22:43 ลอง KLD แล้วได้รายการว่าง
+       ⇒ ต้องเทียบ count ของคลังหน้าร้าน (KLD · ANJ) กับฐาน */
+    { name: "GetProducts + warehousecode=KLD", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehousecode=KLD` },
+    { name: "GetProducts + warehousecode=ANJ", url: `${BASE}/Product/GetProducts?limit=3&page=1&warehousecode=ANJ` },
     { name: "Warehouse/list", url: `${BASE}/Warehouse/list?limit=20&page=1` },
     { name: "Product/GetProductWarehouse", url: `${BASE}/Product/GetProductWarehouse?limit=5&page=1` },
     { name: "Stock/list", url: `${BASE}/Stock/list?limit=5&page=1` },
   ];
   if (sku) {
-    tries.push({ name: `GetProducts sku=${sku}`, url: `${BASE}/Product/GetProducts?limit=3&page=1&sku=${encodeURIComponent(sku)}` });
-    tries.push({ name: `GetProducts sku=${sku} + warehousecode=KLD`, url: `${BASE}/Product/GetProducts?limit=3&page=1&sku=${encodeURIComponent(sku)}&warehousecode=KLD` });
+    // ⚠️ เอกสาร V4 ค้นรหัสด้วย `searchsku` — `sku=` ไม่มีในเอกสาร ZORT เมินแล้วคืนทั้งร้าน (เห็นจริง 22:43: ได้ 00657-11.5-KK)
+    tries.push({ name: `GetProducts searchsku=${sku}`, url: `${BASE}/Product/GetProducts?limit=3&page=1&searchsku=${encodeURIComponent(sku)}` });
+    tries.push({ name: `GetProducts searchsku=${sku} + warehousecode=KLD`, url: `${BASE}/Product/GetProducts?limit=3&page=1&searchsku=${encodeURIComponent(sku)}&warehousecode=KLD` });
   }
 
   const out = [];
@@ -1646,7 +1652,7 @@ export async function zortWarehouseProbe(o = {}) {
   let productIdFound = null;
   if (sku) {
     try {
-      const r = await fetch(`${BASE}/Product/GetProducts?limit=5&page=1&sku=${encodeURIComponent(sku)}`, { headers: h, signal: AbortSignal.timeout(10000) });
+      const r = await fetch(`${BASE}/Product/GetProducts?limit=20&page=1&searchsku=${encodeURIComponent(sku)}`, { headers: h, signal: AbortSignal.timeout(10000) });
       const j = await r.json().catch(() => null);
       const hit = Array.isArray(j?.list) ? j.list.find((x) => String(x?.sku ?? "").trim() === sku) : null;
       productIdFound = hit && Number.isInteger(Number(hit.id)) ? Number(hit.id) : null;
@@ -1678,9 +1684,9 @@ export async function zortWarehouseProbe(o = {}) {
   /* ⚠️ **ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม"**
       ZORT เมินพารามิเตอร์ที่ไม่รู้จักแล้วคืนข้อมูลชุดเดิม ซึ่งอ่านเผิน ๆ เหมือนสำเร็จ */
   const base = out[0];
-  const filtered = out.slice(1, 4).filter((x) => x.ok && x.firstSku);
+  const filtered = out.slice(1, 6).filter((x) => x.ok);
   const changed = filtered.some(
-    (x) => x.firstSku !== base?.firstSku || x.firstStock !== base?.firstStock
+    (x) => x.firstSku !== base?.firstSku || x.firstStock !== base?.firstStock || x.total !== base?.total
   );
   return {
     verdict: changed
