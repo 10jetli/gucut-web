@@ -465,7 +465,12 @@ async function route(req, context) {
        🔴 ออเดอร์/ใบซื้อ **ต้องใช้ id ของ ZORT** ไม่รับเลขที่ใบ (เลขที่เอกสารซ้ำกันได้) · ชุดหยุดกลางทาง = complete:false + nextRow
        ⚠️ "ตั้งค่ากระจายสินค้า" ไม่พบ API (ZORT_NO_API) · "จองขนส่ง" มีเส้นแต่ไม่ทำจนกว่าท่านประธานอนุมัติ (ZORT_CAN_BUT_NOT_BUILT) */
     for (const [key, fnName] of [["addquotations", "zortAddQuotations"], ["ordershipping", "zortOrderShipping"],
-      ["ordershippingbatch", "zortOrderShippingBatch"], ["poreceive", "zortReceivePurchaseOrder"]]) {
+      ["ordershippingbatch", "zortOrderShippingBatch"], ["poreceive", "zortReceivePurchaseOrder"],
+      /* POST ?addpurchasereturn=1 — คืนสินค้าให้ผู้ขาย (soon: buy-return) → ReturnPurchaseOrder/AddReturnPurchaseOrder
+         ขาเข้าจากจอ: {ref, number?, vendor?, vendorCode?, poId?, warehouse?, day?, status?("Pending"|"Success"),
+                       items:[{sku, name, qty, price}], discount?, shipping?, paid?, paymentMethod?, note?, confirm?}
+         ⚠️ คนละตัวกับ ?addreturn (ลูกค้าคืนของ) · ท่อคิดเงินเอง · ค่าเริ่มต้น Pending · ยังไม่เคยยิงจริง */
+      ["addpurchasereturn", "zortAddReturnPurchaseOrder"]]) {
       if (!url.searchParams.get(key)) continue;
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

@@ -807,6 +807,92 @@ export async function zortReceivePurchaseOrder(o = {}) {
     message: mode === "all" ? `รับของครบทั้งใบซื้อ id ${id} แล้ว` : `รับของ ${items.length} บรรทัดตามใบซื้อ id ${id} แล้ว` };
 }
 
+/** คืนสินค้าให้ผู้ขาย (soon: buy-return) → ReturnPurchaseOrder/AddReturnPurchaseOrder
+ *  ⚠️ **คนละตัวกับ zortAddReturnOrder** — ReturnOrder = ลูกค้าคืนของให้เรา · ReturnPurchaseOrder = เราคืนของให้ผู้ขาย
+ *  ⚠️ ชื่อช่องจากเอกสารทางการ ZORT API V4 (อ่าน 14 ก.ย. 2569): number* · amount* · list*[sku*, name*, number*, pricepernumber*, totalprice*]
+ *     status "Pending"|"Success" · returnpurchaseorderdate (yyyy-MM-dd) · warehousecode · discount (String) · shippingamount ·
+ *     referenceid (id ใบซื้อเดิม) · referencenumber · customername/customercode · paymentamount + paymentmethod
+ *  🔴 **ZORT ไม่คิดเงินให้สักชั้น** ([[zort-sends-all-money-fields]]) ⇒ ท่อคิด totalprice ต่อบรรทัด + amount = รวม − ส่วนลด + ค่าส่ง
+ *     เอกสารบังคับ pricepernumber ทุกบรรทัด ⇒ ไม่มีราคา = ตีกลับ ห้ามเดาเป็น 0
+ *  🔴 เอกสาร**ไม่บอก**ว่า Success ตัดสต็อกออกทันทีไหม — ยังไม่เคยยิง ใบแรกต้องดูสต็อกก่อน/หลังด้วยตา · ค่าเริ่มต้นจึงเป็น Pending
+ *  ⚠️ ไม่ทำเส้นยกเลิก/แก้ในรอบนี้ — ใบคืนที่สร้างผิดต้องไปแก้ใน ZORT */
+export async function zortAddReturnPurchaseOrder(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const number = txt(o.number, 60) || ref;
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ต้องมีรายการสินค้าอย่างน้อย 1 บรรทัด" };
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const sku = txt(it?.sku, 60);
+    const name = txt(it?.name, 200);
+    const qty = numOrNull(it?.qty);
+    const price = numOrNull(it?.price);
+    if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+    if (!name) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มีชื่อสินค้า (ZORT บังคับ name)` };
+    if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนไม่ถูกต้อง` };
+    if (price === null || price < 0)
+      return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มีราคา — ZORT บังคับ pricepernumber และห้ามเดา` };
+    list.push({ sku, name, number: qty, pricepernumber: price, totalprice: r2(qty * price) });
+  }
+  const discount = o.discount === undefined ? 0 : numOrNull(o.discount);
+  const shipping = o.shipping === undefined ? 0 : numOrNull(o.shipping);
+  if (discount === null || discount < 0) return { ok: false, error: "ส่วนลดต้องเป็นตัวเลขไม่ติดลบ" };
+  if (shipping === null || shipping < 0) return { ok: false, error: "ค่าส่งต้องเป็นตัวเลขไม่ติดลบ" };
+  const linesTotal = r2(list.reduce((s, l) => s + l.totalprice, 0));
+  if (discount > linesTotal) return { ok: false, error: `ส่วนลด ${discount} มากกว่ายอดสินค้า ${linesTotal}` };
+  const amount = r2(linesTotal - discount + shipping);
+
+  const status = o.status === undefined ? "Pending" : txt(o.status, 20);
+  if (!["Pending", "Success"].includes(status))
+    return { ok: false, error: 'status ของใบคืนรับได้แค่ "Pending" หรือ "Success" (เอกสาร ZORT V4)' };
+  const day = o.day === undefined ? null : txt(o.day, 10);
+  if (day !== null && !DAY_RE.test(day)) return { ok: false, error: "day ต้องเป็นรูป yyyy-MM-dd" };
+  const warehouse = txt(o.warehouse, 30);
+  if (warehouse && !/^[A-Za-z0-9_-]+$/.test(warehouse)) return { ok: false, error: "warehouse ต้องเป็นรหัสคลัง (อักษรอังกฤษ/ตัวเลข)" };
+
+  const body = {
+    number, amount, list, status,
+    returnpurchaseorderdate: day || new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10),
+  };
+  if (discount > 0) body.discount = discount.toFixed(2);
+  if (shipping > 0) body.shippingamount = shipping;
+  if (warehouse) body.warehousecode = warehouse;
+  if (txt(o.vendor)) body.customername = txt(o.vendor, 160);
+  if (txt(o.vendorCode)) body.customercode = txt(o.vendorCode, 60);
+  if (txt(o.note)) body.description = txt(o.note, 500);
+  if (o.poId !== undefined) {
+    const poId = productId(o.poId);
+    if (!poId) return { ok: false, error: "poId ต้องเป็น id ของใบซื้อใน ZORT (ตัวเลข)" };
+    body.referenceid = poId;
+  }
+  if (o.paid !== undefined) {
+    const paid = numOrNull(o.paid);
+    const method = txt(o.paymentMethod, 80);
+    if (paid === null || paid <= 0) return { ok: false, error: "ยอดชำระ (paid) ต้องเป็นตัวเลขมากกว่า 0" };
+    if (!method) return { ok: false, error: "ชำระเงินต้องระบุ paymentMethod" };
+    if (paid > amount) return { ok: false, error: `ยอดชำระ ${paid} มากกว่ายอดใบ ${amount}` };
+    body.paymentamount = paid;
+    body.paymentmethod = method;
+  }
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, linesTotal, willSend: body,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · 🔴 เอกสารไม่บอกว่า Success ตัดสต็อกทันทีไหม ใบแรกต้องดูสต็อกก่อน/หลัง" };
+
+  const seen = await seenRef("po-return", ref);
+  if (seen.state === "unknown")
+    return { ok: false, ref, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบคืนนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ" };
+  const r = await zortPost("ReturnPurchaseOrder/AddReturnPurchaseOrder", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("po-return", ref, { kind: "po-return", number, lines: list.length, amount });
+  return { ok: true, added: true, ref, number, amount, detail: r.detail, warn,
+    message: `บันทึกคืนสินค้าให้ผู้ขาย ${number} ยอด ฿${amount} เข้า ZORT แล้ว` };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */
@@ -1252,6 +1338,13 @@ export const ZORT_NO_API = [
     probe: "Product/GetLeadTime · Product/UpdateLeadTime · PurchaseOrder/GetLeadTime → ยังไม่เคยยิง",
     note: "soon: leadtime · ไม่พบคำว่า lead time ในหน้า Product · Order · Purchase Order · ท่อของเราก็ยังไม่ได้คิด lead time ที่ไหนเลย " +
       "(grep ทั้ง netlify/ ไม่เจอ 14 ก.ย.) ⇒ ทางที่เป็นไปได้คือคิดเองจากประวัติใบซื้อ (วันสร้างใบ → วันรับของ) เป็นงานใหม่ ไม่ใช่ของ ZORT",
+  },
+  {
+    what: "สร้าง/แก้สินค้าหลากคุณสมบัติ (ตัวเลือกย่อยของสินค้า)", at: "2026-09-14", untested: true,
+    probe: "Product/AddVariation · Product/AddVariant · Product/UpdateVariation · Product/AddProductVariant · " +
+      "Variation/AddVariation → ยังไม่เคยยิง",
+    note: "soon: product-variant · เอกสาร V4 หน้า Product มีแค่เส้นอ่าน GetVariations (และตัวกรอง variationid ของ GetProducts) · " +
+      "ช่องของ AddProduct / UpdateProduct ไม่มีเรื่องตัวเลือกย่อยเลย ⇒ จอแสดงตัวเลือกที่มีอยู่ได้ แต่สร้าง/แก้ต้องทำใน ZORT",
   },
   {
     what: "แก้ / ยกเลิกใบเสนอราคา (เส้นมีจริง แต่ยิงแล้วไม่ผ่าน)",
