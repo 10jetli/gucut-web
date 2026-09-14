@@ -434,14 +434,19 @@ export async function getOrder(id) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const key = String(id ?? "").slice(0, 80);
   if (!key) return { error: "ไม่ได้ระบุเลขใบ" };
+  /* bill_discount · ship_amount · items[].discount — gucut2 ขอ 14 ก.ย. 2569 (จอใบขายเจอยอดบรรทัด ≠ ยอดใบ 5/60 ใบ)
+     กระจกเก็บสามช่องนี้มาตั้งแต่ 4986ace (5 ก.ย. 2569) แต่ใบเดียวไม่เคยส่งออก
+     สูตรที่พิสูจน์แล้ว (coredb.mjs): หัวใบ = ผลรวมบรรทัด − bill_discount + ship_amount
+     ⚠️ ส่งค่าดิบ ห้ามแปลง null เป็น 0 — แถวที่ซิงก์ก่อนมีคอลัมน์อาจยังว่าง = ไม่รู้ ไม่ใช่ศูนย์ */
   const [order] = await coreQuery(
-    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, updated_at
+    `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status,
+            bill_discount, ship_amount, updated_at
      FROM orders WHERE id = ?`,
     [key]
   );
   if (!order) return { error: "ไม่พบใบนี้ในคลังเงา" };
   const items = await coreQuery(
-    `SELECT line, sku, name, qty, amount FROM order_items
+    `SELECT line, sku, name, qty, amount, discount FROM order_items
      WHERE order_id = ? ORDER BY line`,
     [key]
   );
