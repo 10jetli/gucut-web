@@ -1196,6 +1196,57 @@ export const ZORT_NO_API = [
       "ไม่มีเส้นอ่าน/ตั้งค่ากระจายสินค้าเลยสักเส้น · หน้า Merchant มีแค่อ่านรายชื่อช่องทางขาย/ช่องทางส่ง/วิธีชำระ " +
       "⇒ จอ spread-setting ต้องขึ้นป้าย 'ทำไม่ได้จริง' พร้อมเหตุผลนี้ ห้ามทำฟอร์มหลอก",
   },
+  /* ── งานกระดาน t_mu0qiwf1 (14 ก.ย. 2569): ตั้งค่า 6 ตัว + ผู้ใช้/สิทธิ์/เชื่อมต่อ/LeadTime ──
+     ⚠️ ยืนยันจาก **เอกสาร V4 ครบ 14 โมดูล** · ชื่อใน probe = ชื่อที่ให้ zortclaims ยิงพิสูจน์ว่าได้ 404 หลัง deploy (ยังไม่เคยยิง)
+     ⚠️ เส้นที่มีจริง (เส้นอ่านของ Merchant · ตรวจสลิปรายใบ) เขียนใน note แบบไม่มี / เท่านั้น — มีเทสกันแดงลวงแล้ว */
+  {
+    what: "ตั้งค่าโปรแกรม (ข้อมูลร้าน · ค่าเริ่มต้นของระบบ)", at: "2026-09-14", untested: true,
+    probe: "Merchant/UpdateMerchantProfile · Merchant/GetSettings · Merchant/UpdateSettings · Setting/GetSettings → ยังไม่เคยยิง",
+    note: "soon: setting-program · หน้า Merchant มีแค่อ่านข้อมูลร้าน (GetMerchantProfile) ไม่มีเส้นแก้ ⇒ จอแสดงข้อมูลร้านได้ แต่แก้ต้องไปทำใน ZORT",
+  },
+  {
+    what: "ตั้งค่าเอกสาร (เลขที่ใบ · หัวกระดาษ · รูปแบบเอกสาร)", at: "2026-09-14", untested: true,
+    probe: "Document/GetDocumentSettings · Document/UpdateDocumentSetting · Merchant/GetDocumentSetting → ยังไม่เคยยิง",
+    note: "soon: setting-docs · โมดูล Document มีแค่อ่านเอกสารของออเดอร์และสร้างเอกสารให้ออเดอร์ ไม่มีเส้นตั้งค่ารูปแบบเอกสาร",
+  },
+  {
+    what: "เพิ่ม/แก้ช่องทางการขาย", at: "2026-09-14", untested: true,
+    probe: "Merchant/AddSalesChannel · Merchant/UpdateSalesChannel · Merchant/DeleteSalesChannel → ยังไม่เคยยิง",
+    note: "soon: setting-channels · มีแค่เส้นอ่านรายชื่อ (GetSalesChannels) ⇒ จอแสดงรายการได้ แต่เพิ่ม/แก้ผ่าน API ไม่ได้",
+  },
+  {
+    what: "เพิ่ม/แก้ช่องทางการจัดส่ง", at: "2026-09-14", untested: true,
+    probe: "Merchant/AddShippingChannel · Merchant/UpdateShippingChannel · Merchant/DeleteShippingChannel → ยังไม่เคยยิง",
+    note: "soon: setting-shipping · มีแค่เส้นอ่านรายชื่อ (GetShippingChannels · คืนแค่ id กับชื่อ) ⇒ จอแสดงรายการได้ แต่ตั้งค่าไม่ได้",
+  },
+  {
+    what: "เพิ่ม/แก้วิธีชำระเงิน", at: "2026-09-14", untested: true,
+    probe: "Merchant/AddPaymentMethod · Merchant/UpdatePaymentMethod · Merchant/DeletePaymentMethod → ยังไม่เคยยิง",
+    note: "soon: setting-payment · มีแค่เส้นอ่านรายชื่อ (GetPaymentMethods) ⇒ จอแสดงรายการได้ แต่เพิ่ม/แก้ไม่ได้",
+  },
+  {
+    what: "ตั้งค่าการตรวจสลิป", at: "2026-09-14", untested: true,
+    probe: "Merchant/GetSlipSetting · Merchant/UpdateSlipSetting · Order/GetSlipSetting · Order/UpdateSlipSetting → ยังไม่เคยยิง",
+    note: "soon: setting-slipcheck · ⚠️ มีเส้นตรวจสลิป **รายใบ** (โมดูล Order เส้น VerifyOrderSlip · ส่งไฟล์สลิปของออเดอร์นั้น) " +
+      "แต่ไม่มีเส้นตั้งค่าการตรวจสลิป ⇒ ป้ายต้องแยก 'ตั้งค่าไม่ได้' ออกจาก 'ตรวจสลิปรายใบได้' ห้ามเขียนรวมว่าตรวจสลิปไม่ได้",
+  },
+  {
+    what: "เพิ่มผู้ใช้ / เพิ่มสิทธิ์ (บทบาท) ใน ZORT", at: "2026-09-14", untested: true,
+    probe: "Merchant/GetUsers · Merchant/AddUser · User/GetUsers · User/AddUser · Merchant/AddRole · Role/AddRole → ยังไม่เคยยิง",
+    note: "soon: user-add · role-add · ⚠️ หลังร้านของเราเองมีสิทธิ์ 2 ชั้นกำหนดในโค้ด (gucut-next middleware.ts: เจ้าของจาก env · " +
+      "พนักงาน STAFF_NAME_1..8 สิทธิ์โอนสินค้าเท่านั้น) ⇒ ถ้าจะมีหน้าเพิ่มผู้ใช้/สิทธิ์ เป็นงานระบบของเรา ต้องให้ท่านประธานตัดสินก่อน ห้ามทำฟอร์มหลอก",
+  },
+  {
+    what: "เพิ่มการเชื่อมต่อร้านค้า (Shopee · Lazada · TikTok ฯลฯ) ผ่าน ZORT", at: "2026-09-14", untested: true,
+    probe: "Merchant/GetConnections · Merchant/AddConnection · Connection/GetConnections · Connection/AddConnection → ยังไม่เคยยิง",
+    note: "soon: connection-add · ไม่มีเส้นใดใน 14 โมดูล · ของเราต่อ API มาร์เก็ตเพลสตรงเองอยู่แล้ว (Shopee/Lazada เชื่อมแล้ว · TikTok รอตรวจ) ไม่ต้องผ่าน ZORT",
+  },
+  {
+    what: "LeadTime (ระยะเวลารอของจากผู้ขาย)", at: "2026-09-14", untested: true,
+    probe: "Product/GetLeadTime · Product/UpdateLeadTime · PurchaseOrder/GetLeadTime → ยังไม่เคยยิง",
+    note: "soon: leadtime · ไม่พบคำว่า lead time ในหน้า Product · Order · Purchase Order · ท่อของเราก็ยังไม่ได้คิด lead time ที่ไหนเลย " +
+      "(grep ทั้ง netlify/ ไม่เจอ 14 ก.ย.) ⇒ ทางที่เป็นไปได้คือคิดเองจากประวัติใบซื้อ (วันสร้างใบ → วันรับของ) เป็นงานใหม่ ไม่ใช่ของ ZORT",
+  },
   {
     what: "แก้ / ยกเลิกใบเสนอราคา (เส้นมีจริง แต่ยิงแล้วไม่ผ่าน)",
     at: "2026-09-06",
