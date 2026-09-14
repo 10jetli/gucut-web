@@ -45,6 +45,7 @@ test('ยอดคืนใช้ WHERE + params ชุดเดียวกั�
   assert.ok(ret.includes(saleWhere), 'เงื่อนไขใบขายในยอดคืนต้องเป็นชุดเดียวกับยอดขาย');
   assert.deepEqual(paramsOf.get(ret), paramsOf.get(sale), 'พารามิเตอร์ต้องชุดเดียวกัน');
   assert.match(ret, /NOT LIKE '%void%'/);
+  assert.match(ret, /FROM return_orders_v2\b/, 'ต้องอ่านตารางกุญแจ id — ตารางเดิมกุญแจ number ทับกันหาย 152 ใบ');
 });
 
 test('อ่านตารางใบคืนไม่ได้ ⇒ returnedAmount/returnedCount/unmatchedReturns = null ไม่ใช่ 0 · ยอดขายยังได้', async () => {
@@ -82,7 +83,7 @@ test('ชีพจรใบคืน: ครบ = complete · หน้าล้
       const pg = Number(/page=(\d+)/.exec(String(url))[1]);
       if (mode === 'first-fail') return { ok: false, json: async () => null };
       if (pg === 2 && mode === 'page-fail') return { ok: false, json: async () => null };
-      const list = pg === 1 ? Array.from({ length: 200 }, (_, i) => ({ number: `CN${i}` })) : [{ number: 'CN-last' }];
+      const list = pg === 1 ? Array.from({ length: 200 }, (_, i) => ({ id: `ID${i}`, number: `CN${i}` })) : [{ id: 'ID-last', number: 'CN-last' }];
       return { ok: true, json: async () => ({ count: 201, list }) };
     };
     const r = await syncReturnOrders({ pages: 12 });
@@ -96,6 +97,27 @@ test('ชีพจรใบคืน: ครบ = complete · หน้าล้
     assert.equal(pf.r.complete, false); assert.equal(pf.beatV, 'incomplete');
     const ff = await run('first-fail');
     assert.ok(ff.r.error); assert.equal(ff.beatV, null, 'ดึงหน้าแรกไม่ได้ต้องไม่จดชีพจร');
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
+
+test('เลขที่ใบคืนซ้ำแต่ id ต่าง ⇒ เก็บครบทุกใบ · เขียนทีละหลายแถว (ไม่ใช่คำสั่งละแถว) · complete จริง', async () => {
+  const saved = globalThis.fetch;
+  sqls = []; paramsOf = new Map();
+  // 120 ใบ · เลขที่ใบซ้ำกันเป็นคู่ (60 เลข) แต่ id ไม่ซ้ำ — แบบเดียวกับของจริง 689 id / 537 เลข
+  globalThis.fetch = async () => ({ ok: true, json: async () => ({
+    count: 120,
+    list: Array.from({ length: 120 }, (_, i) => ({ id: `ID${i}`, number: `CN${Math.floor(i / 2)}`, reference: `R${i}`, amount: 10 })),
+  }) });
+  try {
+    const r = await syncReturnOrders({ pages: 12 });
+    assert.equal(r.fetched, 120, 'ต้องเก็บครบ 120 ใบ ห้ามตัดใบที่เลขซ้ำ');
+    assert.equal(r.written, 120);
+    assert.equal(r.complete, true);
+    const inserts = sqls.filter((s) => /INSERT INTO return_orders_v2/.test(s));
+    assert.equal(inserts.length, 3, '120 แถว ⇒ 3 คำสั่ง (ละ 50) ไม่ใช่ 120 คำสั่ง');
+    assert.match(inserts[0], /ON CONFLICT\(id\)/);
   } finally {
     globalThis.fetch = saved;
   }

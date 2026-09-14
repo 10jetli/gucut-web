@@ -823,17 +823,23 @@ export async function returnsBySku(daysRaw = 90) {
  * ⚠️ `number` เป็น PRIMARY KEY — เลขใบคืนของ ZORT ไม่ซ้ำ
  *    แต่ **ห้ามใช้ `reference` เป็นคีย์** เพราะเป็นเลขออเดอร์แพลตฟอร์ม ซ้ำได้ข้ามใบ
  */
+/* 🔴 **`number` เป็นกุญแจไม่ได้ — เลขที่ใบคืนของ ZORT ซ้ำกันได้จริง** (พิสูจน์ 15 ก.ย. 2569 01:3x)
+    ดึงสดครบ 4 หน้า: 689 แถว · id ไม่ซ้ำ 689 · **number ไม่ซ้ำแค่ 537**
+    เช่น CN-583608391639402476 มี 2 ใบ (id 284950384 · 284947796 · 20 และ 25 เม.ย.) = ออเดอร์เดียวคืนหลายครั้ง
+    ⇒ ตารางเดิม return_orders (PRIMARY KEY number) **เขียนทับกันหาย 152 ใบ** แบบเงียบ
+       คอมเมนต์เดิมเขียนว่า "เลขใบคืนของ ZORT ไม่ซ้ำ" โดยไม่เคยพิสูจน์ (คลาสเดียวกับใบโอน 546 เลขซ้ำ)
+    ⇒ ย้ายไป return_orders_v2 กุญแจ id · **ไม่ลบตารางเดิม** (เลิกใช้ ไม่มีจุดไหนอ่านแล้ว) */
 let returnTableReady = false;
 async function ensureReturnTable() {
   if (returnTableReady) return;
   await coreQuery(
-    `CREATE TABLE IF NOT EXISTS return_orders (
-       number TEXT PRIMARY KEY, reference TEXT, customer TEXT,
+    `CREATE TABLE IF NOT EXISTS return_orders_v2 (
+       id TEXT PRIMARY KEY, number TEXT, reference TEXT, customer TEXT,
        amount REAL NOT NULL DEFAULT 0, status TEXT, warehouse TEXT,
        return_date TEXT, paid TEXT, updated_at TEXT)`
   );
-  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret_date ON return_orders(return_date)`);
-  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret_ref ON return_orders(reference)`);
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret2_date ON return_orders_v2(return_date)`);
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret2_ref ON return_orders_v2(reference)`);
   returnTableReady = true;
 }
 
@@ -879,25 +885,30 @@ export async function syncReturnOrders(opt = {}) {
   }
   const hitPageCap = Math.ceil(total / per) > MAX_PAGES;
 
-  /* กันซ้ำข้ามหน้า — ข้อมูลขยับระหว่างไล่หน้าได้ */
+  /* กันซ้ำข้ามหน้าด้วย **id** — ห้ามใช้ number (ซ้ำได้จริง ดูหัวตาราง) */
   const seen = new Set();
   const uniq = [];
+  let missingId = 0;
   for (const r of rows) {
-    const numTxt = String(r?.number ?? "").trim();
-    if (!numTxt || seen.has(numTxt)) continue;
-    seen.add(numTxt);
+    const idTxt = String(r?.id ?? "").trim();
+    if (!idTxt) { missingId += 1; continue; }
+    if (seen.has(idTxt)) continue;
+    seen.add(idTxt);
     uniq.push(r);
   }
 
   /* อ่านของเดิมมาเทียบก่อนเขียน — การอ่านถูกกว่าการเขียนมากบน D1 */
-  const prevRows = (await coreQuery(
-    `SELECT number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders`
-  ).catch(() => null)) ?? [];
-  const prev = new Map(prevRows.map((r) => [String(r.number), r]));
+  /* 🔒 อ่านของเดิมไม่สำเร็จ ⇒ throw (ไม่ถือว่ากระจกว่าง) — เขียนซ้ำทั้งหมดไม่เสียข้อมูล แต่กินโควตาและชนเพดานเวลา */
+  const prevRows = await coreQuery(
+    `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2`
+  );
+  const prev = new Map(prevRows.map((r) => [String(r.id), r]));
 
-  let written = 0, skipped = 0;
+  let skipped = 0;
+  const changedRows = [];
   for (const r of uniq) {
     const row = {
+      id: String(r?.id ?? ""),
       number: String(r?.number ?? ""),
       reference: String(r?.reference ?? ""),
       customer: String(r?.customername ?? ""),
@@ -916,9 +927,10 @@ export async function syncReturnOrders(opt = {}) {
       return_date: String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10),
       paid: String(r?.paymentstatus ?? r?.paymentStatus ?? ""),
     };
-    const old = prev.get(row.number);
+    const old = prev.get(row.id);
     const same =
       old &&
+      String(old.number ?? "") === row.number &&
       String(old.reference ?? "") === row.reference &&
       String(old.customer ?? "") === row.customer &&
       num(old.amount) === row.amount &&
@@ -927,19 +939,31 @@ export async function syncReturnOrders(opt = {}) {
       String(old.return_date ?? "") === row.return_date &&
       String(old.paid ?? "") === row.paid;
     if (same) { skipped += 1; continue; }
-    await coreQuery(
-      `INSERT INTO return_orders (number, reference, customer, amount, status, warehouse, return_date, paid, updated_at)
-       VALUES (?,?,?,?,?,?,?,?,datetime('now'))
-       ON CONFLICT(number) DO UPDATE SET
-         reference=excluded.reference, customer=excluded.customer, amount=excluded.amount,
-         status=excluded.status, warehouse=excluded.warehouse, return_date=excluded.return_date,
-         paid=excluded.paid, updated_at=datetime('now')`,
-      [row.number, row.reference, row.customer, row.amount, row.status, row.warehouse, row.return_date, row.paid]
-    );
-    written += 1;
+    changedRows.push(row);
   }
+  /* ⚡ เขียนทีละ 50 แถวต่อคำสั่ง (15 ก.ย. 2569) — เดิมเขียนทีละแถว await เรียงกัน
+      รอบแรกที่ต้องเขียนทั้งกอง (537 แถว) ⇒ **หมดเวลา 502** กลางทาง ชีพจรไม่เคยถูกจด */
+  for (let i = 0; i < changedRows.length; i += 50) {
+    const values = changedRows
+      .slice(i, i + 50)
+      .map(
+        (row) =>
+          `(${esc(row.id)},${esc(row.number)},${esc(row.reference)},${esc(row.customer)},${row.amount},` +
+          `${esc(row.status)},${esc(row.warehouse)},${esc(row.return_date)},${esc(row.paid)},datetime('now'))`
+      )
+      .join(",");
+    await coreQuery(
+      `INSERT INTO return_orders_v2 (id, number, reference, customer, amount, status, warehouse, return_date, paid, updated_at)
+       VALUES ${values}
+       ON CONFLICT(id) DO UPDATE SET
+         number=excluded.number, reference=excluded.reference, customer=excluded.customer, amount=excluded.amount,
+         status=excluded.status, warehouse=excluded.warehouse, return_date=excluded.return_date,
+         paid=excluded.paid, updated_at=excluded.updated_at`
+    );
+  }
+  const written = changedRows.length;
 
-  const complete = !hitPageCap && pagesFailed === 0 && uniq.length >= total;
+  const complete = !hitPageCap && pagesFailed === 0 && missingId === 0 && uniq.length >= total;
   /* ชีพจรซิงก์ใบคืน (15 ก.ย. 2569) — จอยอดขายหักคืนจากตารางนี้ ต้องรู้ว่าสดแค่ไหน
       ⚠️ เดิม syncReturnOrders **ไม่มีงานตามเวลาเรียกเลย** มีแต่ ?syncreturnorders สั่งมือ [[nothing-triggers-it]]
       v = "complete" | "incomplete" (ชนเพดานหน้า/หน้าล้ม) · ดึงหน้าแรกไม่ได้ = return ก่อนถึงนี่ ⇒ ไม่จด (ชีพจรเก่าลงให้เห็น)
@@ -962,6 +986,7 @@ export async function syncReturnOrders(opt = {}) {
     /* 🔴 ทั้งสองธงนี้ห้ามกลืน — ชนเพดาน/หน้าล้ม = "ยังไม่ครบ" ไม่ใช่ "ครบแล้ว" */
     hitPageCap,
     pagesFailed,
+    missingId, // แถวที่ ZORT ไม่ส่ง id มา — ไม่ถูกเก็บ (กุญแจคือ id) ⇒ มีเมื่อไหร่ complete เป็น false
     complete,
   };
 }
@@ -1009,7 +1034,9 @@ export async function listReturnOrders(limit = 50, page = 1) {
       customer: String(r?.customername ?? ""),
       amount: num(r?.amount),
       status: String(r?.status ?? ""),
-      warehouse: String(r?.warehousename ?? ""),
+      /* 🔴 เดิมอ่าน warehousename ซึ่ง **ไม่มีในคำตอบของ ZORT** (ตัวซิงก์พิสูจน์แล้ว 9 ก.ย. 2569) ⇒ ช่องคลังว่างมาตลอด
+          แก้ตามตัวซิงก์ 15 ก.ย. 2569 · คลาสเดียวกัน: เดาชื่อช่อง + ค่าสำรอง "" = ผิดแบบเงียบ */
+      warehouse: String(r?.warehousecode ?? ""),
       date: String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10),
       paid: String(r?.paymentstatus ?? r?.paymentStatus ?? ""),
     })),
