@@ -12,6 +12,10 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+/* ⚠️ ค่าว่างจากข้างนอกต้องเป็น null ไม่ใช่ 0 — Number(null) = 0 ⇒ "ZORT ไม่ส่งมา" กลายเป็น "เหลือ 0" เงียบ ๆ
+   (เจอ 14 ก.ย. 2569 ใบด่วน t_mu1dfbz2: ชุด 00073-11.8-NW จอ ZORT พร้อมขาย -10 แต่คลังเงาได้ 0) */
+const numOrNull = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+const sameNum = (a, b) => (a === null || a === undefined ? b === null : b !== null && Number(a) === b);
 const BASE = "https://open-api.zortout.com/v4";
 const PAGE = 200;
 const MAX_PAGES = 20; // 2,672 SKU ≈ 14 หน้า เผื่อไว้
@@ -247,6 +251,9 @@ export async function probeBundleDetail(skuIn) {
     sku,
     id,
     summaryKeys: Object.keys(b),
+    // ค่าดิบตามที่ ZORT ส่ง (ไม่แปลง) — ใช้ชี้ขาดว่า "ว่าง" หรือ "0" หรือ "ติดลบ" (ใบด่วน t_mu1dfbz2)
+    summaryStock: { stock: b.stock ?? null, availablestock: b.availablestock ?? null },
+    detailStock: { stock: d.body.stock ?? null, availablestock: d.body.availablestock ?? null },
     detail: {
       http: d.http,
       resCode: d.body?.res?.resCode ?? null,
@@ -277,11 +284,14 @@ export async function syncBundles() {
       signal: AbortSignal.timeout(12000),
     }).catch(() => null);
     const data = res?.ok ? await res.json().catch(() => null) : null;
-    const list = Array.isArray(data?.list) ? data.list : [];
-    all.push(...list);
-    if (list.length < 200) break;
+    /* 🔒 หน้าไหนถามไม่สำเร็จ = หยุดทั้งรอบ (เดิมกลืนเป็น [] แล้ว break ⇒ ได้ครึ่งเดียวแต่จดเหมือนครบ) */
+    if (!Array.isArray(data?.list)) {
+      return { ok: false, error: `ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
+    }
+    all.push(...data.list);
+    if (data.list.length < 200) break;
   }
-  if (!all.length) return { error: "ดึงสินค้าเป็นชุดจาก ZORT ไม่ได้" };
+  if (!all.length) return { ok: false, error: "ZORT คืนรายชื่อชุดว่าง — รอบนี้ไม่เขียนอะไร" };
 
   const rows = [];
   const seen = new Set();
@@ -293,8 +303,8 @@ export async function syncBundles() {
       sku,
       name: String(b?.name ?? "").slice(0, 200),
       price: num(b?.sellprice),
-      onhand: num(b?.stock),
-      available: num(b?.availablestock),
+      onhand: numOrNull(b?.stock),
+      available: numOrNull(b?.availablestock),
       active: b?.active === false ? 0 : 1,
       unit: String(b?.unittext ?? "").slice(0, 40),
     });
@@ -308,7 +318,7 @@ export async function syncBundles() {
     const p = prev.get(r.sku);
     return (
       !p || String(p.name ?? "") !== r.name || num(p.sellprice) !== r.price ||
-      num(p.onhand) !== r.onhand || num(p.available) !== r.available ||
+      !sameNum(p.onhand, r.onhand) || !sameNum(p.available, r.available) ||
       num(p.active) !== r.active || String(p.unit ?? "") !== r.unit
     );
   });
@@ -318,7 +328,7 @@ export async function syncBundles() {
       .slice(i, i + 80)
       .map(
         (r) =>
-          `(${esc(r.sku)},${esc(r.name)},${r.price},${r.onhand},${r.available},` +
+          `(${esc(r.sku)},${esc(r.name)},${r.price},${r.onhand ?? "NULL"},${r.available ?? "NULL"},` +
           `${r.active},${esc(r.unit)},datetime('now'))`
       )
       .join(",");
@@ -330,7 +340,24 @@ export async function syncBundles() {
          unit=excluded.unit, updated_at=excluded.updated_at`
     );
   }
-  return { fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
+  /* ชีพจร: updated_at เขียนเฉพาะชุดที่เปลี่ยน ⇒ MAX(updated_at) = "เปลี่ยนล่าสุด" ไม่ใช่ "ซิงก์ล่าสุด"
+     ⇒ จดเวลาซิงก์ครบรอบแยก จอจะรู้ว่าตัวเลขสต็อกชุดเก่าแค่ไหน (ต้นเหตุใบด่วน: ไม่มีอะไรเรียกซิงก์เลย 187/360 ชุดค้าง) */
+  await coreQuery(`CREATE TABLE IF NOT EXISTS sync_marks (name TEXT PRIMARY KEY, at TEXT, note TEXT)`);
+  await coreQuery(
+    `INSERT INTO sync_marks (name, at, note) VALUES ('bundles_stock', datetime('now'), ${esc(`fetched ${rows.length} written ${changed.length}`)})
+     ON CONFLICT(name) DO UPDATE SET at=excluded.at, note=excluded.note`
+  );
+  return { ok: true, fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
+}
+
+/** เวลาที่ซิงก์สต็อกสินค้าเป็นชุดครบรอบล่าสุด (UTC) · ยังไม่เคย/อ่านไม่ได้ = null (= ไม่รู้ ห้ามโชว์ว่าสด) */
+export async function bundleStockSyncedAt() {
+  try {
+    const [r] = await coreQuery(`SELECT at FROM sync_marks WHERE name = 'bundles_stock'`);
+    return r?.at ? String(r.at) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** จอ "สินค้าเป็นชุด" แบบ ZORT */
@@ -464,6 +491,8 @@ export async function listBundles(o = {}) {
     offset,
     recipeAt,
     recipeCheckedAt: await recipeCheckedAt(),
+    // ⚠️ คงเหลือ/พร้อมขายของชุดเป็นค่าที่ซิงก์มา ไม่ใช่ค่าสด — จอต้องโชว์อายุ (เก่าเกิน ~1 ชม. = ซิงก์หยุด)
+    stockSyncedAt: await bundleStockSyncedAt(),
     ...mk, // ⚠️ recipeAt = บรรทัดสูตรชุดที่เปลี่ยนล่าสุด · recipeCheckedAt = ตรวจกับ ZORT ล่าสุด (UTC) — ห้ามใช้แทนกัน
     note:
       "สูตรชุดซิงก์จาก ZORT เองทุกชั่วโมง (รอบละ 90 ชุด) — " +
@@ -526,7 +555,7 @@ export async function recipeCheckedAt() {
   }
 }
 
-export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
+export async function syncBundleRecipes({ limit = RECIPE_BATCH, deadlineMs = RECIPE_DEADLINE_MS } = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();
   if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
@@ -575,7 +604,7 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
   const results = new Map();
   let cursor = 0;
   const worker = async () => {
-    while (cursor < pick.length && Date.now() - t0 < RECIPE_DEADLINE_MS) {
+    while (cursor < pick.length && Date.now() - t0 < deadlineMs) {
       const sku = pick[cursor++];
       results.set(sku, await readRecipe(h, byId.get(sku)));
     }

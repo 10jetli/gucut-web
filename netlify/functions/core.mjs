@@ -857,7 +857,9 @@ async function route(req, context) {
     }
     // สินค้าเป็นชุด (Bundle) — 360 ชุดที่ร้านใช้จริง
     if (url.searchParams.get("syncbundles")) {
-      return json({ ok: true, bundles: await syncBundles() });
+      // ล้ม = 502 (เดิมตอบ ok:true เสมอ แม้ซิงก์ไม่สำเร็จ) · ปกติรันเองทุกครึ่งชั่วโมงใน bundle-recipe-sync
+      const b = await syncBundles();
+      return json({ ok: !b.error, bundles: b }, b.error ? 502 : 200);
     }
     /* GET ?syncbundlerecipes=1[&limit=N] ⇒ ซิงก์สูตรชุดจาก ZORT รอบเดียวเดี๋ยวนั้น (ปกติรันเองทุกชั่วโมง :27)
        ⇒ {ok, zortBundles, asked, same, changed, notWritten, problems} · ล้ม = 502 · งานกระดาน t_mu1bh4vh */
