@@ -91,7 +91,14 @@ export default async function handler(req, context) {
     if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady) {
       const s = store();
       const KEY = "office/tasks";
-      const cur = (await s.get(KEY, { type: "json" }).catch(() => null)) || [];
+      /* 🔴 B02 (แก้ 14 ก.ย. 2569): ทุกคำสั่งในกลุ่มนี้ **เขียน office/tasks ทับทั้งก้อน**
+         เดิม `.catch(() => null) || []` ⇒ Blobs สะดุดตอน taskAdd = ได้ [] ⇒ เขียนงานใบเดียวทับทั้งกระดาน
+         แล้วตอบ ok:true ⇒ **กระดานที่ท่านประธานกับทีมใช้ทุกวันหายหมดโดยไม่มีอะไรฟ้อง**
+         ⇒ อ่านไม่ได้ = throw ⇒ ตอบ 503 ไม่เขียน · ไม่มีคีย์เลย (null) = กระดานใหม่ว่างจริง ใช้ [] ได้
+         ⚠️ ทาง GET ข้างล่างยังกลืนได้ เพราะเขียนกลับเฉพาะเมื่อมีแถวขาด owner (ได้ [] ⇒ ไม่เขียน) */
+      let cur;
+      try { cur = await s.get(KEY, { type: "json" }); }
+      catch { return json({ error: "อ่านกระดานไม่ได้ชั่วคราว — ยังไม่ได้บันทึกอะไร ลองใหม่อีกครั้ง" }, 503); }
       const list = Array.isArray(cur) ? cur : [];
       if (body.taskAdd) {
         const t = text(body.taskAdd, 200);

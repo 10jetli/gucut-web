@@ -49,7 +49,12 @@ export default async function handler(req, context) {
   const clip = clean(body.clip, 64);
   if (!clip) return json({ error: "ไม่รู้ว่าคลิปไหน" }, 400);
 
-  const map = await read();
+  /* 🔴 B01 (แก้ 14 ก.ย. 2569): ทางนี้ **เขียน map ทับทั้งก้อน** ⇒ ห้ามใช้ read() ที่กลืนพลาดเป็น {}
+     เดิม: Blobs สะดุดตอนร้านผูกคลิปใบเดียว ⇒ ได้ {} ⇒ เขียนทับ ⇒ คลิปอื่นทั้งหมดเสียปุ่มซื้อ แล้วตอบ ok
+     ⇒ อ่านไม่ได้ = 503 ไม่เขียน · ไม่มีคีย์ (null) = ยังไม่เคยผูก ใช้ {} ได้ · ทาง GET ยังกลืนได้ (อ่านอย่างเดียว) */
+  let map;
+  try { map = (await s.get(KEY, { type: "json" })) || {}; }
+  catch { return json({ error: "อ่านรายการคลิปไม่ได้ชั่วคราว — ยังไม่ได้บันทึก ลองใหม่อีกครั้ง" }, 503); }
 
   if (!body.product) {
     delete map[clip];

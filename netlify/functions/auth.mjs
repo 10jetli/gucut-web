@@ -72,7 +72,13 @@ export default async function handler(req) {
     if (pw.length < 8) return json({ error: "รหัสผ่านต้องยาวอย่างน้อย 8 ตัว" }, 400);
     if (pw.length > 128) return json({ error: "รหัสผ่านยาวเกินไป" }, 400);
 
-    const exists = await s.get(`u/${phone}`, { type: "json" }).catch(() => null);
+    /* 🔴 B12 (แก้ 14 ก.ย. 2569): ทางนี้ **เขียนทับ u/<เบอร์>** ⇒ ห้ามกลืนการอ่านพลาดเป็น null
+       เดิม `.catch(() => null)` ⇒ Blobs สะดุด = ถือว่าไม่มีบัญชี ⇒ ไม่คืน 409 แต่เขียนบัญชีใหม่ทับลูกค้าเดิม
+       (แต้ม · รหัสผ่าน · การผูก LINE หายถาวร และตอบ ok ไม่มีอะไรฟ้อง)
+       ⇒ `get` คืน null เฉพาะ "ไม่มีคีย์" · อ่านไม่ได้ = throw ⇒ ตอบ 503 ไม่เขียนอะไร (ท่าเดียวกับ readCouponsForWrite) */
+    let exists;
+    try { exists = await s.get(`u/${phone}`, { type: "json" }); }
+    catch { return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง" }, 503); }
     if (exists) return json({ error: "เบอร์นี้สมัครไว้แล้ว — กดเข้าสู่ระบบได้เลย" }, 409);
 
     const u = { phone, name, pass: hashPw(pw), created: Date.now(), addr: null };
@@ -120,7 +126,12 @@ export default async function handler(req) {
     if (locked) return locked;
 
     const info = { id: p.id, name: p.name, picture: p.picture };
-    let u = await s.get(`u/${phone}`, { type: "json" }).catch(() => null);
+    /* 🔴 B12 อีกทาง (แก้ 14 ก.ย. 2569): ทางนี้เขียน u/<เบอร์> ทับเหมือน register
+       อ่านพลาดแล้วกลืนเป็น null ⇒ ตกไปสร้างบัญชีใหม่ (ไม่มีรหัส ไม่มีแต้ม) ทับลูกค้าเดิม
+       **และข้ามการถามรหัสผ่านไปด้วย** ⇒ อ่านไม่ได้ = 503 ไม่เขียนอะไร */
+    let u;
+    try { u = await s.get(`u/${phone}`, { type: "json" }); }
+    catch { return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง" }, 503); }
     if (u) {
       // เบอร์นี้มีบัญชีอยู่แล้ว — ต้องยืนยันรหัสผ่านก่อน กันคนอื่นสวมเบอร์เรา
       if (u.pass) {
