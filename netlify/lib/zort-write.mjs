@@ -81,10 +81,14 @@ async function zortPost(path, body) {
   if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
   let r;
   try {
+    /* รูปสินค้าต้องส่งแบบ multipart ⇒ ห้ามตั้ง content-type เอง ให้ fetch ใส่ boundary ให้ */
+    const isForm = typeof FormData !== "undefined" && body instanceof FormData;
+    const h = { ...headers };
+    if (isForm) delete h["content-type"];
     r = await fetch(`${BASE}/${path}`, {
       method: "POST",
-      headers,
-      body: JSON.stringify(body),
+      headers: h,
+      body: isForm ? body : JSON.stringify(body),
       signal: AbortSignal.timeout(12000), // เหลือเวลาให้ตัวจดกันซ้ำเขียนต่อ (เพดานฟังก์ชัน 26 วิ)
     });
   } catch (e) {
@@ -530,6 +534,112 @@ export async function zortDeleteProduct(o = {}) {
   if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
   const warn = await markSafely("product-delete", ref, { kind: "product-delete", id, sku });
   return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบสินค้า ${sku} ออกจาก ZORT แล้ว` };
+}
+
+/* ── รูปสินค้า · ต้นทุน · พิมพ์บาร์โค้ด — งานกระดาน t_mu0m98gq ──
+   ต้นทุน (product-cost): ใช้ ?updateproduct=1 ช่อง cost → purchaseprice ได้เลย ไม่ต้องมีเส้นใหม่
+     ⚠️ ZORT API มีแค่ purchaseprice (ราคาซื้อที่ตั้งไว้) **ไม่มีต้นทุนเฉลี่ย/ประวัติต้นทุน** — จอห้ามเขียนว่าเป็นต้นทุนเฉลี่ย
+   พิมพ์บาร์โค้ด (product-print): **ไม่พบ API พิมพ์ฉลาก/บาร์โค้ด** — พิมพ์เป็นงานของจอ ท่อให้แค่ข้อมูลฉลาก
+     (ไล่เอกสาร V4 แล้ว 14 ก.ย. 2569: Product · Document (มีแต่เอกสารของออเดอร์) · File Upload (ไฟล์แนบออเดอร์/ใบซื้อ/ใบเสนอราคา)
+      ⇒ "ไม่พบในโมดูลที่อ่าน" ไม่ใช่ "ไม่มีแน่นอน")
+   รูป (product-image): POST Product/UpdateProductImage?id=<Int> · multipart ช่อง `file` (เอกสาร V4 · 14 ก.ย. 2569)
+     ⚠️ เอกสารไม่บอกว่า "แทนรูปเดิม" หรือ "ต่อท้าย" — ยังไม่เคยยิง ต้องดูของจริงใบแรก */
+
+/** หาสินค้าใน ZORT ด้วย sku แบบตรงตัวเป๊ะ — ได้ id ของ ZORT ไปใช้กับแก้/ลบ/รูป (กระจก D1 ไม่มี id)
+ *  ⚠️ เอกสารไม่บอกว่า searchsku ค้นตรงตัวหรือบางส่วน ⇒ กรองตรงตัวเองเสมอ (ขอ 00313 ห้ามได้ 00313-A)
+ *  ⚠️ สามสถานะ: found · found:false (ไม่มีจริง) · unknown (ถามไม่สำเร็จ ≠ ไม่มี) */
+export async function zortFindProduct(skuIn) {
+  const sku = txt(skuIn, 60);
+  if (!sku) return { ok: false, error: "ต้องระบุ sku" };
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Product/GetProducts?searchsku=${encodeURIComponent(sku)}&limit=50`,
+      { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = r.ok ? await r.json().catch(() => null) : null;
+  if (!d || !Array.isArray(d.list))
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status}) — ยังไม่รู้ว่ามีสินค้านี้ไหม` };
+  const hit = d.list.filter((p) => String(p?.sku ?? "").trim() === sku);
+  if (!hit.length) return { ok: true, found: false, sku };
+  if (hit.length > 1) return { ok: false, error: `sku ${sku} ตรงกับสินค้า ${hit.length} ตัวใน ZORT — ไม่เดาว่าตัวไหน` };
+  const p = hit[0];
+  return { ok: true, found: true, product: {
+    id: Number(p.id), sku, name: txt(p.name, 200), barcode: txt(p.barcode, 60) || null,
+    sellprice: numOrNull(p.sellprice), purchaseprice: numOrNull(p.purchaseprice),
+    stock: numOrNull(p.stock), availablestock: numOrNull(p.availablestock),
+    unittext: txt(p.unittext, 40) || null, imagepath: txt(p.imagepath, 400) || null } };
+}
+
+/* ทีละ 10 ขนาน × 2 รอบ × เพดาน 8 วิ = ไม่เกิน ~16 วิ (เพดานฟังก์ชัน 26 วิ) ⇒ ขอได้ครั้งละ 20 รหัส */
+export const LABEL_MAX = 20;
+export async function zortProductLabels(skusIn) {
+  const skus = [...new Set(String(skusIn ?? "").split(",").map((s) => txt(s, 60)).filter(Boolean))];
+  if (!skus.length) return { ok: false, error: "ต้องระบุ skus (คั่นด้วย ,)" };
+  if (skus.length > LABEL_MAX) return { ok: false, error: `ขอได้ครั้งละไม่เกิน ${LABEL_MAX} รหัส (ส่งมา ${skus.length})` };
+  const rows = [];
+  const missing = [];
+  const failed = [];
+  for (let i = 0; i < skus.length; i += 10) {
+    const got = await Promise.all(skus.slice(i, i + 10).map((s) => zortFindProduct(s)));
+    got.forEach((g, j) => {
+      const s = skus[i + j];
+      if (!g.ok) failed.push({ sku: s, error: g.error });
+      else if (!g.found) missing.push(s);
+      else rows.push({ sku: g.product.sku, name: g.product.name, barcode: g.product.barcode,
+        sellprice: g.product.sellprice, unittext: g.product.unittext, noBarcode: !g.product.barcode });
+    });
+  }
+  return { ok: rows.length > 0 || !failed.length, complete: !failed.length, rows, missing, failed,
+    note: "ไม่พบ API พิมพ์บาร์โค้ดในเอกสาร ZORT — จอวาดฉลากเอง · noBarcode = ใน ZORT ไม่มีบาร์โค้ด (ห้ามเอา sku มาพิมพ์แทนเงียบ ๆ)" };
+}
+
+const IMG_MAX = 4 * 1024 * 1024; // base64 พองอีก 1/3 + เพดาน body ฟังก์ชัน ~6MB
+/* ตรวจชนิดจากเนื้อไฟล์ ไม่เชื่อนามสกุลหรือ data URL ที่จอส่งมา */
+function sniffImage(buf) {
+  if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) return "image/jpeg";
+  if (buf.length >= 8 && buf.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return "image/png";
+  if (buf.length >= 12 && buf.toString("latin1", 0, 4) === "RIFF" && buf.toString("latin1", 8, 12) === "WEBP") return "image/webp";
+  return null;
+}
+
+export async function zortUpdateProductImage(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันเปลี่ยนรูปผิดตัว" };
+  const b64 = String(o.image ?? "").replace(/^data:[^;,]*;base64,/, "").replace(/\s+/g, "");
+  if (!b64) return { ok: false, error: "ต้องส่ง image (base64 หรือ data URL)" };
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(b64)) return { ok: false, error: "image ไม่ใช่ base64" };
+  const buf = Buffer.from(b64, "base64");
+  if (buf.length > IMG_MAX) return { ok: false, error: `รูปใหญ่เกิน ${IMG_MAX / 1024 / 1024}MB — ย่อก่อนส่ง` };
+  if (buf.length < 1024) return { ok: false, error: "ไฟล์เล็กผิดปกติ (<1KB) — ไม่น่าใช่รูปสินค้าจริง" };
+  const type = sniffImage(buf);
+  if (!type) return { ok: false, error: "ไฟล์ไม่ใช่รูป JPEG/PNG/WebP (ตรวจจากเนื้อไฟล์)" };
+  const fileName = `${sku.replace(/[^A-Za-z0-9._-]/g, "_")}.${type === "image/jpeg" ? "jpg" : type.slice(6)}`;
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, expectSku: sku,
+    willSend: { query: { id }, file: { field: "file", name: fileName, type, bytes: buf.length } },
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT แทนรูปเดิมหรือต่อท้าย · ตอน confirm ท่อถาม ZORT ก่อนว่า id ตรง sku" };
+
+  const seen = await seenRef("product-image", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "รูปนี้เคยส่งไปแล้ว — ไม่ได้ส่งซ้ำ" };
+  const who = await confirmProductIdentity(id, sku);
+  if (!who.ok) return { ref, ...who };
+
+  const form = new FormData();
+  form.append("file", new Blob([buf], { type }), fileName);
+  const r = await zortPost(`Product/UpdateProductImage?id=${id}`, form);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("product-image", ref, { kind: "product-image", id, sku, bytes: buf.length });
+  return { ok: true, updated: true, ref, id, sku, warn, message: `ส่งรูปสินค้า ${sku} เข้า ZORT แล้ว — ไปเปิดดูใน ZORT ว่าแทนหรือต่อท้าย` };
 }
 
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้

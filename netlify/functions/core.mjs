@@ -408,6 +408,32 @@ async function route(req, context) {
         confirm: q.get("confirm") === "1" });
       return json(r, r.ok ? 200 : 400);
     }
+    /* GET  ?zortproduct=<sku>       ⇒ {found, product:{id, sku, name, barcode, sellprice, purchaseprice, stock, ...}}
+            หา id ของ ZORT ก่อนแก้/ลบ/เปลี่ยนรูป (กระจก D1 ไม่มี id) · ต้นทุน = purchaseprice **ไม่ใช่ต้นทุนเฉลี่ย**
+       GET  ?productlabels=<sku,sku> ⇒ ข้อมูลฉลากบาร์โค้ด ≤20 รหัส · ZORT ไม่มี API พิมพ์ จอพิมพ์เอง
+       POST ?productimage=1 body {ref, id, sku, image (base64|data URL ≤4MB), confirm?} ⇒ ZORT Product/UpdateProductImage?id=
+       ⚠️ งานกระดาน t_mu0m98gq · รูป: โหมดซ้อมเป็นค่าเริ่มต้น · ยังไม่เคยยิงจริง · ผิด method = 405
+       ⚠️ ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) แยกจาก 400 (ข้อมูลที่ส่งมาผิด) */
+    if (url.searchParams.has("zortproduct")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortFindProduct } = await import("../lib/zort-write.mjs");
+      const r = await zortFindProduct(url.searchParams.get("zortproduct"));
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
+    if (url.searchParams.has("productlabels")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortProductLabels } = await import("../lib/zort-write.mjs");
+      const r = await zortProductLabels(url.searchParams.get("productlabels"));
+      return json(r, r.ok ? 200 : r.failed?.length ? 502 : 400);
+    }
+    if (url.searchParams.get("productimage")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortUpdateProductImage } = await import("../lib/zort-write.mjs");
+      const r = await zortUpdateProductImage(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("addpo")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
