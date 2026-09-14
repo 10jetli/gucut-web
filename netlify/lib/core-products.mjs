@@ -633,6 +633,30 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
     );
   }
 
+  /* ⑦ สูตรซ้อนจากรหัสที่ขูดหน้าเว็บผิดรูป — เจอจริง 14 ก.ย. 2569 รอบซิงก์แรก:
+        ZORT ใช้ '01936\u00a0set ลูกสูบ' (NBSP) แต่ตัวขูด 3 ก.ย. เก็บเป็นตัวอักษร '01936&#160;set ลูกสูบ'
+        ⇒ ซิงก์เขียนสูตรใต้รหัสจริงเพิ่ม · สูตรเก่าค้างใต้รหัสเพี้ยน ⇒ จอ "รหัสนี้อยู่ในชุดไหน" นับชุดซ้ำ
+      ⚠️ ลบเฉพาะรหัสที่ **ถอดตัวอักษร HTML แล้วตรงกับชุดใน ZORT ตัวอักษรต่อตัวอักษร** และชุดนั้นมีสูตรจากซิงก์แล้ว
+         รหัสอื่นที่ไม่อยู่ใน ZORT = รายงานเฉย ๆ ไม่ลบ (อาจเป็นชุดที่ร้านลบจริง — ลบผิดแก้ยากกว่าค้าง) */
+  const decode = (k) =>
+    k.replace(/&#(\d+);/g, (_, d) => String.fromCodePoint(Number(d))).replace(/&nbsp;/g, "\u00a0").replace(/&amp;/g, "&");
+  const allKeys = (await coreQuery(`SELECT DISTINCT bundle_sku FROM bundle_items`)).map((r) => String(r.bundle_sku));
+  const keySet = new Set(allKeys);
+  const orphans = allKeys.filter((k) => !byId.has(k));
+  const synced = new Set(
+    (await coreQuery(`SELECT bundle_sku FROM bundle_recipe_state WHERE status = 'ok' AND changed_at IS NOT NULL`)).map((r) =>
+      String(r.bundle_sku)
+    )
+  );
+  const dupes = orphans.filter((k) => {
+    const real = decode(k);
+    return real !== k && byId.has(real) && keySet.has(real) && (synced.has(real) || changed.includes(real));
+  });
+  if (dupes.length) {
+    await coreQuery(`DELETE FROM bundle_items WHERE bundle_sku IN (${dupes.map(esc).join(",")})`);
+  }
+  const orphanRest = orphans.filter((k) => !dupes.includes(k));
+
   const problems = asked
     .filter((s) => results.get(s).state !== "ok")
     .map((s) => ({ sku: s, state: results.get(s).state, why: results.get(s).why }));
@@ -644,6 +668,10 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
     same: okSkus.length - changed.length,
     changed: changed.length,
     changedSkus: changed.slice(0, 20),
+    removedDuplicateKeys: dupes,
+    // สูตรที่รหัสชุดไม่อยู่ใน ZORT แล้ว — ไม่ลบให้ ต้องมีคนดู
+    orphanRecipes: orphanRest.length,
+    orphanRecipeKeys: orphanRest.slice(0, 20),
     notWritten: problems.length,
     problems: problems.slice(0, 10),
     ms: Date.now() - t0,

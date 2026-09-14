@@ -7,11 +7,13 @@ import { mock, test } from 'node:test';
 let sqls = [];
 let oldRows = [];
 let failD1Read = false;
+let extraHandler = null;
 mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreReady: () => true,
   coreQuery: async (sql) => {
     const s = String(sql);
     sqls.push(s);
+    if (extraHandler) { const x = await extraHandler(s); if (x) return x; }
     if (/FROM bundle_recipe_state/.test(s) && /^\s*SELECT/.test(s)) return [];
     if (/^\s*SELECT bundle_sku, line, sku, qty FROM bundle_items/.test(s)) {
       if (failD1Read) throw new Error('D1 500: ล่มจำลอง');
@@ -118,6 +120,37 @@ test('รายชื่อได้ครึ่งเดียว (หน้า
     assert.equal(sqls.length, 0);
   } finally {
     globalThis.fetch = saved;
+  }
+});
+
+test('สูตรซ้อนใต้รหัส &#160; ⇒ ลบเฉพาะตัวที่ถอดแล้วตรงชุดจริงที่มีสูตรซิงก์แล้ว · รหัสหายอื่นแค่รายงาน', async () => {
+  reset();
+  bundles = [{ id: 1, sku: '01936\u00a0set ลูกสูบ' }];
+  details = { 1: { id: 1, list: [{ sku: '01936', quantity: 1 }] } };
+  const saved = globalThis.fetch;
+  const savedMock = sqls;
+  // D1 ปลอมเฉพาะเทสนี้: สูตรเดิมไม่มีใต้รหัสจริง ⇒ ซิงก์เขียน · มีรหัสเพี้ยน + รหัสชุดที่หายไปจริง
+  const extra = async (s) => {
+    if (/SELECT DISTINCT bundle_sku FROM bundle_items/.test(s))
+      return [{ bundle_sku: '01936&#160;set ลูกสูบ' }, { bundle_sku: '01936\u00a0set ลูกสูบ' }, { bundle_sku: 'GONE-SET' }];
+    if (/FROM bundle_recipe_state WHERE status = 'ok' AND changed_at IS NOT NULL/.test(s)) return [];
+    return null;
+  };
+  extraHandler = extra;
+  try {
+    const r = await syncBundleRecipes();
+    assert.equal(r.changed, 1);
+    assert.deepEqual(r.removedDuplicateKeys, ['01936&#160;set ลูกสูบ']);
+    assert.equal(r.orphanRecipes, 1);
+    assert.deepEqual(r.orphanRecipeKeys, ['GONE-SET']);
+    const del = sqls.filter((s) => /DELETE FROM bundle_items WHERE bundle_sku IN/.test(s));
+    assert.equal(del.length, 1);
+    assert.match(del[0], /'01936&#160;set ลูกสูบ'/);
+    assert.doesNotMatch(del[0], /GONE-SET/, 'ชุดที่หายจาก ZORT ต้องไม่ถูกลบ');
+  } finally {
+    extraHandler = null;
+    globalThis.fetch = saved;
+    void savedMock;
   }
 });
 
