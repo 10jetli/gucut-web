@@ -8,6 +8,7 @@
 //    ต้องพิสูจน์ก่อนว่าเลขที่เราจะดันตรงกับที่ ZORT ดันอยู่ทุกวัน แล้วค่อยเปิดการเขียน
 //    ตัวเขียนจริงจะอยู่คนละไฟล์ และต้องมีสวิตช์ env แยก — ห้ามใส่รวมในนี้
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { recipeCheckedAt } from "./core-products.mjs";
 import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
 
@@ -216,6 +217,7 @@ export async function shopeeUnlistedStock() {
   return {
     stockDay: day,
     recipeAt,
+    recipeCheckedAt: await recipeCheckedAt(), // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด
     declaredByShopee: cov.declared ?? null,
     sawAll: cov.sawAll ?? null,
     ...summarizeUnlisted(rows, snap, recipe),
@@ -289,8 +291,9 @@ export async function shopeeMissingSkus() {
   //    ย่อหน้าเตือนด้านบนเขียนไว้ว่า "ต้องให้ร้านตัดสินใจก่อน ห้ามเดาแทน"
   //    ตอนนี้ไม่ต้องให้ใครตัดสินใจแล้ว เพราะ **ร้านเคยตอบไว้แล้วในสูตรสินค้าชุด**
   //    ⇒ อ่านจาก bundle_items แทนการอนุมานจากชื่อ
-  //    ⚠️ **สูตรเป็นภาพนิ่งเก็บครั้งเดียว ไม่ได้ซิงก์เอง** — ส่ง recipeAt ออกไปทุกครั้ง
-  //       จอต้องโชว์วันที่เก็บ ไม่งั้นจะกลายเป็นตาข่ายที่เคยถูกแล้วหยุดอัปเดตเงียบ ๆ
+  //    ⚠️ สูตรเคยเป็นภาพนิ่ง 3 ก.ย. — **ซิงก์จาก ZORT ทุกชั่วโมงตั้งแต่ 14 ก.ย. 2569** (bundle-recipe-sync)
+  //       ยังส่ง recipeAt (สูตรเปลี่ยนล่าสุด) + recipeCheckedAt (ตรวจล่าสุด) ออกไปทุกครั้ง
+  //       ซิงก์หยุดเมื่อไหร่ recipeCheckedAt จะเก่า ⇒ จอเห็นได้ ไม่กลายเป็นตาข่ายที่หยุดอัปเดตเงียบ ๆ
   const recipe = new Map();
   let recipeAt = null;
   try {
@@ -365,7 +368,8 @@ export async function shopeeMissingSkus() {
     withRecipe, // มีสูตรชุดจริง ⇒ คำนวณสต็อกดันกลับได้
     computed: computed.length,
     agreeWithShopee: agree, // คำนวณแล้วตรงกับที่ Shopee โชว์อยู่จริง
-    recipeAt, // ⚠️ วันที่เก็บสูตร — จอต้องโชว์เสมอ สูตรไม่ได้ซิงก์เอง
+    recipeAt, // ⚠️ สูตรเปลี่ยนล่าสุด — ไม่ใช่เวลาตรวจ (สูตรที่ไม่เปลี่ยนจะเก่าตลอดไป)
+    recipeCheckedAt: await recipeCheckedAt(), // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · null = ไม่รู้
     rows: out,
   };
 }

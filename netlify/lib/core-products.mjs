@@ -463,7 +463,8 @@ export async function listBundles(o = {}) {
     limit,
     offset,
     recipeAt,
-    ...mk, // ⚠️ recipeAt = บรรทัดสูตรชุดที่เปลี่ยนล่าสุด (ซิงก์ทุกชั่วโมง) — ไม่ใช่เวลาตรวจกับ ZORT ล่าสุด
+    recipeCheckedAt: await recipeCheckedAt(),
+    ...mk, // ⚠️ recipeAt = บรรทัดสูตรชุดที่เปลี่ยนล่าสุด · recipeCheckedAt = ตรวจกับ ZORT ล่าสุด (UTC) — ห้ามใช้แทนกัน
     note:
       "สูตรชุดซิงก์จาก ZORT เองทุกชั่วโมง (รอบละ 90 ชุด) — " +
       "ราคาสินค้ารวมคิดจากราคาขายของชิ้นส่วน (ตรวจกับ ZORT แล้ว) · " +
@@ -511,6 +512,18 @@ async function readRecipe(h, id) {
     lines.push({ sku, qty, name: String(x?.name ?? "").slice(0, 200) });
   }
   return { state: "ok", lines };
+}
+
+/** เวลาที่ตรวจสูตรชุดกับ ZORT ล่าสุด (UTC) — ใช้โชว์คู่กับ recipeAt บนจอ
+ *  ⚠️ recipeAt = สูตร "เปลี่ยน" ล่าสุด · ตัวนี้ = "ตรวจ" ล่าสุด — สูตรที่ไม่เคยเปลี่ยนจะมี recipeAt เก่าตลอดไป
+ *  ⚠️ อ่านอย่างเดียวเพื่อแสดงผล: ยังไม่มีตาราง (ซิงก์ยังไม่เคยรัน) หรืออ่านไม่สำเร็จ = null (= ไม่รู้ ห้ามโชว์ว่า "ตรวจแล้ว") */
+export async function recipeCheckedAt() {
+  try {
+    const [r] = await coreQuery(`SELECT MAX(checked_at) AS last FROM bundle_recipe_state WHERE status = 'ok'`);
+    return r?.last ? String(r.last) : null;
+  } catch {
+    return null;
+  }
 }
 
 export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
