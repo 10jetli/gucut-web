@@ -208,6 +208,86 @@ export async function zortAddProduct(o = {}) {
     message: `เพิ่มสินค้า ${sku} เข้า ZORT แล้ว` };
 }
 
+/** เพิ่มสินค้าเป็นชุดเข้า ZORT — จอ "เพิ่มสินค้าเป็นชุดใหม่" (soon: bundle-add) · งานกระดาน t_mu0m99go
+ *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/bundle · อ่าน 14 ก.ย. 2569)
+ *     POST Bundle/AddBundle · body: name · sku · sellprice (String) · sell_vat_status? (Int) ·
+ *     list: [{ id | sku, quantity (Double) }] · สำเร็จ = resCode "200" + detail.id
+ *  ⚠️ **ยังไม่เคยยิงจริง** (ทะเบียน ZORT_CAN_BUT_NOT_BUILT: 405 = เส้นมีอยู่เท่านั้น)
+ *     ⇒ โหมดซ้อมเป็นค่าเริ่มต้น · ต้อง confirm:true + ref · ยิงใบแรกแล้วต้องดึงกลับมาดูว่าส่วนประกอบเข้าครบ
+ *  ⚠️ ส่วนประกอบในชุด **ZORT ไม่เปิดให้อ่านกลับผ่าน API** (กระจกเราเก็บจากหน้าเว็บ ZORT ครั้งเดียว) */
+export async function zortAddBundle(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const sku = txt(o.sku, 60);
+  const name = txt(o.name, 200);
+  if (!sku || !name) return { ok: false, error: "ต้องมีทั้ง sku และ name" };
+  const price = numOrNull(o.price);
+  if (price === null) return { ok: false, error: "ต้องมีราคาขาย (price) เป็นตัวเลข — ZORT บังคับ sellprice" };
+
+  const items = Array.isArray(o.items) ? o.items : [];
+  if (!items.length) return { ok: false, error: "ชุดต้องมีส่วนประกอบอย่างน้อย 1 รายการ" };
+  const list = [];
+  for (let i = 0; i < items.length; i++) {
+    const s = txt(items[i]?.sku, 60);
+    const q = numOrNull(items[i]?.qty);
+    if (!s) return { ok: false, error: `ส่วนประกอบแถวที่ ${i + 1} ไม่มี sku` };
+    if (q === null || q <= 0) return { ok: false, error: `ส่วนประกอบ ${s} จำนวนต้องเป็นตัวเลขมากกว่า 0` };
+    if (s === sku) return { ok: false, error: `ชุด ${sku} ใส่ตัวเองเป็นส่วนประกอบไม่ได้` };
+    list.push({ sku: s, quantity: q });
+  }
+  const body = { name, sku, sellprice: String(price), list };
+  if (o.vat !== undefined) {
+    const v = numOrNull(o.vat);
+    if (v === null || !Number.isInteger(v)) return { ok: false, error: "vat ต้องเป็นจำนวนเต็ม (sell_vat_status)" };
+    body.sell_vat_status = v;
+  }
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
+
+  const seen = await seenRef("bundle", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ชุดนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("Bundle/AddBundle", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("bundle", ref, { kind: "bundle", sku, name, parts: list.length });
+  return { ok: true, added: true, ref, sku, detail: r.detail, warn,
+    message: `เพิ่มสินค้าชุด ${sku} (${list.length} ส่วนประกอบ) เข้า ZORT แล้ว` };
+}
+
+/** เพิ่มคลังสินค้า/สาขาเข้า ZORT — จอ "เพิ่มคลังสินค้า/สาขา" (soon: warehouse-add) · งานกระดาน t_mu0m99go
+ *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/warehouse · อ่าน 14 ก.ย. 2569)
+ *     POST Warehouse/AddWarehouse · code (บังคับ) · name (บังคับ) · address (ไม่บังคับ) · สำเร็จ = detail.id
+ *  ⚠️ **API ไม่มีช่อง "เปิดบิลขายได้ไหม" (isPos)** — จอ ZORT ตั้งได้ แต่ท่อตั้งไม่ได้ ⇒ จอต้องเขียนบอก ห้ามทำช่องหลอก
+ *  ⚠️ ยังไม่เคยยิงจริง · โหมดซ้อมเป็นค่าเริ่มต้น · คลังสร้างแล้วลบผ่าน API ไม่ได้ (ไม่มีเส้นลบในเอกสาร) */
+export async function zortAddWarehouse(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const code = txt(o.code, 30);
+  const name = txt(o.name, 120);
+  if (!code || !name) return { ok: false, error: "ต้องมีทั้ง code และ name" };
+  if (!/^[A-Za-z0-9_-]+$/.test(code)) return { ok: false, error: "code ใช้ได้เฉพาะอักษรอังกฤษ ตัวเลข - _ (เหมือนคลังเดิม NEW · KLD · ANJ)" };
+  const body = { code, name };
+  if (txt(o.address)) body.address = txt(o.address, 300);
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ คลังที่สร้างแล้วลบผ่าน API ไม่ได้" };
+
+  const seen = await seenRef("warehouse", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "คลังนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("Warehouse/AddWarehouse", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("warehouse", ref, { kind: "warehouse", code, name });
+  return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มคลัง ${code} เข้า ZORT แล้ว` };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */
@@ -542,6 +622,18 @@ export async function zortVoidQuotation(o = {}) {
        เจอ 404 ครบทุกชื่อถึงจะเขียนลงรายการนี้ได้ · เขียนชื่อที่ลองไว้ให้ครบด้วย
        ไม่งั้นคนอ่านจะไม่รู้ว่าเราลองแค่ชื่อเดียวหรือลองครบแล้ว */
 export const ZORT_NO_API = [
+  /* งานกระดาน t_mu0m99go (14 ก.ย. 2569) — ยืนยันจากเอกสารทางการ ไม่ใช่จากการเดาชื่อ */
+  {
+    what: "สร้างหมวดหมู่สินค้า",
+    at: "2026-09-14",
+    probe:
+      "เอกสาร ZORT API V4 หน้า Product (developers.zortout.com/api-reference/product) มีแค่ " +
+      "GET Product/GetCategorys — **ไม่มีเส้นสร้าง/แก้/ลบหมวดหมู่**",
+    note:
+      "หมวดใหม่เกิดได้ทางเดียวคือใส่ชื่อหมวดในช่อง `category` (String) ตอน AddProduct / UpdateProduct " +
+      "⇒ จอ 'เพิ่มหมวดหมู่' ต้องบอกตรง ๆ และพาไปเพิ่ม/แก้สินค้าแทน ห้ามทำฟอร์มสร้างหมวดที่ไม่มีที่ส่ง " +
+      "⚠️ ยังไม่ได้ยิงยืนยันว่า UpdateProduct ใส่ชื่อหมวดใหม่แล้ว ZORT สร้างหมวดให้เองจริง",
+  },
   {
     what: "แก้ / ยกเลิกใบเสนอราคา (เส้นมีจริง แต่ยิงแล้วไม่ผ่าน)",
     at: "2026-09-06",

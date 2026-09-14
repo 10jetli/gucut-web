@@ -395,6 +395,18 @@ async function route(req, context) {
       const r = await zortAddPurchaseOrder(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST ?addbundle=1    body {ref, sku, name, price, vat?, items:[{sku, qty}]}   ⇒ ZORT Bundle/AddBundle
+       POST ?addwarehouse=1 body {ref, code, name, address?}                        ⇒ ZORT Warehouse/AddWarehouse
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · **ยังไม่เคยยิงจริงทั้งคู่** · ผิด method = 405
+       ⚠️ "เพิ่มหมวดหมู่" ไม่มีเส้น — ZORT ไม่เปิด API (ดู ZORT_NO_API) · งานกระดาน t_mu0m99go */
+    if (url.searchParams.get("addbundle") || url.searchParams.get("addwarehouse")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddBundle, zortAddWarehouse } = await import("../lib/zort-write.mjs");
+      const r = url.searchParams.get("addbundle") ? await zortAddBundle(body) : await zortAddWarehouse(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     /* รายการที่ ZORT **ไม่เปิด API ให้** — จอเอาไปโชว์เหตุผลได้ตรง ๆ
        ⚠️ ต่างจาก "เรายังไม่ได้ทำ" คนละเรื่อง ห้ามให้จอเขียนรวมกัน */
     /* ข้อมูลนิติบุคคล + ใบอนุญาต — **แหล่งความจริงเดียว** สำหรับจอหลังร้านทุกตัว
