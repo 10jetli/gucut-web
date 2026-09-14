@@ -473,13 +473,17 @@ export async function listTransfers(o = {}) {
   /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569) — สามตัวนี้ไม่มีตัวไหนต้องรอกัน
       ⚠️ CREATE TABLE ข้างบนยังต้องอยู่ก่อนและ await จริง ๆ — ห้ามย้ายลงมาในนี้
          สามตัวนี้อ่านตารางนั้น ถ้ายังไม่ถูกสร้างจะล้มทั้งชุด */
-  const [sumRows, byStatus, rows] = await Promise.all([
+  const [sumRows, byStatus, byKind, rows] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filter}`
     ),
     // แท็บสถานะ — นับข้ามตัวกรองสถานะเสมอ (กติกาเดียวกับทุกจอ)
     coreQuery(
       `SELECT status, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
+    ),
+    // ยอดแยกชนิดใบ — ใช้เทียบกับ ?zortlist=transfers&type= ทีละชนิด (ใบ t_mu1bh5cl · 14 ก.ย. 2569)
+    coreQuery(
+      `SELECT kind, COUNT(*) AS c FROM transfers WHERE 1=1 ${filter} GROUP BY kind ORDER BY c DESC`
     ),
     coreQuery(
       `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
@@ -494,6 +498,7 @@ export async function listTransfers(o = {}) {
     limit,
     offset,
     byStatus,
+    byKind,
     /* ⚠️ จอต้องบอกว่าเก็บย้อนหลังแค่ช่วงหนึ่ง ไม่ใช่ทั้งหมดที่ ZORT มี
        ค่าที่วัดได้ (6 ก.ย. 2569): กระจก **12,002** ใบ · ZORT บอก **12,196** ใบ (วัด 3 ก.ย.)
        ⇒ ห่างกัน **194** ใบ

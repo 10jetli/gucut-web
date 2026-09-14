@@ -91,3 +91,20 @@ test('ส่งแถวดิบ + rowKeys + count ตามที่ ZORT บ�
   assert.equal(r.rows[0].amount, 120);
   assert.equal(r.count, null, 'ZORT ไม่ส่ง count ⇒ null ไม่ใช่ 1');
 });
+
+test('transfers: type ไปที่ transferType · ชนิดนอกรายการ = 400 ไม่ยิง · kind อื่นส่ง type = 400', async () => {
+  reset();
+  reply = () => ({ ok: true, status: 200, json: async () => ({ list: [], count: 42 }) });
+  const r = await zortReadList({ kind: 'transfers', type: 'Assembly', from: '2022-01-01', to: '2026-09-14', limit: 1 });
+  assert.equal(r.ok, true);
+  assert.equal(new URL(calls[0].url).pathname, '/v4/Transfer/GetTransfers');
+  assert.equal(params().get('transferType'), 'Assembly');
+  assert.equal(params().get('transferdateafter'), '2022-01-01');
+  assert.equal(r.count, 42);
+  assert.equal(r.applied.type, 'Assembly');
+
+  reset();
+  assert.equal((await zortReadList({ kind: 'transfers', type: 'Nope' })).ok, false);
+  assert.equal((await zortReadList({ kind: 'incomes', type: 'Adjust' })).ok, false);
+  assert.equal(calls.length, 0);
+});

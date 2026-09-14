@@ -18,6 +18,14 @@ export const ZORT_LISTS = {
   expenses: { path: "Finance/GetExpenses", after: "expensedateafter", before: "expensedatebefore", label: "รายจ่ายอื่น" },
   moneytransfers: { path: "Finance/GetMoneyTransfers", after: "dateafter", before: "datebefore", label: "โอนเงิน" },
   variations: { path: "Product/GetVariations", after: null, before: null, label: "สินค้าหลากคุณสมบัติ" },
+  /* ใบโอนสินค้า — เพิ่ม 14 ก.ย. 2569 สำหรับใบ t_mu1bh5cl (ส่วนต่างกระจก vs จอ ZORT ~195 ใบ)
+     📏 กวาด GetTransfers แบบไม่ระบุชนิดครบ 61 หน้า = 12,003 ใบ = กระจกพอดี (written 0) 22:22
+     ⇒ ส่วนต่างกับจอ ZORT (12,197 วัด 7 ก.ย.) คือใบที่รายการปกติไม่ส่งมา — ต้องวัดยอดต่อชนิด
+     เอกสาร: transferType = Transfer · Initial · Adjust · Assembly · Disassembly · Reserve · count = ยอดตามตัวกรอง */
+  transfers: {
+    path: "Transfer/GetTransfers", after: "transferdateafter", before: "transferdatebefore", label: "ใบโอนสินค้า",
+    typeParam: "transferType", types: ["Transfer", "Initial", "Adjust", "Assembly", "Disassembly", "Reserve"],
+  },
 };
 
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -28,7 +36,8 @@ function creds() {
   return { storename: ZORT_STORENAME, apikey: ZORT_APIKEY, apisecret: ZORT_APISECRET };
 }
 
-/** ขาเข้าจากจอ: { kind, from?, to?, keyword?, page?, limit? } · from/to = yyyy-MM-dd (ไม่ใช้กับ variations) */
+/** ขาเข้าจากจอ: { kind, from?, to?, keyword?, page?, limit?, type? } · from/to = yyyy-MM-dd (ไม่ใช้กับ variations)
+ *  type = ชนิดใบ ใช้ได้เฉพาะ kind ที่มี types (ตอนนี้ transfers) · ตัวอื่นส่ง type มา = 400 ไม่เมินเงียบ */
 export async function zortReadList(input = {}) {
   const kind = String(input.kind ?? "").trim();
   const def = ZORT_LISTS[kind];
@@ -41,6 +50,11 @@ export async function zortReadList(input = {}) {
   }
   if ((from || to) && !def.after) return { ok: false, error: `${def.label} กรองวันที่ไม่ได้ (ZORT ไม่มีพารามิเตอร์นี้)` };
   if (from && to && from > to) return { ok: false, error: "from ต้องไม่หลัง to" };
+  const type = String(input.type ?? "").trim();
+  if (type && !def.types) return { ok: false, error: `${def.label} ไม่มีตัวกรองชนิด (type)` };
+  if (type && !def.types.includes(type)) {
+    return { ok: false, error: `ชนิด "${type.slice(0, 20)}" ไม่รู้จัก — ใช้ได้: ${def.types.join(" · ")}` };
+  }
 
   // ⚠️ ค่าที่ขอเกินเพดาน = บีบแล้ว **บอกจอ** (limitClamped) ไม่บีบเงียบ ๆ
   const pageIn = Math.floor(Number(input.page ?? 1));
@@ -57,6 +71,7 @@ export async function zortReadList(input = {}) {
   if (keyword) qs.set("keyword", keyword);
   if (from) qs.set(def.after, from);
   if (to) qs.set(def.before, to);
+  if (type) qs.set(def.typeParam, type);
   const path = `${def.path}?${qs}`;
 
   let res;
@@ -81,7 +96,7 @@ export async function zortReadList(input = {}) {
     ok: true,
     kind,
     label: def.label,
-    applied: { from: from || null, to: to || null, keyword: keyword || null, page, limit },
+    applied: { from: from || null, to: to || null, keyword: keyword || null, page, limit, ...(def.types ? { type: type || null } : {}) },
     ...(limitOk && limitIn > 500 ? { limitClamped: true, limitRequested: limitIn } : {}),
     // จำนวนทั้งหมดตามที่ ZORT บอก — ไม่มีช่องนี้ = null (ห้ามเอาจำนวนแถวหน้านี้มาแทน)
     count: Number.isFinite(count) ? count : null,
