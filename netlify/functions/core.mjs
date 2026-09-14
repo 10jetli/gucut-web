@@ -433,6 +433,15 @@ async function route(req, context) {
       const r = await zortFindProduct(url.searchParams.get("zortproduct"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?zortpo=<เลขที่ใบสั่งซื้อ> ⇒ {found, purchaseOrder:{id, number, status, warehousecode, amount, paymentstatus, lines}}
+       หา id ของ ZORT ก่อนรับของ/ตรวจนับ (?poreceive ต้องใช้ id · กระจก D1 ไม่มี id) · งานกระดาน t_mu0tx40g
+       🔴 เลขที่ใบซ้ำกันได้ ⇒ เจอหลายใบ = 400 + ids ไม่เดา · ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) · อ่านอย่างเดียว */
+    if (url.searchParams.has("zortpo")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortFindPurchaseOrder } = await import("../lib/zort-write.mjs");
+      const r = await zortFindPurchaseOrder(url.searchParams.get("zortpo"));
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.has("productlabels")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductLabels } = await import("../lib/zort-write.mjs");

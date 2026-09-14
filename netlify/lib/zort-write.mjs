@@ -917,6 +917,43 @@ export async function zortAddReturnPurchaseOrder(o = {}) {
     message: `บันทึกคืนสินค้าให้ผู้ขาย ${number} ยอด ฿${amount} เข้า ZORT แล้ว` };
 }
 
+/** หาใบสั่งซื้อใน ZORT ด้วยเลขที่ใบ — ได้ id ของ ZORT ไปใช้กับ ?poreceive (soon: stock-count · งานกระดาน t_mu0tx40g)
+ *  ⚠️ กระจก D1 (purchase_orders) ใช้เลขที่ใบเป็นกุญแจ **ไม่มี id ของ ZORT** ⇒ ต้องถาม ZORT
+ *  ⚠️ เอกสาร V4: GetPurchaseOrders รับ `numberlist` เป็น **header** (ไม่ใช่ query) · คืน id · number · status · warehousecode · list
+ *  🔴 **เลขที่เอกสารของ ZORT ซ้ำกันได้จริง** (กระจกเคยหาย 581 ใบเพราะเรื่องนี้)
+ *     ⇒ กรองเลขตรงตัวเอง · เจอมากกว่าหนึ่งใบ = ตีกลับพร้อมรายชื่อ id ห้ามเดาว่าใบไหน
+ *  ⚠️ สามสถานะ: found · found:false (ไม่มีจริง) · unknown (ถามไม่สำเร็จ ≠ ไม่มี)
+ *  ⚠️ ยังไม่เคยยิงจริงว่า ZORT กรองด้วย header นี้จริงไหม — ถ้าไม่กรอง จะได้หลายใบกลับมา แล้วตัวกรองตรงตัวของเรายังกันผิดใบได้ */
+export async function zortFindPurchaseOrder(numberIn) {
+  const number = txt(numberIn, 60);
+  if (!number) return { ok: false, error: "ต้องระบุเลขที่ใบสั่งซื้อ" };
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/PurchaseOrder/GetPurchaseOrders?limit=50`, {
+      headers: { ...headers, numberlist: number },
+      signal: AbortSignal.timeout(8000),
+    });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = r.ok ? await r.json().catch(() => null) : null;
+  if (!d || !Array.isArray(d.list))
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status}) — ยังไม่รู้ว่ามีใบนี้ไหม` };
+  const hit = d.list.filter((p) => String(p?.number ?? "").trim() === number);
+  if (!hit.length) return { ok: true, found: false, number, returned: d.list.length };
+  if (hit.length > 1)
+    return { ok: false, duplicate: true, error: `เลขที่ใบ ${number} ซ้ำกัน ${hit.length} ใบใน ZORT — ไม่เดาว่าใบไหน`,
+      ids: hit.map((p) => Number(p.id)) };
+  const p = hit[0];
+  return { ok: true, found: true, purchaseOrder: {
+    id: Number(p.id), number, status: txt(p.status, 30) || null, warehousecode: txt(p.warehousecode, 30) || null,
+    amount: numOrNull(p.amount), paymentstatus: txt(p.paymentstatus, 30) || null,
+    lines: Array.isArray(p.list) ? p.list.map((l) => ({ sku: txt(l?.sku, 60), name: txt(l?.name, 200), qty: numOrNull(l?.number) })) : null,
+  } };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */
