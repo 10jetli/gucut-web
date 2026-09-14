@@ -184,19 +184,43 @@ export async function zortAddProduct(o = {}) {
                         ⇒ ZORT จะ **เมินเงียบ ๆ ไม่ error** สินค้าขึ้นโดยไม่มีทุน)
       unittext ✅ (เดิมเขียน `unit` ซึ่งเป็นชื่อคอลัมน์ D1 ของเรา ไม่ใช่ของ ZORT)
       barcode · category **ยังยืนยันไม่ได้จากโค้ดในเครื่อง** ⇒ ส่งไปได้แต่ต้องตรวจของจริงรอบแรก */
+  /* ✅ **ยืนยันกับเอกสารทางการ ZORT API V4 แล้ว** (developers.zortout.com/api-reference/product · 14 ก.ย. 2569 · งานกระดาน t_mu0tx2wj)
+      AddProduct: name* · sku* · description · sellprice (String) · purchaseprice (String) · sell_vat_status (Int) ·
+      purchase_vat_status (Int) · barcode · stock (String) · unittext · weight/width/length/height (String) · tag (String Array) ·
+      category · producttype (Int) · properties
+      🔴 แก้ของเดิม: เดิมส่ง sellprice/purchaseprice เป็น **ตัวเลข** ทั้งที่เอกสารกำหนด String — ZORT อาจรับได้ แต่ยังไม่เคยยิงพิสูจน์
+         ⇒ ส่งตามเอกสาร ไม่พึ่งว่า ZORT จะยอมเดาชนิดให้
+      🔴 **ไม่ส่ง `stock` (สต็อกตั้งต้น) โดยตั้งใจ** — สต็อกที่เกิดตอนสร้างสินค้าไม่มีเอกสารรองรับ (ไม่มีใบซื้อ/ใบปรับยอด)
+         กระจกคลังเงาจะเห็นยอดโผล่ขึ้นมาเฉย ๆ ⇒ รับของเข้าต้องผ่าน ?poreceive หรือปรับยอดใน ZORT
+      ⚠️ ไม่ส่ง producttype/properties — เอกสารไม่บอกค่าที่รับ ห้ามเดา */
   const body = { sku, name };
-  for (const [key, field] of [["price", "sellprice"], ["cost", "purchaseprice"]]) {
-    if (o[key] === undefined) continue;
+  for (const [key, field] of [["price", "sellprice"], ["cost", "purchaseprice"],
+    ["weight", "weight"], ["width", "width"], ["length", "length"], ["height", "height"]]) {
+    if (o[key] === undefined || o[key] === "") continue;
     const n = numOrNull(o[key]);
-    if (n === null) return { ok: false, error: `ช่อง ${key} ไม่ใช่ตัวเลข — ยังไม่ส่งเข้า ZORT` };
-    body[field] = n;
+    if (n === null || n < 0) return { ok: false, error: `ช่อง ${key} ต้องเป็นตัวเลขไม่ติดลบ — ยังไม่ส่งเข้า ZORT` };
+    body[field] = String(n);
+  }
+  for (const [key, field, max] of [["vat", "sell_vat_status", 3], ["purchaseVat", "purchase_vat_status", 2]]) {
+    if (o[key] === undefined || o[key] === "") continue;
+    const v = Number(o[key]);
+    if (!Number.isInteger(v) || v < 0 || v > max)
+      return { ok: false, error: `${key} ต้องเป็นเลขจำนวนเต็ม 0-${max} (${field} ตามเอกสาร)` };
+    body[field] = v;
   }
   if (txt(o.unit)) body.unittext = txt(o.unit, 40);
   if (txt(o.barcode)) body.barcode = txt(o.barcode, 60);
   if (txt(o.category)) body.category = txt(o.category, 80);
   if (txt(o.description)) body.description = txt(o.description, 500);
+  if (Array.isArray(o.tags)) {
+    const tag = o.tags.map((t) => txt(t, 40)).filter(Boolean).slice(0, 20);
+    if (tag.length) body.tag = tag;
+  }
+  const warnings = [];
+  if (o.stock !== undefined)
+    warnings.push("ไม่ส่งสต็อกตั้งต้นเข้า ZORT โดยตั้งใจ — รับของเข้าผ่านใบซื้อ (?poreceive) หรือปรับยอดใน ZORT เพื่อให้มีเอกสารรองรับ");
 
-  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body, ...(warnings.length ? { warnings } : {}),
     note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
 
   const seen = await seenRef("product", ref);
