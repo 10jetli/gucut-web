@@ -32,9 +32,13 @@ export async function listSubs() {
   return (await store().get(SUBS, { type: "json" }).catch(() => null)) || [];
 }
 
+/* 🔴 (แก้ 14 ก.ย. 2569 · gucut2 ชี้): SUBS เป็น **ก้อนรวมของแอดมินทุกเครื่อง**
+   เดิม addSub/removeSub อ่านด้วย `.catch(() => null) || []` ⇒ Blobs สะดุด = ได้ []
+   ⇒ removeSub เขียน [] ทับ = **ลบการรับแจ้งเตือนของแอดมินทุกเครื่อง** · addSub ทับเหลือเครื่องเดียว
+   ⇒ ทางเขียนปล่อยให้ throw เมื่ออ่านไม่ได้ (คนเรียกได้ 500 แทนที่จะลบของจริง) · null = ยังไม่มีใครสมัคร */
 export async function addSub(sub) {
   const s = store();
-  const all = (await s.get(SUBS, { type: "json" }).catch(() => null)) || [];
+  const all = (await s.get(SUBS, { type: "json" })) || [];
   if (all.some((x) => x.endpoint === sub.endpoint)) return all.length;
   all.push(sub);
   await s.setJSON(SUBS, all.slice(-50));   // เผื่อแอดมินหลายเครื่อง
@@ -43,7 +47,7 @@ export async function addSub(sub) {
 
 export async function removeSub(endpoint) {
   const s = store();
-  const all = (await s.get(SUBS, { type: "json" }).catch(() => null)) || [];
+  const all = (await s.get(SUBS, { type: "json" })) || [];
   await s.setJSON(SUBS, all.filter((x) => x.endpoint !== endpoint));
 }
 

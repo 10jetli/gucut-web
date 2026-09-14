@@ -91,9 +91,15 @@ export default async function handler(req, context) {
     if (!/^[a-z0-9-]{8,40}$/.test(id)) return json({ error: "bad cid" }, 400);
     if (!text) return json({ error: "empty" }, 400);
 
-    const t = (await store.get(id, { type: "json" }).catch(() => null)) || {
-      cid: id, created: Date.now(), name: "", phone: "", product: null, messages: [],
-    };
+    /* 🔴 B13 (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): ทางนี้ **เขียนเธรดทับทั้งก้อน**
+       เดิม `.catch(() => null) || {เธรดใหม่}` ⇒ Blobs สะดุด = ได้เธรดเปล่า ⇒ push ข้อความใหม่ ⇒ setJSON ทับ
+       ⇒ บทสนทนาทั้งเธรด + ชื่อ + เบอร์ + สินค้าที่ถามหายถาวร (ฝั่งร้านตอบยิ่งหนัก: บล็อก !asAdmin ไม่ใส่ตัวตนกลับ)
+       และเธรดที่ถูกทับได้ created ใหม่ ⇒ ตรวจย้อนหลังไม่ได้เลยว่าเคยเกิด
+       ⇒ อ่านไม่ได้ = 503 ไม่เขียน · null (ไม่มีคีย์) = เธรดใหม่จริง */
+    let t;
+    try { t = await store.get(id, { type: "json" }); }
+    catch { return json({ error: "ส่งไม่สำเร็จ ลองใหม่อีกครั้ง — ข้อความยังไม่ถูกบันทึก" }, 503); }
+    if (!t) t = { cid: id, created: Date.now(), name: "", phone: "", product: null, messages: [] };
     if (!asAdmin) {
       if (body.name) t.name = clean(body.name, 60);
       if (body.phone) t.phone = clean(body.phone, 20);

@@ -76,7 +76,12 @@ export const readUser = (usersStore, phone) =>
  */
 export async function addPoints(usersStore, phone, n, note, orderId) {
   const key = `u/${phone}`;
-  const u = await usersStore.get(key, { type: "json" }).catch(() => null);
+  /* 🔴 B03 ราก (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): เดิม `.catch(() => null)` ⇒ "อ่านไม่ได้" กับ "ไม่มีบัญชี"
+     แยกกันไม่ออก (คืน null ทั้งคู่) ⇒ claimPending ลบแต้มค้างทิ้งทั้งที่ไม่ได้บวกเข้าบัญชี
+     ⇒ อ่านไม่ได้ = **throw** · null = ไม่มีบัญชีจริงเท่านั้น
+     คนเรียกทุกจุดตรวจแล้ว 14 ก.ย.: auth (claimPending) · orders.mjs:490 · order-finalize.mjs:69 ห่อ .catch อยู่แล้ว
+     · points.mjs (หลังร้านปรับแต้ม) ได้ 500 แทนที่จะเขียนผิด */
+  const u = await usersStore.get(key, { type: "json" });
   if (!u) return null;
   const before = Number(u.points || 0);
   const after = Math.max(0, before + Math.round(n));
@@ -102,7 +107,9 @@ const pendKey = (phone) => `pts/${phone}`;
 
 /** พักแต้มไว้รอเจ้าของเบอร์นี้มาสมัคร */
 export async function addPending(usersStore, phone, n, note) {
-  const cur = (await usersStore.get(pendKey(phone), { type: "json" }).catch(() => null)) || { n: 0, note: "" };
+  /* 🔴 (แก้ 14 ก.ย. 2569 · gucut2 ชี้): เดิมอ่านพลาดได้ {n:0} ⇒ เขียนทับแต้มค้างที่สะสมไว้ เหลือแค่ก้อนใหม่
+     ⇒ อ่านไม่ได้ = throw · null = ยังไม่มีแต้มค้าง */
+  const cur = (await usersStore.get(pendKey(phone), { type: "json" })) || { n: 0, note: "" };
   const next = { n: Number(cur.n || 0) + Math.round(n), note: note || cur.note, at: Date.now() };
   await usersStore.setJSON(pendKey(phone), next);
   return next.n;
@@ -110,9 +117,14 @@ export async function addPending(usersStore, phone, n, note) {
 
 /** เรียกตอนสมัคร/เข้าสู่ระบบสำเร็จ — มีแต้มค้างอยู่ก็โอนเข้าบัญชีให้เลย */
 export async function claimPending(usersStore, phone) {
-  const pend = await usersStore.get(pendKey(phone), { type: "json" }).catch(() => null);
+  /* 🔴 B03 (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): เดิมไม่ดูค่าที่ addPoints คืน แล้วลบคีย์ยอดรอทิ้งทันที
+     ⇒ อ่านบัญชีไม่ได้ (เดิมคืน null) = **แต้มหายถาวร ไม่มีแม้แต่บรรทัดในประวัติ** และคนเรียกห่อ .catch เงียบทั้งเส้น
+     ⇒ อ่านยอดรอไม่ได้ = throw (ไม่แตะอะไร) · ลบยอดรอ **เฉพาะเมื่อ addPoints บวกเข้าบัญชีสำเร็จ (คืนตัวเลข)**
+       ไม่มีบัญชี (null) หรืออ่านบัญชีไม่ได้ (throw) ⇒ ยอดรอยังอยู่ รอบล็อกอินหน้าโอนใหม่ได้ */
+  const pend = await usersStore.get(pendKey(phone), { type: "json" });
   if (!pend?.n) return 0;
-  await addPoints(usersStore, phone, pend.n, pend.note || "แต้มสะสมเดิมจากระบบเก่า", null);
+  const after = await addPoints(usersStore, phone, pend.n, pend.note || "แต้มสะสมเดิมจากระบบเก่า", null);
+  if (typeof after !== "number") return 0;
   await usersStore.delete(pendKey(phone)).catch(() => {});
   return pend.n;
 }

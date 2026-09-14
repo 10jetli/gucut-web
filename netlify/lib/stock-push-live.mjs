@@ -315,7 +315,11 @@ export async function stockPushLive(body) {
 
   // ⑤ จดประวัติทุกรอบ — append รายการล่าสุดไว้หัวแถว เก็บ 50 รอบ
   const s = getStore({ name: "gucut-coupon", consistency: "strong" });
-  const log = (await s.get("stockpush/log", { type: "json" }).catch(() => null)) || [];
+  /* 🟠 (แก้ 14 ก.ย. 2569 · gucut2 ชี้): เดิม `.catch(() => null) || []` ⇒ อ่านประวัติพลาด = เขียนรอบนี้รอบเดียวทับ 50 รอบเดิม
+     ⇒ อ่านไม่ได้ = **ไม่จดประวัติรอบนี้** (ดันสต็อกเกิดไปแล้ว ผลยังคืนครบ) และบอกใน logSkipped · null = ยังไม่เคยจด */
+  let log;
+  try { log = (await s.get("stockpush/log", { type: "json" })) || []; }
+  catch { return { ...out, logSkipped: "อ่านประวัติการดันสต็อกไม่ได้ — รอบนี้ไม่ได้จดลงประวัติ (กันเขียนทับของเดิม)" }; }
   /* จด **ผลรายตัวครบทุกสถานะ** ไม่ใช่แค่แถวที่ยิง (ฝั่งจอขอ 8 ก.ย. 2569 —
      "จอจะได้เลิกบอกว่าไปดูที่อื่น") · ตัด raw ออกจาก log กันก้อนบวม เก็บแค่ why */
   log.unshift({

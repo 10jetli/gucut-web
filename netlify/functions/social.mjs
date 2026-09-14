@@ -69,6 +69,14 @@ async function overLimit(s, ip, kind, max) {
 
 const readCounts = async (s) => (await s.get("counts", { type: "json" }).catch(() => null)) || {};
 
+/* 🔴 B16 (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): **ทางที่จะเขียนกลับห้ามใช้ readCounts**
+   `counts` เป็นก้อนเดียวของทั้งร้าน ⇒ อ่านพลาดได้ {} ⇒ กดหัวใจคลิปเดียว = หัวใจ+จำนวนคอมเมนต์ทุกคลิปหาย
+   ⇒ สองตัวนี้ปล่อยให้ throw เมื่ออ่านไม่ได้ (null = ไม่มีคีย์จริง ใช้ค่าว่างได้) · ทาง GET ยังใช้ readCounts ตามเดิม */
+const readCountsForWrite = async (s) => (await s.get("counts", { type: "json" })) || {};
+const readCommentsForWrite = async (s, id) => (await s.get(`cmt/${id}`, { type: "json" })) || [];
+class ReadFailed extends Error {}
+const strict = async (p) => { try { return await p; } catch { throw new ReadFailed(); } };
+
 // แจ้งร้านเวลามีคอมเมนต์ใหม่ — ใช้กลุ่ม Telegram เดิม ไม่ต้องตั้งอะไรเพิ่ม
 async function tell(text) {
   const { TELEGRAM_BOT_TOKEN: tok, TELEGRAM_CHAT_ID: chat } = process.env;
@@ -109,10 +117,14 @@ export default async function handler(req, context) {
     const id = clean(url.searchParams.get("id"), 64);
     const cid = clean(url.searchParams.get("cid"), 64);
     if (!id || !cid) return json({ error: "bad request" }, 400);
-    const list = (await s.get(`cmt/${id}`, { type: "json" }).catch(() => null)) || [];
+    /* 🔴 B16 ทางลบ: เดิมอ่านพลาดได้ [] ⇒ next = [] ⇒ **ลบคอมเมนต์ทิ้งทั้งคลิป** · อ่านไม่ได้ = 503 ไม่เขียน */
+    let list, counts;
+    try { list = await strict(readCommentsForWrite(s, id)); }
+    catch { return json({ error: "อ่านคอมเมนต์ไม่ได้ชั่วคราว — ยังไม่ได้ลบอะไร" }, 503); }
     const next = list.filter((c) => c.i !== cid);
     await s.setJSON(`cmt/${id}`, next);
-    const counts = await readCounts(s);
+    try { counts = await strict(readCountsForWrite(s)); }
+    catch { return json({ ok: true, comments: next, countsSkipped: true }); }   // ลบแล้ว แต่ไม่แตะยอดรวมที่อ่านไม่ได้
     if (counts[id]) { counts[id][1] = next.length; await s.setJSON("counts", counts); }
     return json({ ok: true, comments: next });
   }
@@ -139,7 +151,10 @@ export default async function handler(req, context) {
 
   if (action === "like" || action === "unlike") {
     if (await overLimit(s, ip, "like", LIKE_MAX)) return json({ error: "กดถี่เกินไป พักสักครู่" }, 429);
-    const counts = await readCounts(s);
+    /* 🔴 B16 ทางหัวใจ: counts คือก้อนเดียวของทั้งร้าน ⇒ อ่านพลาดแล้วเขียน = หัวใจ/ยอดคอมเมนต์ทุกคลิปหาย */
+    let counts;
+    try { counts = await strict(readCountsForWrite(s)); }
+    catch { return json({ error: "ตอนนี้กดหัวใจไม่ได้ชั่วคราว ลองใหม่อีกครั้ง" }, 503); }
     const cur = counts[id] || [0, 0];
     cur[0] = Math.max(0, cur[0] + (action === "like" ? 1 : -1));
     counts[id] = cur;
@@ -160,14 +175,20 @@ export default async function handler(req, context) {
       return json({ error: "คอมเมนต์ถี่เกินไป พักสัก 10 นาทีแล้วลองใหม่" }, 429);
     }
 
-    const list = (await s.get(`cmt/${id}`, { type: "json" }).catch(() => null)) || [];
+    /* 🔴 B16 ทางคอมเมนต์: เดิมอ่านพลาดได้ [] ⇒ เขียนทับเหลือคอมเมนต์ใหม่อันเดียว · อ่านไม่ได้ = 503 ไม่เขียน */
+    let list;
+    try { list = await strict(readCommentsForWrite(s, id)); }
+    catch { return json({ error: "ส่งคอมเมนต์ไม่สำเร็จ ลองใหม่อีกครั้ง" }, 503); }
     const c = { i: Math.random().toString(36).slice(2, 10), n: name, t: text, at: Date.now() };
     const next = [...list, c].slice(-MAX_COMMENTS);
     await s.setJSON(`cmt/${id}`, next);
 
-    const counts = await readCounts(s);
-    counts[id] = [counts[id]?.[0] ?? 0, next.length];
-    await s.setJSON("counts", counts);
+    let counts = null;
+    try { counts = await strict(readCountsForWrite(s)); } catch { /* คอมเมนต์บันทึกแล้ว · ยอดรวมอ่านไม่ได้ ⇒ ไม่แตะ (ห้ามเขียนทับทั้งร้าน) */ }
+    if (counts) {
+      counts[id] = [counts[id]?.[0] ?? 0, next.length];
+      await s.setJSON("counts", counts);
+    }
 
     await tell(`💬 คอมเมนต์ใหม่ในคลิป\n${name}: ${text}\nคลิป ${id}`);
     return json({ ok: true, comment: c, comments: next });
