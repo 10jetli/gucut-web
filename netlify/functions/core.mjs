@@ -300,6 +300,19 @@ async function route(req, context) {
       return json({ ready: false, note: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN ที่ Netlify" });
     }
 
+    /* สัญญาคลังเงาระบุ method ของเส้นอ่านไว้ชัดเจน — อย่าปล่อย POST/DELETE
+       ให้ไหลไปทำงานเดียวกับ GET เพราะ caller จะเข้าใจผิดว่าเขียนหรือแก้ข้อมูลสำเร็จ
+       (โดยเฉพาะ sync/recon/snapshot เป็น GET ที่อาจอัปเดตกระจกระหว่างอ่าน) */
+    const contractRead =
+      !url.search ||
+      ["sync", "shopeesync", "recon", "snapshot", "stock", "stockcompare"].some((key) =>
+        url.searchParams.has(key)
+      ) ||
+      ["missing-sku", "orders", "stock", "moves"].includes(url.searchParams.get("list"));
+    if (contractRead && req.method !== "GET") {
+      return json({ error: "ต้องเป็น GET" }, 405);
+    }
+
     /* ── ย้ายฐานไปโซนใกล้ฟังก์ชัน ── (5 ก.ย. 2569 เจ้าของร้านสั่งทำคืนนี้)
        ?d1move=plan|create|schema|copy|verify — **ห้ามข้ามขั้น** ดูลำดับใน lib/d1move.mjs
        ⚠️ ไม่มีคำสั่งไหนแตะฐานเดิมเลย · สับสวิตช์ทำด้วยการเปลี่ยน env เท่านั้น ไม่ได้อยู่ในโค้ด
