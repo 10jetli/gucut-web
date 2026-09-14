@@ -954,6 +954,84 @@ export async function zortFindPurchaseOrder(numberIn) {
   } };
 }
 
+/** อ่านใบสั่งซื้อด้วย id ของ ZORT — ใช้ยืนยันตัวใบก่อน/หลังยกเลิก · งานกระดาน t_mu1bh3s7
+ *  ⚠️ เอกสาร V4: GET PurchaseOrder/GetPurchaseOrderDetail?id= · status: Pending · Waiting · Shipping · Success · Partial Transfer · Voided
+ *  🔴 สามสถานะ: ถามไม่สำเร็จ = unknown (ห้ามแปลว่าไม่มีใบ) · ไม่พบ = found:false · พบ = purchaseOrder */
+export async function zortGetPurchaseOrderById(idIn) {
+  const id = productId(idIn);
+  if (!id) return { ok: false, error: "ต้องระบุ id ของใบสั่งซื้อใน ZORT (ตัวเลข)" };
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/PurchaseOrder/GetPurchaseOrderDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = r.ok ? await r.json().catch(() => null) : null;
+  if (!d) return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status}) — ยังไม่รู้สถานะใบนี้` };
+  /* รูปคำตอบยังไม่เคยเห็นของจริง ⇒ รับเฉพาะก้อนที่ id ตรงกับที่ถาม (ท่าเดียวกับ zortProductById) */
+  const p = [d, d?.detail, d?.purchaseorder].find((x) => x && Number(x.id) === id);
+  if (!p) {
+    const code = String(d?.res?.resCode ?? d?.resCode ?? "");
+    if (code && code !== "200") return { ok: true, found: false, id, zortCode: code };
+    return { ok: false, unknown: true, error: `ZORT ไม่คืนใบสั่งซื้อ id ${id} (หรือรูปคำตอบไม่รู้จัก) — ยังไม่รู้สถานะ` };
+  }
+  return { ok: true, found: true, purchaseOrder: {
+    id, number: txt(p.number, 60) || null, status: txt(p.status, 30) || null,
+    amount: numOrNull(p.amount), paymentstatus: txt(p.paymentstatus, 30) || null,
+  } };
+}
+
+/** ยกเลิกใบสั่งซื้อใน ZORT (PurchaseOrder/VoidPurchaseOrder?id=) · งานกระดาน t_mu1bh3s7
+ *  ใช้ยกเลิก **ใบทดสอบ** ตอนเปิดปุ่มส่งจริงของจอสร้างรายการซื้อ ("ทดสอบด้วยใบจริงมูลค่าน้อย แล้วยกเลิกทันที")
+ *  ⚠️ เอกสาร V4: POST ?id= หรือ ?number= · ไม่มี body · ตอบ resCode · **ยังไม่เคยยิงจริง**
+ *  🔴 VoidQuotation ของ ZORT ยิงจริงแล้วตอบ 'Invalid ID.' (6 ก.ย. 2569) ⇒ **ห้ามเชื่อ resCode 200 อย่างเดียว**
+ *     ⇒ ยิงแล้วอ่านใบกลับมาดูว่า status เป็น Voided จริง (verified) · อ่านไม่ได้ = บอกว่ายังไม่รู้ ไม่ใช่สำเร็จ
+ *  🔴 ใช้ id เท่านั้น + ต้องส่งเลขที่ใบที่คาดไว้มายืนยัน (เลขที่ใบซ้ำกันได้ ⇒ ห้ามยกเลิกผิดใบ)
+ *  🔴 ใบที่ Success/Partial Transfer (รับของเข้าคลังแล้ว) **ไม่ยกเลิก** — สต็อกขยับไปแล้ว ต้องจัดการใน ZORT เอง */
+export async function zortVoidPurchaseOrder(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  if (!id) return { ok: false, error: "ต้องมี id ของใบสั่งซื้อใน ZORT (ตัวเลข) — ไม่รับเลขที่ใบอย่างเดียว" };
+  const expect = txt(o.number, 60);
+  if (!expect) return { ok: false, error: "ต้องส่งเลขที่ใบที่คาดไว้ (number) มาด้วย — กันยกเลิกผิดใบ" };
+  const path = `PurchaseOrder/VoidPurchaseOrder?id=${id}`;
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: { path, body: {} }, expectNumber: expect,
+    note: "โหมดซ้อม — ยังไม่ได้ยกเลิก · ตอน confirm ท่อจะอ่านใบก่อน (เลขที่ใบต้องตรง · ต้องยังไม่รับของ) แล้วอ่านกลับหลังยกเลิก" };
+
+  const seen = await seenRef("po-void", ref);
+  if (seen.state === "unknown") return { ok: false, ref, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ยกเลิก" };
+  if (seen.state === "seen") return { ok: true, duplicate: true, ref, first: seen.info, message: "สั่งยกเลิกใบนี้ไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const before = await zortGetPurchaseOrderById(id);
+  if (!before.ok) return { ok: false, ref, unknown: !!before.unknown, error: `${before.error} — ยังไม่ได้ยกเลิก` };
+  if (!before.found) return { ok: false, ref, error: `ไม่พบใบสั่งซื้อ id ${id} ใน ZORT — ไม่ได้ยกเลิก` };
+  const po = before.purchaseOrder;
+  if (po.number !== expect)
+    return { ok: false, ref, mismatch: true, error: `id ${id} ใน ZORT คือ ${po.number || "(ไม่มีเลขที่ใบ)"} — ไม่ใช่ ${expect} ⇒ ไม่ยกเลิก` };
+  if (po.status === "Voided") return { ok: true, ref, id, number: po.number, alreadyVoided: true, message: `ใบ ${po.number} ถูกยกเลิกอยู่แล้ว` };
+  if (["Success", "Partial Transfer"].includes(po.status))
+    return { ok: false, ref, error: `ใบ ${po.number} สถานะ ${po.status} (รับของเข้าคลังแล้ว) — ไม่ยกเลิกจากท่อ ต้องจัดการใน ZORT` };
+
+  const r = await zortPost(path, {});
+  if (!r.ok) return { ok: false, ref, id, unknown: !!r.unknown, error: r.error };
+
+  const after = await zortGetPurchaseOrderById(id);
+  const verified = after.ok && after.found && after.purchaseOrder.status === "Voided";
+  if (!verified) {
+    return { ok: false, ref, id, number: po.number, unknown: !after.ok, voidAccepted: true,
+      statusAfter: after.ok && after.found ? after.purchaseOrder.status : null,
+      error: after.ok
+        ? `ZORT ตอบรับคำสั่งยกเลิก แต่อ่านกลับแล้วสถานะยังเป็น ${after.found ? after.purchaseOrder.status : "ไม่พบใบ"} — **ยังไม่ได้ยกเลิกจริง** ไปยกเลิกในหน้าจอ ZORT`
+        : `ZORT ตอบรับคำสั่งยกเลิก แต่อ่านกลับไม่ได้ — ยังไม่รู้ว่ายกเลิกจริงไหม ไปตรวจใน ZORT` };
+  }
+  const warn = await markSafely("po-void", ref, { kind: "po-void", id, number: po.number });
+  return { ok: true, voided: true, verified: true, ref, id, number: po.number, warn, message: `ยกเลิกใบสั่งซื้อ ${po.number} ใน ZORT แล้ว (อ่านกลับยืนยันสถานะ Voided)` };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */

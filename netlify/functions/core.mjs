@@ -442,6 +442,15 @@ async function route(req, context) {
       const r = await zortFindPurchaseOrder(url.searchParams.get("zortpo"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?zortpoid=<id ของ ZORT> ⇒ {found, purchaseOrder:{id, number, status, amount, paymentstatus}}
+       อ่านใบสั่งซื้อด้วย id (หลังสร้างใบ ZORT คืนแค่ detail.id) · ใช้ยืนยันก่อน/หลังยกเลิก · งานกระดาน t_mu1bh3s7
+       ถามไม่สำเร็จ = 502 (ไม่รู้) · ไม่พบ = 200 found:false */
+    if (url.searchParams.has("zortpoid")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortGetPurchaseOrderById } = await import("../lib/zort-write.mjs");
+      const r = await zortGetPurchaseOrderById(url.searchParams.get("zortpoid"));
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.has("productlabels")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductLabels } = await import("../lib/zort-write.mjs");
@@ -479,7 +488,11 @@ async function route(req, context) {
          ขาเข้าจากจอ: {ref, number?, vendor?, vendorCode?, poId?, warehouse?, day?, status?("Pending"|"Success"),
                        items:[{sku, name, qty, price}], discount?, shipping?, paid?, paymentMethod?, note?, confirm?}
          ⚠️ คนละตัวกับ ?addreturn (ลูกค้าคืนของ) · ท่อคิดเงินเอง · ค่าเริ่มต้น Pending · ยังไม่เคยยิงจริง */
-      ["addpurchasereturn", "zortAddReturnPurchaseOrder"]]) {
+      ["addpurchasereturn", "zortAddReturnPurchaseOrder"],
+      /* POST ?voidpo=1 — ยกเลิกใบสั่งซื้อ (ใบทดสอบตอนเปิดปุ่มส่งจริง) → PurchaseOrder/VoidPurchaseOrder?id= · งานกระดาน t_mu1bh3s7
+         ขาเข้าจากจอ: {ref, id (ของ ZORT), number (เลขที่ใบที่คาดไว้), confirm?}
+         ⚠️ อ่านใบก่อน (เลขที่ใบต้องตรง · ไม่ยกเลิกใบที่รับของแล้ว) และอ่านกลับว่า Voided จริงก่อนตอบสำเร็จ */
+      ["voidpo", "zortVoidPurchaseOrder"]]) {
       if (!url.searchParams.get(key)) continue;
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
