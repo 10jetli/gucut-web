@@ -261,7 +261,10 @@ export async function probeBundleDetail(skuIn, whIn) {
     detailStock: { stock: d.body.stock ?? null, availablestock: d.body.availablestock ?? null },
     detail: {
       http: d.http,
-      resCode: d.body?.res?.resCode ?? null,
+      // ⚠️ GetBundleDetail วาง resCode/resDesc ไว้ชั้นบนสุด ไม่ใช่ใต้ res (เดิมอ่านแค่ res.resCode ⇒ null เสมอ · gucut2 จับได้ 14 ก.ย.)
+      //    เจอ 22:52 กับเส้นสินค้า: warehousecode=KLD/ANJ ⇒ resCode 100 "Access Denied." — จอใช้ช่องนี้บอกสาเหตุต่อคลัง
+      resCode: d.body?.res?.resCode ?? d.body?.resCode ?? null,
+      resDesc: String(d.body?.res?.resDesc ?? d.body?.resDesc ?? "").slice(0, 160) || null,
       keys: Object.keys(d.body),
       listType: list === null ? "null" : Array.isArray(list) ? "array" : typeof list,
       listLength: Array.isArray(list) ? list.length : null,

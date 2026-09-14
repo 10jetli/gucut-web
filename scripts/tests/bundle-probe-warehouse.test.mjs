@@ -38,3 +38,20 @@ test('รหัสคลังรูปแปลก ⇒ ตีกลับ ไ�
   assert.equal(r.ok, false);
   assert.equal(calls.length, 0);
 });
+
+test('ZORT ตอบ Access Denied (resCode/resDesc ชั้นบนสุด) ⇒ detail ส่ง resCode + resDesc ออกมา ไม่ใช่ null', async () => {
+  const saved = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    const u = String(url);
+    if (/GetBundles\?/.test(u)) return { ok: true, status: 200, text: async () => JSON.stringify({ list: [{ id: 7, sku: 'SET-A' }] }) };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ resCode: '100', resDesc: 'Access Denied.' }) };
+  };
+  try {
+    const r = await probeBundleDetail('SET-A', 'KLD');
+    assert.equal(r.detail.resCode, '100');
+    assert.equal(r.detail.resDesc, 'Access Denied.');
+    assert.deepEqual(r.detailStock, { stock: null, availablestock: null });
+  } finally {
+    globalThis.fetch = saved;
+  }
+});
