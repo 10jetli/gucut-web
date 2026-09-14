@@ -22,6 +22,13 @@ export const ZORT_LISTS = {
      📏 กวาด GetTransfers แบบไม่ระบุชนิดครบ 61 หน้า = 12,003 ใบ = กระจกพอดี (written 0) 22:22
      ⇒ ส่วนต่างกับจอ ZORT (12,197 วัด 7 ก.ย.) คือใบที่รายการปกติไม่ส่งมา — ต้องวัดยอดต่อชนิด
      เอกสาร: transferType = Transfer · Initial · Adjust · Assembly · Disassembly · Reserve · count = ยอดตามตัวกรอง */
+  /* คืนสินค้าให้ผู้ขาย (soon 'buy-return') — เพิ่ม 14 ก.ย. 2569 · ใบ t_mu1bh6sa
+     เอกสาร V4: GetReturnPurchaseOrders · วันที่กรองด้วย returnpurchaseorderdateafter/before · คืน count + totalAmount + totalPaymentAmount
+     ⚠️ คนละตัวกับ ReturnOrder (ลูกค้าคืนของให้ร้าน) — ห้ามสลับ */
+  returnpurchaseorders: {
+    path: "ReturnPurchaseOrder/GetReturnPurchaseOrders", after: "returnpurchaseorderdateafter", before: "returnpurchaseorderdatebefore",
+    label: "คืนสินค้าให้ผู้ขาย",
+  },
   transfers: {
     path: "Transfer/GetTransfers", after: "transferdateafter", before: "transferdatebefore", label: "ใบโอนสินค้า",
     typeParam: "transferType", types: ["Transfer", "Initial", "Adjust", "Assembly", "Disassembly", "Reserve"],
@@ -102,6 +109,9 @@ export async function zortReadList(input = {}) {
     ...(limitOk && limitIn > 500 ? { limitClamped: true, limitRequested: limitIn } : {}),
     // จำนวนทั้งหมดตามที่ ZORT บอก — ไม่มีช่องนี้ = null (ห้ามเอาจำนวนแถวหน้านี้มาแทน)
     count: Number.isFinite(count) ? count : null,
+    // ยอดเงินรวมตามตัวกรองที่ ZORT คิดให้ (มีเฉพาะบางเส้น เช่น returnpurchaseorders) — ไม่มี = null ห้ามบวกเองจากแถวหน้านี้
+    totalAmount: Number.isFinite(Number(body.totalAmount)) && body.totalAmount !== null && body.totalAmount !== undefined ? Number(body.totalAmount) : null,
+    totalPaymentAmount: Number.isFinite(Number(body.totalPaymentAmount)) && body.totalPaymentAmount !== null && body.totalPaymentAmount !== undefined ? Number(body.totalPaymentAmount) : null,
     rowKeys: body.list[0] ? Object.keys(body.list[0]) : [],
     rows: body.list,
   };

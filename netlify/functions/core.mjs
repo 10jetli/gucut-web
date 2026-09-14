@@ -451,7 +451,7 @@ async function route(req, context) {
       const r = await zortGetPurchaseOrderById(url.searchParams.get("zortpoid"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
-    /* GET ?zortlist=<incomes|expenses|moneytransfers|variations|transfers>[&from=yyyy-MM-dd&to=yyyy-MM-dd&keyword=&page=&limit=&type=]
+    /* GET ?zortlist=<incomes|expenses|moneytransfers|variations|transfers|returnpurchaseorders>[&from=yyyy-MM-dd&to=yyyy-MM-dd&keyword=&page=&limit=&type=]
        type= ใช้กับ transfers เท่านั้น (Transfer · Initial · Adjust · Assembly · Disassembly · Reserve)
        ขาเข้าจากจอ: พารามิเตอร์ใน URL ตามนี้ · ขาออกไป ZORT: Finance/GetIncomes · GetExpenses · GetMoneyTransfers · Product/GetVariations
        ⇒ {ok, kind, label, applied, count, rowKeys, rows (แถวดิบของ ZORT)} · อ่านอย่างเดียว ส่งตรงไม่เก็บลงคลังเงา

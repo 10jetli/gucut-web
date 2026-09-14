@@ -110,3 +110,20 @@ test('transfers: type ไปที่ transferType · ชนิดนอกร�
   assert.equal((await zortReadList({ kind: 'incomes', type: 'Adjust' })).ok, false);
   assert.equal(calls.length, 0);
 });
+
+test('returnpurchaseorders: เส้นถูก · วันที่ไปชื่อ returnpurchaseorderdate* · ส่ง totalAmount/totalPaymentAmount ของ ZORT · ไม่มี = null', async () => {
+  reset();
+  reply = () => ({ ok: true, status: 200, json: async () => ({ list: [{ id: 1, number: 'DN-1' }], count: 1, totalAmount: 1500.5, totalPaymentAmount: 0 }) });
+  const r = await zortReadList({ kind: 'returnpurchaseorders', from: '2026-09-01', to: '2026-09-14' });
+  assert.equal(r.ok, true);
+  assert.equal(new URL(calls[0].url).pathname, '/v4/ReturnPurchaseOrder/GetReturnPurchaseOrders');
+  assert.equal(params().get('returnpurchaseorderdateafter'), '2026-09-01');
+  assert.equal(params().get('returnpurchaseorderdatebefore'), '2026-09-14');
+  assert.equal(r.totalAmount, 1500.5);
+  assert.equal(r.totalPaymentAmount, 0, '0 จริงต้องเป็น 0 ไม่ใช่ null');
+
+  reset();
+  reply = () => ({ ok: true, status: 200, json: async () => ({ list: [], count: 0 }) });
+  const r2 = await zortReadList({ kind: 'returnpurchaseorders' });
+  assert.equal(r2.totalAmount, null, 'ZORT ไม่ส่งยอดรวม ⇒ null ห้ามเป็น 0');
+});
