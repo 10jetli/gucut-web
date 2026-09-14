@@ -374,6 +374,47 @@ export async function zortAddWarehouse(o = {}) {
   return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มคลัง ${code} เข้า ZORT แล้ว` };
 }
 
+/** เพิ่มผู้ติดต่อ (ลูกค้า · คู่ค้า) เข้า ZORT — งานกระดาน t_mu0m97e5 ขั้น ② contact-add
+ *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (อ่าน 14 ก.ย. 2569)
+ *     POST Contact/AddContact · code (บังคับ) · name (บังคับ) · idnumber · phone · email · address ·
+ *     branchname · branchno · facebook · line · instagram (ไม่บังคับ)
+ *  ⚠️ **ไม่มีช่องกลุ่มลูกค้า/กลุ่มราคา** — ZORT ไม่เปิด API (ดู ZORT_NO_API) ห้ามทำช่องหลอกบนจอ
+ *  ⚠️ ยังไม่เคยยิงจริง · โหมดซ้อมเป็นค่าเริ่มต้น · ไม่ส่ง `properties` (เอกสารไม่บอกรูปทรง ห้ามเดา) */
+export async function zortAddContact(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const code = txt(o.code, 60);
+  const name = txt(o.name, 160);
+  if (!code || !name) return { ok: false, error: "ต้องมีทั้ง code และ name" };
+  const body = { code, name };
+  const idnumber = txt(o.taxId ?? o.idnumber, 30).replace(/[\s-]/g, "");
+  /* เลขผู้เสียภาษีผิดหลักแล้วไปอยู่บนใบกำกับ = ใบใช้ไม่ได้ ⇒ ตีกลับตั้งแต่ท่อ ไม่ส่งครึ่ง ๆ */
+  if (idnumber && !/^\d{13}$/.test(idnumber)) return { ok: false, error: "เลขผู้เสียภาษี (taxId) ต้องเป็นตัวเลข 13 หลัก" };
+  if (idnumber) body.idnumber = idnumber;
+  const email = txt(o.email, 120);
+  if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return { ok: false, error: "รูปแบบอีเมลไม่ถูกต้อง" };
+  if (email) body.email = email;
+  for (const [k, n] of [["phone", 40], ["address", 300], ["branchname", 80], ["branchno", 30],
+    ["facebook", 120], ["line", 120], ["instagram", 120]]) {
+    const v = txt(o[k], n);
+    if (v) body[k] = v;
+  }
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ผู้ติดต่อที่สร้างแล้วลบผ่าน API ไม่ได้ (แก้ได้ด้วย UpdateContact)" };
+
+  const seen = await seenRef("contact", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ผู้ติดต่อนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost("Contact/AddContact", body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("contact", ref, { kind: "contact", code, name });
+  return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มผู้ติดต่อ ${name} เข้า ZORT แล้ว` };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */

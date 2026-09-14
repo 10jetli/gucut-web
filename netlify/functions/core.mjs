@@ -411,6 +411,17 @@ async function route(req, context) {
       const r = await zortAddSale(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST ?addcontact=1 body {ref, code, name, taxId?, phone?, email?, address?, branchname?, branchno?,
+                              facebook?, line?, instagram?}  ⇒ ZORT Contact/AddContact
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · ยังไม่เคยยิงจริง · ไม่มีกลุ่มลูกค้า (ZORT ไม่เปิด API) */
+    if (url.searchParams.get("addcontact")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortAddContact } = await import("../lib/zort-write.mjs");
+      const r = await zortAddContact(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("addbundle") || url.searchParams.get("addwarehouse")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
