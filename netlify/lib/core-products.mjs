@@ -202,6 +202,64 @@ export async function syncProducts() {
          (ยิงด้วยรหัสจริงแล้ว ไม่ใช่แค่ดูรหัสตอบกลับ) ⇒ "เส้นมีอยู่" ไม่ได้แปลว่า "ได้ข้อมูล"
       ⇒ เรารู้ว่า "มีชุดอะไรบ้าง ราคาเท่าไหร่ เหลือกี่ชุด" แต่ **ไม่รู้ว่าในชุดมีอะไร**
       ห้ามเดาส่วนประกอบจากชื่อชุดเด็ดขาด — เดาผิดคือตัดสต็อกผิดตัว */
+
+/** ตัวตรวจอ่านอย่างเดียว: ZORT ส่ง "สินค้าในชุด" ผ่าน API จริงไหม — งานกระดาน t_mu1bh4vh
+ *
+ * ⚠️ ทำไมต้องตรวจซ้ำ ทั้งที่คอมเมนต์ด้านบนบอกว่า list ว่าง: เอกสาร ZORT V4 เขียนว่า
+ *    `Bundle/GetBundleDetail` รับ `?id=` (Int · บังคับ) และคืน `list` ProductBundle[{id,name,sku,quantity}]
+ *    แต่บันทึก 6 ก.ย. **ไม่ได้จดว่ายิงด้วยพารามิเตอร์อะไร** ⇒ ยิงผิดชื่อพารามิเตอร์ก็ได้ list ว่างเหมือนกัน
+ *    (syncBundles ทิ้ง id ของชุดไปตั้งแต่ต้น ⇒ ตอนนั้นอาจไม่มี id ให้ส่งเลย)
+ * ⇒ ตัวนี้หา id จาก GetBundles ด้วย sku แล้วยิง detail ด้วย id นั้น คืน "รูปคำตอบดิบ" ให้คนตัดสิน
+ * ⚠️ สามสถานะ: ถาม ZORT ไม่สำเร็จ = unknown (ห้ามแปลเป็น "ไม่มีข้อมูล") · ไม่พบชุด = found:false */
+export async function probeBundleDetail(skuIn) {
+  const sku = String(skuIn ?? "").trim().slice(0, 60);
+  if (!sku) return { ok: false, error: "ต้องระบุ sku ของชุด" };
+  const h = headers();
+  if (!h) return { ok: false, skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const get = async (path) => {
+    try {
+      const res = await fetch(`${BASE}/${path}`, { headers: h, signal: AbortSignal.timeout(12000) });
+      const text = await res.text();
+      let body = null;
+      try { body = JSON.parse(text); } catch { /* คืนสถานะ + ความยาวแทน */ }
+      return { http: res.status, body, bytes: text.length };
+    } catch (e) {
+      return { http: 0, body: null, error: String(e?.message ?? e).slice(0, 120) };
+    }
+  };
+
+  const s = await get(`Bundle/GetBundles?keyword=${encodeURIComponent(sku)}&limit=25`);
+  const slist = Array.isArray(s.body?.list) ? s.body.list : null;
+  if (!slist) return { ok: false, unknown: true, step: "GetBundles", http: s.http, resCode: s.body?.res?.resCode ?? null, error: s.error };
+  const b = slist.find((x) => String(x?.sku ?? "").trim() === sku);
+  if (!b) return { ok: true, found: false, sku, candidates: slist.length };
+  const id = Number(b.id);
+  if (!Number.isInteger(id) || id <= 0) {
+    return { ok: true, found: true, sku, idMissing: true, summaryKeys: Object.keys(b) };
+  }
+
+  const d = await get(`Bundle/GetBundleDetail?id=${id}`);
+  if (!d.body) return { ok: false, unknown: true, step: "GetBundleDetail", id, http: d.http, bytes: d.bytes, error: d.error };
+  const list = d.body.list;
+  return {
+    ok: true,
+    found: true,
+    sku,
+    id,
+    summaryKeys: Object.keys(b),
+    detail: {
+      http: d.http,
+      resCode: d.body?.res?.resCode ?? null,
+      keys: Object.keys(d.body),
+      listType: list === null ? "null" : Array.isArray(list) ? "array" : typeof list,
+      listLength: Array.isArray(list) ? list.length : null,
+      list: Array.isArray(list)
+        ? list.slice(0, 50).map((x) => ({ id: x?.id, sku: x?.sku, name: x?.name, quantity: x?.quantity }))
+        : null,
+    },
+  };
+}
+
 export async function syncBundles() {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();

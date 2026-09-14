@@ -451,6 +451,15 @@ async function route(req, context) {
       const r = await zortGetPurchaseOrderById(url.searchParams.get("zortpoid"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?zortbundle=<sku ของชุด> ⇒ ตัวตรวจอ่านอย่างเดียว: GetBundles หา id → GetBundleDetail?id= คืนรูปคำตอบดิบ
+       ใช้ตัดสินว่า "สินค้าในชุด" ซิงก์ผ่าน API ได้ไหม · งานกระดาน t_mu1bh4vh
+       ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) · ไม่พบชุด = 200 found:false */
+    if (url.searchParams.has("zortbundle")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { probeBundleDetail } = await import("../lib/core-products.mjs");
+      const r = await probeBundleDetail(url.searchParams.get("zortbundle"));
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.has("productlabels")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductLabels } = await import("../lib/zort-write.mjs");
