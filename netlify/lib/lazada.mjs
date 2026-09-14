@@ -516,7 +516,10 @@ export async function lazadaStockCompare(o = {}) {
     const key = keyOf.get(r.sku) || null;
     if (!key) {
       missing += 1;
-      if (missingSample.length < 20) missingSample.push({ sku: r.sku, lazada: r.available });
+      /* ⚠️ **full = ครบทุกแถว ห้ามตัด** (แก้ 14 ก.ย. 2569 · งานกระดาน t_mu0k3eo2)
+          ตัวคิดแผนเอากองนี้ไปทำ skipUnknownFull ⇒ ตัวตรวจหลังยิง (stock-push-live) เทียบความยาวกับตัวนับจริง
+          ตัดที่ 20 = วันที่รหัสไม่รู้จักเกิน 20 ตัว ตัวตรวจจะตอบ landed ไม่ได้ทั้งกระดาน · จอ (ไม่ขอ full) ยังได้ตัวอย่าง 20 เหมือนเดิม */
+      if (o.full || missingSample.length < 20) missingSample.push({ sku: r.sku, lazada: r.available });
       continue;
     }
     if (key !== r.sku) matchedByBase += 1;

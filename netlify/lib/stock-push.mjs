@@ -183,14 +183,24 @@ async function lazadaPlan(full) {
     return { skip: "อ่านผลเทียบสต็อก Lazada ไม่ได้ (ไม่มีช่อง diff) — ไม่ใช่ 'ไม่มีอะไรต้องดัน'" };
 
   const exact = (c.diff || []).filter((d) => d.matchedAs === "ตรงตัว" || d.via === "สูตรชุด");
-  const rows = exact.map((d) => ({
-    sku: d.sku,
-    name: d.name,
-    platformQty: num(d.lazada ?? d.platform ?? d.available),
-    coreQty: num(d.core),
-    directQty: d.directQty ?? null,
-    known: true,
-  }));
+  const rows = [
+    ...exact.map((d) => ({
+      sku: d.sku,
+      name: d.name,
+      platformQty: num(d.lazada ?? d.platform ?? d.available),
+      coreQty: num(d.core),
+      directQty: d.directQty ?? null,
+      known: true,
+    })),
+    /* 🔴 **รหัสที่คลังไม่รู้จัก ต้องเข้าแผนด้วย — เหมือน Shopee/TikTok** (แก้ 14 ก.ย. 2569 · t_mu0k3eo2)
+        เดิม Lazada เจ้าเดียวไม่ใส่ ⇒ `skipUnknown` = 10 (จาก c.missing) แต่ `skipUnknownSample` = 0 แถว
+        และ **`skipUnknownFull` ว่าง** ⇒ ตัวตรวจหลังยิง (stock-push-live:190) เห็นกองข้ามไม่ครบ
+        ⇒ ตอบ `skip_lists_incomplete` ให้ทุกรหัส **ยืนยัน landed ของ Lazada ไม่ได้เลยสักตัว**
+        ⚠️ known:false ⇒ planFrom จัดเข้ากองข้ามเสมอ **ไม่มีทางเข้า push** (มีเทส lazada-unknown-plan กันไว้) */
+    ...(c.missingSample || []).map((m) => ({
+      sku: m.sku, name: m.name ?? "", platformQty: num(m.lazada), coreQty: null, known: false,
+    })),
+  ];
   const p = planFrom(rows, full);
   p.platformSkus = num(c.lazadaSkus);
   p.skipUnknown = num(c.missing);
