@@ -845,6 +845,13 @@ async function route(req, context) {
     if (url.searchParams.get("syncbundles")) {
       return json({ ok: true, bundles: await syncBundles() });
     }
+    /* GET ?syncbundlerecipes=1[&limit=N] ⇒ ซิงก์สูตรชุดจาก ZORT รอบเดียวเดี๋ยวนั้น (ปกติรันเองทุกชั่วโมง :27)
+       ⇒ {ok, zortBundles, asked, same, changed, notWritten, problems} · ล้ม = 502 · งานกระดาน t_mu1bh4vh */
+    if (url.searchParams.get("syncbundlerecipes")) {
+      const { syncBundleRecipes } = await import("../lib/core-products.mjs");
+      const r = await syncBundleRecipes({ limit: url.searchParams.get("limit") ?? undefined });
+      return json(r, r.ok || r.skip ? 200 : 502);
+    }
     /* สินค้าที่ลูกค้าซื้อไม่ได้เพราะสต็อกติดลบ — เรียงตาม "นับตัวนี้แล้วปลดล็อกได้กี่รหัส"
          GET /api/core?blocked=1
        ⚠️ อ่านอย่างเดียว ไม่แก้สต็อกให้ — ติดลบแปลว่าของจริงกับในระบบไม่ตรง แก้ได้ด้วยการนับเท่านั้น

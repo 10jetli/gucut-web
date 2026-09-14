@@ -194,18 +194,18 @@ export async function syncProducts() {
       เช่น "NEWWAVE 7800 SUPER-S 30\" (SET KINGKONG)" = เลื่อย + บาร์ + โซ่ ขายเป็นชุดเดียว
    ⚠️ **สำคัญกับสต็อกมาก** — ขายชุดหนึ่งชุดต้องตัดของหลายตัว
       ตราบใดที่คลังเงายังไม่รู้จักชุด การตัดสต็อกของเราจะไม่ตรงกับความจริงทุกครั้งที่ขายชุด
-   ⚠️ **รายการสินค้าในชุด ZORT ไม่เปิด API ให้ดึง** — ช่อง `list` คืน null ทุกตัว
-      (ลองแล้ว: Bundle/GetBundle 404 · GetBundles?id= และ GetBundleDetail คืน list ว่าง)
-      ✅ **ตรวจซ้ำ 6 ก.ย. 2569 หลังกวาดโมดูล×คำกริยาทั้งแผง — ข้อความนี้ยังถูก ห้ามแก้ตาม**
-         การกวาดเจอว่า `Bundle/GetBundleDetail` **มีอยู่จริง** ซึ่งฟังดูเหมือนขัดกับบรรทัดบน
-         แต่ไม่ขัด: ที่นี่ไม่เคยบอกว่าเส้นไม่มี — บอกว่า **เส้นมีแต่ส่ง `list` ว่างมา**
-         (ยิงด้วยรหัสจริงแล้ว ไม่ใช่แค่ดูรหัสตอบกลับ) ⇒ "เส้นมีอยู่" ไม่ได้แปลว่า "ได้ข้อมูล"
-      ⇒ เรารู้ว่า "มีชุดอะไรบ้าง ราคาเท่าไหร่ เหลือกี่ชุด" แต่ **ไม่รู้ว่าในชุดมีอะไร**
+   ⚠️ ช่อง `list` ใน **GetBundles (รายการสรุป)** คืน null ทุกตัว — สูตรชุดไม่มากับรายการสรุป
+   ❌ **บันทึกเดิม 3–6 ก.ย. 2569 ว่า "GetBundleDetail คืน list ว่าง ⇒ ZORT ไม่เปิด API สูตรชุด" — ผิด**
+      📏 พิสูจน์ 14 ก.ย. 2569 (4440ce6 · GET ?zortbundle=00023-24NW): `GetBundleDetail?id=804372`
+         คืน list 5 รายการ ตรงกับสูตรที่ขูดจากหน้าเว็บ 3 ก.ย. ทุกบรรทัด ทุกจำนวน
+      สาเหตุที่ครั้งก่อนได้ว่าง: **ยังไม่รู้** — บันทึกเดิมไม่ได้จดพารามิเตอร์ และตัวนี้ทิ้ง id ของชุดตั้งแต่ต้น
+      ⇒ สูตรชุดซิงก์ด้วย syncBundleRecipes() (งานตามเวลา bundle-recipe-sync ทุกชั่วโมง)
       ห้ามเดาส่วนประกอบจากชื่อชุดเด็ดขาด — เดาผิดคือตัดสต็อกผิดตัว */
 
 /** ตัวตรวจอ่านอย่างเดียว: ZORT ส่ง "สินค้าในชุด" ผ่าน API จริงไหม — งานกระดาน t_mu1bh4vh
+ * 📏 ผล 14 ก.ย. 2569: ส่งจริง (00023-24NW ⇒ 5 รายการตรงสูตรเดิม) ⇒ ใช้ส่องชุดที่ซิงก์แล้วมีปัญหาได้ต่อ
  *
- * ⚠️ ทำไมต้องตรวจซ้ำ ทั้งที่คอมเมนต์ด้านบนบอกว่า list ว่าง: เอกสาร ZORT V4 เขียนว่า
+ * ⚠️ ที่มา — ตอนเขียนตัวนี้ คอมเมนต์ด้านบนยังบอกว่า list ว่าง: เอกสาร ZORT V4 เขียนว่า
  *    `Bundle/GetBundleDetail` รับ `?id=` (Int · บังคับ) และคืน `list` ProductBundle[{id,name,sku,quantity}]
  *    แต่บันทึก 6 ก.ย. **ไม่ได้จดว่ายิงด้วยพารามิเตอร์อะไร** ⇒ ยิงผิดชื่อพารามิเตอร์ก็ได้ list ว่างเหมือนกัน
  *    (syncBundles ทิ้ง id ของชุดไปตั้งแต่ต้น ⇒ ตอนนั้นอาจไม่มี id ให้ส่งเลย)
@@ -368,7 +368,7 @@ export async function listBundles(o = {}) {
         (ราคาซื้อรวมได้ ฿4,365.80 ซึ่งไม่ตรง — ถ้าเดาผิดข้างจะได้เลขที่เกือบถูก)
      ⚠️ ชิ้นส่วนตัวไหนไม่มีราคาในคลัง = **คืนค่าว่าง ห้ามคิดเป็นศูนย์**
         คิดเป็นศูนย์ = ได้ราคาที่ต่ำกว่าจริงแบบดูสมเหตุสมผล ซึ่งจับไม่ได้ด้วยตา
-     ⚠️ สูตรชุดเป็นภาพนิ่งเก็บครั้งเดียว — ส่ง recipeAt ไปให้จอโชว์เสมอ */
+     ⚠️ สูตรชุดซิงก์จาก ZORT ทุกชั่วโมงตั้งแต่ 14 ก.ย. 2569 (เดิมเป็นภาพนิ่ง 3 ก.ย.) — ยังส่ง recipeAt ไปให้จอโชว์เสมอ */
   let recipeAt = null;
   if (rows.length) {
     const keys = rows.map((r) => esc(String(r.sku))).join(",");
@@ -463,23 +463,185 @@ export async function listBundles(o = {}) {
     limit,
     offset,
     recipeAt,
-    ...mk, // ⚠️ วันที่เก็บสูตรชุด — จอต้องโชว์ สูตรไม่ได้ซิงก์เอง
+    ...mk, // ⚠️ recipeAt = บรรทัดสูตรชุดที่เปลี่ยนล่าสุด (ซิงก์ทุกชั่วโมง) — ไม่ใช่เวลาตรวจกับ ZORT ล่าสุด
     note:
-      "รายการในชุดเก็บจากหน้าเว็บ ZORT ครั้งเดียว ไม่ได้ซิงก์เอง — " +
+      "สูตรชุดซิงก์จาก ZORT เองทุกชั่วโมง (รอบละ 90 ชุด) — " +
       "ราคาสินค้ารวมคิดจากราคาขายของชิ้นส่วน (ตรวจกับ ZORT แล้ว) · " +
       "ชิ้นส่วนที่ไม่มีราคาในคลังจะคืนค่าว่าง ไม่คิดเป็นศูนย์",
     rows,
   };
 }
 
+/* ══ ซิงก์สูตรชุดจาก ZORT ตามเวลา — งานกระดาน t_mu1bh4vh (14 ก.ย. 2569) ══════════════
+   📏 พิสูจน์ก่อนเขียน: GET ?zortbundle=00023-24NW (4440ce6) ⇒ GetBundleDetail?id=804372 คืน list 5 รายการ
+      **ตรงกับสูตรที่ขูดจากหน้าเว็บ 3 ก.ย. ทุกบรรทัด ทุกจำนวน** ⇒ ไม่ต้องขูดหน้าเว็บอีก
+   ⚠️ ถาม detail ทีละชุด (360 ชุด) ⇒ รอบละ RECIPE_BATCH ชุด ไล่ชุดที่ตรวจนานสุดก่อน วนครบทั้งร้านในไม่กี่ชั่วโมง
+      สูตรชุดแทบไม่เปลี่ยน — ช้าไปไม่กี่ชั่วโมงยอมได้ · ยิงทั้ง 360 ในรอบเดียวเสี่ยงหลุดเพดานเวลาฟังก์ชัน
+   🔒 อ่านก่อนเขียน ห้ามกลืน error [[read-before-write-no-swallow]]:
+      - ถามรายชื่อชุดไม่สำเร็จแม้หน้าเดียว = ไม่เขียนอะไรเลยทั้งรอบ
+      - ถาม detail ไม่สำเร็จ / ZORT ตอบคนละชุด / list ว่าง / บรรทัดไม่มีรหัสหรือจำนวน ⇒ **ไม่แตะสูตรเดิม** แค่รายงาน
+        (list ว่างของชุดที่ขายอยู่ = น่าสงสัยกว่าน่าเชื่อ · ลบสูตรทิ้ง = ตัดสต็อกชุดไม่ได้เลย)
+      - อ่านสูตรเดิมจาก D1 ไม่สำเร็จ coreQuery จะ throw ⇒ หยุดก่อนเขียน ห้ามถือว่า "ไม่มีสูตรเดิม"
+   ⚠️ เขียนเฉพาะชุดที่สูตรต่างจริง (โควตา D1) · เขียนแบบ upsert แล้วค่อยตัดบรรทัดเกิน ไม่ลบก่อนใส่
+      ⇒ ถ้าล้มกลางทาง รอบหน้าเทียบแล้วเห็นว่าต่าง จะเขียนซ้ำให้เอง
+   ⚠️ ชุดที่หายจาก ZORT ไม่ลบสูตรทิ้ง — แค่นับรายงาน (ลบผิดแก้ยากกว่าค้าง) */
+const RECIPE_BATCH = 90;
+const RECIPE_CONCURRENCY = 4;
+const RECIPE_DEADLINE_MS = 18000;
+
+async function readRecipe(h, id) {
+  let res;
+  try {
+    res = await fetch(`${BASE}/Bundle/GetBundleDetail?id=${id}`, { headers: h, signal: AbortSignal.timeout(10000) });
+  } catch (e) {
+    return { state: "unknown", why: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message ?? e).slice(0, 80)}` };
+  }
+  const body = res.ok ? await res.json().catch(() => null) : null;
+  if (!body) return { state: "unknown", why: `ZORT ตอบ HTTP ${res.status} อ่านไม่ออก` };
+  if (Number(body.id) !== id) return { state: "unknown", why: `ZORT ตอบชุด id ${body.id ?? "ว่าง"} ไม่ใช่ ${id}` };
+  if (!Array.isArray(body.list)) return { state: "unknown", why: "ไม่มีช่อง list ในคำตอบ" };
+  if (!body.list.length) return { state: "empty", why: "ZORT คืน list ว่าง — ไม่แตะสูตรเดิม" };
+  const lines = [];
+  for (const x of body.list) {
+    const sku = String(x?.sku ?? "").trim().slice(0, 60);
+    const qty = Number(x?.quantity);
+    if (!sku || !Number.isFinite(qty) || qty <= 0) {
+      return { state: "invalid", why: `บรรทัดไม่มีรหัสหรือจำนวน (${sku || "ไม่มีรหัส"} × ${x?.quantity})` };
+    }
+    lines.push({ sku, qty, name: String(x?.name ?? "").slice(0, 200) });
+  }
+  return { state: "ok", lines };
+}
+
+export async function syncBundleRecipes({ limit = RECIPE_BATCH } = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const h = headers();
+  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const t0 = Date.now();
+  const n = Math.max(1, Math.min(200, Math.floor(Number(limit)) || RECIPE_BATCH));
+
+  // ① รายชื่อชุด + id — ไม่ครบทุกหน้า = ไม่รู้ว่ามีชุดอะไรบ้าง ⇒ หยุดทั้งรอบ
+  const byId = new Map();
+  for (let page = 1; page <= 10; page++) {
+    const res = await fetch(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, {
+      headers: h,
+      signal: AbortSignal.timeout(12000),
+    }).catch(() => null);
+    const data = res?.ok ? await res.json().catch(() => null) : null;
+    if (!Array.isArray(data?.list)) {
+      return { ok: false, error: `ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
+    }
+    for (const b of data.list) {
+      const sku = String(b?.sku ?? "").trim().slice(0, 60);
+      const id = Number(b?.id);
+      if (sku && Number.isInteger(id) && id > 0 && !byId.has(sku)) byId.set(sku, id);
+    }
+    if (data.list.length < 200) break;
+  }
+  if (!byId.size) return { ok: false, error: "ZORT คืนรายชื่อชุดว่าง — รอบนี้ไม่เขียนอะไร" };
+
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundle_items (
+       bundle_sku TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
+       qty REAL NOT NULL DEFAULT 0, at TEXT,
+       PRIMARY KEY (bundle_sku, line))`
+  );
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundle_recipe_state (
+       bundle_sku TEXT PRIMARY KEY, zort_id INTEGER, checked_at TEXT, status TEXT, changed_at TEXT)`
+  );
+
+  // ② ชุดที่ยังไม่เคยตรวจก่อน แล้วชุดที่ตรวจนานสุด
+  const state = await coreQuery(`SELECT bundle_sku, checked_at FROM bundle_recipe_state`);
+  const last = new Map(state.map((r) => [String(r.bundle_sku), String(r.checked_at ?? "")]));
+  const pick = [...byId.keys()]
+    .sort((a, b) => (last.get(a) ?? "").localeCompare(last.get(b) ?? "") || a.localeCompare(b))
+    .slice(0, n);
+
+  // ③ ถามทีละไม่กี่ชุดพร้อมกัน · เลยงบเวลา = หยุดส่งชุดใหม่ (ชุดที่ไม่ได้ถามไม่ถูกแตะ รอบหน้ามาต่อ)
+  const results = new Map();
+  let cursor = 0;
+  const worker = async () => {
+    while (cursor < pick.length && Date.now() - t0 < RECIPE_DEADLINE_MS) {
+      const sku = pick[cursor++];
+      results.set(sku, await readRecipe(h, byId.get(sku)));
+    }
+  };
+  await Promise.all(Array.from({ length: RECIPE_CONCURRENCY }, worker));
+  const asked = [...results.keys()];
+  if (!asked.length) return { ok: false, error: "หมดงบเวลาก่อนถามได้สักชุด", ms: Date.now() - t0 };
+
+  // ④ สูตรเดิมของชุดที่ถามได้
+  const okSkus = asked.filter((s) => results.get(s).state === "ok");
+  const old = new Map();
+  for (let i = 0; i < okSkus.length; i += 60) {
+    const rows = await coreQuery(
+      `SELECT bundle_sku, line, sku, qty FROM bundle_items
+       WHERE bundle_sku IN (${okSkus.slice(i, i + 60).map(esc).join(",")}) ORDER BY bundle_sku, line`
+    );
+    for (const r of rows) {
+      const k = String(r.bundle_sku);
+      if (!old.has(k)) old.set(k, []);
+      old.get(k).push(`${r.sku}×${num(r.qty)}`);
+    }
+  }
+  const sig = (s) => results.get(s).lines.map((l) => `${l.sku}×${l.qty}`).join("|");
+  const changed = okSkus.filter((s) => (old.get(s) ?? []).join("|") !== sig(s));
+
+  // ⑤ เขียนเฉพาะชุดที่ต่าง: upsert ทุกบรรทัด แล้วตัดบรรทัดที่เกินจำนวนใหม่
+  for (let i = 0; i < changed.length; i += 20) {
+    const chunk = changed.slice(i, i + 20);
+    const values = chunk
+      .flatMap((s) =>
+        results.get(s).lines.map((l, j) => `(${esc(s)},${j + 1},${esc(l.sku)},${esc(l.name)},${l.qty},datetime('now'))`)
+      )
+      .join(",");
+    await coreQuery(
+      `INSERT INTO bundle_items (bundle_sku,line,sku,name,qty,at) VALUES ${values}
+       ON CONFLICT(bundle_sku,line) DO UPDATE SET sku=excluded.sku, name=excluded.name, qty=excluded.qty, at=excluded.at`
+    );
+    await coreQuery(
+      `DELETE FROM bundle_items WHERE ${chunk
+        .map((s) => `(bundle_sku=${esc(s)} AND line>${results.get(s).lines.length})`)
+        .join(" OR ")}`
+    );
+  }
+
+  // ⑥ จดว่าตรวจแล้ว — ถามไม่สำเร็จก็จด ไม่งั้นชุดเดิมกันคิวชุดอื่นทุกรอบ (status บอกผลจริง)
+  for (let i = 0; i < asked.length; i += 80) {
+    const values = asked
+      .slice(i, i + 80)
+      .map((s) => `(${esc(s)},${byId.get(s)},datetime('now'),${esc(results.get(s).state)},${changed.includes(s) ? "datetime('now')" : "NULL"})`)
+      .join(",");
+    await coreQuery(
+      `INSERT INTO bundle_recipe_state (bundle_sku,zort_id,checked_at,status,changed_at) VALUES ${values}
+       ON CONFLICT(bundle_sku) DO UPDATE SET zort_id=excluded.zort_id, checked_at=excluded.checked_at,
+         status=excluded.status, changed_at=COALESCE(excluded.changed_at, bundle_recipe_state.changed_at)`
+    );
+  }
+
+  const problems = asked
+    .filter((s) => results.get(s).state !== "ok")
+    .map((s) => ({ sku: s, state: results.get(s).state, why: results.get(s).why }));
+  return {
+    ok: true,
+    zortBundles: byId.size,
+    planned: pick.length,
+    asked: asked.length,
+    same: okSkus.length - changed.length,
+    changed: changed.length,
+    changedSkus: changed.slice(0, 20),
+    notWritten: problems.length,
+    problems: problems.slice(0, 10),
+    ms: Date.now() - t0,
+  };
+}
+
 /** รับ "รายการสินค้าในชุด" ที่เก็บมาจากหน้าเว็บ ZORT
  *
- * ⚠️ **ทำไมต้องรับจากข้างนอก ไม่ดึงเอง** — ZORT ไม่เปิด API ให้ดึงรายการในชุด
- *    (ลองครบ: Bundle/GetBundle 404 · GetBundles?id= คืนทั้ง 360 ไม่กรอง · detail/showdetail ไม่มีผล)
- *    ข้อมูลนี้อยู่เฉพาะในหน้าเว็บที่ต้องล็อกอิน ⇒ เก็บจากเบราว์เซอร์ที่ล็อกอินอยู่แล้วส่งเข้ามา
- *
- * ⚠️ **เป็นการเก็บครั้งเดียว ไม่ใช่ของที่ซิงก์เองทุกคืน** — ส่วนประกอบของชุดแทบไม่เปลี่ยน
- *    แต่ถ้าร้านแก้สูตรชุดเมื่อไหร่ ต้องเก็บใหม่ **ไม่มีอะไรเตือนให้** ⇒ จอต้องโชว์วันที่เก็บล่าสุด
+ * ⚠️ **เป็นทางสำรองแล้ว** (14 ก.ย. 2569) — เดิมเชื่อว่า ZORT ไม่เปิด API สูตรชุด จึงขูดจากหน้าเว็บที่ล็อกอิน
+ *    พิสูจน์แล้วว่าผิด: GetBundleDetail?id= คืนสูตรครบ ⇒ ทางหลักคือ syncBundleRecipes() ทุกชั่วโมง
+ *    ⚠️ ส่งผ่านทางนี้แล้ว รอบซิงก์ถัดไปจะเขียนทับด้วยสูตรจาก ZORT ถ้าต่างกัน (ZORT เป็นต้นทาง)
  *
  * ⚠️ **ห้ามเดาส่วนประกอบเด็ดขาด** — รับเฉพาะที่ส่งมาจริง ชุดไหนไม่มีข้อมูลก็ปล่อยว่างไว้
  *    เดาผิด = ตัดสต็อกผิดตัว ซึ่งแก้ยากกว่าไม่มีข้อมูล
@@ -543,6 +705,22 @@ export async function listBundleItems(bundleSku = "", memberSku = "") {
       ⇒ จอจะเขียนว่า "ไม่อยู่ในชุดไหนเลย" ทั้งที่ความจริงคือ **ยังไม่รองรับ**
          (ฝั่งจอจับได้ 3 ก.ย. 2569 — คำตอบว่างที่ดูเหมือนคำตอบจริง) */
   const member = String(memberSku ?? "").trim().slice(0, 60);
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS bundle_recipe_state (
+       bundle_sku TEXT PRIMARY KEY, zort_id INTEGER, checked_at TEXT, status TEXT, changed_at TEXT)`
+  );
+  /* ⚠️ collectedAt = บรรทัดสูตรที่ **เปลี่ยน** ล่าสุด (ซิงก์เขียนเฉพาะชุดที่ต่าง) — ไม่ใช่ "ตรวจล่าสุด"
+      สูตรที่ไม่เคยเปลี่ยนจะค้างวันที่ 3 ก.ย. ตลอดไป ทั้งที่ตรวจกับ ZORT ทุกชั่วโมง
+      ⇒ ส่ง recipeCheckedAt (ตรวจกับ ZORT ล่าสุด · UTC) แยกให้จอ · ห้ามเอาสองค่านี้ไปแทนกัน */
+  const [rs] = await coreQuery(
+    `SELECT MAX(checked_at) AS last, COUNT(*) AS checked,
+            SUM(CASE WHEN status = 'ok' THEN 1 ELSE 0 END) AS ok FROM bundle_recipe_state`
+  );
+  const [one_state] = one
+    ? await coreQuery(
+        `SELECT status, checked_at AS checkedAt, changed_at AS changedAt FROM bundle_recipe_state WHERE bundle_sku = ${esc(one)}`
+      )
+    : [];
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT bundle_sku) AS bundles, COUNT(*) AS lines, MAX(at) AS last FROM bundle_items`
   );
@@ -584,9 +762,13 @@ export async function listBundleItems(bundleSku = "", memberSku = "") {
     bundlesWithItems: num(sum?.bundles),
     lines: num(sum?.lines),
     collectedAt: sum?.last || null,
+    recipeCheckedAt: rs?.last || null,
+    recipeChecked: num(rs?.checked),
+    recipeCheckedOk: num(rs?.ok),
+    recipeState: one ? one_state ?? null : undefined,
     bundlesTotal: num(total?.c),
     // จอต้องบอกว่าเก็บมาแล้วกี่ชุดจากทั้งหมด — ไม่งั้นคนนึกว่าครบ
-    note: "รายการในชุดเก็บจากหน้าเว็บ ZORT ครั้งเดียว ไม่ได้ซิงก์เอง — ร้านแก้สูตรชุดเมื่อไหร่ต้องเก็บใหม่",
+    note: "สูตรชุดซิงก์จาก ZORT เองทุกชั่วโมง (รอบละ 90 ชุด) · collectedAt = สูตรเปลี่ยนล่าสุด · recipeCheckedAt = ตรวจกับ ZORT ล่าสุด (UTC)",
     sku: one || undefined,
     rows,
   };
