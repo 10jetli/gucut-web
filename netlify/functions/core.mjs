@@ -475,6 +475,19 @@ async function route(req, context) {
       const r = await mod[fnName](body);
       return json(r, r.ok || r.complete === false ? 200 : 400);
     }
+    /* POST ?batch=<sale|po|product|contact|quotation>  — นำเข้า Excel หลายแถว · งานกระดาน t_mu0qikag
+       ขาเข้าจากจอ: body {rows:[body ของ ?addsale=1 / ?addpo=1 / ?addproduct=1 / ?addcontact=1 / ?addquotation=1] ≤20, confirm?}
+       ⇒ ยิงทีละแถวผ่านตัวเขียนเดิมของชนิดนั้น (ZORT ไม่มีเส้นรับหลายใบ) · ขาออกไป ZORT ดู willSend ของแต่ละแถว
+       ⚠️ ทุกแถวต้องมี ref ของตัวเอง · หยุดกลางทาง = complete:false + nextRow · confirm ใช้ของทั้งชุด · ชนิดไม่รู้จัก = 400 + accepts */
+    if (url.searchParams.has("batch")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON object)" }, 400);
+      const { zortBatch } = await import("../lib/zort-write.mjs");
+      const r = await zortBatch(url.searchParams.get("batch"), body);
+      return json(r, r.ok || r.complete === false ? 200 : 400);
+    }
     /* POST ?addbundle=1    body {ref, sku, name, price, vat?, items:[{sku, qty}]}   ⇒ ZORT Bundle/AddBundle
        POST ?addwarehouse=1 body {ref, code, name, address?}                        ⇒ ZORT Warehouse/AddWarehouse
        ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · **ยังไม่เคยยิงจริงทั้งคู่** · ผิด method = 405

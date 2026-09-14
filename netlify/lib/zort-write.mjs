@@ -689,6 +689,26 @@ export async function zortAddQuotations(o = {}) {
   return runBatch(o.rows, zortAddQuotation, { confirm: o.confirm });
 }
 
+/** นำเข้าหลายแถวของเอกสารชนิดใดก็ได้ที่มีเส้นเพิ่มทีละใบ — งานกระดาน t_mu0qikag
+ *  (soon: sale-import · buy-import · product-import · contact-import · ใบเสนอราคาใช้ร่วมด้วย)
+ *  ZORT **ไม่มีเส้นรับหลายใบสักชนิด** (เอกสาร V4 ครบ 14 โมดูล) ⇒ ตัวกลางเดียว ยิงทีละแถวผ่านตัวเขียนเดิมของชนิดนั้น
+ *  ⚠️ แต่ละแถวผ่านด่านของตัวเขียนเดิมครบทุกข้อ (ref · เงินสามชั้น · id/sku) — ตัวกลางไม่ตรวจซ้ำ ไม่ข้ามด่าน
+ *  ⚠️ ชนิดที่ไม่รู้จัก = ตีกลับพร้อมรายการที่รับ ห้ามเดา */
+const BATCH_WRITERS = {
+  sale: zortAddSale,
+  po: zortAddPurchaseOrder,
+  product: zortAddProduct,
+  contact: zortAddContact,
+  quotation: zortAddQuotation,
+};
+export async function zortBatch(kindIn, o = {}) {
+  const kind = String(kindIn ?? "").trim();
+  const writer = Object.hasOwn(BATCH_WRITERS, kind) ? BATCH_WRITERS[kind] : null;
+  if (!writer) return { ok: false, error: `ไม่รู้จักชนิด "${kind}"`, accepts: Object.keys(BATCH_WRITERS) };
+  const r = await runBatch(o.rows, writer, { confirm: o.confirm });
+  return { kind, ...r };
+}
+
 /** บันทึกข้อมูลจัดส่งให้ออเดอร์ (soon: shipping · บริการส่งสินค้า) → Order/EditOrderInfo?id=
  *  ส่งเฉพาะช่องจัดส่ง: trackingno · shippingchannel · shippingdate (yyyy-MM-dd)
  *  🔴 **ยังไม่รู้ว่า EditOrderInfo ล้างช่องที่ไม่ได้ส่งไหม** (เช่นชื่อ/ที่อยู่ลูกค้า) — เอกสารบอกแค่ว่าไม่บังคับ
