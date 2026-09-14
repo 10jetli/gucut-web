@@ -55,4 +55,33 @@ for (const [query, method, body] of [
   if (bad) failed += 1;
 }
 
+// ทดสอบเฉพาะด่าน method/validation: ห้ามส่ง confirm หรือข้อมูลที่เขียน ZORT ได้
+for (const query of [
+  "addsale=1", "addcontact=1", "addbundle=1", "addwarehouse=1",
+  "updateproduct=1", "productimage=1",
+]) {
+  const result = await request(query, "GET");
+  const bad = result.status !== 405;
+  console.log(`${bad ? "FAIL" : "PASS"} GET ?${query}`, { status: result.status, body: result.body });
+  if (bad) failed += 1;
+}
+
+for (const query of ["zortproduct=X", "productlabels=X"]) {
+  const result = await request(query, "POST");
+  const bad = result.status !== 405;
+  console.log(`${bad ? "FAIL" : "PASS"} POST ?${query}`, { status: result.status, body: result.body });
+  if (bad) failed += 1;
+}
+
+for (const [query, method, expected] of [
+  ["deleteproduct=abc", "GET", 405],
+  ["deleteproduct=abc", "DELETE", 400],
+  ["addcontact=1", "POST", 400],
+]) {
+  const result = await request(query, method, method === "POST" ? {} : undefined);
+  const bad = result.status !== expected;
+  console.log(`${bad ? "FAIL" : "PASS"} ${method} ?${query}`, { status: result.status, body: result.body });
+  if (bad) failed += 1;
+}
+
 process.exitCode = failed ? 1 : 0;
