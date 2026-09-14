@@ -125,7 +125,31 @@ export default async function handler(req, context) {
       const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady, 40);
       const row = list.find((x) => x.id === id);
       if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
-      if (body.taskDone) { row.done = true; row.doneAt = Date.now(); }
+      if (body.taskDone) {
+        /* 🔒 ปิดงานต้องแสดงผลงาน — ท่านประธานสั่ง 14 ก.ย. 2569
+           เหตุจริง: งาน 3 ใบ ("กดทุกจุดลึก ๆ" · "ยิงทุก endpoint" · "เทียบเมนูทั้งแผง")
+           ถูกขีดฆ่าครบ แต่ CEO หาผลงานไม่เจอเลยสักไฟล์ เพราะทีมเขียนคนละชื่อ/คนละที่
+           ⇒ CEO ไปนับเองด้วยวิธีของตัวเอง แล้วรายงานท่านประธานว่า 94%
+              ทั้งที่ CTO วัดไว้แล้วว่า 19/50 = 38% และเขียนไว้ครบตั้งแต่เช้า
+           ⇒ ปัญหาไม่ใช่ "ทีมไม่ทำงาน" แต่คือ **ปิดงานได้โดยไม่ต้องชี้ว่าผลงานอยู่ไหน**
+
+           กติกา: ปิดงานต้องส่ง `proof` มาด้วย = ชี้ว่าผลงานอยู่ที่ไหน
+           (path ไฟล์ · commit · URL · ชื่อหัวข้อใน handoff)
+           ⚠️ ระบบไม่ได้ตรวจว่า proof นั้นมีจริง — มันบังคับแค่ให้ "ตอบให้ได้ว่าอยู่ไหน"
+              ซึ่งเพียงพอจะกันเคสนี้ เพราะคนที่ทำงานจริงตอบได้เสมอใน 1 บรรทัด
+           ⚠️ ยกเว้นงานของท่านประธาน (คนกดเอง ไม่ต้องมีผลงานเป็นไฟล์) */
+        const proof = text(body.proof, 200);
+        const ของประธาน = row.owner === "ประธาน" || row.owner === "boss";
+        if (!proof && !ของประธาน) {
+          return json({
+            error: "ปิดงานต้องแนบ proof — ชี้ว่าผลงานอยู่ไหน (path ไฟล์ · commit · URL · หัวข้อใน handoff)",
+            hint: '{"taskDone":"t_xxx","proof":"~/claude-shared/handoff.md หัวข้อ 15:3x · commit abc1234"}',
+          }, 400);
+        }
+        row.done = true;
+        row.doneAt = Date.now();
+        if (proof) row.proof = proof;
+      }
       else if (body.taskUndo) {
         /* ถอนติ๊ก/ถอนธง — เกิดจากเหตุจริง 8 ก.ย. 2569 **สองรอบในวันเดียว**:
            รอบแรกมือลั่นติ๊กจบผิด 2 ข้อ · รอบสองมือลั่นกดปุ่ม 🙋 พร้อมทำผิดข้อ
