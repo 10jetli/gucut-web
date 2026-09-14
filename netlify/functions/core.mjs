@@ -345,12 +345,16 @@ async function route(req, context) {
       const { lazadaReadBack } = await import("../lib/stock-push-live.mjs");
       return okJson(await lazadaReadBack(skus));
     }
+    /* GET ?stockpush=1[&platform=shopee|lazada|tiktok][&full=1]
+       full=1 ต้องระบุเจ้าเดียว (สัญญากับฝั่งจอ 14 ก.ย. 2569) · ทุกคำตอบมี pushScope/pushShown/pushCapped/pushComplete */
     if (url.searchParams.get("stockpush")) {
-      const { stockPushDryRun } = await import("../lib/stock-push.mjs");
-      return json({
-        ok: true,
-        ...(await stockPushDryRun({ platform: url.searchParams.get("platform") })),
+      const { stockPushView } = await import("../lib/stock-push.mjs");
+      const r = await stockPushView({
+        platform: url.searchParams.get("platform"),
+        full: url.searchParams.get("full"),
       });
+      if (r.error) return json({ ok: false, ...r }, 400);
+      return json({ ok: true, ...r });
     }
 
     if (url.searchParams.get("dbinfo")) {

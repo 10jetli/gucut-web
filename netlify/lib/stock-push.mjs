@@ -35,7 +35,12 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
  *     (ยิงไม่ออกเลยวันที่ wouldPush=76) **โค้ดไม่ได้เปลี่ยนสักตัวอักษร ข้อมูลโตข้ามเส้นเอง**
  *  ⇒ กฎที่ได้: **เลขที่ตั้งไว้เพื่อการแสดงผล ห้ามเอาไปใช้ตัดสินใจ**
  *  ⚠️ `pushSample` ต้องคงไว้เหมือนเดิมทุกตัวอักษร — จอใช้อยู่ และขนาดคำตอบของ
- *     เส้นสาธารณะต้องไม่โตขึ้น (`?stockpush=1` **ห้ามส่ง full**)
+ *     `?stockpush=1` แบบปกติต้องไม่โตขึ้น
+ *  🔄 **สัญญาใหม่ 14 ก.ย. 2569 (ตกลงกับฝั่งจอ · งาน t_mu0k3eo2)**: ขอแผนเต็มได้แล้ว แต่ **เจ้าเดียวต่อคำขอ**
+ *     `?stockpush=1&platform=<shopee|lazada|tiktok>&full=1` ⇒ ได้ `push` ครบ (เพดานแข็ง PUSH_CAP)
+ *     ทุกคำตอบบอกขอบเขตตัวเอง: `pushScope` · `pushShown` · `pushCapped` · `pushComplete`
+ *     เหตุผลฝั่งจอ: จอนี้คือจออนุมัติการเขียนออกนอกระบบ — คนกดต้องเห็นทุกแถวที่ตัวเองอนุมัติ
+ *     ⚠️ ดู stockPushView ท้ายไฟล์ · full ไม่ระบุเจ้า ⇒ error (ไม่ส่งเงียบ ๆ แบบไม่ครบ)
  */
 /* ⚠️ export เพื่อให้ตัวทดสอบเรียก **ตัววางแผนตัวจริง** ได้ (ไม่ต้องประกอบคำตอบด้วยมือ)
    — ตัวทดสอบที่ประกอบแผนเองจะไม่มีวันเจอบั๊กของตัววางแผน (กฎ test-must-hit-the-path) */
@@ -331,4 +336,49 @@ export async function stockPushDryRun(o = {}) {
     "reopen = ของมีแต่ปิดขายอยู่ ดันแล้วได้เงินคืน · close = แพลตฟอร์มโชว์ว่ามีแต่เราไม่มี " +
     "ดันแล้วกันรับออเดอร์ที่ส่งไม่ได้ · สองอย่างนี้ผลตรงข้ามกัน อย่ารวมเป็นเลขเดียว";
   return out;
+}
+
+/** เพดานแข็งของแผนเต็มในคำตอบ HTTP — กันคำตอบบวมจนพัง ไม่ใช่เลขเพื่อตัดสินใจ
+ *  ⚠️ ชนเพดานเมื่อไหร่ต้องบอก (`pushCapped: true`) และ `pushComplete` ต้องเป็น false */
+export const PUSH_CAP = 500;
+const PLATFORMS = ["shopee", "lazada", "tiktok"];
+
+/** ติดป้ายขอบเขตให้แผนของแพลตฟอร์มหนึ่ง — **เพิ่มอย่างเดียว ไม่แตะช่องเดิม**
+ *  ⚠️ แผนที่ข้าม/พัง (`skip` · `error` · ไม่มีตัวนับ) ปล่อยไว้ตามเดิม ห้ามแต่ง pushComplete ให้
+ *     (ไม่มีแผน ≠ แผนครบ — three-states-not-two) */
+export function annotatePush(p, full) {
+  if (!p || typeof p !== "object" || p.skip || p.error || !Number.isFinite(p.wouldPush)) return p;
+  if (full && Array.isArray(p.push)) {
+    const capped = p.push.length > PUSH_CAP;
+    if (capped) p.push = p.push.slice(0, PUSH_CAP);
+    p.pushScope = "full";
+    p.pushShown = p.push.length;
+    p.pushCapped = capped;
+    p.pushComplete = !capped && p.push.length === p.wouldPush;
+  } else {
+    const shown = Array.isArray(p.pushSample) ? p.pushSample.length : 0;
+    p.pushScope = "sample";
+    p.pushShown = shown;
+    p.pushCapped = p.wouldPush > shown;
+    p.pushComplete = shown === p.wouldPush;
+  }
+  return p;
+}
+
+/** ตัวหน้าบ้านของ GET ?stockpush=1 — ตรวจพารามิเตอร์ + ติดป้ายขอบเขต
+ *  @param o.platform  "shopee"|"lazada"|"tiktok"|"all" (ไม่ใส่ = all)
+ *  @param o.full      ต้องเป็นสตริง "1" หรือ true แท้เท่านั้น (สตริง "false"/"0" ไม่นับ)
+ *  @returns แผน หรือ { error, accepts } เมื่อขอ full โดยไม่ระบุเจ้าเดียว */
+export async function stockPushView(o = {}) {
+  const full = o.full === "1" || o.full === true;
+  const platform = String(o.platform ?? "all").trim().toLowerCase();
+  if (full && !PLATFORMS.includes(platform)) {
+    return {
+      error: "full=1 ต้องระบุ platform เจ้าเดียว (กันคำตอบบวมจากสามเจ้าพร้อมกัน)",
+      accepts: { platform: PLATFORMS, full: ["1"] },
+    };
+  }
+  const r = await stockPushDryRun({ platform, full });
+  for (const k of PLATFORMS) if (r[k] !== undefined) annotatePush(r[k], full);
+  return r;
 }
