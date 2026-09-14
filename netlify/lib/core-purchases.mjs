@@ -9,6 +9,7 @@
 // endpoint ที่ใช้ได้จริง: /v4/PurchaseOrder/GetPurchaseOrders
 // (ลองมาแล้ว 404: Purchase/GetPurchases · Purchase/GetPurchaseList · Buy/GetBuys)
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { contains, containsLit } from "./sql-contains.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -194,7 +195,7 @@ export async function listPurchases(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (number LIKE ${esc(`%${q}%`)} OR vendor LIKE ${esc(`%${q}%`)})` : "";
+  const filter = q ? `AND (${containsLit("number", esc(q))} OR ${containsLit("vendor", esc(q))})` : "";
 
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS total FROM purchase_orders WHERE 1=1 ${filter}`
@@ -469,7 +470,7 @@ export async function listTransfers(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (number LIKE ${esc(`%${q}%`)} OR reference LIKE ${esc(`%${q}%`)})` : "";
+  const filter = q ? `AND (${containsLit("number", esc(q))} OR ${containsLit("reference", esc(q))})` : "";
   /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569) — สามตัวนี้ไม่มีตัวไหนต้องรอกัน
       ⚠️ CREATE TABLE ข้างบนยังต้องอยู่ก่อนและ await จริง ๆ — ห้ามย้ายลงมาในนี้
          สามตัวนี้อ่านตารางนั้น ถ้ายังไม่ถูกสร้างจะล้มทั้งชุด */
@@ -556,7 +557,7 @@ export async function listPurchaseItems(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (i.sku LIKE ${esc(`%${q}%`)} OR i.name LIKE ${esc(`%${q}%`)})` : "";
+  const filter = q ? `AND (${containsLit("i.sku", esc(q))} OR ${containsLit("i.name", esc(q))})` : "";
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT i.sku) AS skus, COUNT(*) AS lines,
             ROUND(COALESCE(SUM(i.qty * i.price),0),2) AS amount
@@ -1002,18 +1003,18 @@ async function searchReturnOrdersMirror(limit, page, needle) {
   if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   const p = Math.max(1, Math.min(50, num(page) || 1));
-  // % และ _ ในคำค้นต้องเป็นตัวอักษรธรรมดา ไม่ใช่ตัวแทนของ LIKE
-  const like = `%${needle.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
-  const where = `number LIKE ? ESCAPE '\\' OR reference LIKE ? ESCAPE '\\' OR customer LIKE ? ESCAPE '\\'`;
+  /* 🔴 ห้าม LIKE '%คำค้น%' — D1 จำกัดรูปแบบ LIKE 50 ไบต์ ⇒ ชื่อไทย ≥17 ตัวทำคำขอล้ม
+      (รุ่นแรก 8d4b031 ใช้ LIKE+ESCAPE · gucut2 ยิงจับได้ 15 ก.ย. 2569) ⇒ ดู sql-contains.mjs */
+  const where = `${contains("number")} OR ${contains("reference")} OR ${contains("customer")}`;
   let total;
   let rows;
   try {
-    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [like, like, like]);
+    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [needle, needle, needle]);
     total = num(cnt?.c);
     rows = await coreQuery(
       `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2
        WHERE ${where} ORDER BY return_date DESC, id DESC LIMIT ${n} OFFSET ${(p - 1) * n}`,
-      [like, like, like]
+      [needle, needle, needle]
     );
   } catch {
     return { error: "ค้นใบคืนในกระจกไม่ได้", applied };

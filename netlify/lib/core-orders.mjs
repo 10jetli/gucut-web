@@ -9,6 +9,7 @@
 // ⚠️ ค่าจากผู้ใช้ผูกด้วย ? เสมอ (ไม่ใช่ esc()) — ตัวเลขน้อย ไม่ชนเพดาน ~100 params ของ D1
 //    ต่างจากตัว sync ที่ยัดทีละร้อยแถวจนต้องฝังค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { contains } from "./sql-contains.mjs";
 import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -97,8 +98,8 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source }) 
           ช่องทางออนไลน์มีเลขครบ 100% ทุกใบ (Shopee 62/62 · Lazada 43/43 ·
           TikTok 12/12 · FB 9/9 · LINE 1/1) · ใบที่ไม่มีเลขเป็น POS ล้วน 73/73
           = ขายหน้าร้านรับของเลย **ไม่มีขนส่งจริง ไม่ใช่ข้อมูลขาด** */
-    where.push("(number LIKE ? OR customer LIKE ? OR tracking_no LIKE ?)");
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    where.push(`(${contains("number")} OR ${contains("customer")} OR ${contains("tracking_no")})`);
+    params.push(q, q, q);
   }
   if (!includeCancelled) where.push(CANCEL_SQL);
   return { sql: where.join(" AND "), params };
@@ -523,8 +524,8 @@ export async function listLogistics(o = {}) {
   const parts = [];
   const params = [];
   if (q) {
-    parts.push(`(tracking_no LIKE ? OR number LIKE ? OR ship_name LIKE ?)`);
-    params.push(`%${q}%`, `%${q}%`, `%${q}%`);
+    parts.push(`(${contains("tracking_no")} OR ${contains("number")} OR ${contains("ship_name")})`);
+    params.push(q, q, q);
   }
   /* ⚠️ **ขอบเขตของจอนี้คือ "ใบที่มีการส่งของ" ไม่ใช่ออเดอร์ทั้งหมด**
       รอบแรกผมกวาดทุกแถวในตาราง orders มาแสดง = 12,127 ใบ ทั้งที่ ZORT มี 1,644

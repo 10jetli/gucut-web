@@ -17,6 +17,7 @@
 // 🔴 **รูปนับจากจำนวนคีย์ใน Blobs ไม่ใช่ตัวนับที่บวกเอง**
 import { getStore } from "@netlify/blobs";
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { containsLit } from "./sql-contains.mjs";
 import { findByPin } from "./attendance.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
@@ -273,7 +274,7 @@ export async function listReturnsInbox({ q = "", limit = 50, offset = 0 } = {}) 
   const off = Math.max(0, Number(offset) || 0);
   const term = String(q ?? "").trim();
   const where = term
-    ? `WHERE (${Q_FIELDS.map((f) => `${f} LIKE ${esc(`%${term}%`)}`).join(" OR ")})`
+    ? `WHERE (${Q_FIELDS.map((f) => containsLit(f, esc(term))).join(" OR ")})`
     : "";
   const rows = await coreQuery(
     `SELECT * FROM returns_desk ${where} ORDER BY last_activity_at DESC LIMIT ${lim} OFFSET ${off}`

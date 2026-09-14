@@ -12,6 +12,7 @@
 // ⚠️ ระหว่างที่ยังใช้ ZORT อยู่ **ห้ามยิงท่อนี้คู่กับการเปิดบิลใน ZORT ใบเดียวกัน**
 //    จะกลายเป็นสองใบในคลังเงา — ท่อนี้มีไว้ใช้ "หลัง" ตัด ZORT หรือใช้กับสาขาที่ไม่ได้ใช้ ZORT
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { contains } from "./sql-contains.mjs";
 import { permitInfo } from "./permit-models.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
@@ -337,11 +338,11 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
   //    = คนขายพิมพ์ชื่อของที่ยังไม่เคยขาย แล้ว **หาไม่เจอทั้งที่มีของอยู่ในคลัง**
   //    (บั๊กเดียวกับที่เจอในจอสินค้า · ที่นี่หนักกว่าเพราะลูกค้ายืนรออยู่หน้าร้าน)
   const where = term
-    ? `AND (s.sku LIKE ?
-            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = s.sku AND p2.name LIKE ?)
-            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND oi.name LIKE ?))`
+    ? `AND (${contains("s.sku")}
+            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = s.sku AND ${contains("p2.name")})
+            OR EXISTS (SELECT 1 FROM order_items oi WHERE oi.sku = s.sku AND ${contains("oi.name")}))`
     : "";
-  const params = term ? [day, `%${term}%`, `%${term}%`, `%${term}%`, term] : [day];
+  const params = term ? [day, term, term, term, term] : [day];
   const rows = await coreQuery(
     `SELECT s.sku AS sku, s.qty AS qty, s.price AS price,
             /* 🔴 **ต้องดึงหมวดจริงจากทะเบียนสินค้ามาด้วย** (เพิ่ม 12 ก.ย. 2569)

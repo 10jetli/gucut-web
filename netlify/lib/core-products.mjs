@@ -9,6 +9,7 @@
 // ⚠️ ตัด ZORT เมื่อไหร่ ตารางนี้กลายเป็นทะเบียนสินค้าตัวจริงของร้าน ⇒ ห้ามลบทิ้ง
 //    และวันนั้นต้องมีหน้าจอแก้ชื่อ/ราคาเอง (ยังไม่มี — จดไว้ในแผน)
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { containsLit } from "./sql-contains.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -374,7 +375,7 @@ export async function listBundles(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (sku LIKE ${esc(`%${q}%`)} OR name LIKE ${esc(`%${q}%`)})` : "";
+  const filter = q ? `AND (${containsLit("sku", esc(q))} OR ${containsLit("name", esc(q))})` : "";
   const only = { active: "AND active = 1", inactive: "AND active = 0" }[o.only] || "";
 
   /* ⚡ **ยิงพร้อมกัน ห้ามเรียงกัน** (6 ก.ย. 2569 — เจ้าของร้านสั่ง "สินค้ากับสินค้าชุด ห้ามโหลดช้า")

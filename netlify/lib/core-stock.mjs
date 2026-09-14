@@ -33,6 +33,7 @@
    ⚠️ `shown` ถือเป็นของเลิกใช้ **ของใหม่ห้ามอ่าน** ให้ใช้ matched/returned เท่านั้น */
 
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { contains } from "./sql-contains.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 /* ⚠️ **ไฟล์ .mjs ไม่มีตัวตรวจชนิดข้อมูล — ตัวแปรที่ไม่มีอยู่จริงพังตอนรันเท่านั้น**
@@ -282,11 +283,11 @@ export async function listStock(o = {}) {
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
   //    = พิมพ์ชื่อสินค้าที่ยังไม่เคยขายแล้วหาไม่เจอ ทั้งที่มีของอยู่ในคลัง (เจอจริง 2 ก.ย. 2569)
   let filter = q
-    ? `AND (cur.sku LIKE ?
-            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = cur.sku AND p2.name LIKE ?)
-            OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND oi2.name LIKE ?))`
+    ? `AND (${contains("cur.sku")}
+            OR EXISTS (SELECT 1 FROM products p2 WHERE p2.sku = cur.sku AND ${contains("p2.name")})
+            OR EXISTS (SELECT 1 FROM order_items oi2 WHERE oi2.sku = cur.sku AND ${contains("oi2.name")}))`
     : "";
-  const fParams = q ? [`%${q}%`, `%${q}%`, `%${q}%`] : [];
+  const fParams = q ? [q, q, q] : [];
   /* กรองตามหมวด — เจ้าของร้านจับได้ 8 ก.ย. 2569 ว่าชื่อหมวดใน ZORT กดเข้าไปดูสินค้าได้
      แต่จอเรากดไม่ได้ ⇒ จอหมวดหมู่จะลิงก์มาที่จอสินค้าพร้อม ?category=<ชื่อ>
      ⚠️ จับคู่ **ตรงตัวทั้งชื่อ** ไม่ใช่ LIKE — ชื่อหมวดมาจากตารางเดียวกัน ไม่ใช่คำค้นอิสระ

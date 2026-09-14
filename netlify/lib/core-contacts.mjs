@@ -13,6 +13,7 @@
 //    คือความเสี่ยงเปล่า ๆ (facebook · line · instagram · gender · birthDate · รูป
 //    ว่างแทบทั้งหมดอยู่แล้ว และไม่มีจอไหนต้องใช้)
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { containsLit } from "./sql-contains.mjs";
 
 const esc = (v) => `'${String(v ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -186,7 +187,7 @@ export async function listContacts(o = {}) {
   const withPhone = o.withPhone === "1" || o.withPhone === true;
   const withEmail = o.withEmail === "1" || o.withEmail === true;
   const filter =
-    (q ? `AND (name LIKE ${esc(`%${q}%`)} OR phone LIKE ${esc(`%${q}%`)} OR code LIKE ${esc(`%${q}%`)})` : "") +
+    (q ? `AND (${containsLit("name", esc(q))} OR ${containsLit("phone", esc(q))} OR ${containsLit("code", esc(q))})` : "") +
     (withPhone ? ` AND COALESCE(phone,'') <> ''` : "") +
     (withEmail ? ` AND COALESCE(email,'') <> ''` : "");
   const [sum] = await coreQuery(

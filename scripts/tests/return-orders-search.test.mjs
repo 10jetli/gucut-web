@@ -53,18 +53,24 @@ test('มีคำค้น ⇒ กรองที่กระจก ไม่�
     assert.equal(r.syncComplete, true);
     const rowQ = sqls.find((x) => /SELECT id, number/.test(x.s) && /return_orders_v2/.test(x.s));
     assert.ok(rowQ, 'ต้องมีคำสั่งดึงแถวจากกระจก');
-    assert.match(rowQ.s, /WHERE number LIKE \? ESCAPE '\\' OR reference LIKE \? ESCAPE '\\' OR customer LIKE \? ESCAPE '\\'/);
-    assert.deepEqual(rowQ.params, ['%CN-1%', '%CN-1%', '%CN-1%']);
+    assert.match(rowQ.s, /WHERE instr\(lower\(number\), lower\(\?\)\) > 0 OR instr\(lower\(reference\), lower\(\?\)\) > 0 OR instr\(lower\(customer\), lower\(\?\)\) > 0/);
+    assert.doesNotMatch(rowQ.s, /LIKE/, 'ห้าม LIKE — D1 จำกัดรูปแบบ 50 ไบต์');
+    assert.deepEqual(rowQ.params, ['CN-1', 'CN-1', 'CN-1']);
     const cntQ = sqls.find((x) => /COUNT\(\*\)/.test(x.s));
     assert.deepEqual(cntQ.params, rowQ.params, 'ตัวนับกับตัวดึงแถวต้องใช้เงื่อนไขชุดเดียวกัน');
   });
 });
 
-test('% และ _ ในคำค้นถูก escape — ไม่กลายเป็นตัวแทนที่จับทุกแถว', async () => {
-  sqls = [];
-  await listReturnOrders(50, 1, '50%_a');
-  const rowQ = sqls.find((x) => /SELECT id, number/.test(x.s));
-  assert.equal(rowQ.params[0], '%50\\%\\_a%');
+test('คำค้นส่งดิบ ไม่ห่อ % — ชื่อไทย 20 ตัว (60 ไบต์) ไม่ถูกตัด · % _ เป็นตัวอักษรธรรมดา', async () => {
+  /* 🔴 รุ่นแรกห่อ %…% ด้วย LIKE ⇒ D1 ปฏิเสธรูปแบบเกิน 50 ไบต์ · ไทย ≥17 ตัว = ล้ม (gucut2 ยิงจับได้ 15 ก.ย.) */
+  for (const q of ['ก'.repeat(20), '50%_a']) {
+    sqls = [];
+    const r = await listReturnOrders(50, 1, q);
+    const rowQ = sqls.find((x) => /SELECT id, number/.test(x.s));
+    assert.deepEqual(rowQ.params, [q, q, q]);
+    assert.equal(r.applied.q, q);
+    assert.equal(r.error, undefined);
+  }
 });
 
 test('หน้าและขนาดหน้า: offset = (page-1)*limit · limit เพดาน 200', async () => {
