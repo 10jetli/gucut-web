@@ -991,7 +991,66 @@ export async function syncReturnOrders(opt = {}) {
   };
 }
 
-export async function listReturnOrders(limit = 50, page = 1) {
+/* 🔎 ค้นใบคืนด้วยคำค้น — อ่านจากกระจก return_orders_v2 (15 ก.ย. 2569)
+    เดิม ?list=returnorders **เมิน q ทิ้ง** (ZORT GetReturnOrders ไม่มีช่องค้น · ส่งแค่ limit/page)
+    ⇒ จอกรองในเบราว์เซอร์ได้แค่หน้าที่โหลดมา · ไฟล์ส่งออกได้ทุกแถวทั้งที่หัวไฟล์บอกว่ากรองแล้ว (gucut2 จับได้ 5d1ce6d)
+    ⚠️ ผลค้นมาจากกระจก ไม่ใช่ ZORT สด ⇒ ส่ง source + ชีพจรซิงก์ (syncedAtUtc/syncComplete) ให้จอเขียนบอก
+    🔒 อ่านกระจกไม่ได้ ⇒ error ห้ามคืน rows:[] (ไม่งั้นเหมือน "ค้นแล้วไม่เจอ")
+    🔒 จอใช้ `applied.q` ตัดสินว่าไฟล์กรองแล้วจริงไหม — ห้ามเชื่อแค่ว่าตัวเองส่ง q ไป */
+async function searchReturnOrdersMirror(limit, page, needle) {
+  const applied = { q: needle, source: "mirror" };
+  if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
+  const n = Math.max(1, Math.min(200, num(limit) || 50));
+  const p = Math.max(1, Math.min(50, num(page) || 1));
+  // % และ _ ในคำค้นต้องเป็นตัวอักษรธรรมดา ไม่ใช่ตัวแทนของ LIKE
+  const like = `%${needle.replace(/[\\%_]/g, (c) => "\\" + c)}%`;
+  const where = `number LIKE ? ESCAPE '\\' OR reference LIKE ? ESCAPE '\\' OR customer LIKE ? ESCAPE '\\'`;
+  let total;
+  let rows;
+  try {
+    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [like, like, like]);
+    total = num(cnt?.c);
+    rows = await coreQuery(
+      `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2
+       WHERE ${where} ORDER BY return_date DESC, id DESC LIMIT ${n} OFFSET ${(p - 1) * n}`,
+      [like, like, like]
+    );
+  } catch {
+    return { error: "ค้นใบคืนในกระจกไม่ได้", applied };
+  }
+  // ชีพจรอ่านไม่ได้ = ไม่รู้ (null) ไม่ใช่ "ครบ"
+  let meta = null;
+  try {
+    [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = 'sync_returns'`);
+  } catch {
+    meta = null;
+  }
+  return {
+    total,
+    page: p,
+    pages: Math.max(1, Math.ceil(total / n)),
+    live: false,
+    source: "mirror",
+    applied,
+    syncedAtUtc: meta?.at ?? null,
+    syncComplete: meta ? meta.v === "complete" : null,
+    rows: (Array.isArray(rows) ? rows : []).map((r) => ({
+      id: String(r?.id ?? ""),
+      number: String(r?.number ?? ""),
+      reference: String(r?.reference ?? ""),
+      customer: String(r?.customer ?? ""),
+      amount: num(r?.amount),
+      status: String(r?.status ?? ""),
+      warehouse: String(r?.warehouse ?? ""),
+      date: String(r?.return_date ?? ""),
+      paid: String(r?.paid ?? ""),
+    })),
+  };
+}
+
+export async function listReturnOrders(limit = 50, page = 1, q = "") {
+  const needle = String(q ?? "").trim().slice(0, 60);
+  if (needle) return searchReturnOrdersMirror(limit, page, needle);
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
@@ -1007,12 +1066,13 @@ export async function listReturnOrders(limit = 50, page = 1) {
   const list = Array.isArray(data?.list) ? data.list : null;
   /* ⚠️ แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีใบสักใบ" — จอต้องเขียนคนละคำ
       (สอง 0 ที่หน้าตาเหมือนกันแต่คนละความหมาย) */
-  if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้" };
+  if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้", applied: { q: null, source: "zort" } };
   return {
     total: num(data?.count),
     page: p,
     pages: Math.max(1, Math.ceil(num(data?.count) / n)),
     live: true,
+    applied: { q: null, source: "zort" },
     rows: list.map((r) => ({
       /* 🔴 **ต้องส่ง `id` ออกไปด้วยเสมอ** (เพิ่ม 9 ก.ย. 2569 · ฝั่งจอจับได้ก่อน push)
           เส้นรายใบ `?returnorder=` ค้นด้วย `id` แต่รายการนี้ส่งแต่ `number` ⇒ จอกดเข้าใบไม่ได้

@@ -1036,7 +1036,9 @@ async function route(req, context) {
     }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
-      return okJson(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page")));
+      /* q= (15 ก.ย. 2569) มีคำค้น ⇒ ค้นจากกระจก return_orders_v2 · ไม่มี ⇒ ดึงสด ZORT เหมือนเดิม
+         ขาออกมี applied {q, source} — จอเช็คตัวนี้ก่อนเขียนว่าไฟล์กรองแล้ว */
+      return okJson(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q")));
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
