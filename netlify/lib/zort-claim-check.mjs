@@ -35,10 +35,27 @@ async function probe(path) {
   return "unknown";
 }
 
-export async function zortClaimCheck() {
+/** ยิงพร้อมกันไม่เกิน limit ตัว · ผลเรียงตามลำดับของ items เสมอ */
+export const PROBE_CONCURRENCY = 6;
+export async function mapLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < items.length) {
+      const i = next++;
+      out[i] = await fn(items[i], i);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, worker));
+  return out;
+}
+
+/** @param {{probe?: (path: string) => Promise<"exists"|"missing"|"unknown">}} [opts]
+ *  probe ส่งเข้ามาได้เพื่อทดสอบโดยไม่ยิงเน็ต — ใช้งานจริงไม่ต้องส่ง */
+export async function zortClaimCheck({ probe: probeFn = probe } = {}) {
   // ตัวควบคุม — ต้อง exists ทั้งคู่ ไม่งั้นผลทั้งรอบแปลไม่ได้
   const controls = ["Product/GetProducts", "Order/GetOrders"];
-  const controlResults = await Promise.all(controls.map(probe));
+  const controlResults = await Promise.all(controls.map((c) => probeFn(c)));
   if (controlResults.some((x) => x !== "exists")) {
     return {
       inconclusive: true,
@@ -51,21 +68,31 @@ export async function zortClaimCheck() {
   const gone = [];    // เคยบอกว่ามี แต่ตอนนี้ไม่มี ⇒ ของที่เราวางแผนจะใช้หายไป
   const unknown = []; // ยิงไม่ถึง — ต้องบอก ไม่ใช่กลืน
 
+  /* ⏱ **ยิงพร้อมกันทีละ PROBE_CONCURRENCY ตัว ไม่ใช่ทีละตัว** (แก้ 14 ก.ย. 2569)
+      วัดจริงก่อนแก้: 46 ชื่อยิงเรียงกัน = 12.4–14.5 วิ (เพดานฟังก์ชัน 26 วิ) ⇒ เพิ่มอีก ~30 ชื่อ = ใกล้เพดาน
+      และ ZORT ช้าขึ้นนิดเดียวก็โดนตัดกลางคำขอทั้งรอบ ⇒ ตัวตรวจตายเงียบทั้งชุด (งบเวลาเป็นของใช้ร่วมกัน)
+      ⚠️ ห้ามยิงทั้งหมดพร้อมกันไม่จำกัด — ZORT อาจนับเป็นยิงรัวแล้วตอบผิดปกติ ⇒ ผลกลายเป็น unknown ทั้งแผง
+      ⚠️ ลำดับผลต้องเหมือนเดิม (เรียงตามทะเบียน) ไม่งั้นรายงานสลับแถวกับชื่อ */
+  const jobs = [];
   for (const row of ZORT_NO_API) {
-    for (const n of namesIn(row.probe)) {
-      const s = await probe(n);
-      if (s === "exists") broke.push({ what: row.what, endpoint: n, at: row.at });
-      else if (s === "unknown") unknown.push(n);
-    }
+    for (const n of namesIn(row.probe)) jobs.push({ kind: "noApi", row, endpoint: n });
   }
   for (const row of ZORT_CAN_BUT_NOT_BUILT) {
     // ในข้อความมีทั้งชื่อที่มีจริงและชื่อที่ไม่มี — สนใจเฉพาะตัวแรก (ตัวที่อ้างว่ามี)
     const first = namesIn(row.probe)[0];
-    if (!first) continue;
-    const s = await probe(first);
-    if (s === "missing") gone.push({ what: row.what, endpoint: first, at: row.at });
-    else if (s === "unknown") unknown.push(first);
+    if (first) jobs.push({ kind: "can", row, endpoint: first });
   }
+  const states = await mapLimit(jobs, PROBE_CONCURRENCY, (j) => probeFn(j.endpoint));
+  jobs.forEach((j, i) => {
+    const s = states[i];
+    if (j.kind === "noApi") {
+      if (s === "exists") broke.push({ what: j.row.what, endpoint: j.endpoint, at: j.row.at });
+      else if (s === "unknown") unknown.push(j.endpoint);
+    } else {
+      if (s === "missing") gone.push({ what: j.row.what, endpoint: j.endpoint, at: j.row.at });
+      else if (s === "unknown") unknown.push(j.endpoint);
+    }
+  });
 
   return {
     ok: broke.length === 0 && gone.length === 0,
