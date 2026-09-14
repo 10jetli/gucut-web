@@ -164,7 +164,8 @@ async function markSafely(kind, ref, info) {
 
 /** เพิ่มสินค้าเข้า ZORT — จอ "เพิ่มสินค้า" ของหลังร้านเรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` มา = **โหมดซ้อม** คืนสิ่งที่จะส่งให้ดู ไม่ยิงจริง
- *     ครั้งแรกที่ใช้ต้องเป็นการกดโดยตั้งใจ เพราะ ZORT ไม่เปิด API ให้ลบสินค้าที่เพิ่มผิด
+ *     ครั้งแรกที่ใช้ต้องเป็นการกดโดยตั้งใจ · ลบได้ด้วย DeleteProduct (เอกสาร V4 · แก้ข้อความเดิม 14 ก.ย. 2569 ที่เขียนว่าไม่มี API ลบ)
+ *     แต่ต้องรู้ id ของ ZORT และลบแล้วเอาคืนไม่ได้ ⇒ ใส่ให้ถูกตั้งแต่แรกดีที่สุด
  */
 export async function zortAddProduct(o = {}) {
   const ref = cleanRef(o.ref);
@@ -413,6 +414,122 @@ export async function zortAddContact(o = {}) {
   if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
   const warn = await markSafely("contact", ref, { kind: "contact", code, name });
   return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มผู้ติดต่อ ${name} เข้า ZORT แล้ว` };
+}
+
+/* ── แก้/ลบสินค้า — งานกระดาน t_mu0m97e5 ขั้น ③ ──
+   ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/product · อ่าน 14 ก.ย. 2569)
+      POST Product/UpdateProduct?id=<Int> · body ไม่บังคับทุกช่อง: name · description · unittext · barcode ·
+        sellprice (String) · purchaseprice (String) · sell_vat_status (0-3) · category · weight (กรัม) · height/length/width (ซม.)
+      POST Product/DeleteProduct?id=<Int> · ไม่มี body
+      GET  Product/GetProductDetail?id=<Int> · คืน id · sku · name · stock ...
+   🔴 **ระบุด้วย id ของ ZORT ไม่ใช่ sku** ⇒ จอส่ง id ผิดตัวเดียว = ไปแก้/ลบสินค้าคนละตัวแบบเงียบสนิท
+      ⇒ ต้องส่ง sku ที่คาดไว้มาคู่กันเสมอ แล้วตอนยืนยันท่อ **ถาม ZORT ก่อน** ว่า id นี้คือ sku นี้จริง
+      ถามไม่สำเร็จ / รูปคำตอบไม่รู้จัก = ไม่ทำต่อ ("ไม่รู้" ≠ "ตรง")
+   ⚠️ ยังไม่เคยยิงจริงทั้งสามเส้น · โหมดซ้อมไม่ยิงเน็ตเลย (ตรวจ id↔sku เฉพาะตอน confirm) */
+const productId = (v) => {
+  const s = String(v ?? "").trim();
+  return /^\d{1,12}$/.test(s) && Number(s) > 0 ? Number(s) : null;
+};
+
+async function zortProductById(id) {
+  const headers = creds();
+  if (!headers) return { error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Product/GetProductDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) return { error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
+  /* รูปคำตอบยังไม่เคยเห็นของจริง ⇒ รับเฉพาะก้อนที่ id ตรงกับที่ถามเท่านั้น ไม่งั้นถือว่าไม่รู้ */
+  const p = [d, d?.detail, d?.product].find((x) => x && Number(x.id) === id);
+  if (!p) return { error: `ZORT ไม่คืนสินค้า id ${id} (หรือรูปคำตอบไม่รู้จัก)` };
+  return { product: p };
+}
+
+async function confirmProductIdentity(id, sku) {
+  const got = await zortProductById(id);
+  if (got.error) return { ok: false, unknown: true, error: `${got.error} — ยังไม่ได้แก้/ลบอะไร` };
+  const real = String(got.product.sku ?? "").trim();
+  if (real !== sku)
+    return { ok: false, mismatch: true,
+      error: `id ${id} ใน ZORT คือ ${real || "(ไม่มี sku)"} ${txt(got.product.name, 60)} — ไม่ใช่ ${sku} ⇒ ไม่ทำต่อ` };
+  return { ok: true, product: got.product };
+}
+
+export async function zortUpdateProduct(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันแก้ผิดตัว" };
+  const body = {};
+  for (const [key, field] of [["price", "sellprice"], ["cost", "purchaseprice"],
+    ["weight", "weight"], ["height", "height"], ["length", "length"], ["width", "width"]]) {
+    if (o[key] === undefined) continue;
+    const n = numOrNull(o[key]);
+    if (n === null || n < 0) return { ok: false, error: `ช่อง ${key} ต้องเป็นตัวเลขไม่ติดลบ — ยังไม่ส่งเข้า ZORT` };
+    body[field] = String(n); // เอกสารกำหนดเป็น String ทุกช่องตัวเลขของเส้นนี้
+  }
+  if (o.vat !== undefined) {
+    if (![0, 1, 2, 3].includes(Number(o.vat)) || String(o.vat).trim() === "")
+      return { ok: false, error: "vat ต้องเป็น 0-3 (sell_vat_status)" };
+    body.sell_vat_status = Number(o.vat);
+  }
+  /* ช่องข้อความว่าง = ไม่ส่ง (ยังไม่รู้ว่า ZORT ตีความ "" เป็นล้างค่าหรือเมิน ⇒ ห้ามเดา) */
+  for (const [key, field, n] of [["name", "name", 200], ["description", "description", 500],
+    ["unit", "unittext", 40], ["barcode", "barcode", 60], ["category", "category", 80]]) {
+    const v = txt(o[key], n);
+    if (v) body[field] = v;
+  }
+  if (!Object.keys(body).length) return { ok: false, error: "ไม่มีช่องให้แก้เลย" };
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: { query: { id }, body }, expectSku: sku,
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ตอน confirm ท่อจะถาม ZORT ก่อนว่า id นี้คือ sku นี้จริง" };
+
+  const seen = await seenRef("product-update", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "การแก้ครั้งนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+  const who = await confirmProductIdentity(id, sku);
+  if (!who.ok) return { ref, ...who };
+
+  const r = await zortPost(`Product/UpdateProduct?id=${id}`, body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("product-update", ref, { kind: "product-update", id, sku, fields: Object.keys(body) });
+  return { ok: true, updated: true, ref, id, sku, warn, message: `แก้สินค้า ${sku} ใน ZORT แล้ว` };
+}
+
+/** ลบสินค้าใน ZORT — ⚠️ **ลบแล้วเอาคืนไม่ได้**
+ *  ด่านเพิ่มจากตัวแก้: **สต็อกใน ZORT ต้องเป็น 0 เป๊ะ** อ่านสต็อกไม่ได้ = ไม่ลบ
+ *  (ลบของที่ยังมีสต็อก = ยอดคลังหายไปทั้งก้อนโดยไม่มีใบรองรับ) */
+export async function zortDeleteProduct(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันลบผิดตัว" };
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: { query: { id }, body: null }, expectSku: sku,
+    note: "โหมดซ้อม — ⚠️ ลบแล้วเอาคืนไม่ได้ · ตอน confirm ท่อจะถาม ZORT ก่อนว่า id นี้คือ sku นี้ และสต็อกต้องเป็น 0" };
+
+  const seen = await seenRef("product-delete", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ลบ" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "สินค้านี้เคยลบไปแล้ว — ไม่ได้ส่งซ้ำ" };
+  const who = await confirmProductIdentity(id, sku);
+  if (!who.ok) return { ref, ...who };
+  const stock = numOrNull(who.product.stock);
+  if (stock !== 0)
+    return { ok: false, ref, error: `สินค้า ${sku} สต็อกใน ZORT = ${who.product.stock ?? "อ่านไม่ได้"} — ไม่ลบ (ต้องเป็น 0 ก่อน)` };
+
+  const r = await zortPost(`Product/DeleteProduct?id=${id}`, {});
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("product-delete", ref, { kind: "product-delete", id, sku });
+  return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบสินค้า ${sku} ออกจาก ZORT แล้ว` };
 }
 
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
@@ -914,7 +1031,8 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
     probe: "PurchaseOrder/VoidPurchaseOrder · ReturnOrder/VoidReturnOrder → 405 (ยังไม่เคยยิงจริง)" },
   { what: "ลบสินค้า", at: "2026-09-06", untested: true,
     probe: "Product/DeleteProduct → 405",
-    note: "⚠️ ของร้านจริง ลบพลาดเอาคืนไม่ได้ — ต่อเข้าจอต้องมีขั้นยืนยันเสมอ" },
+    note: "⚠️ ของร้านจริง ลบพลาดเอาคืนไม่ได้ — ต่อเข้าจอต้องมีขั้นยืนยันเสมอ · " +
+      "ท่อมีแล้ว 14 ก.ย. 2569: DELETE ?deleteproduct=<id> (ตรวจ id↔sku + สต็อก 0 ก่อนลบ · ยังไม่เคยยิงจริง)" },
 ];
 
 /* 🔔 **ZORT ยิงเหตุการณ์กลับมาหาเราได้** — เจอ 6 ก.ย. 2569 ตอนกวาดทั้งแผง

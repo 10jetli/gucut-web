@@ -387,6 +387,27 @@ async function route(req, context) {
       const r = await zortAddProduct(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST   ?updateproduct=1 body {ref, id, sku, name?, description?, price?, cost?, unit?, barcode?, category?,
+                                    weight?, height?, length?, width?, vat?}  ⇒ ZORT Product/UpdateProduct?id=
+       DELETE ?deleteproduct=<id ของ ZORT>&sku=<sku ที่คาดไว้>&ref=<ref>[&confirm=1]  ⇒ ZORT Product/DeleteProduct?id=
+       🔴 id คือ **id ของ ZORT ไม่ใช่ sku** · ตอนยืนยันท่อถาม ZORT ก่อนว่า id ตรง sku · ลบต้องสต็อก 0 ด้วย
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น · ยังไม่เคยยิงจริงทั้งคู่ · ผิด method = 405 · งานกระดาน t_mu0m97e5 ขั้น ③ */
+    if (url.searchParams.get("updateproduct")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortUpdateProduct } = await import("../lib/zort-write.mjs");
+      const r = await zortUpdateProduct(body);
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (url.searchParams.has("deleteproduct")) {
+      if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
+      const q = url.searchParams;
+      const { zortDeleteProduct } = await import("../lib/zort-write.mjs");
+      const r = await zortDeleteProduct({ id: q.get("deleteproduct"), sku: q.get("sku"), ref: q.get("ref"),
+        confirm: q.get("confirm") === "1" });
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("addpo")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
