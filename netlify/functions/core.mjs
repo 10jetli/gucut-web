@@ -455,6 +455,26 @@ async function route(req, context) {
       const r = await zortAddPurchaseOrder(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* ── งานกระดาน t_mu0p3521 · ท่อ 4 ฟีเจอร์ที่ยังไม่มีเส้นเขียน (เอกสาร ZORT V4 · ยังไม่เคยยิงจริง · โหมดซ้อมเป็นค่าเริ่มต้น) ──
+       POST ?addpo=1 เพิ่มช่อง status ("Pending"|"Success") · paid + paymentMethod  ⇒ "สร้างรายการซื้อแบบเร็ว" (buy-create-quick)
+       POST ?addquotations=1   body {rows:[<body ของ ?addquotation=1>…] ≤20, confirm?}      ⇒ นำเข้าใบเสนอราคาหลายใบ (ทีละใบ)
+       POST ?ordershipping=1   body {ref, id, trackingNo?, shippingChannel?, shippingDate?, confirm?}  ⇒ Order/EditOrderInfo?id=
+       POST ?ordershippingbatch=1 body {rows:[…] ≤20, confirm?}                           ⇒ นำเข้าเลขพัสดุจาก Excel
+       POST ?poreceive=1       body {ref, id, warehouse?, date?, items?:[{sku, qty}], confirm?}
+                               ⇒ มี items = UpdatePartialPurchaseOrder · ไม่มี = UpdatePurchaseOrderStatus status=1 (รับครบ)
+       🔴 ออเดอร์/ใบซื้อ **ต้องใช้ id ของ ZORT** ไม่รับเลขที่ใบ (เลขที่เอกสารซ้ำกันได้) · ชุดหยุดกลางทาง = complete:false + nextRow
+       ⚠️ "ตั้งค่ากระจายสินค้า" ไม่พบ API (ZORT_NO_API) · "จองขนส่ง" มีเส้นแต่ไม่ทำจนกว่าท่านประธานอนุมัติ (ZORT_CAN_BUT_NOT_BUILT) */
+    for (const [key, fnName] of [["addquotations", "zortAddQuotations"], ["ordershipping", "zortOrderShipping"],
+      ["ordershippingbatch", "zortOrderShippingBatch"], ["poreceive", "zortReceivePurchaseOrder"]]) {
+      if (!url.searchParams.get(key)) continue;
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON object)" }, 400);
+      const mod = await import("../lib/zort-write.mjs");
+      const r = await mod[fnName](body);
+      return json(r, r.ok || r.complete === false ? 200 : 400);
+    }
     /* POST ?addbundle=1    body {ref, sku, name, price, vat?, items:[{sku, qty}]}   ⇒ ZORT Bundle/AddBundle
        POST ?addwarehouse=1 body {ref, code, name, address?}                        ⇒ ZORT Warehouse/AddWarehouse
        ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · **ยังไม่เคยยิงจริงทั้งคู่** · ผิด method = 405

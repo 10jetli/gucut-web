@@ -642,6 +642,151 @@ export async function zortUpdateProductImage(o = {}) {
   return { ok: true, updated: true, ref, id, sku, warn, message: `ส่งรูปสินค้า ${sku} เข้า ZORT แล้ว — ไปเปิดดูใน ZORT ว่าแทนหรือต่อท้าย` };
 }
 
+/* ── งานกระดาน t_mu0p3521: ท่อของ 4 ฟีเจอร์ที่ยังไม่มีเส้นเขียน (อันที่ 5 "ตั้งค่ากระจายสินค้า" = ไม่พบ API ดู ZORT_NO_API) ──
+   ⚠️ ชื่อช่องทั้งหมดมาจากเอกสารทางการ ZORT API V4 (อ่าน 14 ก.ย. 2569) · ยังไม่เคยยิงจริงสักเส้น · โหมดซ้อมเป็นค่าเริ่มต้น
+   🔴 **ใบสั่งขาย/ใบซื้อ ต้องระบุด้วย id ของ ZORT เท่านั้น ไม่รับเลขที่ใบ**
+      เอกสารรับ number ได้ แต่เลขที่เอกสารของ ZORT **ซ้ำกันได้จริง** (กระจกเคยหาย 581 ใบเพราะเรื่องนี้)
+      ⇒ ยิงด้วยเลขที่ใบ = อาจไปแก้ใบคนละใบแบบเงียบสนิท · จอหา id จากกระจก (?list=orders / ?list=purchases) แล้วส่ง id มา */
+
+/** วนทำทีละแถวภายใต้เพดานเวลาฟังก์ชัน (26 วิ)
+ *  ⚠️ เพดานเวลาเป็นของใช้ร่วมกัน: แถวใหม่เริ่มได้เฉพาะเมื่อ "เวลาที่ใช้ไป + เวลาเลวร้ายสุดของแถวหนึ่ง" ยังไม่เกินเส้น
+ *     ไม่งั้นแถวสุดท้ายโดนตัดกลางคำขอ = ยิงไปแล้วแต่ไม่รู้ผล (สถานะ "ไม่รู้" ที่แพงที่สุด)
+ *  ⚠️ หยุดกลางทาง ⇒ complete:false + nextRow ให้จอส่งแถวที่เหลือมาใหม่ · ref ของแต่ละแถวกันซ้ำให้แล้ว
+ *  ⚠️ confirm ใช้ของทั้งชุดเท่านั้น (ไม่อ่าน confirm รายแถว) — กันชุดเดียวมีทั้งซ้อมทั้งจริงปนกัน */
+export const BATCH_MAX = 20;
+const BATCH_DEADLINE_MS = 22000;
+export async function runBatch(rows, fn, { confirm = false, worstRowMs = 12000, now = Date.now } = {}) {
+  if (!Array.isArray(rows) || !rows.length) return { ok: false, error: "ต้องส่ง rows อย่างน้อย 1 แถว" };
+  if (rows.length > BATCH_MAX) return { ok: false, error: `ส่งได้ครั้งละไม่เกิน ${BATCH_MAX} แถว (ส่งมา ${rows.length}) — แบ่งส่งหลายรอบ` };
+  const started = now();
+  const results = [];
+  for (let i = 0; i < rows.length; i++) {
+    if (confirm && i > 0 && now() - started + worstRowMs > BATCH_DEADLINE_MS) break;
+    const row = rows[i] && typeof rows[i] === "object" ? rows[i] : {};
+    const r = await fn({ ...row, confirm: !!confirm });
+    results.push({ row: i, ...r });
+  }
+  const notRun = rows.length - results.length;
+  const count = (k) => results.filter((r) => r[k]).length;
+  return {
+    ok: notRun === 0 && results.every((r) => r.ok),
+    complete: notRun === 0,
+    dryRun: !confirm,
+    total: rows.length,
+    done: results.length,
+    notRun,
+    nextRow: notRun ? results.length : null,
+    counts: { ok: count("ok"), failed: results.filter((r) => !r.ok).length, duplicate: count("duplicate"),
+      unknown: count("unknown") },
+    results,
+  };
+}
+
+/** นำเข้าใบเสนอราคาหลายใบ (soon: quotation นำเข้า Excel)
+ *  ZORT **ไม่มีเส้นรับหลายใบ** (เอกสาร: AddQuotation สร้างทีละใบ) ⇒ จออ่าน Excel แล้วส่งมาเป็น rows ท่อยิงทีละใบ
+ *  แต่ละแถวใช้กติกาเดียวกับ ?addquotation=1 ครบทุกด่าน (ต้องมี ref · ลูกค้า · เงินสามชั้น) */
+export async function zortAddQuotations(o = {}) {
+  return runBatch(o.rows, zortAddQuotation, { confirm: o.confirm });
+}
+
+/** บันทึกข้อมูลจัดส่งให้ออเดอร์ (soon: shipping · บริการส่งสินค้า) → Order/EditOrderInfo?id=
+ *  ส่งเฉพาะช่องจัดส่ง: trackingno · shippingchannel · shippingdate (yyyy-MM-dd)
+ *  🔴 **ยังไม่รู้ว่า EditOrderInfo ล้างช่องที่ไม่ได้ส่งไหม** (เช่นชื่อ/ที่อยู่ลูกค้า) — เอกสารบอกแค่ว่าไม่บังคับ
+ *     ⇒ ใบแรกที่ยิงจริงต้องดึง GetOrderDetail ก่อน/หลังมาเทียบทุกช่อง ก่อนเปิดให้นำเข้าเป็นชุด
+ *  ⚠️ ไม่ทำ "จองขนส่ง" (ReadyToShip · BookOrderShipment) — เรียกขนส่งจริง/อาจเสียเงิน ต้องให้ท่านประธานอนุมัติก่อน */
+export async function zortOrderShipping(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  if (!id) return { ok: false, error: "ต้องมี id ของออเดอร์ใน ZORT (ตัวเลข) — ไม่รับเลขที่ใบเพราะซ้ำกันได้" };
+  const body = {};
+  const trackingno = txt(o.trackingNo ?? o.trackingno, 60);
+  const shippingchannel = txt(o.shippingChannel ?? o.shippingchannel, 80);
+  const shippingdate = txt(o.shippingDate ?? o.shippingdate, 10);
+  if (shippingdate && !DAY_RE.test(shippingdate)) return { ok: false, error: "shippingDate ต้องเป็นรูป yyyy-MM-dd" };
+  if (trackingno) body.trackingno = trackingno;
+  if (shippingchannel) body.shippingchannel = shippingchannel;
+  if (shippingdate) body.shippingdate = shippingdate;
+  if (!Object.keys(body).length) return { ok: false, error: "ต้องมีอย่างน้อยหนึ่งช่อง: trackingNo · shippingChannel · shippingDate" };
+  const path = `Order/EditOrderInfo?id=${id}`;
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: { path, body },
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT ล้างช่องที่ไม่ได้ส่งไหม ใบแรกต้องดึงกลับมาเทียบ" };
+
+  const seen = await seenRef("order-shipping", ref);
+  if (seen.state === "unknown")
+    return { ok: false, ref, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ข้อมูลจัดส่งแถวนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ" };
+  const r = await zortPost(path, body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("order-shipping", ref, { kind: "order-shipping", id, fields: Object.keys(body) });
+  return { ok: true, updated: true, ref, id, warn, message: `บันทึกข้อมูลจัดส่งออเดอร์ id ${id} แล้ว` };
+}
+
+/** นำเข้าข้อมูลจัดส่งจาก Excel หลายแถว — กติกาเดียวกับ zortOrderShipping ทีละแถว */
+export async function zortOrderShippingBatch(o = {}) {
+  return runBatch(o.rows, zortOrderShipping, { confirm: o.confirm });
+}
+
+/** ตรวจนับ/รับของเข้าตามใบซื้อ (soon: stock-count) → PurchaseOrder/UpdatePartialPurchaseOrder หรือ UpdatePurchaseOrderStatus
+ *  - ส่ง items [{sku, qty}] = รับบางส่วนตามจำนวนที่นับได้ → UpdatePartialPurchaseOrder?id=…&warehousecode&actiondate · body = [{sku, number}]
+ *  - ไม่ส่ง items = รับครบทั้งใบ → UpdatePurchaseOrderStatus?id=…&status=1&warehousecode&actionDate
+ *    (⚠️ เอกสารสะกดชื่อพารามิเตอร์วันที่ต่างกันสองเส้น: actiondate vs actionDate — ส่งตามเอกสารของแต่ละเส้น)
+ *  🔴 **ยังไม่รู้ว่าจำนวนใน UpdatePartialPurchaseOrder คือ "ยอดรอบนี้" หรือ "ยอดสะสม"**
+ *     เข้าใจผิดทางเดียว = ของเข้าซ้ำหรือขาดแบบเงียบ ⇒ ใบแรกต้องดูสต็อกก่อน/หลังด้วยตา
+ *  🔴 สต็อกขยับจริงทุกครั้งที่ยิงสำเร็จ — ของที่รับเข้าแล้วถอยผ่าน API ไม่ได้ */
+export async function zortReceivePurchaseOrder(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  if (!id) return { ok: false, error: "ต้องมี id ของใบซื้อใน ZORT (ตัวเลข) — ไม่รับเลขที่ใบเพราะซ้ำกันได้" };
+  const warehouse = txt(o.warehouse, 30);
+  if (warehouse && !/^[A-Za-z0-9_-]+$/.test(warehouse)) return { ok: false, error: "warehouse ต้องเป็นรหัสคลัง (อักษรอังกฤษ/ตัวเลข)" };
+  const date = txt(o.date, 10);
+  if (date && !DAY_RE.test(date)) return { ok: false, error: "date ต้องเป็นรูป yyyy-MM-dd" };
+  const items = o.items === undefined ? [] : o.items;
+  if (!Array.isArray(items)) return { ok: false, error: "items ต้องเป็นรายการ [{sku, qty}]" };
+  if (items.length > 200) return { ok: false, error: "รับของได้ครั้งละไม่เกิน 200 บรรทัด" };
+
+  const q = new URLSearchParams({ id: String(id) });
+  if (warehouse) q.set("warehousecode", warehouse);
+  let path;
+  let body;
+  if (items.length) {
+    body = [];
+    for (let i = 0; i < items.length; i++) {
+      const sku = txt(items[i]?.sku, 60);
+      const qty = numOrNull(items[i]?.qty);
+      if (!sku) return { ok: false, error: `บรรทัดที่ ${i + 1} ไม่มี sku` };
+      if (qty === null || qty <= 0) return { ok: false, error: `บรรทัดที่ ${i + 1} จำนวนต้องมากกว่า 0` };
+      body.push({ sku, number: qty });
+    }
+    if (date) q.set("actiondate", date);
+    path = `PurchaseOrder/UpdatePartialPurchaseOrder?${q}`;
+  } else {
+    q.set("status", "1");
+    if (date) q.set("actionDate", date);
+    path = `PurchaseOrder/UpdatePurchaseOrderStatus?${q}`;
+    body = {};
+  }
+  const mode = items.length ? "partial" : "all";
+
+  if (!o.confirm) return { ok: true, dryRun: true, ref, mode, willSend: { path, body },
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · 🔴 ยิงจริงแล้วสต็อกขยับทันที ถอยไม่ได้ · ยังไม่รู้ว่าจำนวนเป็นยอดรอบนี้หรือยอดสะสม" };
+
+  const seen = await seenRef("po-receive", ref);
+  if (seen.state === "unknown")
+    return { ok: false, ref, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "การรับของครั้งนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ (กันของเข้าคลังซ้ำ)" };
+  const r = await zortPost(path, body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("po-receive", ref, { kind: "po-receive", id, mode, lines: items.length });
+  return { ok: true, received: true, ref, id, mode, warn,
+    message: mode === "all" ? `รับของครบทั้งใบซื้อ id ${id} แล้ว` : `รับของ ${items.length} บรรทัดตามใบซื้อ id ${id} แล้ว` };
+}
+
 /** สร้างใบสั่งซื้อใน ZORT — จอ "สร้างรายการซื้อ" เรียกตัวนี้
  *  ⚠️ ไม่ส่ง `confirm: true` = โหมดซ้อม (ZORT ไม่เปิด Update/Delete ให้ใบซื้อ ⇒ ผิดแล้วแก้ไม่ได้)
  */
@@ -765,6 +910,29 @@ export async function zortAddPurchaseOrder(o = {}) {
 
   const body = { list, ...headerAmount(list) };
   if (txt(o.vendor)) body.customername = txt(o.vendor, 160);
+  /* ── "สร้างรายการซื้อแบบเร็ว" (soon: buy-create-quick · งานกระดาน t_mu0p3521) ──
+     ZORT **ไม่มีเส้นแยก** (เอกสาร V4 หน้า Purchase Order มีแค่ AddPurchaseOrder) ⇒ "แบบเร็ว" = ใบเดิม + สถานะ + จ่ายเงินในคำขอเดียว
+     ⚠️ เอกสารให้ status แค่ "Pending" (ค่าเริ่มต้น) กับ "Success" · paymentamount ต้องมาคู่ paymentmethod
+     🔴 **"Success" น่าจะรับของเข้าคลังทันที** (สต็อกขยับ) — ยังไม่เคยยิง ⇒ ใบแรกต้องดูสต็อกก่อน/หลัง
+     ⚠️ ไม่ส่งช่องคลัง เพราะเอกสารหน้านี้ที่อ่านไม่ยืนยันชื่อช่อง ⇒ ZORT ใช้คลังค่าเริ่มต้นของร้าน */
+  if (o.status !== undefined) {
+    const status = txt(o.status, 20);
+    if (!["Pending", "Success"].includes(status))
+      return { ok: false, error: 'status ของใบซื้อรับได้แค่ "Pending" หรือ "Success" (เอกสาร ZORT V4)' };
+    body.status = status;
+  }
+  if (o.paid !== undefined) {
+    const paid = numOrNull(o.paid);
+    const method = txt(o.paymentMethod, 80);
+    if (paid === null || paid <= 0) return { ok: false, error: "ยอดชำระ (paid) ต้องเป็นตัวเลขมากกว่า 0" };
+    if (!method) return { ok: false, error: "ชำระเงินต้องระบุ paymentMethod (ชื่อวิธีชำระที่มีใน ZORT)" };
+    /* ยอดหัวใบไม่รู้ (มีบรรทัดไม่มีราคา) = ตรวจไม่ได้ว่าจ่ายเกินไหม ⇒ ไม่ยอมให้จ่าย ห้ามเดา */
+    if (typeof body.amount !== "number")
+      return { ok: false, error: "ใส่ราคาให้ครบทุกบรรทัดก่อน จึงบันทึกจ่ายเงินพร้อมกันได้" };
+    if (paid > body.amount) return { ok: false, error: `ยอดชำระ ${paid} มากกว่ายอดใบ ${body.amount}` };
+    body.paymentamount = paid;
+    body.paymentmethod = method;
+  }
   if (txt(o.note)) body.description = txt(o.note, 500);
 
   if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: body,
@@ -988,6 +1156,23 @@ export const ZORT_NO_API = [
       "⇒ จอ 'เพิ่มหมวดหมู่' ต้องบอกตรง ๆ และพาไปเพิ่ม/แก้สินค้าแทน ห้ามทำฟอร์มสร้างหมวดที่ไม่มีที่ส่ง " +
       "⚠️ ยังไม่ได้ยิงยืนยันว่า UpdateProduct ใส่ชื่อหมวดใหม่แล้ว ZORT สร้างหมวดให้เองจริง",
   },
+  /* งานกระดาน t_mu0p3521 (14 ก.ย. 2569) — soon key: spread-setting
+     ⚠️ ยืนยันจาก **เอกสาร** ครบทุกโมดูลในสารบัญแล้ว แต่ **ยังไม่ได้ยิง** (g1 ไม่มีรหัส ZORT)
+     ⇒ ชื่อใน probe ข้างล่างคือชื่อที่ให้ zortclaims ยิงตรวจหลัง deploy · ต้องได้ 404 ทุกชื่อ ถึงจะถือว่าพิสูจน์แล้ว
+     ⚠️ ห้ามใส่ชื่อเส้นที่มีจริงลงใน probe ของแถวนี้ (ตัวตรวจจะนับว่า "คำกล่าวอ้างเป็นเท็จ") */
+  {
+    what: "ตั้งค่ากระจายสินค้า (แบ่งสต็อกให้ช่องทางขาย/คลัง)",
+    at: "2026-09-14",
+    untested: true,
+    probe:
+      "Product/GetStockDistribution · Product/UpdateStockDistribution · Warehouse/GetStockDistribution · " +
+      "Warehouse/UpdateStockDistribution · Merchant/GetStockDistribution · Merchant/UpdateStockSetting → ยังไม่เคยยิง",
+    note:
+      "เอกสาร ZORT API V4 อ่านครบ 14 โมดูลในสารบัญ (Product · Bundle · Warehouse · Contact · Order · Purchase Order · " +
+      "Return Order · Return Purchase Order · Transfer · Quotation · Finance · File Upload · Document · Merchant) — " +
+      "ไม่มีเส้นอ่าน/ตั้งค่ากระจายสินค้าเลยสักเส้น · หน้า Merchant มีแค่อ่านรายชื่อช่องทางขาย/ช่องทางส่ง/วิธีชำระ " +
+      "⇒ จอ spread-setting ต้องขึ้นป้าย 'ทำไม่ได้จริง' พร้อมเหตุผลนี้ ห้ามทำฟอร์มหลอก",
+  },
   {
     what: "แก้ / ยกเลิกใบเสนอราคา (เส้นมีจริง แต่ยิงแล้วไม่ผ่าน)",
     at: "2026-09-06",
@@ -1143,6 +1328,11 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
     probe: "Product/DeleteProduct → 405",
     note: "⚠️ ของร้านจริง ลบพลาดเอาคืนไม่ได้ — ต่อเข้าจอต้องมีขั้นยืนยันเสมอ · " +
       "ท่อมีแล้ว 14 ก.ย. 2569: DELETE ?deleteproduct=<id> (ตรวจ id↔sku + สต็อก 0 ก่อนลบ · ยังไม่เคยยิงจริง)" },
+  /* งานกระดาน t_mu0p3521 — ท่อไม่ทำโดยตั้งใจ: เรียกขนส่งจริง/อาจมีค่าใช้จ่าย ⇒ ต้องให้ท่านประธานอนุมัติก่อน */
+  { what: "จองขนส่ง / เรียกรถเข้ารับ / ปริ้นใบปะหน้า", at: "2026-09-14", untested: true,
+    probe: "Order/BookOrderShipment → เอกสาร V4 (ยังไม่เคยยิง) · Order/ReadyToShip · Order/GetShipmentLabels",
+    note: "BookOrderShipment รับ shipment = thailandpost|flashexpress|kerry|shopeeexpress|dhl · ReadyToShip มี booking=1 " +
+      "= เรียกผู้ให้บริการขนส่งจริง ⇒ ไม่ทำเส้นเขียนจนกว่าท่านประธานอนุมัติ · ส่วนบันทึกเลขพัสดุเอง ใช้ ?ordershipping=1 (EditOrderInfo)" },
 ];
 
 /* 🔔 **ZORT ยิงเหตุการณ์กลับมาหาเราได้** — เจอ 6 ก.ย. 2569 ตอนกวาดทั้งแผง
