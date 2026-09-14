@@ -88,6 +88,8 @@ export async function zortReadList(input = {}) {
       kind,
       http: res.status,
       zortCode: body?.res?.resCode ?? body?.resCode ?? null,
+      // ข้อความของ ZORT — ใช้ไล่สาเหตุ (14 ก.ย. 2569: GetMoneyTransfers ตอบ resCode 500 แต่เดิมไม่เห็นข้อความ)
+      zortDesc: String(body?.res?.resDesc ?? body?.resDesc ?? "").slice(0, 160) || null,
       error: `ZORT ไม่คืนรายการ${def.label} (HTTP ${res.status}) — ยังไม่รู้ว่ามีรายการไหม ห้ามแปลว่าว่าง`,
     };
   }

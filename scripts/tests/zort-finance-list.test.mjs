@@ -73,6 +73,8 @@ test('สามสถานะ: list ว่างจริง = rows [] · ไ�
   assert.equal(noList.ok, false);
   assert.equal(noList.unknown, true);
   assert.equal(noList.rows, undefined, 'ห้ามมี rows ว่างแนบมา — จอจะอ่านเป็นไม่มีรายการ');
+  assert.equal(noList.zortCode, '401');
+  assert.equal(noList.zortDesc, 'unauthorized', 'ต้องส่งข้อความของ ZORT ออกมาให้ไล่สาเหตุได้');
 
   reply = () => ({ ok: false, status: 500, json: async () => ({ list: [] }) });
   const http = await zortReadList({ kind: 'expenses' });
