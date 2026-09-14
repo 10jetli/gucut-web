@@ -1043,6 +1043,10 @@ async function route(req, context) {
           sku: url.searchParams.get("sku"),
           kind: url.searchParams.get("kind"),
           limit: url.searchParams.get("limit"),
+          // ช่วงวันไทย yyyy-MM-dd + แบ่งหน้า (15 ก.ย. 2569 · ส่งออกบัตรสต็อก) — ไม่ส่ง = เหมือนเดิม
+          offset: url.searchParams.get("offset"),
+          from: url.searchParams.get("from") ?? undefined,
+          to: url.searchParams.get("to") ?? undefined,
         })),
       });
     }

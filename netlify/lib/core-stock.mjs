@@ -666,17 +666,40 @@ export async function listDeadStock(o = {}) {
  *     ในใบโอน (ยิงจริงแล้ว 404)"* ซึ่ง **ไม่ตรงกับความจริงแล้ว**
  *     404 ที่เคยได้มาจากการยิง**ชื่ออื่น** · `Transfer/GetTransferDetail` **มีอยู่จริง**
  *     (กวาดคู่โมดูล×คำกริยาเจอ · เราเรียกใช้อยู่แล้วที่ `getTransferDetail`)
- *     ⚠️ แต่ **ยังไม่รู้ว่ามันส่งบรรทัดสินค้ามาด้วยไหม** — ต้องยิงด้วยรหัสร้านจริงก่อน
- *        ⇒ สามสถานะ: "มีบรรทัด" · "ไม่มีบรรทัดในใบนี้" · "ZORT ไม่ส่งช่องบรรทัดมาเลย"
- *        พิสูจน์แล้วเมื่อไหร่ ค่อยเปิดให้ stockCard นับใบโอนรายสินค้า **อย่าเพิ่งเขียนว่าทำได้**
+ *     ✅ **ยืนยันแล้ว 14 ก.ย. 2569** (ใบ t_mu1bh5cl): ?transfer=<id> ได้บรรทัดสินค้าจริงทุกชนิด
+ *        (Adjust TF-202609002 · Transfer TF-202607009 · Initial TF-202606033)
+ *     ⚠️ แต่ **กระจกใบโอนยังเก็บแค่หัวใบ** ⇒ stockCard ยังนับใบโอนรายสินค้าไม่ได้จนกว่าจะเก็บบรรทัดลงกระจก
+ *        (ดึงสดทีละใบ 12,003 ใบต่อการเปิดจอหนึ่งครั้งไม่ได้) **อย่าเพิ่งเขียนว่าทำได้**
+ *
+ *  ➕ ช่วงวัน + แบ่งหน้า (15 ก.ย. 2569 · ใบ t_mu1i74cu ส่งออกบัตรสต็อกของ gucut2)
+ *     ⚠️ แบ่งหน้าข้าม 3 แหล่ง: ดึงแต่ละแหล่ง offset+limit แถวแรก → รวม → เรียง → ตัดช่วง
+ *        (ห้าม OFFSET แยกต่อแหล่ง — ลำดับข้ามแหล่งจะผิดและแถวหาย/ซ้ำระหว่างหน้า)
+ *     ⚠️ ความลึกสูงสุด offset+limit = STOCKCARD_MAX_DEPTH · เกินแล้วบอกจอ (depthCapped) ไม่ตัดเงียบ
  *  ⚠️ **ไม่มีข้อมูลรายคลัง** — ZORT มีตัวกรองคลัง (โกดัง/KLD/ANJ) เราไม่มี
  *     ⇒ ส่ง warehouses: null ออกไป ให้จอเขียนว่าทำไมกรองไม่ได้ ไม่ใช่ทำ dropdown เปล่า
  */
+export const STOCKCARD_MAX_DEPTH = 5000;
+
 export async function stockCard(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const sku = String(o.sku ?? "").trim().slice(0, 60);
   if (!sku) return { error: "ต้องระบุ sku" };
-  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
+  const limit = Math.max(1, Math.min(500, num(o.limit) || 50));
+  const offsetIn = Math.max(0, Math.floor(num(o.offset)));
+  const DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const from = String(o.from ?? "").trim();
+  const to = String(o.to ?? "").trim();
+  for (const [name, v] of [["from", from], ["to", to]]) {
+    if (v && !DATE.test(v)) return { error: `${name} ต้องเป็น yyyy-MM-dd (ได้ "${v.slice(0, 20)}")` };
+  }
+  if (from && to && from > to) return { error: "from ต้องไม่หลัง to" };
+  // ความลึกเกินเพดาน = บีบ offset ลงแล้วบอกจอ ไม่ใช่คืนหน้าว่างที่ดูเหมือน "หมดแล้ว"
+  const depthCapped = offsetIn + limit > STOCKCARD_MAX_DEPTH;
+  const offset = depthCapped ? Math.max(0, STOCKCARD_MAX_DEPTH - limit) : offsetIn;
+  const depth = offset + limit;
+  /* ช่วงวัน — วันของใบขาย/ใบซื้อเป็นวันไทยอยู่แล้ว · stock_moves.at เป็น UTC ต้อง +7 ก่อนเทียบ */
+  const range = (expr) =>
+    `${from ? ` AND ${expr} >= ${esc(from)}` : ""}${to ? ` AND ${expr} <= ${esc(to)}` : ""}`;
 
   /* ชื่อโหมดตรงกับตัวเลือกของ ZORT เท่าที่เราทำได้จริง
      ⚠️ **ค่าที่ไม่รู้จักต้องบอกออกไป ห้ามถอยไป all เงียบ ๆ**
@@ -723,8 +746,8 @@ export async function stockCard(o = {}) {
           `SELECT o.order_date AS date, 'ขาย' AS kind, o.status AS status,
                   o.number AS ref, o.customer AS party, -oi.qty AS qty, oi.amount AS amount
            FROM order_items oi JOIN orders o ON o.id = oi.order_id
-           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}
-           ORDER BY o.order_date DESC LIMIT ${limit}`
+           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}${range("o.order_date")}
+           ORDER BY o.order_date DESC LIMIT ${depth}`
         )
       : none(),
     wantBuy
@@ -732,16 +755,16 @@ export async function stockCard(o = {}) {
           `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
                   i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
            FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
-           WHERE i.sku = ${esc(sku)}
-           ORDER BY po.po_date DESC LIMIT ${limit}`
+           WHERE i.sku = ${esc(sku)}${range("po.po_date")}
+           ORDER BY po.po_date DESC LIMIT ${depth}`
         )
       : none(),
     wantAdjust
       ? coreQuery(
           `SELECT date(at, '+7 hours') AS date, 'ปรับ (ของเราเอง)' AS kind, reason AS status,
                   ref AS ref, '' AS party, qty AS qty, NULL AS amount
-           FROM stock_moves WHERE sku = ${esc(sku)}
-           ORDER BY at DESC LIMIT ${limit}`
+           FROM stock_moves WHERE sku = ${esc(sku)}${range("date(at, '+7 hours')")}
+           ORDER BY at DESC LIMIT ${depth}`
         ).catch(() => FAILED)
       : none(),
     /* ⚠️ **นับของทั้งหมดแยกตามแหล่ง — ไม่ใช่แค่ที่แสดง** (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569)
@@ -752,14 +775,17 @@ export async function stockCard(o = {}) {
     wantSale
       ? coreQuery(
           `SELECT COUNT(*) AS c FROM order_items oi JOIN orders o ON o.id = oi.order_id
-           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}`
+           WHERE oi.sku = ${esc(sku)} AND ${CANCEL_SQL.replace(/status/g, "o.status")}${range("o.order_date")}`
         )
       : none(),
     wantBuy
-      ? coreQuery(`SELECT COUNT(*) AS c FROM purchase_order_items WHERE sku = ${esc(sku)}`)
+      ? coreQuery(
+          `SELECT COUNT(*) AS c FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
+           WHERE i.sku = ${esc(sku)}${range("po.po_date")}`
+        )
       : none(),
     wantAdjust
-      ? coreQuery(`SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}`).catch(() => FAILED)
+      ? coreQuery(`SELECT COUNT(*) AS c FROM stock_moves WHERE sku = ${esc(sku)}${range("date(at, '+7 hours')")}`).catch(() => FAILED)
       : none(),
   ]);
 
@@ -775,11 +801,13 @@ export async function stockCard(o = {}) {
     adjust: num(adjCnt[0]?.c),
   };
   const total = counts.sale + counts.buy + counts.adjust;
-  const shown = Math.min(rows.length, limit);
+  const page = rows.slice(offset, offset + limit);
+  const shown = page.length;
   return {
     sku,
     // ⚠️ สะท้อน **ค่าที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
-    applied: { sku, kind, limit },
+    applied: { sku, kind, limit, offset, from: from || null, to: to || null },
+    ...(depthCapped ? { depthCapped: true, offsetRequested: offsetIn, maxDepth: STOCKCARD_MAX_DEPTH } : {}),
     total, // จำนวนจริงทั้งหมดในตัวกรองนี้ (ไม่ใช่จำนวนที่แสดง)
     shown, // ⚠️ เลิกใช้ — ที่เส้นนี้มันหมายถึง "ที่ส่งกลับจริง" ซึ่งคนละความหมายกับ list=stock
     rowsMatched: total,
@@ -788,8 +816,10 @@ export async function stockCard(o = {}) {
     /* ⚠️ มีชื่ออยู่ในนี้ = แหล่งนั้น **ดึงไม่สำเร็จ ไม่ใช่ไม่มีข้อมูล**
         จอต้องเขียนกำกับว่าตัวเลขไม่ครบ **ห้ามโชว์ 0 เฉย ๆ** ไม่งั้นกลายเป็นคำยืนยันที่ผิด */
     failed,
-    // ⚠️ true = มีของถูกตัดออกเพราะชนเพดาน **จอต้องเขียนบอก ห้ามตัดเงียบ**
+    // ⚠️ true = ยังมีแถวนอกหน้านี้ (ก่อนหรือหลัง) **จอต้องเขียนบอก ห้ามตัดเงียบ**
     truncated: total > shown,
+    // มีหน้าถัดไปไหม — ส่งออกให้วนจนเป็น false · ⚠️ ถ้าชนความลึกสูงสุดจะเป็น false ทั้งที่ยังไม่ครบ (ดู depthCapped/total)
+    hasMore: !depthCapped && offset + shown < total && offset + shown < STOCKCARD_MAX_DEPTH,
     // ค่าที่ส่งมาแต่ไม่รู้จัก → บอกให้รู้ ไม่เมินเงียบ
     ...(known ? {} : { ignored: { kind: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — ใช้ "all" แทน` }),
     kinds: [
@@ -811,9 +841,9 @@ export async function stockCard(o = {}) {
       /* ⚠️ ข้อความนี้ไปโผล่บนจอ — ห้ามเขียนเกินกว่าที่พิสูจน์แล้ว
          เดิมเขียนว่า "ZORT ไม่เปิด API ให้ดึงรายการในใบ" ซึ่งเป็นเท็จตั้งแต่ 6 ก.ย. 2569 */
       "ยังไม่รวม: ใบ 'ปรับ' และ 'ยกมา' ของ ZORT รายสินค้า (กระจกใบโอนเก็บแค่หัวใบ · " +
-      "เส้นดึงรายละเอียดใบโอนมีอยู่ แต่ยังไม่ได้ยืนยันว่าส่งบรรทัดสินค้ามาด้วย) · " +
+      "เส้นดึงรายละเอียดใบโอนส่งบรรทัดสินค้ามาจริง (ยืนยัน 14 ก.ย. 2569) แต่กระจกยังไม่ได้เก็บบรรทัด) · " +
       "ไม่มีคอลัมน์คงเหลือสะสมเพราะคำนวณย้อนหลังไม่ครบ",
-    rows: rows.slice(0, limit),
+    rows: page,
   };
 }
 
