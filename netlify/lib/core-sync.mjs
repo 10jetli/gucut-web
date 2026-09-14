@@ -213,20 +213,29 @@ export async function syncOrders(days = 3, range = {}) {
               ⇒ ต้องหักส่วนลดก่อนเสมอ ไม่ใช่เอา per × qty ดิบ ๆ
            ⚠️ **ZORT ส่ง discount มาเป็นข้อความได้** ("10" ไม่ใช่ 10) ⇒ ต้องผ่าน num() เสมอ
               (เจอตอนคำนวณด้วย Python แล้ว TypeError — ถ้าเป็น JS จะได้ผลเพี้ยนเงียบ ๆ แทน) */
+          /* 🔴 **discount ของ ZORT เป็น "ต่อชิ้น"** — เอกสาร V4 (Order · OrderProduct): discount = "Discount Per Unit"
+                (อ่านยืนยัน 14 ก.ย. 2569) · ตรงกับ POS ของเรา (pos.mjs: qty × (price − discount))
+             ⇒ เดิมคิด per × qty − disc (ถือเป็นส่วนลดทั้งบรรทัด) ⇒ ใบที่ totalprice หาย + qty > 1 + มีส่วนลด
+                ยอดบรรทัดสูงเกินจริง disc × (qty − 1) · SO-202607034 ข้างบนเป็น qty 1 จึงไม่เคยเห็น
+             🔴 **และคอลัมน์ order_items.discount ไม่เคยถูกเขียนเลย** ตั้งแต่เพิ่มคอลัมน์ cb2218a (2 ก.ย. 2569)
+                เจอ 14 ก.ย. 2569: ?order= ของ 20 ใบล่าสุด บรรทัด 28/28 discount เป็น null ทั้งที่ใบวันนี้
+                (คลาส "เพิ่มคอลัมน์แต่ลืมต่อท่อ" ที่ coredb.mjs เตือนไว้) ⇒ เขียนค่าต่อชิ้นลงคอลัมน์แล้ว
+                ใบเก่าต้องกวาดย้อนหลังด้วย items:"all" (หัวใบไม่เปลี่ยน ตัวเทียบข้างบนจะข้าม) */
           const disc = num(it.discount);
-          const computed = Math.max(0, per * qty - disc);
+          const computed = Math.max(0, (per - disc) * qty);
           const amount = totalRaw > 0 || per <= 0 ? totalRaw : computed;
           rows.push(
             `(${esc(`${st.tag}/${o.number}`)},${idx},${esc(it.sku)},` +
-            `${esc(String(it.name ?? it.productname ?? "").slice(0, 200))},${qty},${amount})`
+            `${esc(String(it.name ?? it.productname ?? "").slice(0, 200))},${qty},${amount},${disc})`
           );
         });
       }
       for (let j = 0; j < rows.length; j += 200) {
         await coreQuery(
-          `INSERT INTO order_items (order_id,line,sku,name,qty,amount)
+          `INSERT INTO order_items (order_id,line,sku,name,qty,amount,discount)
            VALUES ${rows.slice(j, j + 200).join(",")}
-           ON CONFLICT(order_id,line) DO UPDATE SET sku=excluded.sku, name=excluded.name, qty=excluded.qty, amount=excluded.amount`
+           ON CONFLICT(order_id,line) DO UPDATE SET sku=excluded.sku, name=excluded.name, qty=excluded.qty, amount=excluded.amount,
+             discount=excluded.discount`
         );
       }
       itemRows += rows.length;
