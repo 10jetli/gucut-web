@@ -473,7 +473,7 @@ async function route(req, context) {
     if (url.searchParams.has("zortbundle")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { probeBundleDetail } = await import("../lib/core-products.mjs");
-      const r = await probeBundleDetail(url.searchParams.get("zortbundle"));
+      const r = await probeBundleDetail(url.searchParams.get("zortbundle"), url.searchParams.get("wh") ?? undefined);
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
     if (url.searchParams.has("productlabels")) {

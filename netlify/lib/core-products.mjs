@@ -215,8 +215,12 @@ export async function syncProducts() {
  *    (syncBundles ทิ้ง id ของชุดไปตั้งแต่ต้น ⇒ ตอนนั้นอาจไม่มี id ให้ส่งเลย)
  * ⇒ ตัวนี้หา id จาก GetBundles ด้วย sku แล้วยิง detail ด้วย id นั้น คืน "รูปคำตอบดิบ" ให้คนตัดสิน
  * ⚠️ สามสถานะ: ถาม ZORT ไม่สำเร็จ = unknown (ห้ามแปลเป็น "ไม่มีข้อมูล") · ไม่พบชุด = found:false */
-export async function probeBundleDetail(skuIn) {
+export async function probeBundleDetail(skuIn, whIn) {
   const sku = String(skuIn ?? "").trim().slice(0, 60);
+  /* wh = รหัสคลัง (เอกสาร V4: GetBundleDetail รับ warehousecode) — ใช้ดูสต็อกชุดรายคลังให้จอรายละเอียดชุด (ใบ t_mu1dfe94)
+     รับเฉพาะตัวอักษร/ตัวเลข ไม่งั้นตีกลับ · ยังไม่รู้ว่า ZORT ตอบสต็อกรายคลังจริงไหม ⇒ คืนค่าดิบให้ดู */
+  const wh = String(whIn ?? "").trim();
+  if (wh && !/^[A-Za-z0-9_-]{1,20}$/.test(wh)) return { ok: false, error: "รหัสคลัง (wh) ต้องเป็นตัวอักษร/ตัวเลข 1–20 ตัว" };
   if (!sku) return { ok: false, error: "ต้องระบุ sku ของชุด" };
   const h = headers();
   if (!h) return { ok: false, skip: "ยังไม่ได้ตั้งรหัส ZORT" };
@@ -242,7 +246,7 @@ export async function probeBundleDetail(skuIn) {
     return { ok: true, found: true, sku, idMissing: true, summaryKeys: Object.keys(b) };
   }
 
-  const d = await get(`Bundle/GetBundleDetail?id=${id}`);
+  const d = await get(`Bundle/GetBundleDetail?id=${id}${wh ? `&warehousecode=${encodeURIComponent(wh)}` : ""}`);
   if (!d.body) return { ok: false, unknown: true, step: "GetBundleDetail", id, http: d.http, bytes: d.bytes, error: d.error };
   const list = d.body.list;
   return {
@@ -250,6 +254,7 @@ export async function probeBundleDetail(skuIn) {
     found: true,
     sku,
     id,
+    warehousecode: wh || null,
     summaryKeys: Object.keys(b),
     // ค่าดิบตามที่ ZORT ส่ง (ไม่แปลง) — ใช้ชี้ขาดว่า "ว่าง" หรือ "0" หรือ "ติดลบ" (ใบด่วน t_mu1dfbz2)
     summaryStock: { stock: b.stock ?? null, availablestock: b.availablestock ?? null },
