@@ -1605,6 +1605,7 @@ export async function zortWarehouseProbe(o = {}) {
   ];
   if (sku) {
     tries.push({ name: `GetProducts sku=${sku}`, url: `${BASE}/Product/GetProducts?limit=3&page=1&sku=${encodeURIComponent(sku)}` });
+    tries.push({ name: `GetProducts sku=${sku} + warehousecode=KLD`, url: `${BASE}/Product/GetProducts?limit=3&page=1&sku=${encodeURIComponent(sku)}&warehousecode=KLD` });
   }
 
   const out = [];
@@ -1637,6 +1638,43 @@ export async function zortWarehouseProbe(o = {}) {
     }
   }
 
+  /* ➕ ท่ารายตัว (เพิ่ม 14 ก.ย. 2569 · ใบ t_mu1bktmq): รอบ 5 ก.ย. ลองแค่ GetProducts แบบรายการ
+     แต่ GetBundleDetail?id=&warehousecode= **ตอบต่างกันตามคลังจริง** (NEW = ยอดรวม · KLD/ANJ = stock null)
+     ⇒ ต้องลอง GetProductDetail?id=&warehousecode= ด้วยก่อนสรุปว่า "ZORT เมินตัวกรองคลังทุกท่า"
+     ต้องมี sku ถึงจะหา id ได้ · ตัดสินด้วยเกณฑ์เดิม: เปลี่ยนคลังแล้วเลขเปลี่ยนไหม */
+  const detail = [];
+  let productIdFound = null;
+  if (sku) {
+    try {
+      const r = await fetch(`${BASE}/Product/GetProducts?limit=5&page=1&sku=${encodeURIComponent(sku)}`, { headers: h, signal: AbortSignal.timeout(10000) });
+      const j = await r.json().catch(() => null);
+      const hit = Array.isArray(j?.list) ? j.list.find((x) => String(x?.sku ?? "").trim() === sku) : null;
+      productIdFound = hit && Number.isInteger(Number(hit.id)) ? Number(hit.id) : null;
+    } catch { /* ไม่ได้ id = ข้ามท่ารายตัว และบอกไว้ใน detailSkipped */ }
+    if (productIdFound) {
+      for (const wh of ["", "NEW", "KLD", "ANJ"]) {
+        const url = `${BASE}/Product/GetProductDetail?id=${productIdFound}${wh ? `&warehousecode=${wh}` : ""}`;
+        try {
+          const r = await fetch(url, { headers: h, signal: AbortSignal.timeout(10000) });
+          const j = await r.json().catch(() => null);
+          const p = [j, j?.detail, j?.product].find((x) => x && Number(x.id) === productIdFound) ?? null;
+          detail.push({
+            warehousecode: wh || null, status: r.status,
+            idMatched: Boolean(p), stock: p?.stock ?? null, availablestock: p?.availablestock ?? null,
+            warehouseFields: p ? Object.keys(p).filter((k) => /wareh|branch|คลัง/i.test(k)) : null,
+          });
+        } catch (e) {
+          detail.push({ warehousecode: wh || null, error: String(e?.message || e).slice(0, 120) });
+        }
+      }
+    }
+  }
+  const detailBase = detail.find((x) => x.warehousecode === null);
+  const detailChanged = detail.some(
+    (x) => x.warehousecode && x.idMatched && detailBase?.idMatched &&
+      (String(x.stock) !== String(detailBase.stock) || String(x.availablestock) !== String(detailBase.availablestock))
+  );
+
   /* ⚠️ **ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม"**
       ZORT เมินพารามิเตอร์ที่ไม่รู้จักแล้วคืนข้อมูลชุดเดิม ซึ่งอ่านเผิน ๆ เหมือนสำเร็จ */
   const base = out[0];
@@ -1652,5 +1690,15 @@ export async function zortWarehouseProbe(o = {}) {
       "ตอบ 200 ไม่ได้แปลว่าใช้ได้ — ต้องเปลี่ยนคลังแล้วตัวเลขเปลี่ยนจริงถึงจะแปลว่าตัวกรองทำงาน · " +
       "ดู warehouseFields ด้วย ถ้ามีช่องชื่อคล้ายคลังโผล่มา แปลว่าข้อมูลรายคลังอาจซ่อนอยู่ในคำตอบเดิม",
     tries: out,
+    // ท่ารายตัว GetProductDetail — ตัดสินแยก เพราะคนละเส้นกับรายการ
+    detailVerdict: !sku
+      ? "ไม่ได้ลองท่ารายตัว — ต้องส่ง sku มาด้วย"
+      : !productIdFound
+        ? "ไม่ได้ลองท่ารายตัว — หา id ของ sku นี้ใน ZORT ไม่เจอหรือถามไม่สำเร็จ"
+        : detailChanged
+          ? "ท่ารายตัว: ตัวกรองคลังมีผล — GetProductDetail เปลี่ยนคลังแล้วตัวเลขเปลี่ยน"
+          : "ท่ารายตัว: ยังไม่พบว่าตัวกรองคลังมีผล — ทุกคลังคืนตัวเลขชุดเดิม",
+    productId: productIdFound,
+    detail,
   };
 }
