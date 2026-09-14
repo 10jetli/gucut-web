@@ -451,6 +451,20 @@ async function route(req, context) {
       const r = await zortGetPurchaseOrderById(url.searchParams.get("zortpoid"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?zortlist=<incomes|expenses|moneytransfers|variations>[&from=yyyy-MM-dd&to=yyyy-MM-dd&keyword=&page=&limit=]
+       ขาเข้าจากจอ: พารามิเตอร์ใน URL ตามนี้ · ขาออกไป ZORT: Finance/GetIncomes · GetExpenses · GetMoneyTransfers · Product/GetVariations
+       ⇒ {ok, kind, label, applied, count, rowKeys, rows (แถวดิบของ ZORT)} · อ่านอย่างเดียว ส่งตรงไม่เก็บลงคลังเงา
+       ถาม ZORT ไม่สำเร็จ = 502 unknown (ห้ามแปลว่าว่าง) · พารามิเตอร์ผิด = 400 · ใบ t_mu1bkrdw ของ gucut2 */
+    if (url.searchParams.has("zortlist")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortReadList } = await import("../lib/zort-finance.mjs");
+      const q = url.searchParams;
+      const r = await zortReadList({
+        kind: q.get("zortlist"), from: q.get("from") ?? undefined, to: q.get("to") ?? undefined,
+        keyword: q.get("keyword") ?? undefined, page: q.get("page") ?? undefined, limit: q.get("limit") ?? undefined,
+      });
+      return json(r, r.ok || r.skip ? 200 : r.unknown ? 502 : 400);
+    }
     /* GET ?zortbundle=<sku ของชุด> ⇒ ตัวตรวจอ่านอย่างเดียว: GetBundles หา id → GetBundleDetail?id= คืนรูปคำตอบดิบ
        ใช้ตัดสินว่า "สินค้าในชุด" ซิงก์ผ่าน API ได้ไหม · งานกระดาน t_mu1bh4vh
        ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) · ไม่พบชุด = 200 found:false */
