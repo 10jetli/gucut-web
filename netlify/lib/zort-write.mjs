@@ -373,6 +373,113 @@ export async function zortAddBundle(o = {}) {
     message: `เพิ่มสินค้าชุด ${sku} (${list.length} ส่วนประกอบ) เข้า ZORT แล้ว` };
 }
 
+/* ── แก้สินค้าเป็นชุด — งานกระดาน t_mu1w2rth ──
+   เอกสารทางการ ZORT API V4 (ตรวจ 15 ก.ย. 2569):
+     POST Bundle/UpdateBundle?id=<Int> · body รับ name · sellprice · sell_vat_status
+   ไม่มี list ใน UpdateBundle ⇒ เส้นนี้ไม่รับแก้ส่วนประกอบ และไม่เดาช่องเพิ่มเอง
+   🔴 ก่อน POST ต้องถาม GetBundleDetail แล้วเทียบ id+sku รวมทั้งค่าเดิมของทุกช่อง
+      ที่จะเขียน เพื่อไม่ทับการแก้ของคนอื่นแบบเงียบ ๆ */
+async function zortBundleById(id) {
+  const headers = creds();
+  if (!headers) return { error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Bundle/GetBundleDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) return { error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
+  const code = String(d?.res?.resCode ?? d?.resCode ?? "");
+  if (code && code !== "200") {
+    const desc = txt(d?.res?.resDesc ?? d?.resDesc, 160);
+    return { error: `ZORT ปฏิเสธตอนตรวจชุด (${code}): ${desc || "ไม่บอกเหตุผล"}` };
+  }
+  const b = [d, d?.detail, d?.bundle].find((x) => x && Number(x.id) === id);
+  if (!b) return { error: `ZORT ไม่คืนชุดสินค้า id ${id} (หรือรูปคำตอบไม่รู้จัก)` };
+  return { bundle: b };
+}
+
+const sameBundleValue = (field, actual, expected) => {
+  if (field === "sellprice") return numOrNull(actual) === numOrNull(expected);
+  if (field === "sell_vat_status") {
+    const a = actual === null || actual === undefined || actual === "" ? null : Number(actual);
+    const e = expected === null || expected === undefined || expected === "" ? null : Number(expected);
+    return a === e;
+  }
+  return String(actual ?? "").trim() === String(expected ?? "").trim();
+};
+
+export async function zortUpdateBundle(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันแก้ผิดชุด" };
+
+  const body = {};
+  if (o.name !== undefined) {
+    if (typeof o.name !== "string" || o.name.trim().length > 200)
+      return { ok: false, error: "ชื่อชุดต้องเป็นข้อความยาวไม่เกิน 200 ตัวอักษร" };
+    const name = txt(o.name, 200);
+    if (!name) return { ok: false, error: "ชื่อชุดห้ามว่าง" };
+    body.name = name;
+  }
+  if (o.price !== undefined) {
+    if (typeof o.price !== "string" && typeof o.price !== "number")
+      return { ok: false, error: "ราคาขายต้องเป็นข้อความหรือตัวเลข" };
+    const price = numOrNull(o.price);
+    if (price === null || price < 0) return { ok: false, error: "ราคาขายต้องเป็นตัวเลขไม่ติดลบ" };
+    body.sellprice = String(price);
+  }
+  if (o.vat !== undefined) {
+    const vatRaw = typeof o.vat === "string" || typeof o.vat === "number" ? String(o.vat).trim() : "";
+    if (!/^[0-4]$/.test(vatRaw))
+      return { ok: false, error: "vat ต้องเป็น 0-4 (sell_vat_status)" };
+    const vat = Number(vatRaw);
+    body.sell_vat_status = vat;
+  }
+  const fields = Object.keys(body);
+  if (!fields.length) return { ok: false, error: "ไม่มีช่องให้แก้เลย" };
+  if (!o.before || typeof o.before !== "object")
+    return { ok: false, error: "ต้องส่งค่าก่อนแก้ของทุกช่องมาด้วย — กันเขียนทับข้อมูลที่เพิ่งเปลี่ยน" };
+  for (const field of fields) {
+    if (!Object.prototype.hasOwnProperty.call(o.before, field))
+      return { ok: false, error: `ไม่มีค่าก่อนแก้ของช่อง ${field} — ยังไม่ส่งเข้า ZORT` };
+  }
+
+  if (!o.confirm) return {
+    ok: true, dryRun: true, ref, expectSku: sku,
+    willSend: { query: { id }, body },
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ตอน confirm จะตรวจ id+sku และค่าก่อนแก้กับ ZORT อีกครั้ง",
+  };
+
+  const seen = await seenRef("bundle-update", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "การแก้ชุดครั้งนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const got = await zortBundleById(id);
+  /* เป็น GET ก่อน UpdateBundle ⇒ ล้มตรงนี้รู้แน่ว่ายังไม่ได้ยิงเขียน จึงไม่ติด unknown */
+  if (got.error) return { ok: false, ref, error: `${got.error} — ยังไม่ได้แก้อะไร` };
+  const realSku = String(got.bundle.sku ?? "").trim();
+  if (realSku !== sku) {
+    return { ok: false, mismatch: true, ref,
+      error: `id ${id} ใน ZORT คือ ${realSku || "(ไม่มี sku)"} ${txt(got.bundle.name, 60)} — ไม่ใช่ ${sku} ⇒ ไม่แก้` };
+  }
+  const changedBehind = fields.filter((field) => !sameBundleValue(field, got.bundle[field], o.before[field]));
+  if (changedBehind.length) {
+    return { ok: false, conflict: true, ref,
+      error: `ข้อมูลใน ZORT เปลี่ยนหลังเปิดจอ (${changedBehind.join(", ")}) — ยังไม่ได้แก้อะไร กรุณาโหลดใหม่แล้วตรวจอีกครั้ง` };
+  }
+
+  const r = await zortPost(`Bundle/UpdateBundle?id=${id}`, body);
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("bundle-update", ref, { kind: "bundle-update", id, sku, fields });
+  return { ok: true, updated: true, ref, id, sku, warn, message: `แก้ชุดสินค้า ${sku} ใน ZORT แล้ว` };
+}
+
 /** เพิ่มคลังสินค้า/สาขาเข้า ZORT — จอ "เพิ่มคลังสินค้า/สาขา" (soon: warehouse-add) · งานกระดาน t_mu0m99go
  *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/warehouse · อ่าน 14 ก.ย. 2569)
  *     POST Warehouse/AddWarehouse · code (บังคับ) · name (บังคับ) · address (ไม่บังคับ) · สำเร็จ = detail.id

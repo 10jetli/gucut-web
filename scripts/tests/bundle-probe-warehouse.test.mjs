@@ -11,7 +11,10 @@ let calls = [];
 globalThis.fetch = async (url) => {
   const u = String(url);
   calls.push(u);
-  if (/GetBundles\?/.test(u)) return { ok: true, status: 200, text: async () => JSON.stringify({ list: [{ id: 7, sku: 'SET-A', stock: '5', availablestock: '1' }] }) };
+  if (/GetBundles\?/.test(u)) return { ok: true, status: 200, text: async () => JSON.stringify({ list: [{
+    id: 7, sku: 'SET-A', name: 'ชุด A', sellprice: '1200', sell_vat_status: 2, active: true,
+    stock: '5', availablestock: '1',
+  }] }) };
   if (/GetBundleDetail\?/.test(u)) return { ok: true, status: 200, text: async () => JSON.stringify({ id: 7, stock: '2', availablestock: '0', list: [] }) };
   throw new Error(`ยิงเส้นที่ไม่คาด: ${u}`);
 };
@@ -22,6 +25,9 @@ test('ส่ง wh ⇒ GetBundleDetail มี warehousecode · ไม่ส่�
   const r = await probeBundleDetail('SET-A', 'KLD');
   assert.equal(r.ok, true);
   assert.equal(r.warehousecode, 'KLD');
+  assert.deepEqual(r.bundle, {
+    id: 7, sku: 'SET-A', name: 'ชุด A', sellprice: '1200', sell_vat_status: 2, active: true,
+  });
   const d = calls.find((u) => /GetBundleDetail/.test(u));
   assert.equal(new URL(d).searchParams.get('warehousecode'), 'KLD');
   assert.equal(new URL(d).searchParams.get('id'), '7');

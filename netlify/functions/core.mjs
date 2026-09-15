@@ -575,6 +575,17 @@ async function route(req, context) {
       const r = url.searchParams.get("addbundle") ? await zortAddBundle(body) : await zortAddWarehouse(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST ?updatebundle=1 body {ref,id,sku,name?|price?|vat?,before:{<ชื่อช่อง ZORT>:ค่าเดิม},confirm?}
+       ⇒ ZORT Bundle/UpdateBundle?id= · โหมดซ้อมเป็นค่าเริ่มต้น
+       ตอนยืนยันตรวจ id+sku และ optimistic concurrency ก่อนเขียน · งาน t_mu1w2rth */
+    if (url.searchParams.get("updatebundle")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortUpdateBundle } = await import("../lib/zort-write.mjs");
+      const r = await zortUpdateBundle(body);
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     /* รายการที่ ZORT **ไม่เปิด API ให้** — จอเอาไปโชว์เหตุผลได้ตรง ๆ
        ⚠️ ต่างจาก "เรายังไม่ได้ทำ" คนละเรื่อง ห้ามให้จอเขียนรวมกัน */
     /* ข้อมูลนิติบุคคล + ใบอนุญาต — **แหล่งความจริงเดียว** สำหรับจอหลังร้านทุกตัว

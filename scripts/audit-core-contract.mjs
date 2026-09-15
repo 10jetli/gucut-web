@@ -58,7 +58,7 @@ for (const [query, method, body] of [
 // ทดสอบเฉพาะด่าน method/validation: ห้ามส่ง confirm หรือข้อมูลที่เขียน ZORT ได้
 for (const query of [
   "addsale=1", "addcontact=1", "addbundle=1", "addwarehouse=1",
-  "updateproduct=1", "productimage=1",
+  "updateproduct=1", "updatebundle=1", "productimage=1",
 ]) {
   const result = await request(query, "GET");
   const bad = result.status !== 405;

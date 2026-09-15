@@ -255,6 +255,15 @@ export async function probeBundleDetail(skuIn, whIn) {
     found: true,
     sku,
     id,
+    /* ช่องที่จอแก้ชุดใช้ — คืนเฉพาะข้อมูลตามเอกสาร ไม่ส่งก้อนดิบทั้งใบ */
+    bundle: {
+      id,
+      sku: String(b.sku ?? "").trim(),
+      name: String(b.name ?? "").slice(0, 200),
+      sellprice: b.sellprice ?? null,
+      sell_vat_status: b.sell_vat_status ?? null,
+      active: typeof b.active === "boolean" ? b.active : null,
+    },
     warehousecode: wh || null,
     summaryKeys: Object.keys(b),
     // ค่าดิบตามที่ ZORT ส่ง (ไม่แปลง) — ใช้ชี้ขาดว่า "ว่าง" หรือ "0" หรือ "ติดลบ" (ใบด่วน t_mu1dfbz2)
