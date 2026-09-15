@@ -2866,6 +2866,16 @@ async function route(req, context) {
     /* ── เบา: เอาแค่ป้ายชื่อร้าน + ยอดแยกช่องทาง ──
        ยิง D1 2 รอบ แทนที่จะเป็น 11 รอบของ list=orders
        ⚠️ ตัวนี้ **ไม่มี rows** โดยตั้งใจ — จอที่ต้องการรายการออเดอร์ต้องใช้ list=orders */
+    if (p.get("list") === "orderfacets" || p.get("list") === "orders") {
+      /* 🔴 ค่าร้านที่ไม่รู้จักต้อง 400 — ห้ามปล่อยให้ "ไม่กรอง" หรือ "กรองได้ 0" เงียบ ๆ (15 ก.ย. 2569)
+         ชื่อพารามิเตอร์คือ `store` แต่ช่องในคำตอบชื่อ `source` ⇒ คนลอกชื่อจากคำตอบไปใส่คำขอ
+         ⇒ ส่ง `source=` มาเฉย ๆ ก็ตอบ 400 ด้วย จะได้รู้ตัวตั้งแต่ครั้งแรก */
+      if (p.has("source") && !p.has("store"))
+        return json({ error: "ตัวกรองร้านชื่อ store= (z1 · z2 · all) — source เป็นชื่อช่องในคำตอบ" }, 400);
+      const { parseStore } = await import("../lib/core-orders.mjs");
+      const st = parseStore(p.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+    }
     if (p.get("list") === "orderfacets") {
       return json({
         ok: true,

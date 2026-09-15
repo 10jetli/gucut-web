@@ -68,6 +68,19 @@ const daysAgo = (n) =>
   new Date(Date.now() + 7 * 3600e3 - n * 864e5).toISOString().slice(0, 10);
 
 /** ตัวกรองที่ใช้ร่วมกันทั้งตัวนับและตัวดึงแถว */
+/** แปลงค่า store จากคำขอเป็นตัวกรองร้าน — **ตัวเดียวที่ทุกเส้นออเดอร์ใช้**
+ *  ว่าง / "all" ⇒ `{ source: null }` (ทุกร้าน) · "z1" | "z2" ⇒ ร้านนั้น · ค่าอื่น ⇒ `{ error }`
+ *  🔴 (15 ก.ย. 2569) เดิมสามฟังก์ชันแปลงกันเองคนละแบบ: listOrders/listChannels ปัดค่าแปลกเป็น "ทุกร้าน"
+ *     แต่ listOrderFacets เอาค่าดิบไปกรอง ⇒ `store=all` ได้ 1,299 ใบที่ list=orders
+ *     แต่ได้ **0** พร้อมป้าย "เฉพาะร้าน all" ที่ orderfacets · และ `source=`/`store=zzz` ไม่กรองโดยไม่มีอะไรเตือน
+ *  ⇒ เส้นใน core.mjs ตอบ 400 เมื่อได้ `error` · ตัวในไลบรารีปัดเป็นทุกร้าน (ห้ามเอาค่าดิบลง SQL) */
+export function parseStore(raw) {
+  const v = String(raw ?? "").trim();
+  if (v === "" || v === "all") return { source: null };
+  if (v === "z1" || v === "z2") return { source: v };
+  return { error: `store ต้องเป็น z1 · z2 · all (ได้มา "${v.slice(0, 20)}")` };
+}
+
 function buildWhere({ from, to, channel, status, q, includeCancelled, source }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
@@ -125,7 +138,7 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source }) 
 export async function listOrderFacets(o = {}) {
   const from = o.from || null;
   const to = o.to || null;
-  const source = o.source || null;
+  const source = parseStore(o.source).source ?? null;
   /* ⚠️ **ต้องรับตัวกรองครบชุดเท่ากับ list=orders** (ฝั่งจอทักมา 5 ก.ย. 2569)
       เดิมตัวนี้ทิ้ง `status` กับ `q` ไปเงียบ ๆ ⇒ จอที่กรองสถานะหรือค้นหาอยู่
       จะได้ยอดของ "ทั้งช่วง" แทนที่จะเป็นยอดของสิ่งที่กรองไว้ **โดยไม่มีอะไรฟ้อง**
@@ -228,7 +241,7 @@ export async function listOrders(o = {}) {
   const q = String(o.q ?? "").trim().slice(0, 60) || null;
   const includeCancelled = !!o.includeCancelled;
   // รับเฉพาะค่าที่รู้จัก — ค่าแปลกปลอมให้เป็น null (ไม่กรอง) ดีกว่าเอาไปยัดลง SQL
-  const source = ["z1", "z2"].includes(String(o.source)) ? String(o.source) : null;
+  const source = parseStore(o.source).source ?? null;
 
   const w = buildWhere({ from, to, channel, status, q, includeCancelled, source });
 
@@ -498,7 +511,7 @@ export async function listChannels(source = null) {
       ซึ่งหน้าตาเหมือนระบบพังทุกประการ
       ⚠️ ตัวกรองที่ครอบคลุมไม่เท่ากันระหว่าง "ตัวเลือก" กับ "ผลลัพธ์" คือกับดักประจำ —
          ตัวเลือกต้องมาจากขอบเขตเดียวกับที่ผลลัพธ์จะถูกกรอง */
-  const src = ["z1", "z2"].includes(String(source)) ? String(source) : null;
+  const src = parseStore(source).source ?? null;
   const rows = await coreQuery(
     `SELECT channel, COUNT(*) AS orders FROM orders
      WHERE channel IS NOT NULL AND channel <> ''${src ? " AND source = ?" : ""}
