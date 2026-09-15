@@ -1345,7 +1345,15 @@ async function route(req, context) {
             ซึ่งกินเครดิตโดยไม่จำเป็น และช้ากว่าด้วย
          ⚠️ `order_date` เก็บเป็นวันแบบไทยอยู่แล้ว ⇒ ตัด 7 ตัวแรกได้เลย ไม่ต้องบวกเวลาอีก
             (ถ้าเป็นคอลัมน์ที่เก็บ UTC ต้อง date(col,'+7 hours') ก่อนเสมอ — คนละกรณีกัน) */
-      const byMonth = url.searchParams.get("by") === "month";
+      /* by=category — รวมยอดตามหมวดสินค้าฝั่งเซิร์ฟเวอร์ (การ์ด "หมวดหมู่ขายดีปีนี้" เมนู 1 · ข้อ 7 เมนู 2)
+         ⚠️ จอห้ามรวมหมวดเองจากรายการ limit ≤100 — ตัดหางแล้วอันดับหมวดเพี้ยน (display-limits-cant-decide)
+         ⚠️ by ค่าอื่นตอบ 400 — เดิมค่าที่ไม่รู้จักตกไปเป็นรายสินค้าเงียบ ๆ (filter-looks-applied-but-is-not) */
+      const byRaw = String(url.searchParams.get("by") ?? "");
+      if (byRaw && byRaw !== "month" && byRaw !== "category") {
+        return json({ error: `by รับแค่ month หรือ category (ได้มา "${byRaw.slice(0, 20)}")` }, 400);
+      }
+      const byMonth = byRaw === "month";
+      const byCategory = byRaw === "category";
       const items = byMonth
         ? await coreQuery(
             /* 🔴 **แยก "ที่ได้เงินแล้ว" ออกจาก "ยังไม่จ่าย" ในคิวรีเดียว** (6 ก.ย. 2569)
@@ -1374,10 +1382,25 @@ async function route(req, context) {
              GROUP BY substr(o.order_date,1,7) ORDER BY month`,
             params
           )
+        : byCategory
+        ? await coreQuery(
+            `SELECT COALESCE(NULLIF(p.category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS category,
+                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
+                    COUNT(DISTINCT oi.sku) AS skus, COUNT(DISTINCT o.id) AS orders
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             LEFT JOIN products p ON p.sku = oi.sku
+             WHERE o.order_date >= ? AND o.order_date <= ?
+               AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+               ${filter}
+             GROUP BY 1 ORDER BY amount DESC LIMIT ${limit}`,
+            params
+          )
         : await coreQuery(
             `SELECT oi.sku, MAX(oi.name) AS name,
-                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
+                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
+                    MAX(COALESCE(p.category,'')) AS category
              FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             LEFT JOIN products p ON p.sku = oi.sku
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
                ${filter}
@@ -1392,7 +1415,7 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, by: byMonth ? "month" : null },
+        applied: { sku: sku || null, limit, by: byRaw || null },
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
             คำตอบชุดอื่นในไฟล์นี้ประกาศขอบเขตครบ (storeScope · shipStatusScope · freshnessNote)
             แต่ **ตัวเลขเงินซึ่งสำคัญที่สุดกลับไม่มีอะไรกำกับ** เพราะมันดู "ชัดอยู่แล้ว"
@@ -1401,6 +1424,10 @@ async function route(req, context) {
           ? "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** · " +
             "อยากได้เฉพาะเงินที่ได้รับจริง ให้ใช้ amount − unpaidAmount ของเดือนนั้น"
           : "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** (รายตัวยังไม่ได้แยกยอดค้างจ่าย)",
+        ...(byMonth ? {} : {
+          categoryScope: "หมวด = หมวดสินค้าในคลัง ZORT (ตาราง products ผูกด้วย sku · ไม่แยกร้าน) · " +
+            "sku ที่คลังไม่รู้จักหรือยังไม่จัดหมวด = " + (byCategory ? "(ยังไม่ได้จัดหมวดใน ZORT)" : "ค่าว่าง"),
+        }),
         items,
       });
     }
