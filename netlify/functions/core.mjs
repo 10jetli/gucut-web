@@ -858,6 +858,15 @@ async function route(req, context) {
       });
       return json({ ok: true, token, expiresInMinutes: 10 });
     }
+    /* ขาเข้าจากตัวคัดบน g1: POST ?warehousevalues=1 body {rows:[{code, value:"16,305,522.84", lastMovement:"15 ก.ย. 2569 11:48"}]}
+       มูลค่าคงเหลือ + เคลื่อนไหวล่าสุดต่อคลังจากจอ ZORT /Warehouse/list (API ไม่มี) · แถวเสียแถวเดียว = ไม่เขียนเลย */
+    if (url.searchParams.get("warehousevalues")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { saveWarehouseValues } = await import("../lib/warehouse-values.mjs");
+      return okJson(await saveWarehouseValues(body.rows), 200);
+    }
     // มูลค่าสินค้ารายหมวดที่คัดมาจากจอ ZORT (ไม่มี Category API — ต้องคัดจากเบราว์เซอร์)
     if (url.searchParams.get("categoryvalues")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);

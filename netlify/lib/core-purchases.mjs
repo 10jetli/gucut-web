@@ -226,12 +226,27 @@ export async function listWarehouses() {
   const data = res?.ok ? await res.json().catch(() => null) : null;
   const list = Array.isArray(data?.list) ? data.list : null;
   if (!list) return { error: "ดึงคลังสินค้าจาก ZORT ไม่ได้" };
+  /* มูลค่าคงเหลือ + เคลื่อนไหวล่าสุดต่อคลัง — คัดจากจอ ZORT (API ไม่มี · ดู warehouse-values.mjs)
+     🔴 สามสถานะ: ยังไม่เคยคัด = null ต่อแถว · อ่าน D1 พลาด = valuesError + null ทุกแถว · ห้ามเป็น 0 */
+  let values = null, valuesError = null;
+  try {
+    values = await (await import("./warehouse-values.mjs")).warehouseValues();
+  } catch (e) {
+    valuesError = `อ่านมูลค่าที่คัดจาก ZORT ไม่ได้: ${String(e?.message ?? e).slice(0, 120)}`;
+  }
   return {
     count: list.length,
+    // ชื่อช่องที่ ZORT ส่งมาจริง (ไม่ส่งค่า — มีที่อยู่คลัง) · เอกสารเขียนแค่ id/name/code/address แต่โค้ดเราอ่าน province ด้วย
+    zortFields: [...new Set(list.flatMap((w) => (w && typeof w === "object" ? Object.keys(w) : [])))].sort(),
+    valuesError,
     warehouses: list.map((w) => ({
       code: String(w?.code ?? ""),
       name: String(w?.name ?? ""),
       province: String(w?.province ?? ""),
+      // ⚠️ ชื่อช่องตามที่จอสาขา (gucut-next app/core/branches) รอไว้แล้ว: stockValue · movedAt
+      stockValue: values?.get(String(w?.code ?? ""))?.value ?? null,
+      movedAt: values?.get(String(w?.code ?? ""))?.lastMovementAt ?? null,
+      valueCollectedAt: values?.get(String(w?.code ?? ""))?.collectedAtUtc ?? null,
       // ⚠️ ที่อยู่คลังไม่ส่งออกไปหน้าจอลูกค้า — หน้านี้เป็นหลังร้านล้วน แต่จำกัดไว้เท่าที่ใช้
       isPos: ["KLD", "ANJ"].includes(String(w?.code ?? "").toUpperCase()),
     })),
