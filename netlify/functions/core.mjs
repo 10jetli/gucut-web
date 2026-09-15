@@ -1341,7 +1341,10 @@ async function route(req, context) {
         .toISOString().slice(0, 10);
       const from = day(url.searchParams.get("from"), monthAgo);
       const to = day(url.searchParams.get("to"), today);
-      const limit = Math.min(100, Math.max(1, parseInt(url.searchParams.get("limit") ?? "15", 10) || 15));
+      /* เพดาน 5,000 (เดิม 100 · 16 ก.ย. 2569) — ปุ่ม Export ยอดขายตามสินค้าต้องได้ทุกรหัสในช่วง
+         🔴 จอเคยทำไฟล์ "ยอดขายตามสินค้า" จากรายการที่ขอมาแสดง limit=10 ⇒ ไฟล์มีแค่ 10 ตัวแต่ชื่อบอกว่าทั้งหมด
+         ⇒ ส่ง totalSkus (จำนวนรหัสทั้งหมดในเงื่อนไขเดียวกัน) ให้จอเช็คว่าได้ครบก่อนเขียนไฟล์ (display-limits-cant-decide) */
+      const limit = Math.min(5000, Math.max(1, parseInt(url.searchParams.get("limit") ?? "15", 10) || 15));
       /* ⚠️ **sku= ถามยอดขายของสินค้าตัวเดียว** — ฝั่งจอต้องใช้ในหน้ารายละเอียดสินค้า
           ก่อนหน้านี้ผมบอกฝั่งจอว่า "ใช้ sku= ได้" ทั้งที่ยังไม่ได้ทำ
           ⇒ ท่อเมินพารามิเตอร์ที่ไม่รู้จักเงียบ ๆ แล้วคืนสินค้าขายดีทั้งร้าน
@@ -1426,6 +1429,15 @@ async function route(req, context) {
              GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
             params
           );
+      // จำนวนรหัสทั้งหมดในเงื่อนไขเดียวกับรายสินค้า — มีเฉพาะโหมดรายสินค้า (รายเดือน/หมวดไม่ใช่รายรหัส)
+      const totalSkus = byMonth || byCategory ? null : Number((await coreQuery(
+        `SELECT COUNT(DISTINCT oi.sku) AS c
+         FROM order_items oi JOIN orders o ON o.id = oi.order_id
+         WHERE o.order_date >= ? AND o.order_date <= ?
+           AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+           ${filter}`,
+        params
+      ))[0]?.c ?? 0);
       // ⚠️ **สะท้อนพารามิเตอร์ที่รับไปจริงกลับไปด้วยเสมอ** (ฝั่งจอเสนอ — ดีมาก)
       //    จอจะได้ตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปจริงไหม แทนที่จะรู้ตอนตัวเลขผิดบนจอ
       // ⚠️ **จอใช้ applied เป็นด่านจริง ไม่ใช่แค่ debug** (ฝั่งจอทำแล้ว: applied.sku ไม่ตรง = ทิ้งข้อมูล)
@@ -1435,6 +1447,7 @@ async function route(req, context) {
         from,
         to,
         applied: { sku: sku || null, limit, by: byRaw || null, warehouse: warehouse || null },
+        ...(totalSkus === null ? {} : { totalSkus, complete: items.length >= totalSkus }),
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
             คำตอบชุดอื่นในไฟล์นี้ประกาศขอบเขตครบ (storeScope · shipStatusScope · freshnessNote)
             แต่ **ตัวเลขเงินซึ่งสำคัญที่สุดกลับไม่มีอะไรกำกับ** เพราะมันดู "ชัดอยู่แล้ว"
