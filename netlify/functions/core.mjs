@@ -380,6 +380,17 @@ async function route(req, context) {
       return json({ ok: true, ...r });
     }
 
+    /* POST ?imgmirror=1 body {sku, source, files:{128,256,384,640: base64 webp}} ⇒ เก็บรูปย่อเข้า R2 + products.image_file
+       ใบ t_mu2utot5 (ท่านประธานสั่ง "รูปต้องขึ้นทุกรหัส") · ตัวย่ออยู่บน g1 (Netlify ไม่มี sharp) · ต้องมี x-admin-key
+       🔒 source ต้องตรง products.image_path ของ sku นั้น · ต้องเป็น webp จริงครบ 4 ขั้น ⇒ ยัดไฟล์อื่นเข้าถังไม่ได้ */
+    if (url.searchParams.get("imgmirror")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { saveMirroredImage } = await import("../lib/product-image-mirror.mjs");
+      const r = await saveMirroredImage(body);
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.get("dbinfo")) {
       return okJson(await d1Info());
     }

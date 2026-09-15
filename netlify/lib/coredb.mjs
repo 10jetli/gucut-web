@@ -277,6 +277,10 @@ export async function coreInit() {
        สามสถานะ: NULL = ยังไม่เคยซิงก์หลังเพิ่มคอลัมน์ · '' = ZORT ไม่มีรูป · URL = มีรูป (ไฟล์ดิบใหญ่ถึง ~2 MB ห้ามลิงก์ตรงเข้าตาราง)
        ⚠️ SELECT อ่านคอลัมน์นี้ ⇒ ต้องยิง ?init=1 ทันทีที่ท่อขึ้น (บทเรียน new-column-select-before-migration) */
     `ALTER TABLE products ADD COLUMN image_path TEXT`,
+    /* รูปย่อที่มิเรอร์จาก image_path เข้าถังเรา (i/<ขั้น>/zort/<hash>.webp · ใบ t_mu2utot5)
+       image_file_src = image_path ตอนที่ย่อ ⇒ ZORT เปลี่ยนรูปเมื่อไหร่ list=stock ไม่ส่งรูปย่อเก่า (ต้องย่อใหม่) */
+    `ALTER TABLE products ADD COLUMN image_file TEXT`,
+    `ALTER TABLE products ADD COLUMN image_file_src TEXT`,
   ]) {
     await coreQuery(sql, [], { heal: false }).catch(() => null);
   }

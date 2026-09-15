@@ -373,6 +373,7 @@ export async function listStock(o = {}) {
             COALESCE(sold.qty,0) AS sold30,
             p.purchase_price AS buy, p.available AS avail, p.unit AS unit,
             p.product_type AS ptype, p.active AS active, p.weight AS weight, p.image_path AS imagePath,
+            CASE WHEN p.image_file_src = p.image_path THEN p.image_file ELSE NULL END AS imageFile,
             COALESCE((SELECT name FROM products WHERE sku = cur.sku AND name <> ''),
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
@@ -552,6 +553,8 @@ export async function listStock(o = {}) {
       weight: r.weight === null || r.weight === undefined ? null : num(r.weight),
       // รูปจาก ZORT สามสถานะ ห้ามยุบ: null = ยังไม่รู้ (ยังไม่ซิงก์) · '' = ZORT ไม่มีรูป · URL = มี (ไฟล์ดิบ ไม่ใช่รูปย่อ)
       imagePath: r.imagePath === null || r.imagePath === undefined ? null : String(r.imagePath),
+      // รูปย่อในถังเรา (ชื่อไฟล์ใต้ video.gucut.com/i/<128|256|384|640>/) — ส่งเฉพาะที่ย่อจากรูป ZORT ปัจจุบัน
+      imageFile: r.imageFile ? String(r.imageFile) : null,
       service: num(r.ptype) === 1,
       active: r.active === null || r.active === undefined ? null : num(r.active) === 1,
       // ⚠️ **ต้องหยิบตรงนี้ ไม่ใช่ไปแปะไว้บนแถวดิบ** — แถวถูกแปลงเป็นวัตถุใหม่ตรงนี้
