@@ -710,6 +710,20 @@ async function route(req, context) {
       return okJson(await getQuotationDetail(url.searchParams.get("quotation"),
         url.searchParams.get("raw") === "1"));
     }
+    /* GET ?zortdocrows=1[&page=1&limit=100&type=1..5] ⇒ สารบัญเอกสารบัญชีรายแถว
+       type ส่งต่อเป็น documenttype ของ ZORT (1 ใบเสร็จ · 2 ใบกำกับภาษี · 3 ใบแจ้งหนี้
+       · 4 ใบเสนอราคา · 5 ใบหัก ณ ที่จ่าย) · ไม่ส่ง = ทุกชนิด · อ่านอย่างเดียว
+       แยกพารามิเตอร์จาก ?zortdocs=1 เพราะตัวเดิมมีสัญญาเป็นผลสรุปทั้งกอง */
+    if (url.searchParams.has("zortdocrows")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortDocumentRows } = await import("../lib/zort-document-rows.mjs");
+      const r = await zortDocumentRows({
+        page: url.searchParams.get("page") ?? undefined,
+        limit: url.searchParams.get("limit") ?? undefined,
+        type: url.searchParams.get("type") ?? undefined,
+      });
+      return json(r, r.ok || r.skip ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.get("zortdocs")) {
       const { zortDocumentsRead } = await import("../lib/zort-write.mjs");
       return json(await zortDocumentsRead(url.searchParams.get("limit")));
