@@ -127,6 +127,8 @@ export async function syncProducts() {
       cat: String(p?.category ?? "").trim().slice(0, 120),
       catId: String(p?.categoryid ?? "").trim().slice(0, 40),
       subCat: String(p?.subCategory ?? "").trim().slice(0, 120),
+      // รูปจาก ZORT — ไม่มี = '' (ไม่ใช่ null · null ในฐาน = ยังไม่เคยซิงก์)
+      img: typeof p?.imagepath === "string" ? p.imagepath.trim().slice(0, 400) : "",
     });
   }
 
@@ -135,7 +137,7 @@ export async function syncProducts() {
     (
       await coreQuery(
         `SELECT sku, name, sellprice, purchase_price, product_type, active, unit, onhand, available,
-                category, category_id, sub_category, weight
+                category, category_id, sub_category, weight, image_path
          FROM products`
       )
     ).map((r) => [r.sku, r])
@@ -155,7 +157,9 @@ export async function syncProducts() {
       String(p.category ?? "") !== r.cat ||
       String(p.category_id ?? "") !== r.catId ||
       String(p.sub_category ?? "") !== r.subCat ||
-      (p.weight === null ? null : num(p.weight)) !== r.weight
+      (p.weight === null ? null : num(p.weight)) !== r.weight ||
+      // NULL (ยังไม่เคยซิงก์) ต้องนับว่าเปลี่ยน ⇒ รอบแรกหลังเพิ่มคอลัมน์กวาดครบทุกตัวเอง
+      p.image_path === null || p.image_path === undefined || String(p.image_path) !== r.img
     );
   });
 
@@ -166,20 +170,20 @@ export async function syncProducts() {
         (r) =>
           `(${esc(r.sku)},${esc(r.name)},${r.price},${r.buy},${r.type},${r.active},` +
           `${esc(r.unit)},${r.onhand},${r.available},${esc(r.cat)},${esc(r.catId)},` +
-          `${esc(r.subCat)},${r.weight === null ? "NULL" : r.weight},datetime('now'))`
+          `${esc(r.subCat)},${r.weight === null ? "NULL" : r.weight},${esc(r.img)},datetime('now'))`
       )
       .join(",");
     await coreQuery(
       `INSERT INTO products
          (sku,name,sellprice,purchase_price,product_type,active,unit,onhand,available,
-          category,category_id,sub_category,weight,updated_at)
+          category,category_id,sub_category,weight,image_path,updated_at)
        VALUES ${values}
        ON CONFLICT(sku) DO UPDATE SET name=excluded.name, sellprice=excluded.sellprice,
          purchase_price=excluded.purchase_price, product_type=excluded.product_type,
          active=excluded.active, unit=excluded.unit, onhand=excluded.onhand,
          available=excluded.available, category=excluded.category,
          category_id=excluded.category_id, sub_category=excluded.sub_category,
-         weight=excluded.weight, updated_at=excluded.updated_at`
+         weight=excluded.weight, image_path=excluded.image_path, updated_at=excluded.updated_at`
     );
   }
   /* ⚠️ `partial: true` = **รอบนี้กวาดไม่ครบเพราะมีหน้าล้ม** ไม่ใช่ "ZORT มีเท่านี้"

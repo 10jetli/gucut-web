@@ -243,6 +243,10 @@ export async function coreInit() {
     `ALTER TABLE products ADD COLUMN category TEXT`,
     `ALTER TABLE products ADD COLUMN category_id TEXT`,
     `ALTER TABLE products ADD COLUMN sub_category TEXT`,
+    /* รูปสินค้าจาก ZORT (GetProducts · imagepath) — ท่านประธานสั่ง "รูปต้องขึ้นทุกรหัส" 15 ก.ย. 2569 (ใบ t_mu2u6eg6)
+       สามสถานะ: NULL = ยังไม่เคยซิงก์หลังเพิ่มคอลัมน์ · '' = ZORT ไม่มีรูป · URL = มีรูป (ไฟล์ดิบใหญ่ถึง ~2 MB ห้ามลิงก์ตรงเข้าตาราง)
+       ⚠️ SELECT อ่านคอลัมน์นี้ ⇒ ต้องยิง ?init=1 ทันทีที่ท่อขึ้น (บทเรียน new-column-select-before-migration) */
+    `ALTER TABLE products ADD COLUMN image_path TEXT`,
   ]) {
     await coreQuery(sql).catch(() => null);
   }
