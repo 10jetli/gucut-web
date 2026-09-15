@@ -75,6 +75,7 @@ for (const query of ["zortproduct=X", "productlabels=X"]) {
 
 for (const [query, method, expected] of [
   ["deleteproduct=abc&sku=X&ref=AUDIT", "GET", 405],
+  ["deletebundle=abc&sku=X&ref=AUDIT", "GET", 405],
   ["addcontact=1", "POST", 400],
 ]) {
   const result = await request(query, method, method === "POST" ? {} : undefined);
@@ -90,5 +91,13 @@ console.log(`${idRejected ? "PASS" : "FAIL"} DELETE ?deleteproduct=abc&sku=X&ref
   body: invalidProductId.body,
 });
 if (!idRejected) failed += 1;
+
+const invalidBundleId = await request("deletebundle=abc&sku=X&ref=AUDIT", "DELETE");
+const bundleIdRejected = invalidBundleId.status === 400 && /id.*ตัวเลข|ตัวเลข.*id/i.test(String(invalidBundleId.body?.error ?? ""));
+console.log(`${bundleIdRejected ? "PASS" : "FAIL"} DELETE ?deletebundle=abc&sku=X&ref=AUDIT`, {
+  status: invalidBundleId.status,
+  body: invalidBundleId.body,
+});
+if (!bundleIdRejected) failed += 1;
 
 process.exitCode = failed ? 1 : 0;

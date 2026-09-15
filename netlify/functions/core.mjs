@@ -421,6 +421,17 @@ async function route(req, context) {
         confirm: q.get("confirm") === "1" });
       return json(r, r.ok ? 200 : 400);
     }
+    /* DELETE ?deletebundle=<id ของ ZORT>&sku=<sku ที่คาดไว้>&ref=<ref>[&confirm=1]
+       ⇒ ZORT Bundle/DeleteBundle?id= · โหมดซ้อมเป็นค่าเริ่มต้น
+       🔴 ตอนยืนยัน ท่อถาม GetBundleDetail ซ้ำแล้วเทียบทั้ง id+sku ก่อนลบ · งาน t_mu1uptzd */
+    if (url.searchParams.has("deletebundle")) {
+      if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
+      const q = url.searchParams;
+      const { zortDeleteBundle } = await import("../lib/zort-write.mjs");
+      const r = await zortDeleteBundle({ id: q.get("deletebundle"), sku: q.get("sku"), ref: q.get("ref"),
+        confirm: q.get("confirm") === "1" });
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     /* GET  ?zortproduct=<sku>       ⇒ {found, product:{id, sku, name, barcode, sellprice, purchaseprice, stock, ...}}
             หา id ของ ZORT ก่อนแก้/ลบ/เปลี่ยนรูป (กระจก D1 ไม่มี id) · ต้นทุน = purchaseprice **ไม่ใช่ต้นทุนเฉลี่ย**
        GET  ?productlabels=<sku,sku> ⇒ ข้อมูลฉลากบาร์โค้ด ≤20 รหัส · ZORT ไม่มี API พิมพ์ จอพิมพ์เอง

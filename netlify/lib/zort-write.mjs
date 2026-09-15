@@ -667,6 +667,72 @@ export async function zortDeleteProduct(o = {}) {
   return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบสินค้า ${sku} ออกจาก ZORT แล้ว` };
 }
 
+/* ── ลบสินค้าเป็นชุด — งานกระดาน t_mu1uptzd ──
+   เอกสารทางการ ZORT API V4 (ตรวจ 15 ก.ย. 2569):
+     GET  Bundle/GetBundleDetail?id=<Int> · POST Bundle/DeleteBundle?id=<Int> (ไม่มี body)
+   🔴 ระบุด้วย id เช่นเดียวกับสินค้าเดี่ยว ⇒ ห้ามเชื่อ id จากจออย่างเดียว ท่อต้องถาม
+      GetBundleDetail แล้วเทียบทั้ง id และ sku ซ้ำก่อนลบทุกครั้ง
+   ⚠️ ชุดสินค้าเป็นสูตรเสมือน สต็อกของชุดคำนวณจากชิ้นส่วน จึงไม่ใช้ด่าน stock=0 ของ
+      Product/DeleteProduct; ความตั้งใจของคนใช้ยืนยันด้วย dry-run + พิมพ์ sku ซ้ำที่จอ */
+async function zortBundleById(id) {
+  const headers = creds();
+  if (!headers) return { error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Bundle/GetBundleDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) return { error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
+  const b = [d, d?.detail, d?.bundle].find((x) => x && Number(x.id) === id);
+  if (!b) return { error: `ZORT ไม่คืนชุดสินค้า id ${id} (หรือรูปคำตอบไม่รู้จัก)` };
+  return { bundle: b };
+}
+
+/** ลบชุดสินค้าใน ZORT — ลบแล้วเอาคืนไม่ได้ จึงซ้อมและกันยิงซ้ำเสมอ */
+export async function zortDeleteBundle(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันลบผิดชุด" };
+
+  if (!o.confirm) return {
+    ok: true,
+    dryRun: true,
+    ref,
+    willSend: { query: { id }, body: null },
+    expectSku: sku,
+    note: "โหมดซ้อม — ⚠️ ลบแล้วเอาคืนไม่ได้ · ตอน confirm ท่อจะถาม ZORT ก่อนว่า id นี้คือ sku นี้จริง",
+  };
+
+  const seen = await seenRef("bundle-delete", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ลบ" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ชุดสินค้านี้เคยลบไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const got = await zortBundleById(id);
+  /* ด่านนี้เป็น GET ก่อนคำสั่งลบเสมอ ⇒ ถ้าล้ม เรารู้แน่ว่า DeleteBundle ยังไม่ถูกยิง
+     ห้ามติด unknown ซึ่งสงวนไว้สำหรับกรณีที่ยิงคำสั่งเขียนแล้วไม่รู้ผล */
+  if (got.error) return { ok: false, ref, error: `${got.error} — ยังไม่ได้ลบอะไร` };
+  const real = String(got.bundle.sku ?? "").trim();
+  if (real !== sku) {
+    return {
+      ok: false,
+      mismatch: true,
+      ref,
+      error: `id ${id} ใน ZORT คือ ${real || "(ไม่มี sku)"} ${txt(got.bundle.name, 60)} — ไม่ใช่ ${sku} ⇒ ไม่ลบ`,
+    };
+  }
+
+  const r = await zortPost(`Bundle/DeleteBundle?id=${id}`, {});
+  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  const warn = await markSafely("bundle-delete", ref, { kind: "bundle-delete", id, sku });
+  return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบชุดสินค้า ${sku} ออกจาก ZORT แล้ว` };
+}
+
 /* ── รูปสินค้า · ต้นทุน · พิมพ์บาร์โค้ด — งานกระดาน t_mu0m98gq ──
    ต้นทุน (product-cost): ใช้ ?updateproduct=1 ช่อง cost → purchaseprice ได้เลย ไม่ต้องมีเส้นใหม่
      ⚠️ ZORT API มีแค่ purchaseprice (ราคาซื้อที่ตั้งไว้) **ไม่มีต้นทุนเฉลี่ย/ประวัติต้นทุน** — จอห้ามเขียนว่าเป็นต้นทุนเฉลี่ย
