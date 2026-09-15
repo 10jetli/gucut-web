@@ -861,21 +861,40 @@ export async function listBundleItems(bundleSku = "", memberSku = "") {
       จอต้องโชว์ว่าคัดมาเมื่อไหร่ ไม่งั้นกลายเป็นตาข่ายที่เคยถูกแล้วหยุดอัปเดตเงียบ ๆ
    ⚠️ ต้นทุนเฉลี่ยขยับเฉพาะตอน "ซื้อเข้า" — ร้านนี้มีใบซื้อ 32 ใบ ปี 2026 ใบเดียว
       ⇒ เก็บใหม่เมื่อมีใบซื้อใหม่ก็พอ ไม่ต้องเก็บทุกวัน */
-export async function saveCategoryValues(rows = []) {
+/* 🔴 (15 ก.ย. 2569 · ใบ t_mu28zi83) ของเดิมใช้ num() ที่คืน 0 เมื่ออ่านไม่ได้ ⇒ ส่ง "215,516.55" (มีลูกน้ำแบบบนจอ)
+      กลายเป็น 0 แล้วเขียนทับของจริงเงียบ ๆ · ตอนนี้อ่านไม่ได้แถวเดียว = ปฏิเสธทั้งชุด ไม่เขียนอะไร */
+const strictNum = (v) => {
+  if (typeof v === "number") return Number.isFinite(v) ? v : null;
+  const s = String(v ?? "").trim().replace(/,/g, "");
+  return /^-?\d+(\.\d+)?$/.test(s) ? Number(s) : null;
+};
+
+/** opt.complete + opt.expectedCount: ตัวคัดยืนยันว่าส่งครบทุกหมวดบนจอ ⇒ ลบหมวดที่ไม่อยู่ในชุด (ถูกลบ/เปลี่ยนชื่อใน ZORT)
+ *  🔴 ไม่ลบ = หมวดค้างบวกเข้า zortTotalValue ตลอดไป · จำนวนแถวไม่เท่า expectedCount = ปฏิเสธ ไม่ลบไม่เขียน */
+export async function saveCategoryValues(rows = [], opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const list = Array.isArray(rows) ? rows : [];
+  const bad = [];
+  const seen = new Set();
+  const clean = [];
+  for (const [i, r] of list.entries()) {
+    const name = String(r?.name ?? "").trim().slice(0, 120);
+    const v = { name, skus: strictNum(r?.skus), remain: strictNum(r?.remain), avail: strictNum(r?.avail) };
+    const why = !name ? "ไม่มีชื่อหมวด" : seen.has(name) ? "ชื่อหมวดซ้ำ"
+      : v.skus === null || v.remain === null || v.avail === null ? "อ่านตัวเลขไม่ได้" : null;
+    if (why) { bad.push({ row: i, name: name.slice(0, 40), why }); continue; }
+    seen.add(name);
+    clean.push(v);
+  }
+  if (bad.length) return { error: `มีแถวที่ใช้ไม่ได้ ${bad.length} แถว — ไม่ได้บันทึกอะไร`, bad: bad.slice(0, 10) };
+  if (!clean.length) return { error: "ไม่มีข้อมูลที่ใช้ได้" };
+  const complete = opt?.complete === true;
+  if (complete && clean.length !== Number(opt?.expectedCount))
+    return { error: `ส่ง complete แต่มี ${clean.length} หมวด ไม่เท่ากับ expectedCount ${opt?.expectedCount} — ไม่ได้บันทึกอะไร` };
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS category_values (
        name TEXT PRIMARY KEY, skus INTEGER, value_remain REAL, value_available REAL, at TEXT)`
   );
-  const clean = (Array.isArray(rows) ? rows : [])
-    .map((r) => ({
-      name: String(r?.name ?? "").trim().slice(0, 120),
-      skus: num(r?.skus),
-      remain: num(r?.remain),
-      avail: num(r?.avail),
-    }))
-    .filter((r) => r.name);
-  if (!clean.length) return { error: "ไม่มีข้อมูลที่ใช้ได้" };
   for (let i = 0; i < clean.length; i += 40) {
     const values = clean
       .slice(i, i + 40)
@@ -888,12 +907,23 @@ export async function saveCategoryValues(rows = []) {
          value_available=excluded.value_available, at=excluded.at`
     );
   }
+  let removed = 0;
+  if (complete) {
+    const [before] = await coreQuery(`SELECT COUNT(*) AS c FROM category_values`);
+    await coreQuery(
+      `DELETE FROM category_values WHERE name NOT IN (${clean.map(() => "?").join(",")})`,
+      clean.map((r) => r.name)
+    );
+    removed = Math.max(0, num(before?.c) - clean.length);
+  }
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(SUM(value_remain),2) AS remain, ROUND(SUM(value_available),2) AS avail
      FROM category_values`
   );
   return {
     saved: clean.length,
+    removed,
+    replacedAll: complete,
     categories: num(sum?.c),
     totalRemain: num(sum?.remain),
     totalAvailable: num(sum?.avail),

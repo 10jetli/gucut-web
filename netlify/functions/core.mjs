@@ -875,7 +875,7 @@ async function route(req, context) {
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
       const { saveCategoryValues } = await import("../lib/core-products.mjs");
-      const r = await saveCategoryValues(body.rows || body);
+      const r = await saveCategoryValues(body.rows || body, { complete: body.complete === true, expectedCount: body.expectedCount });
       return new Response(JSON.stringify(r.error ? { ok: false, ...r } : { ok: true, ...r }), {
         status: r.error ? 400 : 200,
         headers: {
