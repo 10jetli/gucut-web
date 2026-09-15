@@ -1096,6 +1096,8 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           store: listStore.store,
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
         })),
         ...listStore,
       });
@@ -1371,6 +1373,14 @@ async function route(req, context) {
       let filter = "";
       if (sku) { filter = "AND oi.sku = ?"; params.push(sku); }
       if (warehouse) { filter += " AND o.warehouse_code = ?"; params.push(warehouse); }
+      /* store= (16 ก.ย. 2569 · ใบ t_mu2wjql1) — เทียบกับ ZORT ต้องแยกร้าน (บัญชี ZORT บน Chrome = z1)
+         ⚠️ ไม่ส่ง = รวมทุกร้านเหมือนเดิม (จอเดิมเลขไม่เปลี่ยน) · ค่าอื่นนอกจาก z1/z2/all/ว่าง = 400 */
+      const storeRaw = String(url.searchParams.get("store") ?? "").trim();
+      if (storeRaw && !["z1", "z2", "all"].includes(storeRaw)) {
+        return json({ error: `store ต้องเป็น z1 · z2 · all (ได้มา "${storeRaw.slice(0, 20)}")` }, 400);
+      }
+      const store = storeRaw === "z1" || storeRaw === "z2" ? storeRaw : null;
+      if (store) { filter += " AND o.source = ?"; params.push(store); }
       /* by=month — แบ่งเป็นรายเดือนในคำขอเดียว (ฝั่งจอขอ: กราฟยอดขายรายสินค้า)
          ⚠️ เดิมจอต้องยิง 12 ครั้ง เดือนละครั้ง ⇒ **12 การเรียกฟังก์ชันต่อการเปิดกราฟหนึ่งครั้ง**
             ซึ่งกินเครดิตโดยไม่จำเป็น และช้ากว่าด้วย
@@ -1455,7 +1465,8 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, by: byRaw || null, warehouse: warehouse || null },
+        applied: { sku: sku || null, limit, by: byRaw || null, warehouse: warehouse || null, store },
+        storeScope: store ? `เฉพาะร้าน ${store}` : "ทุกร้านรวมกัน",
         ...(totalSkus === null ? {} : { totalSkus, complete: items.length >= totalSkus }),
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
             คำตอบชุดอื่นในไฟล์นี้ประกาศขอบเขตครบ (storeScope · shipStatusScope · freshnessNote)

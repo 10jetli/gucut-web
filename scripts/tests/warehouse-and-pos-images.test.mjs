@@ -60,7 +60,8 @@ test('core.mjs — orderfacets ส่ง warehouses · topproducts warehouse= �
   const blk = src.slice(a, src.indexOf('// สะพานส่งเอกสารขายเข้า PEAK', a));
   assert.match(blk, /if \(warehouse && !\/\^\[A-Za-z0-9_-\]\{1,20\}\$\/\.test\(warehouse\)\) \{\s*return json\(\{ error:[\s\S]*?\}, 400\);/);
   assert.match(blk, /if \(warehouse\) \{ filter \+= " AND o\.warehouse_code = \?"; params\.push\(warehouse\); \}/);
-  assert.match(blk, /warehouse: warehouse \|\| null \}/);
+  // applied ต่อท้าย store แล้ว (16 ก.ย. 2569) — เช็คว่ายังสะท้อน warehouse ไม่ผูกกับตำแหน่งปิดวงเล็บ
+  assert.match(blk, /warehouse: warehouse \|\| null[,}]/);
   // filter ต้องถูกใช้ครบทุกคิวรี: 3 กิ่ง (รายเดือน · หมวด · รายสินค้า) + ตัวนับ totalSkus (16 ก.ย. 2569)
   //   ⚠️ เดิมนับว่าต้องเท่ากับ 3 พอดี — พอเพิ่มคิวรีที่ถูกต้องตัวที่ 4 เทสต์แดงทั้งที่โค้ดถูก ⇒ เช็คทีละคิวรีแทนการนับรวม
   const queries = [...blk.matchAll(/`SELECT[\s\S]*?`/g)].map((m) => m[0]).filter((q) => /FROM order_items oi JOIN orders o/.test(q));

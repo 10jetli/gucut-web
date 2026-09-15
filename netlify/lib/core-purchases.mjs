@@ -266,7 +266,12 @@ export async function listPurchases(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = `AND source = ${esc(store)}` + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("vendor", esc(q))})` : "");
+  /* 📅 from/to = วันที่ใบซื้อ (16 ก.ย. 2569) — จอเมนู 3 เคยกรองช่วงวันเองจาก limit=200 ⇒ เกิน 200 ใบเมื่อไหร่ช่วงจะขาดเงียบ
+     ⚠️ สรุป · แท็บสถานะ · แถว ใช้ filter ชุดเดียวกัน · ตรวจวันจริงที่ param-guard (DATE_LISTS) */
+  const from = isRealDay(o.from) ? o.from : null;
+  const to = isRealDay(o.to) ? o.to : null;
+  const filter = `AND source = ${esc(store)}` + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("vendor", esc(q))})` : "") +
+    (from ? ` AND po_date >= ${esc(from)}` : "") + (to ? ` AND po_date <= ${esc(to)}` : "");
 
   const [sum] = await coreQuery(
     `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS total FROM purchase_orders_v2 WHERE 1=1 ${filter}`
@@ -280,7 +285,12 @@ export async function listPurchases(o = {}) {
      FROM purchase_orders_v2 WHERE 1=1 ${filter}
      ORDER BY po_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
   );
-  return { store, total: num(sum?.c), amount: num(sum?.total), limit, offset, byStatus, rows };
+  return {
+    store, total: num(sum?.c), amount: num(sum?.total), limit, offset, byStatus, rows,
+    truncated: num(sum?.c) > rows.length + offset,
+    dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
+    applied: { q: q || null, limit, offset, from, to },
+  };
 }
 
 /** รายชื่อคลังสินค้าจาก ZORT — **คนละอย่างกับ "สาขาที่ขายหน้าร้าน"**
