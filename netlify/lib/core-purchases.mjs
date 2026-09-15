@@ -10,6 +10,7 @@
 // (ลองมาแล้ว 404: Purchase/GetPurchases · Purchase/GetPurchaseList · Buy/GetBuys)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
+import { storeCreds } from "./zort-store-doc-counts.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -262,10 +263,29 @@ export async function listWarehouses() {
       ส่วนตารางนี้คือกระจกของ ZORT · ปนกันเมื่อไหร่ = ตัดสต็อกสองรอบ
    ⚠️ ดึงย้อนหลังเป็นช่วง ไม่ดึงทั้ง 12,000 รายการรวดเดียว — เขียน D1 ก้อนใหญ่
       เสี่ยงชนโควตาและใช้เวลาเกินที่ Netlify ให้ฟังก์ชันรอ (เคยชนมาแล้ว 2 ก.ย.) */
+/* 🏷️ คอลัมน์ร้าน (source) ของกระจกใบโอน — เพิ่ม 15 ก.ย. 2569 · ใบ t_mu2pfve9
+   ที่มา: ?zortdoccounts ยิงจริงพบร้าน z2 มีใบโอน 15,514 ใบ ที่กระจกไม่เคยดึง (ตารางเดิมไม่มีคอลัมน์ร้านเลย)
+   · แถวเดิมทั้งหมดได้ 'z1' จาก DEFAULT ทันที ไม่ต้องกวาดย้อนหลัง (ตัวซิงก์เดิมใช้รหัสร้าน z1 ชุดเดียว)
+   ⚠️ กลืนได้เฉพาะ "duplicate column" (มีคอลัมน์แล้ว) — error อื่นต้องโยน ห้ามเดินต่อไปเขียนแถวที่ไม่มีช่องร้าน
+   ⚠️ resetTransfers ต้องล้างธงนี้ ไม่งั้นตารางที่สร้างใหม่หลัง DROP จะไม่มีคอลัมน์ */
+let transfersSourceReady = false;
+async function ensureTransfersSource() {
+  if (transfersSourceReady) return;
+  try {
+    await coreQuery(`ALTER TABLE transfers ADD COLUMN source TEXT NOT NULL DEFAULT 'z1'`);
+  } catch (e) {
+    if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
+  }
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_source ON transfers(source)`);
+  transfersSourceReady = true;
+}
+
 export async function syncTransfers(days = 90, opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const h = headers();
-  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const store = opt.store ?? "z1";
+  if (store !== "z1" && store !== "z2") return { error: `store ต้องเป็น z1 หรือ z2 (ได้มา "${String(store).slice(0, 20)}")` };
+  const h = store === "z1" ? headers() : storeCreds("z2");
+  if (!h) return { skip: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   await coreQuery(
     /* ⚠️ **กุญแจหลักต้องเป็น `id` ห้ามใช้ `number`** — พลาดมาแล้ว 3 ก.ย. 2569
         เลขที่ใบใน ZORT **ซ้ำกันได้จริง** 546 เลขซ้ำ ใบถูกกลืนหายไป 581 ใบ
@@ -278,6 +298,7 @@ export async function syncTransfers(days = 90, opt = {}) {
   );
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_date ON transfers(transfer_date)`);
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_tf_number ON transfers(number)`);
+  await ensureTransfersSource();
 
   const back = Math.max(1, Math.min(3650, num(days) || 90));
   const since = new Date(Date.now() - back * 864e5).toISOString().slice(0, 10);
@@ -319,13 +340,13 @@ export async function syncTransfers(days = 90, opt = {}) {
     if (hitOld || list.length < 200) break;
     nextPage = page + 1;
   }
-  if (!rows.length) return { fetched: 0, written: 0, since, startPage, nextPage: null };
+  if (!rows.length) return { store, fetched: 0, written: 0, collisions: 0, since, startPage, nextPage: null };
 
   const prev = new Map(
     (
       await coreQuery(
         `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
-         FROM transfers WHERE transfer_date >= ${esc(since)}`
+         FROM transfers WHERE transfer_date >= ${esc(since)} AND source = ${esc(store)}`
       )
     ).map((r) => [String(r.id), r])
   );
@@ -339,27 +360,43 @@ export async function syncTransfers(days = 90, opt = {}) {
     );
   });
 
-  for (let i = 0; i < changed.length; i += 60) {
-    const values = changed
+  /* 🔒 **กันเขียนทับข้ามร้าน** — กุญแจยังเป็น id ของ ZORT ตัวเดียว
+      id ของ ZORT ดูเป็นลำดับรวมทั้งระบบ (ใบเสนอราคาร้านที่มี 6 ใบได้ id 974090 · 633824) แต่ **ยังไม่พิสูจน์**
+      ⇒ ถ้า id นี้มีอยู่แล้วเป็นของอีกร้าน **ไม่เขียน** และนับรายงาน (collisions) — ชนจริงเมื่อไหร่ต้องเปลี่ยนกุญแจเป็น (source,id)
+      ⚠️ อ่านไม่สำเร็จ = โยน (ไม่ถือว่าไม่ชน) */
+  const clash = new Set();
+  for (let i = 0; i < changed.length; i += 100) {
+    const ids = changed.slice(i, i + 100).map((r) => esc(r.id)).join(",");
+    const hit = await coreQuery(`SELECT id FROM transfers WHERE id IN (${ids}) AND source <> ${esc(store)}`);
+    for (const x of hit) clash.add(String(x.id));
+  }
+  const toWrite = changed.filter((r) => !clash.has(r.id));
+
+  for (let i = 0; i < toWrite.length; i += 60) {
+    const values = toWrite
       .slice(i, i + 60)
       .map(
         (r) =>
           `(${esc(r.id)},${esc(r.number)},${esc(r.kind)},${esc(r.from)},${esc(r.to)},${esc(r.status)},` +
-          `${esc(r.date)},${esc(r.ref)},${esc(r.note)},datetime('now'))`
+          `${esc(r.date)},${esc(r.ref)},${esc(r.note)},datetime('now'),${esc(store)})`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO transfers (id,number,kind,from_wh,to_wh,status,transfer_date,reference,note,updated_at)
+      `INSERT INTO transfers (id,number,kind,from_wh,to_wh,status,transfer_date,reference,note,updated_at,source)
        VALUES ${values}
        ON CONFLICT(id) DO UPDATE SET number=excluded.number, kind=excluded.kind, from_wh=excluded.from_wh,
          to_wh=excluded.to_wh, status=excluded.status, transfer_date=excluded.transfer_date,
-         reference=excluded.reference, note=excluded.note, updated_at=excluded.updated_at`
+         reference=excluded.reference, note=excluded.note, updated_at=excluded.updated_at
+       WHERE transfers.source = excluded.source`
     );
   }
   return {
+    store,
     fetched: rows.length,
-    written: changed.length,
+    written: toWrite.length,
     skipped: rows.length - changed.length,
+    collisions: clash.size, // > 0 = id ชนกับอีกร้าน ไม่ได้เขียน ⇒ ต้องเปลี่ยนกุญแจก่อน
+    collisionIds: [...clash].slice(0, 20),
     since,
     startPage,
     nextPage, // ยังไม่หมด — เรียกซ้ำด้วย startPage=nextPage · null = ครบแล้ว
@@ -373,6 +410,7 @@ export async function resetTransfers() {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const [before] = await coreQuery(`SELECT COUNT(*) AS c FROM transfers`).catch(() => [{ c: 0 }]);
   await coreQuery(`DROP TABLE IF EXISTS transfers`);
+  transfersSourceReady = false;
   return { dropped: num(before?.c) };
 }
 
@@ -482,10 +520,13 @@ export async function listTransfers(o = {}) {
        id TEXT PRIMARY KEY, number TEXT, kind TEXT, from_wh TEXT, to_wh TEXT,
        status TEXT, transfer_date TEXT, reference TEXT, note TEXT, updated_at TEXT)`
   );
+  await ensureTransfersSource();
+  // ร้าน: ผู้เรียกตรวจค่าแล้ว (parseSingleStore) · ไม่ส่งมา = z1 เหมือนก่อนมีคอลัมน์ร้าน (จอเดิมได้เลขเท่าเดิม)
+  const store = o.store === "z2" ? "z2" : "z1";
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (${containsLit("number", esc(q))} OR ${containsLit("reference", esc(q))})` : "";
+  const filter = `AND source = ${esc(store)}` + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("reference", esc(q))})` : "");
   /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569) — สามตัวนี้ไม่มีตัวไหนต้องรอกัน
       ⚠️ CREATE TABLE ข้างบนยังต้องอยู่ก่อนและ await จริง ๆ — ห้ามย้ายลงมาในนี้
          สามตัวนี้อ่านตารางนั้น ถ้ายังไม่ถูกสร้างจะล้มทั้งชุด */
@@ -509,6 +550,7 @@ export async function listTransfers(o = {}) {
   ]);
   const sum = sumRows[0];
   return {
+    store,
     total: num(sum?.c),
     oldest: sum?.oldest || null,
     limit,

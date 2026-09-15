@@ -1028,7 +1028,7 @@ async function route(req, context) {
     }
     /* 🔴 สี่เส้นนี้มีแค่ร้าน z1 (ดู parseZ1OnlyStore) — ด่านเดียวก่อนถึงทั้งสี่ · ติดขอบเขตในคำตอบทุกเส้น */
     // purchaseitems เพิ่ม 15 ก.ย. 2569 — ตาราง purchase_order_items เขียนโดย syncPurchases ตัวเดียวกัน (รหัสร้าน z1 ชุดเดียว) · ฝั่งจอชี้ว่าเส้นนี้ไม่ส่ง storeScope
-    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders", "transfers"];
+    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders"];
     let z1Scope = null;
     if (Z1_ONLY_LISTS.includes(url.searchParams.get("list"))) {
       if (url.searchParams.has("source") && !url.searchParams.has("store"))
@@ -1199,24 +1199,39 @@ async function route(req, context) {
     if (url.searchParams.get("resettransfers")) {
       return json({ ok: true, reset: await resetTransfers() });
     }
+    /* 🏷️ ใบโอนแยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจาก Z1_ONLY_LISTS
+       ขาเข้าจากจอ: store= ว่าง ⇒ z1 (จอเดิมได้เลขเท่าเดิม) · z1 | z2 · all/ค่าอื่น ⇒ 400 (ตอบทีละร้าน) · source= เฉย ๆ ⇒ 400
+       ขาออก: store · storeDefaulted · storeScope (StoreScopeLine ของจออ่านช่องนี้) */
     if (url.searchParams.get("synctransfers")) {
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
       return json({
         ok: true,
         transfers: await syncTransfers(url.searchParams.get("days"), {
           startPage: url.searchParams.get("startpage"),
           maxPages: url.searchParams.get("maxpages"),
+          store: st.source,
         }),
       });
     }
     if (url.searchParams.get("list") === "transfers") {
+      if (url.searchParams.has("source") && !url.searchParams.has("store"))
+        return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
       return json({
-        ...z1Scope,
         ok: true,
         ...(await listTransfers({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          store: st.source,
         })),
+        store: st.source,
+        storeDefaulted: st.defaulted,
+        storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
       });
     }
     // คลังสินค้าทั้งหมด (รวมโกดัง) — คนละอย่างกับ list=branches ที่เป็นสาขาขายหน้าร้าน

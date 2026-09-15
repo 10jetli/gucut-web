@@ -107,6 +107,8 @@ export default async function handler() {
          ⚠️ **ไม่ช่วยเรื่องส่วนต่างเก่า 194 ใบ** ซึ่งเป็นของเก่าที่ไม่เคยถูกซิงก์
             อันนั้นยังเป็นข้อค้างใน verify-claims ตามเดิม — คนละเรื่องกัน */
         transfers: await syncTransfers(30).catch((e) => ({ error: String(e?.message || e) })),
+        // ร้าน z2 (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ย้อน 30 วันเหมือนกัน · กวาดของเก่าทั้งกองต้องสั่งมือเป็นช่วงหน้า (?synctransfers=1&store=z2&startpage=)
+        transfersZ2: await syncTransfers(30, { store: "z2" }).catch((e) => ({ error: String(e?.message || e) })),
       };
       // ⚠️ ต้องอยู่หลัง snapshotStock เสมอ — ตัวเทียบใช้ภาพถ่ายของ "วันนี้" เป็นวันปลาย
       //    สลับลำดับเมื่อไหร่ = เทียบกับภาพถ่ายเมื่อวานทั้งสองฝั่ง ส่วนต่างเป็นศูนย์หลอก ๆ
