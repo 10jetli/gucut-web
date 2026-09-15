@@ -25,13 +25,26 @@ export function badParamError(sp) {
     if (!/^\d+$/.test(v)) return `${k} ต้องเป็นจำนวนเต็มตั้งแต่ 0 ขึ้นไป (ได้มา "${v.slice(0, 20)}")`;
   }
   if (DATE_LISTS.has(sp.get("list"))) {
-    for (const k of ["from", "to", "day"]) {
+    for (const k of ["from", "to", "day", "shipfrom", "shipto"]) {
       const v = String(sp.get(k) ?? "").trim();
       if (v && !isRealDay(v)) return `${k} ต้องเป็นวันที่จริงรูป YYYY-MM-DD (ได้มา "${v.slice(0, 20)}")`;
     }
     const f = String(sp.get("from") ?? "").trim();
     const t = String(sp.get("to") ?? "").trim();
     if (f && t && f > t) return `from (${f}) ต้องไม่มากกว่า to (${t})`;
+    // ตัวกรองค้นหาขั้นสูงของรายการขาย (15 ก.ย. 2569) — ช่วงวันส่ง · ช่วงมูลค่า · COD
+    const sf = String(sp.get("shipfrom") ?? "").trim();
+    const stt = String(sp.get("shipto") ?? "").trim();
+    if (sf && stt && sf > stt) return `shipfrom (${sf}) ต้องไม่มากกว่า shipto (${stt})`;
+    for (const k of ["amountmin", "amountmax"]) {
+      const v = String(sp.get(k) ?? "").trim();
+      if (v && !/^\d+(\.\d+)?$/.test(v)) return `${k} ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป (ได้มา "${v.slice(0, 20)}")`;
+    }
+    const amin = String(sp.get("amountmin") ?? "").trim();
+    const amax = String(sp.get("amountmax") ?? "").trim();
+    if (amin && amax && Number(amin) > Number(amax)) return `amountmin (${amin}) ต้องไม่มากกว่า amountmax (${amax})`;
+    const cod = String(sp.get("cod") ?? "").trim();
+    if (cod && cod !== "0" && cod !== "1") return `cod ต้องเป็น 1 (เก็บเงินปลายทาง) หรือ 0 (ไม่ใช่) (ได้มา "${cod.slice(0, 10)}")`;
   }
   return null;
 }

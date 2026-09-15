@@ -11,6 +11,7 @@
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains } from "./sql-contains.mjs";
 import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
+import { isRealDay } from "./param-guard.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -107,7 +108,7 @@ export function parseZ1OnlyStore(raw) {
 }
 export const Z1_ONLY_SCOPE = { store: "z1", storeScope: "เฉพาะร้าน z1 — ยังไม่ได้ดึงเอกสารของร้าน z2 เข้าระบบ" };
 
-function buildWhere({ from, to, channel, status, q, includeCancelled, source }) {
+function buildWhere({ from, to, channel, status, q, includeCancelled, source, payStatus, cod, product, shipChannel, shipFrom, shipTo, amountMin, amountMax, number, customer }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
   /* ⚠️ **ต้องกรองร้านได้** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
@@ -140,8 +141,47 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source }) 
     where.push(`(${contains("number")} OR ${contains("customer")} OR ${contains("tracking_no")})`);
     params.push(q, q, q);
   }
+  /* 🔎 ตัวกรองค้นหาขั้นสูงแบบ ZORT (15 ก.ย. 2569 · ใบ t_mu2sy2fu · ต่อจากตารางของคุณส้ม ค้นหาขั้นสูง-จอขาย-เทียบ-ZORT.md)
+     ข้อมูลมีในกระจกอยู่แล้วแต่ท่อไม่เคยรับ · ทุกตัวอยู่ในตัวสร้างเงื่อนไขตัวนี้ตัวเดียว ⇒ ยอดขาย · แถว · ยอดหักคืน · แท็บ ใช้ชุดเดียวกัน
+     📏 รูปค่าจริง (วัด 15 ก.ย. 200 ใบ): ship_date = YYYY-MM-DD หรือ '' (ยังไม่ส่ง) · is_cod 1/0 · pay_status Paid/Voided/Pending
+        · ship_channel สะกดหลายแบบ ("Flash Express" · "Flash express" · "Drop-off: Flash Express, …") ⇒ ใช้ contains ไม่ใช่ = */
+  if (payStatus) { where.push("pay_status = ?"); params.push(payStatus); }
+  if (cod === "1") where.push("is_cod = 1");
+  if (cod === "0") where.push("COALESCE(is_cod,0) = 0");
+  if (product) {
+    // ⚠️ อ้าง orders.id ตรง ๆ — เงื่อนไขนี้ถูกฝังใน EXISTS ของยอดหักคืนด้วย (FROM orders WHERE …) ต้องชี้ตารางใบขายชั้นนั้น
+    where.push(`EXISTS (SELECT 1 FROM order_items oi WHERE oi.order_id = orders.id AND (${contains("oi.sku")} OR ${contains("oi.name")}))`);
+    params.push(product, product);
+  }
+  if (shipChannel) { where.push(contains("ship_channel")); params.push(shipChannel); }
+  if (shipFrom || shipTo) where.push("COALESCE(ship_date,'') <> ''"); // ใบที่ยังไม่ส่งไม่เข้าเงื่อนไขช่วงวันส่ง
+  if (shipFrom) { where.push("ship_date >= ?"); params.push(shipFrom); }
+  if (shipTo) { where.push("ship_date <= ?"); params.push(shipTo); }
+  if (amountMin !== null && amountMin !== undefined) { where.push("amount >= ?"); params.push(amountMin); }
+  if (amountMax !== null && amountMax !== undefined) { where.push("amount <= ?"); params.push(amountMax); }
+  if (number) { where.push(contains("number")); params.push(number); }
+  if (customer) { where.push(contains("customer")); params.push(customer); }
   if (!includeCancelled) where.push(CANCEL_SQL);
   return { sql: where.join(" AND "), params };
+}
+
+/** ค่าตัวกรองค้นหาขั้นสูงจากผู้เรียก → ค่าที่ใช้จริง (ผ่าน param-guard มาแล้ว · ตรงนี้กันค่าเพี้ยนซ้ำอีกชั้น) */
+function advancedFrom(o = {}) {
+  const txt = (v, n) => String(v ?? "").trim().slice(0, n) || null;
+  const numOrNull = (v) => (v === null || v === undefined || String(v).trim() === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+  return {
+    payStatus: txt(o.payStatus, 40),
+    cod: o.cod === "1" || o.cod === "0" ? o.cod : null,
+    product: txt(o.product, 60),
+    shipChannel: txt(o.shipChannel, 60),
+    // วันจริงตามปฏิทิน ไม่ใช่แค่รูป — รุ่นแรกใช้ DAY แล้ว 2026-13-01 หลุดลง WHERE (เทสต์จับได้ก่อน push)
+    shipFrom: isRealDay(o.shipFrom) ? o.shipFrom : null,
+    shipTo: isRealDay(o.shipTo) ? o.shipTo : null,
+    amountMin: numOrNull(o.amountMin),
+    amountMax: numOrNull(o.amountMax),
+    number: txt(o.number, 60),
+    customer: txt(o.customer, 60),
+  };
 }
 
 /**
@@ -178,6 +218,7 @@ export async function listOrderFacets(o = {}) {
     q: o.q ? String(o.q).trim().slice(0, 60) : null,
     includeCancelled: o.includeCancelled === true,
     source,
+    ...advancedFrom(o),
   });
 
   const [storeRows, byChannel] = await Promise.all([
@@ -268,8 +309,9 @@ export async function listOrders(o = {}) {
   const includeCancelled = !!o.includeCancelled;
   // รับเฉพาะค่าที่รู้จัก — ค่าแปลกปลอมให้เป็น null (ไม่กรอง) ดีกว่าเอาไปยัดลง SQL
   const source = parseStore(o.source).source ?? null;
+  const adv = advancedFrom(o);
 
-  const w = buildWhere({ from, to, channel, status, q, includeCancelled, source });
+  const w = buildWhere({ from, to, channel, status, q, includeCancelled, source, ...adv });
 
   /* ⚠️ **ยิง D1 พร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
       ของเดิมยิง D1 **10 รอบเรียงกัน** ในคำขอเดียว ⇒ วัดจริงได้ 4.5 วินาที
@@ -280,7 +322,8 @@ export async function listOrders(o = {}) {
          ไม่ต้องรอ ⇒ **ใส่ใน Promise.all เดียวกัน**
       ⚠️ ตัวที่อาจล้มได้ (core_meta ยังไม่ถูกสร้าง) ต้องมี .catch ของตัวเอง
          ไม่งั้นล้มตัวเดียวลากทั้งคำขอตาย — เดิมมันอยู่ใน try/catch แยก */
-  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true });
+  // แท็บสถานะ = ทุกตัวกรองยกเว้นสถานะ (รวมตัวกรองค้นหาขั้นสูง ไม่งั้นเลขในแท็บตอบคนละคำถามกับตาราง)
+  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true, source, ...adv });
   const [
     sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, byStatus,
     beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
@@ -418,6 +461,7 @@ export async function listOrders(o = {}) {
     limit,
     offset,
     status,
+    advancedFilters: adv, // ค่าที่ใช้กรองจริง (null = ไม่กรอง) — จอเช็คก่อนเขียนว่ากรองแล้ว
     total: num(sum?.c),
     totalAmount: num(sum?.s),
     /* 🔴 **ขอบเขตของ `totalAmount` — เพิ่ม 6 ก.ย. 2569** (เพิ่มอย่างเดียว ไม่แตะค่าเดิม)

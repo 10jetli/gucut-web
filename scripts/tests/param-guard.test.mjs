@@ -49,3 +49,13 @@ test('core.mjs — ด่านอยู่หลังตรวจรหัส 
   assert.match(block, /status: 400/);
   assert.match(block, /"x-core-build": CORE_BUILD/);
 });
+
+test('ค้นหาขั้นสูงรายการขาย: วันส่ง · มูลค่า · COD ค่าผิด = error · ค่าถูก = ผ่าน', () => {
+  assert.match(badParamError(sp('list=orders&shipfrom=2026-13-01')), /shipfrom ต้องเป็นวันที่จริง/);
+  assert.match(badParamError(sp('list=orders&shipfrom=2026-09-10&shipto=2026-09-01')), /shipfrom .* ต้องไม่มากกว่า shipto/);
+  assert.match(badParamError(sp('list=orders&amountmin=abc')), /amountmin ต้องเป็นตัวเลข/);
+  assert.match(badParamError(sp('list=orders&amountmin=500&amountmax=100')), /amountmin .* ต้องไม่มากกว่า amountmax/);
+  assert.match(badParamError(sp('list=orders&cod=yes')), /cod ต้องเป็น 1/);
+  assert.equal(badParamError(sp('list=orders&shipfrom=2026-09-01&shipto=2026-09-10&amountmin=99.5&amountmax=1000&cod=1')), null);
+  assert.equal(badParamError(sp('list=orderfacets&cod=0')), null);
+});
