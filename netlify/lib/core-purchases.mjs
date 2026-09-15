@@ -533,11 +533,15 @@ export async function listTransfers(o = {}) {
 /** ใบเสนอราคา — จอ "รายการขาย → ใบเสนอราคา" ของ ZORT
  *  ⚠️ ร้านมีแค่ 3 ใบ (ไม่ค่อยได้ใช้) — ดึงสดทุกครั้ง ไม่ต้องทำกระจก
  *     ทำกระจกให้ของที่มี 3 แถวคือเพิ่มที่ให้ข้อมูลไม่ตรงกันได้เปล่า ๆ */
-export async function listQuotations(limit = 50) {
+export async function listQuotations(limit = 50, page = 1) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
-  const res = await fetch(`${BASE}/Quotation/GetQuotations?limit=${n}`, {
+  /* 🔴 **ต้องส่ง page ต่อให้ ZORT** (แก้ 15 ก.ย. 2569 · คลาสเดียวกับ returnorders t_mtzx0wp4)
+      เดิมส่งแค่ limit ⇒ ได้แค่ limit ใบล่าสุดเสมอ · จอไล่ offset= แล้วได้ก้อนเดิมซ้ำ
+      (ฝั่งจอเจอตอนทำด่าน "หน้าไม่ขยับ" ใบ t_mu2mc4jj) · วันนี้มี 6 ใบยังไม่ออกอาการ แต่โตข้าม limit เมื่อไหร่ Export ขาดเงียบ */
+  const p = Math.max(1, Math.min(50, num(page) || 1));
+  const res = await fetch(`${BASE}/Quotation/GetQuotations?limit=${n}&page=${p}`, {
     headers: h,
     signal: AbortSignal.timeout(15000),
   }).catch(() => null);

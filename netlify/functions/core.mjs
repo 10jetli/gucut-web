@@ -1103,7 +1103,7 @@ async function route(req, context) {
     }
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
-      return okJson({ ...(await listQuotations(url.searchParams.get("limit"))), ...z1Scope });
+      return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"))), ...z1Scope });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์

@@ -1,0 +1,39 @@
+// รัน: node --experimental-test-module-mocks --test scripts/tests/quotations-page.test.mjs
+// 15 ก.ย. 2569 — ?list=quotations ต้องส่ง page ต่อให้ ZORT (เดิมส่งแค่ limit ⇒ หน้า 2 ขึ้นไปได้ก้อนเดิม)
+// คลาสเดียวกับ returnorders (t_mtzx0wp4) · ฝั่งจอจับได้ตอนทำด่าน "หน้าไม่ขยับ" ใบ t_mu2mc4jj
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { readFileSync } from 'node:fs';
+
+process.env.ZORT_STORENAME = 's'; process.env.ZORT_APIKEY = 'k'; process.env.ZORT_APISECRET = 'x';
+const { listQuotations } = await import('../../netlify/lib/core-purchases.mjs');
+
+const withFetch = async (fn) => {
+  const saved = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (u) => {
+    urls.push(new URL(String(u)));
+    return { ok: true, json: async () => ({ count: 6, list: [{ id: 1, number: 'QT-1' }] }) };
+  };
+  try { return await fn(urls); } finally { globalThis.fetch = saved; }
+};
+
+test('page ถึง ZORT จริง · ไม่ใส่ = 1 · ขยะ = 1 · ถูกบีบในเพดาน', async () => {
+  await withFetch(async (urls) => {
+    await listQuotations('2', '3');
+    await listQuotations('2');
+    await listQuotations('2', 'abc');
+    await listQuotations('2', '999');
+    assert.deepEqual(urls.map((u) => u.searchParams.get('page')), ['3', '1', '1', '50']);
+    assert.ok(urls.every((u) => u.searchParams.get('limit') === '2'));
+  });
+});
+
+test('เส้น list=quotations ใน core.mjs ส่ง page ต่อให้ listQuotations', () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const start = src.indexOf('get("list") === "quotations"');
+  assert.ok(start > 0, 'หาเส้น quotations ไม่เจอ');
+  const next = src.indexOf('url.searchParams.get("list") ===', start + 10);
+  const block = src.slice(start, next > 0 ? next : start + 800);
+  assert.match(block, /listQuotations\(url\.searchParams\.get\("limit"\),\s*url\.searchParams\.get\("page"\)\)/);
+});
