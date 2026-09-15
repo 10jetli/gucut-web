@@ -60,6 +60,14 @@ function orderDay(o) {
   return null;
 }
 
+/* tag ของ ZORT — เอกสาร V4 ไม่ได้บอกรูป ⇒ รับทั้งข้อความและรายการ (ไม่เดารูปเดียว)
+   รายการ = รวมด้วย ", " · ค่าอื่นที่ไม่ใช่ข้อความ/ตัวเลขทิ้ง */
+export function tagText(v) {
+  if (Array.isArray(v)) return v.filter((x) => typeof x === "string" || typeof x === "number").map((x) => String(x).trim()).filter(Boolean).join(", ").slice(0, 200);
+  if (typeof v === "string" || typeof v === "number") return String(v).trim().slice(0, 200);
+  return "";
+}
+
 async function fetchOrders(st, after, before) {
   const headers = { storename: st.storename, apikey: st.apikey, apisecret: st.apisecret };
   const out = [];
@@ -109,7 +117,7 @@ export async function syncOrders(days = 3, range = {}) {
       (
         await coreQuery(
           `SELECT id, channel, status, amount, customer, order_date, tracking_no, pay_status, integration_status,
-                  bill_discount, ship_amount FROM orders
+                  bill_discount, ship_amount, tag, create_user, warehouse_code FROM orders
            WHERE source = ? AND order_date >= ? AND order_date <= ?`,
           [st.tag, after, before]
         )
@@ -133,6 +141,10 @@ export async function syncOrders(days = 3, range = {}) {
         // ⚠️ ต้องอยู่ในเงื่อนไขนี้ด้วย ไม่งั้นใบที่หัวใบไม่เปลี่ยนจะไม่เคยได้ค่าใหม่เลย
         String(p.integration_status ?? "") === String(o.integrationStatus ?? "").slice(0, 40) &&
         // ⚠️ ต้องอยู่ในตัวเทียบด้วย ไม่งั้นใบเก่าที่หัวใบไม่เปลี่ยนจะไม่เคยได้ค่าใหม่
+        // ⚠️ ช่องใหม่ต้องอยู่ในตัวเทียบ ไม่งั้นใบนิ่งไม่เคยได้ค่า (new-columns-need-backfill)
+        String(p.tag ?? "") === tagText(o.tag) &&
+        String(p.create_user ?? "") === String(o.createusername ?? "").slice(0, 80) &&
+        String(p.warehouse_code ?? "") === String(o.warehousecode ?? "").slice(0, 40) &&
         num(p.bill_discount) === num(o.discountamount) &&
         num(p.ship_amount) === num(o.shippingamount)
       );
@@ -155,13 +167,14 @@ export async function syncOrders(days = 3, range = {}) {
           `${esc(String(o.shippingdateString ?? o.shippingdate ?? "").slice(0, 10))},` +
           `${o.isCOD ? 1 : 0},${esc(String(o.paymentstatus ?? "").slice(0, 40))},` +
           `${esc(String(o.integrationStatus ?? "").slice(0, 40))},` +
-          `${num(o.discountamount)},${num(o.shippingamount)})`
+          `${num(o.discountamount)},${num(o.shippingamount)},` +
+          `${esc(tagText(o.tag))},${esc(String(o.createusername ?? "").slice(0, 80))},${esc(String(o.warehousecode ?? "").slice(0, 40))})`
         )
         .join(",");
       await coreQuery(
         `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at,
                              tracking_no,ship_channel,ship_name,ship_date,is_cod,pay_status,integration_status,
-                             bill_discount,ship_amount)
+                             bill_discount,ship_amount,tag,create_user,warehouse_code)
          VALUES ${values}
          ON CONFLICT(id) DO UPDATE SET
            channel=excluded.channel, status=excluded.status, amount=excluded.amount,
@@ -169,7 +182,8 @@ export async function syncOrders(days = 3, range = {}) {
            tracking_no=excluded.tracking_no, ship_channel=excluded.ship_channel,
            ship_name=excluded.ship_name, ship_date=excluded.ship_date, is_cod=excluded.is_cod,
            pay_status=excluded.pay_status, integration_status=excluded.integration_status,
-           bill_discount=excluded.bill_discount, ship_amount=excluded.ship_amount`
+           bill_discount=excluded.bill_discount, ship_amount=excluded.ship_amount,
+           tag=excluded.tag, create_user=excluded.create_user, warehouse_code=excluded.warehouse_code`
       );
     }
 

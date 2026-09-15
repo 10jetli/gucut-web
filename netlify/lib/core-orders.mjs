@@ -108,7 +108,7 @@ export function parseZ1OnlyStore(raw) {
 }
 export const Z1_ONLY_SCOPE = { store: "z1", storeScope: "เฉพาะร้าน z1 — ยังไม่ได้ดึงเอกสารของร้าน z2 เข้าระบบ" };
 
-function buildWhere({ from, to, channel, status, q, includeCancelled, source, payStatus, cod, product, shipChannel, shipFrom, shipTo, amountMin, amountMax, number, customer }) {
+function buildWhere({ from, to, channel, status, q, includeCancelled, source, payStatus, cod, product, shipChannel, shipFrom, shipTo, amountMin, amountMax, number, customer, tag, createUser, warehouse }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
   /* ⚠️ **ต้องกรองร้านได้** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
@@ -161,6 +161,10 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source, pa
   if (amountMax !== null && amountMax !== undefined) { where.push("amount <= ?"); params.push(amountMax); }
   if (number) { where.push(contains("number")); params.push(number); }
   if (customer) { where.push(contains("customer")); params.push(customer); }
+  // Tag · ผู้สร้าง · คลัง (15 ก.ย. 2569 · ใบ t_mu2tzeb1) — ใบที่ซิงก์ก่อนมีคอลัมน์เป็น NULL จนกว่าจะกวาดย้อนหลัง
+  if (tag) { where.push(contains("tag")); params.push(tag); }
+  if (createUser) { where.push(contains("create_user")); params.push(createUser); }
+  if (warehouse) { where.push("warehouse_code = ?"); params.push(warehouse); }
   if (!includeCancelled) where.push(CANCEL_SQL);
   return { sql: where.join(" AND "), params };
 }
@@ -181,6 +185,9 @@ function advancedFrom(o = {}) {
     amountMax: numOrNull(o.amountMax),
     number: txt(o.number, 60),
     customer: txt(o.customer, 60),
+    tag: txt(o.tag, 60),
+    createUser: txt(o.createUser, 60),
+    warehouse: txt(o.warehouse, 40),
   };
 }
 
@@ -336,7 +343,7 @@ export async function listOrders(o = {}) {
     /* ⚠️ เพิ่มคอลัมน์ในตารางแล้วต้องเพิ่มใน SELECT นี้ด้วย ไม่งั้นจอไม่มีวันเห็น
         (ฝั่งจอทักมา 4 ก.ย. 2569 — เก็บ integration_status เข้าฐานแล้วแต่แถวไม่มีฟิลด์นี้) */
     coreQuery(
-      `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus
+      `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus, tag, create_user, warehouse_code
        FROM orders WHERE ${w.sql}
        ORDER BY order_date DESC, number DESC
        LIMIT ${limit} OFFSET ${offset}`,
@@ -561,7 +568,7 @@ export async function getOrder(id) {
      ⚠️ ส่งค่าดิบ ห้ามแปลง null เป็น 0 — แถวที่ซิงก์ก่อนมีคอลัมน์อาจยังว่าง = ไม่รู้ ไม่ใช่ศูนย์ */
   const [order] = await coreQuery(
     `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status,
-            bill_discount, ship_amount, updated_at
+            bill_discount, ship_amount, tag, create_user, warehouse_code, updated_at
      FROM orders WHERE id = ?`,
     [key]
   );

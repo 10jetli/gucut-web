@@ -225,6 +225,12 @@ export async function coreInit() {
     `ALTER TABLE order_items ADD COLUMN discount REAL`, // ส่วนลดต่อชิ้น (บาท/ชิ้น)
     // กุญแจกันยิงซ้ำที่จอ POS สร้างเอง — ดูเหตุผลเต็มใน pos.mjs (createSale)
     `ALTER TABLE orders ADD COLUMN client_ref TEXT`,
+    /* ช่องค้นหาขั้นสูงจอขายของ ZORT ที่กระจกยังไม่มี (ใบ t_mu2tm88b · วัด z1 30 วัน 640 ใบ 15 ก.ย. 2569)
+       tag มีค่า 65 ใบ · createusername 41 ใบ (ใบที่คนสร้างเอง) · warehousecode 640 ใบ
+       ⚠️ ต่อท่อใน core-sync.mjs แล้ว (INSERT + ตัวเทียบ same) — ใบเก่าต้องกวาดย้อนหลังด้วย ?sync=&from=&to= */
+    `ALTER TABLE orders ADD COLUMN tag TEXT`,
+    `ALTER TABLE orders ADD COLUMN create_user TEXT`,
+    `ALTER TABLE orders ADD COLUMN warehouse_code TEXT`,
     // ทะเบียนสินค้า — ฟิลด์ที่จอสินค้าต้องใช้ให้เหมือน ZORT
     `ALTER TABLE products ADD COLUMN purchase_price REAL`, // ราคาซื้อ (ต้นทุน)
     `ALTER TABLE products ADD COLUMN product_type INTEGER`, // 0 = สินค้า · 1 = บริการ (ไม่มีสต็อกจริง)

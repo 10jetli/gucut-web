@@ -11,7 +11,7 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreQuery: async (sql, params = []) => { calls.push({ s: String(sql), params }); return []; },
 } });
 const { listOrders, listOrderFacets } = await import('../../netlify/lib/core-orders.mjs');
-const ADV = { payStatus: 'Paid', cod: '1', product: '00313', shipChannel: 'flash', shipFrom: '2026-09-01', shipTo: '2026-09-10', amountMin: '100', amountMax: '5000', number: 'SO-2026', customer: 'สมชาย' };
+const ADV = { payStatus: 'Paid', cod: '1', product: '00313', shipChannel: 'flash', shipFrom: '2026-09-01', shipTo: '2026-09-10', amountMin: '100', amountMax: '5000', number: 'SO-2026', tag: 'VIP', createUser: 'แอดมิน', warehouse: 'W0001', customer: 'สมชาย' };
 
 test('ยอดขายรวม: ทุกตัวกรองลง WHERE พร้อมพารามิเตอร์ครบ', async () => {
   calls = [];
