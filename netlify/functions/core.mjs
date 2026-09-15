@@ -391,6 +391,12 @@ async function route(req, context) {
       const r = await saveMirroredImage(body);
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?mkpfinanceprobe=1 — สิทธิ์ API การเงิน Shopee/Lazada/TikTok (ชื่อช่องเท่านั้น ไม่มีค่า) · ใบ t_mu2wjrcf */
+    if (url.searchParams.get("mkpfinanceprobe")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { probeMarketplaceFinance } = await import("../lib/mkp-finance-probe.mjs");
+      return json({ ok: true, ...(await probeMarketplaceFinance()) });
+    }
     if (url.searchParams.get("dbinfo")) {
       return okJson(await d1Info());
     }
