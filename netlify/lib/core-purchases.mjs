@@ -713,6 +713,14 @@ export async function listQuotations(limit = 50, page = 1, store = "z1") {
 /** รายการสินค้าในใบซื้อ — สำหรับจอ "รายงาน → ยอดซื้อ" แบบแยกรายสินค้า
  *  ⚠️ ข้อมูลนี้ **เก็บอยู่แล้ว** ตั้งแต่ทำ syncPurchases แต่ไม่เคยมีทางอ่าน
  *     ⇒ ฝั่งจอจึงเข้าใจว่าคลังเงาเก็บแค่หัวใบ · ของมีอยู่ แค่ไม่มีประตู */
+/* 🔴 รายงานยอดซื้อไม่นับใบซื้อที่ยกเลิก — ตาม ZORT (15 ก.ย. 2569)
+   หลักฐาน (คุณส้มอ่านจอ ZORT /Dashboard/BuyReport อ่านอย่างเดียว): ช่วงตั้งต้นย้อนหลัง 3 เดือน จอขึ้น "ไม่มียอดซื้อ"
+   ขณะที่กระจกช่วงนั้นมีใบเดียวคือ PO-202609001 (Voided ฿1) ⇒ ZORT ไม่นับใบยกเลิก แต่ list=purchaseitems ของเรานับ
+   ⚠️ ขอบเขตหลักฐาน: ยังไม่เคยเห็นช่วงที่มีใบยกเลิกปนใบสำเร็จบนจอ ZORT (เปลี่ยนช่วงต้องกด) — กติกาคำเดียวกับบัตรสต็อก
+   ⚠️ ใช้กับ "รายงาน" เท่านั้น — จอรายการซื้อ (list=purchases) ยังโชว์ใบยกเลิก เพราะ ZORT มีแท็บสถานะที่รวมใบยกเลิก */
+const PO_NOT_CANCELLED =
+  "COALESCE(po.status,'') NOT LIKE '%cancel%' AND COALESCE(po.status,'') NOT LIKE '%void%' AND COALESCE(po.status,'') NOT LIKE '%ยกเลิก%'";
+
 export async function listPurchaseItems(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureTables();
@@ -726,7 +734,9 @@ export async function listPurchaseItems(o = {}) {
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT i.sku) AS skus, COUNT(*) AS lines,
             ROUND(COALESCE(SUM(i.qty * i.price),0),2) AS amount
-     FROM purchase_order_items_v2 i WHERE i.source = ${esc(store)} ${filter}`
+     FROM purchase_order_items_v2 i
+     LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+     WHERE i.source = ${esc(store)} AND ${PO_NOT_CANCELLED} ${filter}`
   );
   // รวมรายสินค้า — แบบเดียวกับที่ ZORT แสดงในรายงานยอดซื้อ
   const rows = await coreQuery(
@@ -736,7 +746,7 @@ export async function listPurchaseItems(o = {}) {
             MAX(po.po_date) AS lastDate
      FROM purchase_order_items_v2 i
      LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
-     WHERE i.source = ${esc(store)} ${filter}
+     WHERE i.source = ${esc(store)} AND ${PO_NOT_CANCELLED} ${filter}
      GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
   );
   /* ⚠️ **บรรทัดสรุปที่ถูก + ตารางที่ไม่ครบ = อันตรายกว่าตัวเลขผิดตรง ๆ**
@@ -754,6 +764,7 @@ export async function listPurchaseItems(o = {}) {
     shown,
     truncated: num(sum?.skus) > shown + offset,
     store,
+    excludesCancelled: true, // รวมเฉพาะใบซื้อที่ไม่ได้ยกเลิก (ตาม ZORT) — จอเลิกขึ้นป้าย "รวมใบยกเลิก" ได้
     applied: { q: q || null, limit, offset },
     limit,
     offset,

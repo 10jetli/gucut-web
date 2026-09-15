@@ -101,3 +101,19 @@ test('ใบเสนอราคา z2 ใช้รหัส _2 · บัตร
   const w = readFileSync(new URL('../../netlify/lib/zort-write.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(w, /FROM purchase_orders WHERE|FROM purchase_order_items WHERE/);
 });
+
+test('รายงานยอดซื้อ (purchaseitems) ไม่นับใบซื้อที่ยกเลิก — ทั้งตัวนับและตารางรวม · จอรายการซื้อยังนับ', async () => {
+  const { listPurchaseItems } = await import('../../netlify/lib/core-purchases.mjs');
+  metaRow = [{ v: 'complete', at: 'x' }]; sqls = [];
+  const r = await listPurchaseItems({ store: 'z1' });
+  const q = sqls.filter((x) => /FROM purchase_order_items_v2 i/.test(x.s));
+  assert.equal(q.length, 2, 'ตัวนับ + ตารางรวม');
+  for (const x of q) {
+    assert.match(x.s, /LEFT JOIN purchase_orders_v2 po ON po\.id = i\.po_id/);
+    assert.match(x.s, /COALESCE\(po\.status,''\) NOT LIKE '%void%'/);
+  }
+  assert.equal(r.excludesCancelled, true);
+  sqls = [];
+  await listPurchases({ store: 'z1' });
+  assert.ok(sqls.filter((x) => /FROM purchase_orders_v2 WHERE 1=1/.test(x.s)).every((x) => !/NOT LIKE '%void%'/.test(x.s)), 'รายการซื้อยังโชว์ใบยกเลิก');
+});
