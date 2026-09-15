@@ -43,15 +43,18 @@ console.log("ordercheck shipping: ผ่านการเทียบ 4 ฟิ�
 // รันบล็อก route จริงด้วย I/O จำลอง: ไม่มีคีย์หรือการเรียกเครือข่าย
 const { readFile } = await import('node:fs/promises');
 const helpers = await import('../../netlify/lib/ordercheck-shipping.mjs');
+// ตัวแปลงค่าร้านกลาง (15 ก.ย. 2569) — ใช้ของจริง ไม่จำลอง เพราะ store=typo ⇒ 400 ต้องมาจากตัวนี้
+const storeLib = await import('../../netlify/lib/core-orders.mjs');
 const source = await readFile(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
 const begin = source.indexOf('    if (url.searchParams.get("ordercheck")) {');
 const end = source.indexOf('\n    /* ไขว้ช่องทาง', begin);
 assert.ok(begin >= 0 && end > begin);
 const block = source.slice(begin, end)
   .replace('await import("../lib/ordercheck-shipping.mjs")', 'helpers')
-  .replace('await import("../lib/coredb.mjs")', '({ coreQuery: mockQuery })');
+  .replace('await import("../lib/coredb.mjs")', '({ coreQuery: mockQuery })')
+  .replace('(await import("../lib/core-orders.mjs"))', 'storeLib');
 const route = new (Object.getPrototypeOf(async function(){}).constructor)(
-  'url', 'fetch', 'mockQuery', 'process', 'json', 'helpers', block);
+  'url', 'fetch', 'mockQuery', 'process', 'json', 'helpers', 'storeLib', block);
 async function run(pages, mine, query = 'store=z2&from=2026-09-01&to=2026-09-12') {
   const requests = [];
   const result = await route(new URL(`https://local/api/core?ordercheck=1&${query}`),
@@ -68,7 +71,7 @@ async function run(pages, mine, query = 'store=z2&from=2026-09-01&to=2026-09-12'
       return mine;
     },
     { env: { ZORT_STORENAME: 'fixture', ZORT_STORENAME_2: 'fixture' } },
-    (body, status = 200) => ({ body, status }), helpers);
+    (body, status = 200) => ({ body, status }), helpers, storeLib);
   return { ...result, requests };
 }
 const order = (number) => ({ number, status: '2', paymentstatus: 'paid', integrationStatus: 'confirmed', ...zort });

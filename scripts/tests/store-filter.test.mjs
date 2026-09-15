@@ -68,3 +68,27 @@ test('core.mjs ตีกลับค่าร้านที่ไม่รู�
   assert.match(block, /st\.error\) return json\(\{ error: st\.error \}, 400\)/);
   assert.match(block, /p\.has\("source"\) && !p\.has\("store"\)/);
 });
+
+test('parseSingleStore: ว่าง = z1 (ค่าเดิม) · z1/z2 · all/ค่าแปลก = error ห้ามตกเป็น z1', async () => {
+  const { parseSingleStore } = await import('../../netlify/lib/core-orders.mjs');
+  assert.deepEqual(parseSingleStore(undefined), { source: 'z1', defaulted: true });
+  assert.deepEqual(parseSingleStore(''), { source: 'z1', defaulted: true });
+  assert.deepEqual(parseSingleStore('z1'), { source: 'z1', defaulted: false });
+  assert.deepEqual(parseSingleStore('z2'), { source: 'z2', defaulted: false });
+  for (const bad of ['all', 'zzz', 'Z2']) {
+    const r = parseSingleStore(bad);
+    assert.ok(r.error, `ต้อง error: ${bad}`);
+    assert.equal(r.source, undefined, `${bad} ต้องไม่ได้ร้านไหนกลับมา`);
+  }
+});
+
+test('core.mjs ไม่เหลือจุดที่ปัดค่าร้านเองเงียบ ๆ — ทุกเส้นผ่านตัวแปลงกลาง', () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  assert.equal(src.includes('get("store") === "z2" ? "z2" : "z1"'), false, 'ห้ามตก z1 เงียบ');
+  assert.equal(/\["z1", "z2"\]\.includes\(url\.searchParams\.get\("store"\)\)\s*\?/.test(src), false, 'ห้ามเหมาทุกร้านเงียบ');
+  const single = src.match(/parseSingleStore\(url\.searchParams\.get\("store"\)\)/g) || [];
+  const multi = src.match(/\.parseStore\(url\.searchParams\.get\("store"\)\)/g) || [];
+  assert.equal(single.length, 3, 'ordercheck · pending · cardguess');
+  assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
+  assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
+});

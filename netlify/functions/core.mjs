@@ -1639,9 +1639,10 @@ async function route(req, context) {
       const { shippingFieldsChanged, ordercheckCoverage, validateOrdercheckWindow, readOrdercheckPage } =
         await import("../lib/ordercheck-shipping.mjs");
       const startedAt = new Date().toISOString();
-      if (url.searchParams.has("store") && !["z1", "z2"].includes(url.searchParams.get("store")))
-        return json({ error: "store ต้องเป็น z1 หรือ z2" }, 400);
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      /* ร้านเดียวต่อคำขอ — all/ค่าแปลก ⇒ 400 ห้ามตกเป็น z1 เงียบ ๆ (ดู parseSingleStore) */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseSingleStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
       const st =
         store === "z2"
           ? {
@@ -1870,9 +1871,10 @@ async function route(req, context) {
           ไม่งั้นตัวเลขคนละจอไม่ตรงกัน แล้วจะเถียงกันไม่จบว่าใครถูก */
     if (url.searchParams.get("daily") || url.searchParams.get("bycustomer")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
-        ? url.searchParams.get("store")
-        : null;
+      /* ว่าง/all = ทุกร้าน · ค่าแปลก ⇒ 400 ห้ามเหมาเป็นทุกร้านเงียบ ๆ (ดู parseStore · 15 ก.ย. 2569) */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
       const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
       const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
       const from = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
@@ -2096,9 +2098,10 @@ async function route(req, context) {
 
     if (url.searchParams.get("monthly")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = ["z1", "z2"].includes(url.searchParams.get("store"))
-        ? url.searchParams.get("store")
-        : null;
+      /* ว่าง/all = ทุกร้าน · ค่าแปลก ⇒ 400 ห้ามเหมาเป็นทุกร้านเงียบ ๆ (ดู parseStore · 15 ก.ย. 2569) */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
       /* ⚠️ **เพดานขยายจาก 36 → 120 เดือน** (9 ก.ย. 2569 · ฝั่งจอทักมา)
           ข้อมูลเริ่ม ส.ค. 2566 ⇒ เพดาน 36 เดือนกำลังจะเริ่มบังของจริง **โดยไม่มีอะไรเตือน**
           จอ /core/coverage ต้องย้อนถึงเดือนแรกสุดเสมอ ไม่งั้นเดือนที่ถูกเพดานตัด
@@ -2186,7 +2189,10 @@ async function route(req, context) {
 
     if (url.searchParams.get("pending")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      /* ร้านเดียวต่อคำขอ — all/ค่าแปลก ⇒ 400 ห้ามตกเป็น z1 เงียบ ๆ (ดู parseSingleStore) */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseSingleStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
       const dormantDays = Math.max(
         7,
         Math.min(365, parseInt(url.searchParams.get("dormant") ?? "30", 10) || 30)
@@ -2337,7 +2343,10 @@ async function route(req, context) {
 
     if (url.searchParams.get("cardguess")) {
       const { coreQuery } = await import("../lib/coredb.mjs");
-      const store = url.searchParams.get("store") === "z2" ? "z2" : "z1";
+      /* ร้านเดียวต่อคำขอ — all/ค่าแปลก ⇒ 400 ห้ามตกเป็น z1 เงียบ ๆ (ดู parseSingleStore) */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseSingleStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
       const NOTDONE = `status NOT LIKE '%Success%' AND status NOT LIKE '%สำเร็จ%'`;
       const NOTCANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
       const noTrack = `COALESCE(tracking_no,'') = ''`;

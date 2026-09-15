@@ -81,6 +81,17 @@ export function parseStore(raw) {
   return { error: `store ต้องเป็น z1 · z2 · all (ได้มา "${v.slice(0, 20)}")` };
 }
 
+/** ตัวกรองร้านของ **เส้นที่ตอบทีละร้าน** (pending · cardguess · ordercheck)
+ *  ว่าง ⇒ z1 (ค่าเดิม — หน้าแรกกับจอแพ็คยิง pending=1 โดยไม่ใส่ร้าน) · "z1" | "z2" ⇒ ร้านนั้น
+ *  "all" / ค่าอื่น ⇒ `{ error }` — 🔴 (15 ก.ย. 2569) เดิมอะไรที่ไม่ใช่ "z2" ตกเป็น z1 เงียบ ๆ
+ *     ฝั่งจอวัดไว้ก่อนแก้: pending=1&store=all ได้ store:"z1" ⇒ คนขอทุกร้านได้ร้านเดียวโดยไม่รู้ตัว */
+export function parseSingleStore(raw) {
+  const v = String(raw ?? "").trim();
+  if (v === "") return { source: "z1", defaulted: true };
+  if (v === "z1" || v === "z2") return { source: v, defaulted: false };
+  return { error: `store ต้องเป็น z1 หรือ z2 — เส้นนี้ตอบทีละร้าน ${v === "all" ? "(all ใช้ไม่ได้ ยิง z1 และ z2 แยกแล้วรวมเอง)" : `(ได้มา "${v.slice(0, 20)}")`}` };
+}
+
 function buildWhere({ from, to, channel, status, q, includeCancelled, source }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];
