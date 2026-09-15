@@ -228,7 +228,12 @@ export async function listOrderFacets(o = {}) {
     ...advancedFrom(o),
   });
 
-  const [storeRows, byChannel] = await Promise.all([
+  /* 🏬 byWarehouse — ยอดตามคลังของใบ (warehouses=1 เท่านั้น · ขอเพิ่ม 15 ก.ย. 2569 จากแท็บ ตามคลัง/สาขา เมนู 2)
+      ⚠️ ขอเองเท่านั้น — ตัวนี้มีจุดขายที่ "รอบน้อย" (คอมเมนต์หัวฟังก์ชัน) ไม่ขอ = ไม่ยิงเพิ่มสักรอบ
+      ⚠️ ใบที่ไม่รู้คลัง (warehouse_code NULL/'' — ใบก่อน 1 ก.ย. 2569 ที่ยังไม่กวาดย้อนหลัง) รวมเป็นแถว code "" ของตัวเอง
+         ⇒ จอไม่ต้องคิด "ยอดรวม − ผลรวมคลัง" เอง (คิดเองพังเงียบเมื่อมีคลังใหม่หรือขอบเขตไม่ตรงกัน) */
+  const wantWarehouses = o.warehouses === true || o.warehouses === "1";
+  const [storeRows, byChannel, byWarehouse] = await Promise.all([
     coreQuery(
       `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders WHERE ${w.sql}
@@ -241,6 +246,14 @@ export async function listOrderFacets(o = {}) {
        GROUP BY channel ORDER BY amount DESC`,
       w.params
     ),
+    wantWarehouses
+      ? coreQuery(
+          `SELECT COALESCE(warehouse_code,'') AS code, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+           FROM orders WHERE ${w.sql}
+           GROUP BY COALESCE(warehouse_code,'') ORDER BY amount DESC`,
+          w.params
+        )
+      : Promise.resolve(null),
   ]);
 
   return {
@@ -257,6 +270,12 @@ export async function listOrderFacets(o = {}) {
       ? `เฉพาะร้าน ${storeName(source)}`
       : "ทุกร้านที่มีบิลในช่วงนี้ — จอนับจาก stores.length เอง ห้ามเขียนจำนวนร้านตายตัว",
     byChannel,
+    ...(byWarehouse
+      ? {
+          byWarehouse: byWarehouse.map((r) => ({ code: String(r.code ?? ""), orders: num(r.orders), amount: num(r.amount) })),
+          warehouseScope: "code \"\" = ใบที่ยังไม่รู้คลัง (เก็บคลังของใบตั้งแต่ 1 ก.ย. 2569 · ใบเก่ากำลังกวาดย้อนหลัง) · ผลรวมทุกแถว = ยอดของ stores ในคำขอเดียวกัน",
+        }
+      : {}),
     /* ⚠️ **บอกให้ชัดว่าตัวนี้ไม่มีอะไร** ไม่งั้นจอที่เผลอเรียกตัวนี้แทน list=orders
         จะเห็น rows หายไปแล้วนึกว่า "ช่วงนี้ไม่มีออเดอร์" ซึ่งเป็นคนละเรื่องกันคนละขั้ว */
     note: "ตัวนี้ตอบแค่ป้ายชื่อร้านกับยอดแยกช่องทาง — ไม่มี rows · total · byStatus โดยตั้งใจ (ต้องการของพวกนั้นให้ใช้ list=orders)",

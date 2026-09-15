@@ -1348,9 +1348,17 @@ async function route(req, context) {
              ถ้าจอเชื่อชื่อพารามิเตอร์แล้วหยิบแถวแรกมาแสดง = **โชว์ยอดขายของสินค้าตัวอื่น
              ในหน้าสินค้าตัวนี้ โดยดูสมเหตุสมผลทุกประการ** (ฝั่งจอจับได้ 3 ก.ย. 2569) */
       const sku = String(url.searchParams.get("sku") ?? "").trim().slice(0, 60);
+      /* warehouse= — ยอดขายรายสินค้าของคลังเดียว (dropdown เลือกคลังในแท็บ ตามคลัง/สาขา แบบ ZORT · ขอ 15 ก.ย. 2569)
+         ⚠️ คลังของใบเก็บตั้งแต่ 1 ก.ย. 2569 · ใบเก่าที่ยังไม่กวาดย้อนหลังไม่เข้าคลังไหน ⇒ ช่วงก่อนนั้นยอดต่ำกว่าจริง
+         ⚠️ ค่าผิดรูปตอบ 400 ห้ามเมินเงียบ (เมิน = ได้ยอดทั้งร้านที่หน้าตาเหมือนยอดคลัง) */
+      const warehouse = String(url.searchParams.get("warehouse") ?? "").trim();
+      if (warehouse && !/^[A-Za-z0-9_-]{1,20}$/.test(warehouse)) {
+        return json({ error: `warehouse ต้องเป็นรหัสคลัง ตัวอักษร/ตัวเลข 1–20 ตัว (ได้มา "${warehouse.slice(0, 20)}")` }, 400);
+      }
       const params = [from, to];
       let filter = "";
       if (sku) { filter = "AND oi.sku = ?"; params.push(sku); }
+      if (warehouse) { filter += " AND o.warehouse_code = ?"; params.push(warehouse); }
       /* by=month — แบ่งเป็นรายเดือนในคำขอเดียว (ฝั่งจอขอ: กราฟยอดขายรายสินค้า)
          ⚠️ เดิมจอต้องยิง 12 ครั้ง เดือนละครั้ง ⇒ **12 การเรียกฟังก์ชันต่อการเปิดกราฟหนึ่งครั้ง**
             ซึ่งกินเครดิตโดยไม่จำเป็น และช้ากว่าด้วย
@@ -1426,7 +1434,7 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, by: byRaw || null },
+        applied: { sku: sku || null, limit, by: byRaw || null, warehouse: warehouse || null },
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
             คำตอบชุดอื่นในไฟล์นี้ประกาศขอบเขตครบ (storeScope · shipStatusScope · freshnessNote)
             แต่ **ตัวเลขเงินซึ่งสำคัญที่สุดกลับไม่มีอะไรกำกับ** เพราะมันดู "ชัดอยู่แล้ว"
@@ -3116,6 +3124,7 @@ async function route(req, context) {
           createUser: p.get("createuser"),
           warehouse: p.get("warehouse"),
           includeCancelled: p.get("cancelled") === "1",
+          warehouses: p.get("warehouses"),
         })),
       });
     }

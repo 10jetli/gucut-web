@@ -349,6 +349,10 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
                ไม่มีช่องนี้คือต้นตอของบั๊กที่ทำให้ปุ่มหมวดของ ZORT ทั้ง 42 ปุ่มกดแล้วว่าง
                — ดูคำอธิบายเต็มที่ตัวกรองข้างล่าง */
             (SELECT category FROM products WHERE sku = s.sku) AS cat_real,
+            /* รูปจาก ZORT (fc52832 · e2e9634) — จอ POS ขอ 15 ก.ย. 2569 · ส่งทั้งรูปย่อในถังเราและลิงก์ดิบ
+               ⚠️ แท็บเล็ตหน้าร้านห้ามใช้ลิงก์ดิบ (ถึง ~2 MB) — จอใช้ imageFile เท่านั้น (lib/sku-images.ts allowRaw=false) */
+            (SELECT image_path FROM products WHERE sku = s.sku) AS image_path,
+            (SELECT CASE WHEN image_file_src = image_path THEN image_file ELSE NULL END FROM products WHERE sku = s.sku) AS image_file,
             COALESCE((SELECT name FROM products WHERE sku = s.sku AND name <> ''),
                      (SELECT name FROM order_items WHERE sku = s.sku AND name <> '' LIMIT 1)) AS name
      FROM stock_snapshots s
@@ -409,6 +413,9 @@ export async function lookup(q, limit = 20, cat = "", offset = 0) {
         needsPermit: pm.needsPermit, // เก็บไว้เพื่อความเข้ากันได้ แต่กำกวม อย่าใช้ตัดสินใจ
         permitModel: pm.model,
         permitWhy: pm.why,
+        // สามสถานะเหมือน list=stock: null = ยังไม่รู้ · "" = ZORT ไม่มีรูป · URL = มี
+        imagePath: r.image_path === null || r.image_path === undefined ? null : String(r.image_path),
+        imageFile: r.image_file ? String(r.image_file) : null,
       };
     }),
   };
