@@ -12,10 +12,12 @@ mock.module('@netlify/blobs', { namedExports: { getStore: () => ({
 let calls = [];
 let bundle = null;
 let detailFails = false;
+let detailRejects = false;
 globalThis.fetch = async (url, init = {}) => {
   calls.push({ url: String(url), method: init.method || 'GET' });
   if (String(url).includes('GetBundleDetail')) {
     if (detailFails) throw new Error('network down');
+    if (detailRejects) return { ok: true, status: 200, json: async () => ({ resCode: '100', resDesc: 'Access Denied.' }) };
     return { ok: true, status: 200, json: async () => bundle };
   }
   return { ok: true, status: 200, json: async () => ({ resCode: '200', resDesc: 'OK' }) };
@@ -53,13 +55,20 @@ test('ยืนยันแล้ว id เป็นชุดคนละรห�
 });
 
 test('ถามตัวตนชุดไม่สำเร็จก่อนยิงลบ ต้องบอกว่ายังไม่ได้ลบและไม่ใช้สถานะ unknown', async () => {
-  withZort(); calls = []; detailFails = true;
+  withZort(); calls = []; detailFails = true; detailRejects = false;
   const r = await zortDeleteBundle({ ref: 'BD-UNKNOWN', id: 804372, sku: '00023-24NW', confirm: true });
   assert.equal(r.ok, false);
   assert.equal(r.unknown, undefined);
   assert.match(r.error, /ยังไม่ได้ลบอะไร/);
   assert.equal(posts().length, 0);
   detailFails = false;
+
+  calls = []; detailRejects = true;
+  const rejected = await zortDeleteBundle({ ref: 'BD-REJECTED', id: 804372, sku: '00023-24NW', confirm: true });
+  assert.equal(rejected.ok, false);
+  assert.match(rejected.error, /ZORT ปฏิเสธ.*ยังไม่ได้ลบอะไร/);
+  assert.equal(posts().length, 0);
+  detailRejects = false;
 });
 
 test('id+sku ตรงจึงยิง DeleteBundle ครั้งเดียว และ ref เดิมไม่ยิงซ้ำ', async () => {

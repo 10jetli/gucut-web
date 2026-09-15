@@ -673,22 +673,8 @@ export async function zortDeleteProduct(o = {}) {
    🔴 ระบุด้วย id เช่นเดียวกับสินค้าเดี่ยว ⇒ ห้ามเชื่อ id จากจออย่างเดียว ท่อต้องถาม
       GetBundleDetail แล้วเทียบทั้ง id และ sku ซ้ำก่อนลบทุกครั้ง
    ⚠️ ชุดสินค้าเป็นสูตรเสมือน สต็อกของชุดคำนวณจากชิ้นส่วน จึงไม่ใช้ด่าน stock=0 ของ
-      Product/DeleteProduct; ความตั้งใจของคนใช้ยืนยันด้วย dry-run + พิมพ์ sku ซ้ำที่จอ */
-async function zortBundleById(id) {
-  const headers = creds();
-  if (!headers) return { error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
-  let r;
-  try {
-    r = await fetch(`${BASE}/Bundle/GetBundleDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
-  } catch (e) {
-    return { error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
-  }
-  const d = await r.json().catch(() => null);
-  if (!r.ok || !d) return { error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
-  const b = [d, d?.detail, d?.bundle].find((x) => x && Number(x.id) === id);
-  if (!b) return { error: `ZORT ไม่คืนชุดสินค้า id ${id} (หรือรูปคำตอบไม่รู้จัก)` };
-  return { bundle: b };
-}
+      Product/DeleteProduct; ความตั้งใจของคนใช้ยืนยันด้วย dry-run + พิมพ์ sku ซ้ำที่จอ
+   ใช้ zortBundleById ตัวเดียวกับ UpdateBundle ด้านบน เพื่อให้ทั้งสองทางตรวจ resCode เหมือนกัน */
 
 /** ลบชุดสินค้าใน ZORT — ลบแล้วเอาคืนไม่ได้ จึงซ้อมและกันยิงซ้ำเสมอ */
 export async function zortDeleteBundle(o = {}) {
