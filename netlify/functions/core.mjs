@@ -1707,6 +1707,15 @@ async function route(req, context) {
           จะไม่โผล่ในรายการที่หยิบมาเทียบตั้งแต่แรก** ⇒ มองไม่เห็นทั้งใบ
           (เคสจริง: ใบโอนสินค้าหาย 581 ใบ เมื่อ 3 ก.ย. เพราะใช้เลขที่ใบเป็นกุญแจ)
        ⚠️ **คืนเฉพาะเลขที่ใบกับสถานะ ห้ามคืนชื่อ/เบอร์/ที่อยู่ลูกค้า** */
+    /* GET ?zortdoccounts=1 — จำนวนใบซื้อ·ใบเสนอราคา·ใบคืน·ใบโอน ของร้าน z1 และ z2 (ใบ t_mu28iq46 · 15 ก.ย. 2569)
+       ขาเข้าจากจอ/ตัวตรวจ: ไม่มีพารามิเตอร์ · ขาออกไป ZORT: 4 เส้น × 2 ร้าน limit=1 (GET อย่างเดียว)
+       ขาออก: {ok, at, stores:{z1:{purchases:{count}|{unknown,error},…}, z2:{…}}, controlOk, z2Known}
+       🔒 คืนจำนวนอย่างเดียว ไม่มีแถว */
+    if (url.searchParams.has("zortdoccounts")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortStoreDocCounts } = await import("../lib/zort-store-doc-counts.mjs");
+      return json(await zortStoreDocCounts());
+    }
     if (url.searchParams.get("ordercheck")) {
       /* ⚠️ **รหัส ZORT กับตัวกรอง source ต้องมาจากตัวแปรตัวเดียวกัน**
           เดิมเขียนแยกกัน (env ของร้าน 1 · WHERE source='z1' คนละที่)
