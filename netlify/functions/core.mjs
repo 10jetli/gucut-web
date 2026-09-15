@@ -865,7 +865,9 @@ async function route(req, context) {
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
       const { saveWarehouseValues } = await import("../lib/warehouse-values.mjs");
-      return okJson(await saveWarehouseValues(body.rows), 200);
+      // ⚠️ ปฏิเสธต้องเป็น 400 ไม่ใช่ 200+ok:false — ยิงของจริงหลัง deploy 84b8108 ได้ 200 (คนดูแค่รหัสสถานะจะนึกว่าบันทึกแล้ว)
+      const r = await saveWarehouseValues(body.rows);
+      return okJson(r, r?.error ? 400 : 200);
     }
     // มูลค่าสินค้ารายหมวดที่คัดมาจากจอ ZORT (ไม่มี Category API — ต้องคัดจากเบราว์เซอร์)
     if (url.searchParams.get("categoryvalues")) {

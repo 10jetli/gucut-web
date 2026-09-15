@@ -105,9 +105,12 @@ test('core.mjs มีเส้น POST ?warehousevalues ที่ส่งต่
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
   const at = src.indexOf('if (url.searchParams.get("warehousevalues")) {');
   assert.ok(at > 0);
-  const body = src.slice(at, at + 500);
+  // เนื้อของเส้น = หัวเส้นถึงหัวเส้นถัดไป (หน้าต่างตายตัวพังทุกครั้งที่มีคนเพิ่มคอมเมนต์ — เจอสองรอบในวันเดียว)
+  const next = src.indexOf('if (url.searchParams.get(', at + 10);
+  const body = src.slice(at, next > at ? next : at + 4000);
   assert.match(body, /req\.method !== "POST"\) return json\(\{ error: "ต้องเป็น POST" \}, 405\)/);
   assert.match(body, /saveWarehouseValues\(body\.rows\)/);
+  assert.match(body, /return okJson\(r, r\?\.error \? 400 : 200\);/, 'ปฏิเสธต้องได้ 400 — เคยหลุดเป็น 200+ok:false บนของจริง');
   const gate = src.indexOf('const gate = await adminGate(req, context);');
   assert.ok(gate > 0 && gate < at, 'ต้องอยู่หลังด่านรหัสหลังร้าน');
 });
