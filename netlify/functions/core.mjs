@@ -1711,6 +1711,10 @@ async function route(req, context) {
       if (mode === "dry") {
         const day = url.searchParams.get("day") ||
           new Date(Date.now() + 7 * 3600 * 1000 - 86400 * 1000).toISOString().slice(0, 10);
+        /* 🔴 day ต้องเป็นวันจริงตามปฏิทิน (15 ก.ย. 2569) — เดิมไม่ตรวจ ⇒ day=2026-13-45 ได้ 0 ใบ + 200
+            หน้าตาเหมือน "วันนั้นไม่มีขาย" ทั้งที่ถามวันที่ไม่มีอยู่จริง · ตัวนี้คือซ้อมเอกสารภาษี ห้ามเงียบ */
+        const { isRealDay } = await import("../lib/param-guard.mjs");
+        if (!isRealDay(day)) return json({ error: `day ต้องเป็นวันที่จริง YYYY-MM-DD (ได้มา "${String(day).slice(0, 20)}")` }, 400);
         /* 🔴 **ต้องส่งเข้า PEAK เฉพาะร้าน z1 (ศีตกาล · gucut@icloud.com) เท่านั้น**
             เจ้าของร้านยืนยัน 4 ก.ย. 2569: **ร้านที่สอง (ceojet) ยังไม่ได้เอามาคิดภาษี**
             ⚠️ เดิมตรงนี้ดึงออเดอร์ของวันนั้น **ทั้งสองร้าน** ⇒ ถ้าเปิดส่งจริงเมื่อไหร่
@@ -1744,6 +1748,8 @@ async function route(req, context) {
           taxStore: TAX_STORE, // ⚠️ บอกขอบเขตเสมอ — เลขนี้นับเฉพาะร้านที่เข้าภาษี
           scopeNote: "เฉพาะร้าน ศีตกาล เทรดดิ้ง (gucut@icloud.com) — ร้าน ceojet ยังไม่ได้เอามาคิดภาษี",
           orders: orders.length,
+          // ⚠️ คิวรีตัดที่ 200 ใบ — ชนเพดาน = ใบของวันนั้นไม่ครบ ห้ามถือว่าซ้อมครบทั้งวัน
+          truncated: orders.length >= 200,
           peak: await sendInvoices(invoices),
         });
       }
