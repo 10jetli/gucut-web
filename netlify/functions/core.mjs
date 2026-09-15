@@ -498,6 +498,14 @@ async function route(req, context) {
       const r = await archiveSlips({ docnos: body.docnos });
       return json(r, r.ok ? 200 : 400);
     }
+    /* GET ?slipscan=1 — สั่งตัวไล่ดึงสลิปใหม่หนึ่งรอบเดี๋ยวนั้น (งานตามเวลา slips-sync :50) · ใบ t_mu2sow9d
+       ขาออก: {ok, since, wrapped, scanned, skippedBad, notStarted, stored, errors, bad, cursor} · เขียนแค่ถังปิดของเรา ไม่เขียน ZORT */
+    if (url.searchParams.has("slipscan")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { slipScanStep } = await import("../lib/slip-scan.mjs");
+      const r = await slipScanStep();
+      return json(r, r.ok ? 200 : 502);
+    }
     if (url.searchParams.has("slipsarchive")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { slipArchiveSummary } = await import("../lib/slip-archive.mjs");
