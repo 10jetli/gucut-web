@@ -467,6 +467,21 @@ async function route(req, context) {
       });
       return json(r, r.ok || r.skip ? 200 : r.unknown ? 502 : 400);
     }
+    /* GET ?zortfiles=<order|purchaseorder|quotation|returnorder|returnpurchaseorder>&docid=<id ของ ZORT> | &docno=<เลขที่เอกสาร> [&fileid=<id ไฟล์>]
+       ขาเข้าจากจอ/ตัวตรวจ: พารามิเตอร์ใน URL ตามนี้ (ตั้งชื่อ docid/docno ไม่ใช้ id/number กันชนเส้นอื่น)
+       ขาออกไป ZORT: <โมดูล>/Get<โมดูล>Files · <โมดูล>/Get<โมดูล>FileDetail (GET อย่างเดียว)
+       ⇒ ไม่มี fileid: {ok, applied, count, rowKeys, topKeys, files:[{id, fileName, type}]}
+       ⇒ มี fileid:   {ok, applied, fileKeys, file:{id, fileName, type, hasContent, base64Chars, bytes, kind}}
+       🔒 **ไม่ส่งตัวไฟล์ออก** (สลิปมีข้อมูลลูกค้า) · kind ดูจากไบต์จริง — "html" = ได้หน้าเว็บ ไม่ใช่ไฟล์
+       ถาม ZORT ไม่สำเร็จ/รูปคำตอบไม่รู้จัก = 502 unknown (ห้ามแปลว่าไม่มีไฟล์) · ZORT ปฏิเสธ = 400 + zortCode · งานกระดาน t_mu1xao7r */
+    if (url.searchParams.has("zortfiles")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortDocFiles } = await import("../lib/zort-files.mjs");
+      const q = url.searchParams;
+      const r = await zortDocFiles({ doc: q.get("zortfiles"), docid: q.get("docid") ?? undefined,
+        docno: q.get("docno") ?? undefined, fileid: q.get("fileid") ?? undefined });
+      return json(r, r.ok || r.skip ? 200 : r.unknown ? 502 : 400);
+    }
     /* GET ?zortbundle=<sku ของชุด> ⇒ ตัวตรวจอ่านอย่างเดียว: GetBundles หา id → GetBundleDetail?id= คืนรูปคำตอบดิบ
        ใช้ตัดสินว่า "สินค้าในชุด" ซิงก์ผ่าน API ได้ไหม · งานกระดาน t_mu1bh4vh
        ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) · ไม่พบชุด = 200 found:false */

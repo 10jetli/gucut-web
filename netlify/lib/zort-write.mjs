@@ -1656,6 +1656,15 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
     probe: "Order/BookOrderShipment → เอกสาร V4 (ยังไม่เคยยิง) · Order/ReadyToShip · Order/GetShipmentLabels",
     note: "BookOrderShipment รับ shipment = thailandpost|flashexpress|kerry|shopeeexpress|dhl · ReadyToShip มี booking=1 " +
       "= เรียกผู้ให้บริการขนส่งจริง ⇒ ไม่ทำเส้นเขียนจนกว่าท่านประธานอนุมัติ · ส่วนบันทึกเลขพัสดุเอง ใช้ ?ordershipping=1 (EditOrderInfo)" },
+  /* 🔎 กวาดซ้ำ 15 ก.ย. 2569 07:15 (ยิงเปล่า · ตัวควบคุมผ่านก่อน/หลัง) — คำกล่าวอ้าง 3 ก.ย. "ZORT ไม่มี API ไฟล์แนบ"
+      **ผิดตระกูลชื่อ** (ยิงแค่ File/GetFiles · Attachment/GetAttachments = 404 จริง) · งานกระดาน t_mu1xao7r
+      ท่ออ่าน GET ?zortfiles= มีแล้ว (netlify/lib/zort-files.mjs) · ⚠️ ชื่อแรกใน probe ต้องเป็นเส้นที่อ้างว่ามี — zortclaims ยิงแค่ตัวแรก
+      ⚠️ ยังไม่พิสูจน์ด้วยรหัสร้านว่าได้ตัวไฟล์จริง ⇒ **สลิป 376 ใบยังอยู่ในกองคัดมือ** จนกว่าจะเห็น kind เป็นรูป/PDF */
+  { what: "อ่านไฟล์แนบรายเอกสาร (สลิป · ไฟล์ในออเดอร์/ใบซื้อ/ใบเสนอราคา/ใบคืน)", at: "2026-09-15", untested: true,
+    probe: "Order/GetOrderFiles → 200 · Order/GetOrderFileDetail · PurchaseOrder/GetPurchaseOrderFiles · Quotation/GetQuotationFiles · " +
+      "ReturnOrder/GetReturnOrderFiles · ReturnPurchaseOrder/GetReturnPurchaseOrderFiles → 200 · Transfer/GetTransferFiles = 404",
+    note: "ดึงได้รายเอกสารเท่านั้น ไม่มีรายการไฟล์ทั้งร้าน ⇒ ต้องวนตามเอกสาร · ยังไม่รู้ว่าได้ base64 ตัวไฟล์จริงหรือไม่ " +
+      "(บทเรียน Document/GetDocuments: linkurl ได้ HTML) · ReturnOrder/ReturnPurchaseOrder ไม่อยู่ในเอกสาร V4 แต่ยิงแล้วมีจริง" },
 ];
 
 /* 🔔 **ZORT ยิงเหตุการณ์กลับมาหาเราได้** — เจอ 6 ก.ย. 2569 ตอนกวาดทั้งแผง
