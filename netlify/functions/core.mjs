@@ -1027,6 +1027,12 @@ async function route(req, context) {
       const { getCustomerDetail } = await import("../lib/core-contacts.mjs");
       return okJson(await getCustomerDetail(url.searchParams.get("customer")));
     }
+    /* GET ?synccontactsnow=1 ⇒ สั่งงานตามเวลาซิงก์ผู้ติดต่อเดี๋ยวนั้น (หน้าแรก ๆ + กวาดต่อจาก cursor)
+       ⇒ {ok, recent, sweep:{from, nextCursor, sweepComplete}, errors} · งานตามเวลาอยู่ที่ functions/contacts-sync.mjs · งานกระดาน t_mu2045bl */
+    if (url.searchParams.get("synccontactsnow")) {
+      const { syncContactsScheduled } = await import("../lib/core-contacts.mjs");
+      return json(await syncContactsScheduled());
+    }
     if (url.searchParams.get("synccontacts")) {
       return json({
         ok: true,

@@ -49,7 +49,12 @@ export async function syncContacts(opt = {}) {
   const rows = [];
   let nextPage = null;
   let total = null;
+  /* ⏱ deadlineAt (ใช้จากงานตามเวลา · 15 ก.ย. 2569) — เลิกเริ่มหน้าใหม่เมื่อเลยเวลา แล้วชี้ nextPage ที่หน้านั้น
+      ⚠️ หยุดก่อนได้สักหน้า ห้ามตอบ nextPage: null (= ครบแล้ว) ⇒ ใช้ stoppedAt แยก */
+  let stoppedAt = null;
+  const nowFn = typeof opt.now === "function" ? opt.now : Date.now;
   for (let page = startPage; page < startPage + maxPages; page++) {
+    if (opt.deadlineAt && nowFn() > opt.deadlineAt) { stoppedAt = page; nextPage = page; break; }
     const res = await fetch(`${BASE}/Contact/GetContacts?limit=200&page=${page}`, {
       headers: h,
       signal: AbortSignal.timeout(12000),
@@ -81,7 +86,10 @@ export async function syncContacts(opt = {}) {
     }
     if (total === null) total = num(data?.count);
     const list = Array.isArray(data?.list) ? data.list : [];
-    if (!list.length) break;
+    /* 🔴 **หน้าว่าง/หน้าสุดท้าย = ครบแล้ว ⇒ nextPage ต้องเป็น null** (แก้ 15 ก.ย. 2569)
+        เดิม break โดยไม่ล้าง nextPage ⇒ ค้างค่าจากหน้าก่อน (= เลขหน้านี้) ⇒ ผู้เรียกเข้าใจว่ายังไม่ครบ
+        ต้องเรียกซ้ำอีกรอบถึงจะได้ null · งานกวาดตามเวลาจะไม่มีวันรู้ว่ากวาดครบในรอบที่ครบจริง */
+    if (!list.length) { nextPage = null; break; }
     for (const c of list) {
       const id = String(c?.id ?? "").trim();
       if (!id) continue;
@@ -99,10 +107,10 @@ export async function syncContacts(opt = {}) {
         bno: String(c?.branchno ?? "").slice(0, 30),
       });
     }
-    if (list.length < 200) break;
+    if (list.length < 200) { nextPage = null; break; }
     nextPage = page + 1;
   }
-  if (!rows.length) return { fetched: 0, written: 0, total, startPage, nextPage: null };
+  if (!rows.length) return { fetched: 0, written: 0, total, startPage, nextPage: stoppedAt, stoppedByDeadline: stoppedAt !== null };
 
   // เขียนเฉพาะรายที่เปลี่ยนจริง — โควตาเขียนของ D1 มีจำกัด และของพวกนี้แทบไม่ขยับ
   const ids = rows.map((r) => esc(r.id)).join(",");
@@ -150,6 +158,7 @@ export async function syncContacts(opt = {}) {
     total,
     startPage,
     nextPage,
+    stoppedByDeadline: stoppedAt !== null,
   };
 }
 
@@ -203,6 +212,12 @@ export async function listContacts(o = {}) {
   );
   // นับชนิดของทั้งฐาน (ไม่ผูกตัวกรอง) — ใช้ตัดสินว่าตัวกรองชนิดมีประโยชน์ไหม · เป็นตัวเลขนับ ไม่มีข้อมูลรายคน
   const byType = await coreQuery(`SELECT COALESCE(type,'') AS type, COUNT(*) AS c FROM contacts GROUP BY 1 ORDER BY c DESC`).catch(() => null);
+  /* ชีพจรซิงก์ (15 ก.ย. 2569) — จอต้องรู้ว่ากระจกสดแค่ไหน · อ่านไม่ได้ = null (ไม่รู้) ห้ามแปลว่าสด
+      ที่มา: ท่อ 28,250 vs จอ ZORT 28,333 เพราะไม่มีอะไรสั่งซิงก์ (gucut2 จับได้) [[nothing-triggers-it]] */
+  const metaRows = await coreQuery(
+    `SELECT k, v, at FROM core_meta WHERE k IN ('sync_contacts_recent','sync_contacts_full','contacts_cursor')`
+  ).catch(() => null);
+  const meta = Array.isArray(metaRows) ? Object.fromEntries(metaRows.map((r) => [r.k, r])) : null;
   const mask = (v) => {
     const s = String(v ?? "");
     return s.length > 4 ? `${"•".repeat(Math.max(0, s.length - 4))}${s.slice(-4)}` : s;
@@ -216,6 +231,11 @@ export async function listContacts(o = {}) {
     offset,
     applied: { q: q || null, withPhone, withEmail },
     byType: byType ? byType.map((r) => ({ type: r.type, count: num(r.c) })) : null,
+    // recentAtUtc = ซิงก์หน้าแรก ๆ ล่าสุด (รายใหม่) · fullSweepAtUtc = กวาดครบทั้งฐานรอบล่าสุด (การแก้ของรายเก่า) · null = ยังไม่เคย/ไม่รู้
+    sync: meta
+      ? { recentAtUtc: meta.sync_contacts_recent?.at ?? null, fullSweepAtUtc: meta.sync_contacts_full?.at ?? null,
+          cursor: meta.contacts_cursor ? num(meta.contacts_cursor.v) : null }
+      : null,
     // ⚠️ ข้อความนี้ต้องขึ้นบนจอ — คนใช้ต้องรู้ว่ากำลังดูข้อมูลส่วนบุคคลอยู่
     note:
       "ข้อมูลส่วนบุคคลของลูกค้า — เปิดดูได้เฉพาะผู้มีรหัสหลังร้าน · " +
@@ -274,4 +294,65 @@ export async function getCustomerDetail(idOrName) {
               firstDay: s.first_day || null, lastDay: s.last_day || null, recent },
     matchNote: "จับคู่ออเดอร์ด้วยชื่อเต็มตรงตัว — ชื่อซ้ำกันจะปนกัน · ชื่อที่ถูก mask จับคู่ไม่ได้",
   };
+}
+
+/* ⏰ ซิงก์ผู้ติดต่อตามเวลา — งานกระดาน t_mu2045bl (15 ก.ย. 2569)
+   ที่มา: gucut2 เจอท่อ 28,250 vs จอ ZORT 28,333 ⇒ พิสูจน์แล้ว **ไม่มีอะไรสั่งซิงก์** (มีแค่ ?synccontacts= สั่งมือ)
+          ซิงก์หน้า 1 หน้าเดียวเขียนรายใหม่ 84 ⇒ ตรง ZORT 28,334 [[nothing-triggers-it]]
+   สองจังหวะ แชร์งบเวลาเดียวกัน (เพดานฟังก์ชัน 26 วิ):
+     ① หน้า 1–2 ทุกรอบ — รายใหม่เข้าหน้าแรก
+     ② กวาดทั้งฐานต่อจาก contacts_cursor ครั้งละ ≤6 หน้า — ตามการแก้ของรายเก่า (28k ราย ≈ 142 หน้า ≈ วันละรอบ)
+   🔒 อ่านตำแหน่งกวาดไม่ได้ ⇒ ข้ามจังหวะ ② (ไม่เดาเริ่มหน้า 1 — read-before-write-no-swallow)
+   🔒 ไม่มีรหัส ZORT (skip) ⇒ ไม่แตะ cursor · หน้าล้ม ⇒ cursor ชี้หน้าที่ล้ม รอบหน้าลองซ้ำ
+   ⚠️ ซิงก์นี้ **ไม่ลบ** รายที่ไม่เจอ — หน้าล้ม/ZORT ตอบไม่ครบ ≠ ลูกค้าหายไป */
+const pickSync = (r) => ({ fetched: r?.fetched ?? 0, written: r?.written ?? 0, total: r?.total ?? null,
+  nextPage: r?.nextPage ?? null, stoppedByDeadline: !!r?.stoppedByDeadline, error: r?.error ?? null });
+
+async function writeMeta(k, v, errors) {
+  try {
+    await coreQuery(
+      `INSERT INTO core_meta (k,v,at) VALUES (?, ?, datetime('now')) ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`,
+      [k, v]
+    );
+  } catch {
+    errors.push({ stage: "meta", key: k, error: "จดชีพจรไม่สำเร็จ" });
+  }
+}
+
+export async function syncContactsScheduled(o = {}) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const now = typeof o.now === "function" ? o.now : Date.now;
+  const deadlineAt = now() + (Number(o.budgetMs) > 0 ? Number(o.budgetMs) : 15000);
+  const out = { recent: null, sweep: null, errors: [] };
+
+  const recent = await syncContacts({ startPage: 1, maxPages: 2, deadlineAt, now });
+  out.recent = pickSync(recent);
+  if (recent?.skip) return { ok: false, skip: recent.skip, ...out };
+  if (recent?.error) out.errors.push({ stage: "recent", error: recent.error });
+  else await writeMeta("sync_contacts_recent", "ok", out.errors);
+
+  let cursor;
+  try {
+    const [row] = await coreQuery(`SELECT v FROM core_meta WHERE k = 'contacts_cursor'`);
+    cursor = Math.max(1, num(row?.v) || 1);
+  } catch {
+    out.errors.push({ stage: "cursor", error: "อ่านตำแหน่งกวาดไม่ได้ — ข้ามรอบกวาดทั้งฐาน (ไม่เดาเริ่มหน้า 1)" });
+    return { ok: false, ...out };
+  }
+  if (now() > deadlineAt) {
+    out.sweep = { skipped: "หมดงบเวลาหลังรอบหน้าแรก", from: cursor };
+    return { ok: out.errors.length === 0, ...out };
+  }
+  const sweep = await syncContacts({ startPage: cursor, maxPages: 6, deadlineAt, now });
+  out.sweep = { ...pickSync(sweep), from: cursor };
+  if (sweep?.skip) return { ok: false, skip: sweep.skip, ...out };
+  if (sweep?.error) out.errors.push({ stage: "sweep", error: sweep.error });
+  /* nextPage: null = กวาดครบรอบ ⇒ เริ่มหน้า 1 · มีค่า = หน้าถัดไป/หน้าที่ล้ม/หน้าที่ยังไม่เริ่มเพราะหมดเวลา */
+  const complete = !sweep?.error && sweep?.nextPage === null;
+  const next = complete ? 1 : Math.max(1, num(sweep?.nextPage) || cursor);
+  await writeMeta("contacts_cursor", String(next), out.errors);
+  if (complete) await writeMeta("sync_contacts_full", "complete", out.errors);
+  out.sweep.nextCursor = next;
+  out.sweep.sweepComplete = complete;
+  return { ok: out.errors.length === 0, ...out };
 }

@@ -1411,13 +1411,20 @@ export const ZORT_NO_API = [
      ⚠️ ยืนยันจาก **เอกสาร** ครบทุกโมดูลในสารบัญแล้ว แต่ **ยังไม่ได้ยิง** (g1 ไม่มีรหัส ZORT)
      ⇒ ชื่อใน probe ข้างล่างคือชื่อที่ให้ zortclaims ยิงตรวจหลัง deploy · ต้องได้ 404 ทุกชื่อ ถึงจะถือว่าพิสูจน์แล้ว
      ⚠️ ห้ามใส่ชื่อเส้นที่มีจริงลงใน probe ของแถวนี้ (ตัวตรวจจะนับว่า "คำกล่าวอ้างเป็นเท็จ") */
+  /* 🔧 แก้ 15 ก.ย. 2569 — แถวนี้เดิมใช้ชื่อเดา (GetStockDistribution …) ที่ **ไม่เคยยิง** และผิดตระกูลกับจอจริง
+      จอ ZORT คือ /Integration/Main → เด้งไป /Integration/list · ฟังก์ชันบนจอ updateAllocatedPercent (gucut2 เจอ 5ceb678)
+      📏 กวาดจริง 70 ชื่อ (Integration · Merchant · Product · Warehouse · Channel · SalesChannel · Marketplace ×
+         GetAllocatedPercent(s) · UpdateAllocatedPercent · GetIntegration(s) · GetAllocation · GetStockAllocation ·
+         GetChannelAllocation · GetSalesChannels · GetMarketplaces) ยิงเปล่า · ตัวควบคุมผ่านก่อน/หลัง
+         ⇒ มีจริงตัวเดียว Merchant/GetSalesChannels (รายชื่อช่องทาง ไม่มี %) — **ห้ามใส่ใน probe ข้างล่าง** (zortclaims จะแดงลวง)
+      📏 ค่าจริงบนจอ 15 ก.ย. (อ่าน DOM ไม่คลิก): TikTok · Shopee-gucut · Lazada-gucut · Shopify = **100% ทุกช่องทาง**
+         ⇒ ตอนนี้เลขคงเหลือที่ท่ออ่าน = เลขที่มาร์เก็ตเพลสได้ · ⚠️ ถ้าวันหนึ่งมีคนตั้ง <100 ท่อจะไม่รู้ (ไม่มีเส้นอ่าน) */
   {
     what: "ตั้งค่ากระจายสินค้า (แบ่งสต็อกให้ช่องทางขาย/คลัง)",
-    at: "2026-09-14",
-    untested: true,
+    at: "2026-09-15",
     probe:
-      "Product/GetStockDistribution · Product/UpdateStockDistribution · Warehouse/GetStockDistribution · " +
-      "Warehouse/UpdateStockDistribution · Merchant/GetStockDistribution · Merchant/UpdateStockSetting → ยังไม่เคยยิง",
+      "Integration/GetAllocatedPercent · Integration/UpdateAllocatedPercent · Integration/GetIntegrations · " +
+      "Merchant/GetAllocatedPercent · Product/GetStockAllocation · Warehouse/GetAllocation · SalesChannel/GetAllocation → 404 (กวาด 70 ชื่อ 15 ก.ย. · หน้า /Integration/list)",
     note:
       "เอกสาร ZORT API V4 อ่านครบ 14 โมดูลในสารบัญ (Product · Bundle · Warehouse · Contact · Order · Purchase Order · " +
       "Return Order · Return Purchase Order · Transfer · Quotation · Finance · File Upload · Document · Merchant) — " +
