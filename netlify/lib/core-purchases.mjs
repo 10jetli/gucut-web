@@ -536,17 +536,46 @@ export function docLines(doc) {
   return l;
 }
 
+/* 🔎 ดึงเอกสารรายใบจาก ZORT แยกสามสถานะ (15 ก.ย. 2569 · ใบ t_mu2pekwt ยิงลึกเส้นรายใบ)
+   เดิมทั้งสามเส้น (ใบโอน · ใบคืน · ใบเสนอราคา) เขียน `res?.ok ? json : null` แล้วตอบข้อความเดียว "ดึง…จาก ZORT ไม่ได้"
+   ⇒ id ที่ไม่มีจริง (999999999999) · ค่าขยะ (abc) · เน็ตล่ม **ได้ข้อความเดียวกัน** — คนหน้าคลังแยกไม่ออกว่าพิมพ์เลขผิดหรือระบบพัง
+   ⇒ แยก: id ไม่ใช่ตัวเลข = ไม่ยิง ZORT · ติดต่อ ZORT ไม่ได้ = unknown · ZORT ตอบไม่ใช่ 200 = บอกสถานะ/resCode ของ ZORT ตรง ๆ
+   ⚠️ **ไม่แปลงเป็น "ไม่พบใบ" เอง** — ยังไม่เคยเห็นว่า ZORT ตอบรูปไหนเมื่อไม่มีใบ ⇒ ส่งของ ZORT ออกไปให้เห็น ไม่เดา */
+async function zortDetailFetch(path, key, label) {
+  const h = headers();
+  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  if (!/^\d{1,20}$/.test(key)) return { error: `id ของ${label}ต้องเป็นตัวเลขของ ZORT (ได้มา "${key.slice(0, 30)}")`, badId: true };
+  let res;
+  try {
+    res = await fetch(`${BASE}/${path}?id=${key}`, { headers: h, signal: AbortSignal.timeout(15000) });
+  } catch {
+    return { error: `ติดต่อ ZORT ไม่ได้ (เครือข่าย/หมดเวลา) — ยังไม่รู้ว่ามี${label}นี้หรือไม่`, unknown: true };
+  }
+  if (!res?.ok) {
+    let body = null;
+    try { body = await res.json(); } catch { body = null; }
+    const code = body?.res?.resCode ?? body?.resCode ?? null;
+    const desc = String(body?.res?.resDesc ?? body?.resDesc ?? "").slice(0, 120);
+    return {
+      error: `ZORT ไม่ส่ง${label}ให้ (HTTP ${res?.status}${code !== null ? ` · resCode ${code}` : ""}${desc ? ` · ${desc}` : ""}) — id ${key}`,
+      zortStatus: res?.status ?? null,
+      zortCode: code,
+      zortDesc: desc || null,
+    };
+  }
+  const data = await res.json().catch(() => null);
+  if (!data) return { error: `ZORT ตอบ${label}มาในรูปที่อ่านไม่ได้`, unknown: true };
+  return { data };
+}
+
 export async function getTransferDetail(id) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const key = String(id ?? "").trim();
   if (!key) return { error: "ต้องระบุเลขใบโอน" };
-  const res = await fetch(
-    `${BASE}/Transfer/GetTransferDetail?id=${encodeURIComponent(key)}`,
-    { headers: h, signal: AbortSignal.timeout(15000) }
-  ).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
-  if (!data) return { error: "ดึงรายละเอียดใบโอนจาก ZORT ไม่ได้" };
+  const got = await zortDetailFetch("Transfer/GetTransferDetail", key, "ใบโอน");
+  if (got.error) return got;
+  const data = got.data;
   /* ⚠️ ZORT วางตัวใบไว้คนละที่แล้วแต่เส้น — ลองทุกรูปที่เคยเจอในโปรเจกต์นี้
       หาไม่เจอ = **บอกว่าหาไม่เจอ** ห้ามคืนใบว่างที่หน้าตาเหมือน "ใบนี้ไม่มีของ" */
   const t = pickDocHeader(data);
@@ -753,12 +782,9 @@ export async function getQuotationDetail(id, raw = false) {
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const key = String(id ?? "").trim();
   if (!key) return { error: "ต้องระบุเลขที่ใบ" };
-  const res = await fetch(
-    `${BASE}/Quotation/GetQuotationDetail?id=${encodeURIComponent(key)}`,
-    { headers: h, signal: AbortSignal.timeout(15000) }
-  ).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
-  if (!data) return { error: "ดึงรายละเอียดใบเสนอราคาจาก ZORT ไม่ได้" };
+  const got = await zortDetailFetch("Quotation/GetQuotationDetail", key, "ใบเสนอราคา");
+  if (got.error) return got;
+  const data = got.data;
   /* ⚠️ **โหมดดูของดิบ — สำหรับไล่ปัญหาเท่านั้น ห้ามให้จอเรียกประจำ**
       ทำเพิ่ม 6 ก.ย. 2569 เพราะตัวย่อด้านล่างหยิบ `list[0]` มาแสดง
       แล้ว `list[0]` ของเส้นนี้คือ **บรรทัดสินค้า ไม่ใช่หัวใบ** ⇒ ที่เห็นว่าเป็น "ใบ" มาตลอด
@@ -1337,12 +1363,9 @@ export async function getReturnOrderDetail(id) {
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const key = String(id ?? "").trim();
   if (!key) return { error: "ต้องระบุเลขที่ใบคืน" };
-  const res = await fetch(
-    `${BASE}/ReturnOrder/GetReturnOrderDetail?id=${encodeURIComponent(key)}`,
-    { headers: h, signal: AbortSignal.timeout(15000) }
-  ).catch(() => null);
-  const data = res?.ok ? await res.json().catch(() => null) : null;
-  if (!data) return { error: "ดึงรายละเอียดใบคืนจาก ZORT ไม่ได้" };
+  const got = await zortDetailFetch("ReturnOrder/GetReturnOrderDetail", key, "ใบคืน");
+  if (got.error) return got;
+  const data = got.data;
 
   const r = pickDocHeader(data);
   if (!r) return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
