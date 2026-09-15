@@ -1,12 +1,12 @@
 // สร้างอัตโนมัติโดย scripts/gen-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผังในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ARCH = {
-  "generatedAt": "2026-09-14T14:03:25.543Z",
+  "generatedAt": "2026-09-15T01:32:22.698Z",
   "site": "gucut.com",
   "project": "gucut-storefront",
   "repo": "gucut-web",
   "functions": {
-    "count": 54,
+    "count": 56,
     "scheduled": [
       {
         "name": "backup-run",
@@ -15,6 +15,10 @@ export const ARCH = {
       {
         "name": "beam-sweep",
         "cron": "*/30 * * * *"
+      },
+      {
+        "name": "bundle-recipe-sync",
+        "cron": "27,57 * * * *"
       },
       {
         "name": "core-sync",
@@ -27,6 +31,10 @@ export const ARCH = {
       {
         "name": "permit-remind",
         "cron": "30 2 * * *"
+      },
+      {
+        "name": "returns-sync",
+        "cron": "7 * * * *"
       },
       {
         "name": "shopee-reviews-pull",
@@ -63,6 +71,7 @@ export const ARCH = {
       "backup_log",
       "backups",
       "bundle_items",
+      "bundle_recipe_state",
       "bundles",
       "category_values",
       "contacts",
@@ -73,7 +82,7 @@ export const ARCH = {
       "purchase_order_items",
       "purchase_orders",
       "recon_log",
-      "return_orders",
+      "return_orders_v",
       "returns_desk",
       "returns_desk_items",
       "returns_desk_takeovers",
@@ -82,6 +91,7 @@ export const ARCH = {
       "stock_moves",
       "stock_recon_log",
       "stock_snapshots",
+      "sync_marks",
       "tiktok_order_items",
       "tiktok_orders",
       "transfers"

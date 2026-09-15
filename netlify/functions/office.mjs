@@ -88,7 +88,8 @@ export default async function handler(req, context) {
        (คลาสเดียวกับ [[stale-state-comments]] — สภาพปัจจุบันที่เขียนตายจะโกหกเสมอ)
        ⚠️ งานที่จบแล้ว **ติ๊ก done ไม่ลบแถว** — เจ้าของร้านต้องเห็นว่าอะไรเพิ่งเสร็จไป
           จอค่อยตัดสินใจเองว่าโชว์ของเสร็จกี่วันแล้วค่อยซ่อน */
-    if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady) {
+    if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady ||
+        body?.taskBlock || body?.taskUnblock || body?.taskSchedule) {
       const s = store();
       const KEY = "office/tasks";
       /* 🔴 B02 (แก้ 14 ก.ย. 2569): ทุกคำสั่งในกลุ่มนี้ **เขียน office/tasks ทับทั้งก้อน**
@@ -122,7 +123,8 @@ export default async function handler(req, context) {
         await s.setJSON(KEY, list);
         return json({ ok: true, id });
       }
-      const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady, 40);
+      const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady ||
+                      body.taskBlock || body.taskUnblock || body.taskSchedule, 40);
       const row = list.find((x) => x.id === id);
       if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
       if (body.taskDone) {
@@ -161,7 +163,59 @@ export default async function handler(req, context) {
         delete row.doneAt;
         delete row.ready;
         delete row.readyAt;
-      } else if (body.taskReady) {
+        delete row.blocked;      // ถอนติ๊ก = ถอนทุกสถานะ ไม่ใช่แค่ done
+        delete row.notBefore;
+      }
+      /* ══════════════════════════════════════════════════════════════════════
+         ⏸️ ติดอยู่ · 🕒 รอเวลา — เอาแนวคิดจาก Hermes kanban มาทำเอง (15 ก.ย. 2569)
+
+         ท่านประธานสั่ง: "ทำกระดานแบบ Hermes ระบบเดียวกัน เลือกเอาแต่อันดี ๆ มาไว้กับตัวเอง"
+         ⇒ ไม่ย้ายไป Hermes (เผาเครดิต cloud + จอ 2 ตัวอ่าน /api/office อยู่)
+            แต่หยิบ 2 อย่างที่เราขาดจริงมาทำเอง
+
+         🔴 เหตุที่ต้องมี "ติดอยู่" — ท่านประธานสั่งไว้ตั้งแต่ 14 ก.ย. แล้วยังไม่มี:
+            งาน t_mtxkwwb9 ติดรอท่านประธานตัดสิน แต่กระดานมีแค่ "เสร็จ/ไม่เสร็จ"
+            ⇒ ตัวเตือนงานค้างยิงซ้ำใบเดิม **6 ครั้ง** ทั้งที่ทีมเขียนเหตุผลครบทุกครั้ง
+            ⇒ และตัวจ่ายงานนับว่า "มีงานในมือ" ⇒ ไม่จ่ายงานใหม่ให้ ⇒ คนว่างทั้งที่ทำอะไรไม่ได้
+
+         🔴 เหตุที่ต้องมี "รอเวลา" — ตอนนี้กรองด้วยการหาคำว่า "[พรุ่งนี้]" ในข้อความ
+            ซึ่งหยาบมาก: พิมพ์ต่างอักษรเดียวก็หลุด และไม่มีทางรู้ว่าจะพร้อมเมื่อไหร่
+
+         ⚠️ ทั้งสองสถานะ **ไม่ใช่ "เสร็จ"** — งานยังอยู่บนกระดาน ท่านประธานยังเห็น
+            แค่บอกระบบว่า "อย่าเพิ่งทวง อย่าเพิ่งนับเป็นงานในมือ"
+         ⚠️ ปลดได้เสมอด้วย taskUnblock หรือ taskUndo (ทุกสถานะที่ตั้งได้ต้องถอนได้) */
+      else if (body.taskBlock) {
+        const reason = text(body.reason, 200);
+        if (!reason) {
+          return json({
+            error: "ติดอยู่ต้องบอกว่าติดอะไร — ไม่งั้นไม่มีใครรู้ว่าต้องแก้อะไรถึงจะเดินต่อได้",
+            hint: '{"taskBlock":"t_xxx","reason":"รอท่านประธานตัดสินว่ายึดกองไหนเป็นตัวจุดชนวน"}',
+          }, 400);
+        }
+        row.blocked = { at: Date.now(), reason };
+        delete row.ready;        // ติดอยู่ = ไม่ใช่งานที่กำลังทำ
+        delete row.readyAt;
+      }
+      else if (body.taskUnblock) {
+        delete row.blocked;
+      }
+      else if (body.taskSchedule) {
+        /* รอเวลา — ส่ง until เป็นเวลาไทยแบบ "2026-09-16 09:00" หรือ ISO
+           ⚠️ เก็บเป็น epoch ms เสมอ ห้ามเก็บสตริง — ไม่งั้นทุกคนที่อ่านต้องแปลงเอง
+              แล้วจะแปลงคนละแบบ (เจอมาแล้วกับเรื่องเขตเวลา UTC vs ไทย) */
+        const raw = text(body.until, 40);
+        const ms = raw ? Date.parse(raw.includes("T") ? raw : raw.replace(" ", "T") + "+07:00") : NaN;
+        if (!Number.isFinite(ms)) {
+          return json({
+            error: "taskSchedule ต้องมี until ที่อ่านเป็นเวลาได้",
+            hint: '{"taskSchedule":"t_xxx","until":"2026-09-16 09:00"}  (เวลาไทย)',
+          }, 400);
+        }
+        row.notBefore = ms;
+        delete row.ready;        // ยังไม่ถึงเวลา = ยังไม่ใช่งานที่สั่งแล้ว
+        delete row.readyAt;
+      }
+      else if (body.taskReady) {
         /* "พร้อมทำ — เรียก AI" (เจ้าของร้านขอเอง 8 ก.ย. 2569)
            กดแล้ว: ติดธง ready + เด้ง Telegram เข้ากลุ่มร้าน ⇒ AI/ทีมเห็นทันทีว่า
            เจ้าของร้านว่างและกำลังจะทำข้อไหน จะได้เตรียมพากดหรือเตรียมของรอ
