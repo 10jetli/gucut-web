@@ -353,10 +353,13 @@ export async function listOrders(o = {}) {
            และ w.sql เขียนชื่อคอลัมน์ไม่มีคำนำหน้า ⇒ JOIN จะอ่านคอลัมน์ผิดตารางหรือล้ม
         ⚠️ ขอบเขต = ใบคืนของ "ใบขายที่อยู่ในตัวกรองนี้" (วันที่ขาย · ร้าน · ช่องทาง · สถานะ · คำค้น)
            ไม่ใช่ "ใบคืนที่ออกในช่วงนี้" — คนละคำถาม · ใบคืนยกเลิกไม่นับ
-        ⚠️ ตารางยังไม่มี/อ่านไม่ได้ ⇒ null (ไม่รู้) ห้ามเป็น 0 */
+        ⚠️ ตารางยังไม่มี/อ่านไม่ได้ ⇒ null (ไม่รู้) ห้ามเป็น 0
+        🔴 (15 ก.ย. 2569 · ใบ t_mu2pfve9) **ต้องจับคู่ร้านด้วย** — เลขที่ใบซ้ำข้ามร้านได้ · เดิมตารางใบคืนมีแต่ z1 จึงไม่ออกอาการ
+           พอดึงใบคืนร้าน z2 เข้ามา ใบคืน z2 ที่เลขอ้างอิงตรงใบขาย z1 จะไปหักยอด z1 เงียบ ๆ ⇒ EXISTS + source ตรงกัน
+           (ใช้ EXISTS ไม่ใช้ (source,reference) IN — ไม่แน่ใจว่า D1 รับ row value และถ้าล้มจะกลายเป็น null เงียบ) */
     coreQuery(
       `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s FROM return_orders_v2
-       WHERE reference IN (SELECT number FROM orders WHERE ${w.sql})
+       WHERE EXISTS (SELECT 1 FROM orders WHERE orders.number = return_orders_v2.reference AND orders.source = return_orders_v2.source AND ${w.sql})
          AND COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%'`,
       w.params
     ).catch(() => null),
@@ -366,7 +369,7 @@ export async function listOrders(o = {}) {
       `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s FROM return_orders_v2 r
        WHERE r.return_date >= ? AND r.return_date <= ?
          AND COALESCE(r.status,'') NOT LIKE '%void%' AND COALESCE(r.status,'') NOT LIKE '%cancel%'
-         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.number = r.reference)`,
+         AND NOT EXISTS (SELECT 1 FROM orders o WHERE o.number = r.reference AND o.source = r.source)`,
       [from, to]
     ).catch(() => null),
     coreQuery(`SELECT v, at FROM core_meta WHERE k = 'sync_returns'`).catch(() => null),

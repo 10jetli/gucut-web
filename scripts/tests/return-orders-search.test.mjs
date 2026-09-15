@@ -53,9 +53,9 @@ test('มีคำค้น ⇒ กรองที่กระจก ไม่�
     assert.equal(r.syncComplete, true);
     const rowQ = sqls.find((x) => /SELECT id, number/.test(x.s) && /return_orders_v2/.test(x.s));
     assert.ok(rowQ, 'ต้องมีคำสั่งดึงแถวจากกระจก');
-    assert.match(rowQ.s, /WHERE instr\(lower\(number\), lower\(\?\)\) > 0 OR instr\(lower\(reference\), lower\(\?\)\) > 0 OR instr\(lower\(customer\), lower\(\?\)\) > 0/);
+    assert.match(rowQ.s, /WHERE \(instr\(lower\(number\), lower\(\?\)\) > 0 OR instr\(lower\(reference\), lower\(\?\)\) > 0 OR instr\(lower\(customer\), lower\(\?\)\) > 0/);
     assert.doesNotMatch(rowQ.s, /LIKE/, 'ห้าม LIKE — D1 จำกัดรูปแบบ 50 ไบต์');
-    assert.deepEqual(rowQ.params, ['CN-1', 'CN-1', 'CN-1']);
+    assert.deepEqual(rowQ.params, ['CN-1', 'CN-1', 'CN-1', 'z1']);
     const cntQ = sqls.find((x) => /COUNT\(\*\)/.test(x.s));
     assert.deepEqual(cntQ.params, rowQ.params, 'ตัวนับกับตัวดึงแถวต้องใช้เงื่อนไขชุดเดียวกัน');
   });
@@ -67,7 +67,7 @@ test('คำค้นส่งดิบ ไม่ห่อ % — ชื่อไ
     sqls = [];
     const r = await listReturnOrders(50, 1, q);
     const rowQ = sqls.find((x) => /SELECT id, number/.test(x.s));
-    assert.deepEqual(rowQ.params, [q, q, q]);
+    assert.deepEqual(rowQ.params, [q, q, q, 'z1']);
     assert.equal(r.applied.q, q);
     assert.equal(r.error, undefined);
   }

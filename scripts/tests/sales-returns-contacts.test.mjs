@@ -39,7 +39,7 @@ test('ยอดคืนใช้ WHERE + params ชุดเดียวกั�
   assert.equal(r.returnsSyncedAtUtc, '2026-09-14 18:07:00');
   assert.equal(r.returnsSyncComplete, true);
   const sale = sqls.find((s) => /SELECT COUNT\(\*\) AS c, ROUND\(COALESCE\(SUM\(amount\),0\),2\) AS s\s+FROM orders WHERE/.test(s));
-  const ret = sqls.find((s) => /FROM return_orders/.test(s) && /reference IN \(SELECT number FROM orders WHERE/.test(s));
+  const ret = sqls.find((s) => /FROM return_orders/.test(s) && /EXISTS \(SELECT 1 FROM orders WHERE orders\.number = return_orders_v2\.reference AND orders\.source = return_orders_v2\.source AND/.test(s));
   assert.ok(sale && ret, 'ต้องมีทั้งยอดขายและยอดคืน');
   const saleWhere = /FROM orders WHERE (.*)$/s.exec(sale)[1].trim();
   assert.ok(ret.includes(saleWhere), 'เงื่อนไขใบขายในยอดคืนต้องเป็นชุดเดียวกับยอดขาย');
@@ -87,8 +87,9 @@ test('ชีพจรใบคืน: ครบ = complete · หน้าล้
       return { ok: true, json: async () => ({ count: 201, list }) };
     };
     const r = await syncReturnOrders({ pages: 12 });
-    const beat = sqls.find((s) => /INSERT INTO core_meta/.test(s) && /sync_returns/.test(s));
-    return { r, beatV: beat ? paramsOf.get(beat)[0] : null };
+    // คีย์ชีพจรเป็นพารามิเตอร์แล้ว (15 ก.ย. 2569 · แยกร้าน) ⇒ หาจาก params[0] และตรึงว่า z1 ยังใช้คีย์เดิม
+    const beat = sqls.find((s) => /INSERT INTO core_meta/.test(s) && paramsOf.get(s)?.[0] === 'sync_returns');
+    return { r, beatV: beat ? paramsOf.get(beat)[1] : null };
   };
   try {
     const ok = await run('ok');

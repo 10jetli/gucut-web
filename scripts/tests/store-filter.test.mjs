@@ -89,7 +89,8 @@ test('core.mjs ไม่เหลือจุดที่ปัดค่าร�
   const single = src.match(/parseSingleStore\(url\.searchParams\.get\("store"\)\)/g) || [];
   const multi = src.match(/\.parseStore\(url\.searchParams\.get\("store"\)\)/g) || [];
   // +2 เส้นใบโอน 15 ก.ย. 2569 (ใบ t_mu2pfve9) — ใช้ตัวแปร st ไม่ใช่ storeParsed จึงไม่เพิ่มยอดบรรทัดล่าง
-  assert.equal(single.length, 5, 'ordercheck · pending · cardguess · synctransfers · list=transfers');
+  // +2 เส้นใบคืน 15 ก.ย. 2569 (syncreturns · list=returnorders)
+  assert.equal(single.length, 7, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders');
   assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
   assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
 });
@@ -112,12 +113,12 @@ test('parseZ1OnlyStore: ว่าง/z1 = z1 · z2/all/ค่าแปลก = e
 test('core.mjs สี่เส้นที่มีแค่ z1: ด่านอยู่ก่อนทุกเส้น และทุกคำตอบติดขอบเขต', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
   // transfers ออกจากรายชื่อ 15 ก.ย. 2569 (กระจกมีคอลัมน์ร้านแล้ว · ดู transfers-store.test.mjs)
-  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders"];');
+  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations"];');
   assert.ok(guard > 0, 'ต้องมีรายชื่อสี่เส้น');
   const gblock = src.slice(guard, guard + 800);
   assert.match(gblock, /if \(z1\.error\) return json\(\{ error: z1\.error, \.\.\.Z1_ONLY_SCOPE \}, 400\);/);
   assert.match(gblock, /url\.searchParams\.has\("source"\) && !url\.searchParams\.has\("store"\)/);
-  for (const k of ['purchases', 'purchaseitems', 'quotations', 'returnorders']) {
+  for (const k of ['purchases', 'purchaseitems', 'quotations']) {
     const at = src.indexOf(`if (url.searchParams.get("list") === "${k}") {`);
     assert.ok(at > guard, `${k} ต้องอยู่หลังด่าน`);
     // เนื้อของเส้นนี้ = ตั้งแต่หัวเส้นถึงหัวเส้นถัดไป (ไม่ใช้หน้าต่างตายตัว — คอมเมนต์ยาวจะดันโค้ดหลุดหน้าต่าง)

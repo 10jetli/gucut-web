@@ -1028,7 +1028,7 @@ async function route(req, context) {
     }
     /* 🔴 สี่เส้นนี้มีแค่ร้าน z1 (ดู parseZ1OnlyStore) — ด่านเดียวก่อนถึงทั้งสี่ · ติดขอบเขตในคำตอบทุกเส้น */
     // purchaseitems เพิ่ม 15 ก.ย. 2569 — ตาราง purchase_order_items เขียนโดย syncPurchases ตัวเดียวกัน (รหัสร้าน z1 ชุดเดียว) · ฝั่งจอชี้ว่าเส้นนี้ไม่ส่ง storeScope
-    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders"];
+    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations"];
     let z1Scope = null;
     if (Z1_ONLY_LISTS.includes(url.searchParams.get("list"))) {
       if (url.searchParams.has("source") && !url.searchParams.has("store"))
@@ -1148,13 +1148,27 @@ async function route(req, context) {
     /* ดึงใบคืนจาก ZORT ลงกระจก — ปิดเอกสาร 6 ใบใน doccoverage + เป็นขานอกระบบของจอรับคืน */
     if (url.searchParams.get("syncreturns")) {
       const { syncReturnOrders } = await import("../lib/core-purchases.mjs");
-      return okJson(await syncReturnOrders({ pages: url.searchParams.get("pages") }));
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      return okJson(await syncReturnOrders({ pages: url.searchParams.get("pages"), store: st.source }));
     }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
       /* q= (15 ก.ย. 2569) มีคำค้น ⇒ ค้นจากกระจก return_orders_v2 · ไม่มี ⇒ ดึงสด ZORT เหมือนเดิม
          ขาออกมี applied {q, source} — จอเช็คตัวนี้ก่อนเขียนว่าไฟล์กรองแล้ว */
-      return okJson({ ...(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q"))), ...z1Scope });
+      /* 🏷️ แยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจาก Z1_ONLY_LISTS · store ว่าง ⇒ z1 · all/ค่าอื่น 400 */
+      if (url.searchParams.has("source") && !url.searchParams.has("store"))
+        return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      return okJson({
+        ...(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q"), st.source)),
+        store: st.source,
+        storeDefaulted: st.defaulted,
+        storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
+      });
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {

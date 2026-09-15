@@ -902,6 +902,14 @@ async function ensureReturnTable() {
   );
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret2_date ON return_orders_v2(return_date)`);
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret2_ref ON return_orders_v2(reference)`);
+  /* 🏷️ คอลัมน์ร้าน (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ท่าเดียวกับกระจกใบโอน (gucut-web 7351c3c ยิงจริงชน 0)
+     แถวเดิมได้ 'z1' จาก DEFAULT · กลืนได้แค่ "duplicate column" */
+  try {
+    await coreQuery(`ALTER TABLE return_orders_v2 ADD COLUMN source TEXT NOT NULL DEFAULT 'z1'`);
+  } catch (e) {
+    if (!/duplicate column/i.test(String(e?.message ?? e))) throw e;
+  }
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_ret2_source ON return_orders_v2(source)`);
   returnTableReady = true;
 }
 
@@ -915,8 +923,10 @@ async function ensureReturnTable() {
  */
 export async function syncReturnOrders(opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const h = headers();
-  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const store = opt.store ?? "z1";
+  if (store !== "z1" && store !== "z2") return { error: `store ต้องเป็น z1 หรือ z2 (ได้มา "${String(store).slice(0, 20)}")` };
+  const h = store === "z1" ? headers() : storeCreds("z2");
+  if (!h) return { skip: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   await ensureReturnTable();
 
   const per = 200;
@@ -962,7 +972,7 @@ export async function syncReturnOrders(opt = {}) {
   /* อ่านของเดิมมาเทียบก่อนเขียน — การอ่านถูกกว่าการเขียนมากบน D1 */
   /* 🔒 อ่านของเดิมไม่สำเร็จ ⇒ throw (ไม่ถือว่ากระจกว่าง) — เขียนซ้ำทั้งหมดไม่เสียข้อมูล แต่กินโควตาและชนเพดานเวลา */
   const prevRows = await coreQuery(
-    `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2`
+    `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2 WHERE source = ${esc(store)}`
   );
   const prev = new Map(prevRows.map((r) => [String(r.id), r]));
 
@@ -1005,25 +1015,34 @@ export async function syncReturnOrders(opt = {}) {
   }
   /* ⚡ เขียนทีละ 50 แถวต่อคำสั่ง (15 ก.ย. 2569) — เดิมเขียนทีละแถว await เรียงกัน
       รอบแรกที่ต้องเขียนทั้งกอง (537 แถว) ⇒ **หมดเวลา 502** กลางทาง ชีพจรไม่เคยถูกจด */
-  for (let i = 0; i < changedRows.length; i += 50) {
-    const values = changedRows
+  /* 🔒 กันเขียนทับข้ามร้าน — ท่าเดียวกับใบโอน: id ที่เป็นของอีกร้านไม่เขียน รายงาน collisions · อ่านล้ม = โยน */
+  const clash = new Set();
+  for (let i = 0; i < changedRows.length; i += 100) {
+    const ids = changedRows.slice(i, i + 100).map((r) => esc(r.id)).join(",");
+    const hit = await coreQuery(`SELECT id FROM return_orders_v2 WHERE id IN (${ids}) AND source <> ${esc(store)}`);
+    for (const x of hit) if (x?.id !== undefined && x?.id !== null) clash.add(String(x.id));
+  }
+  const toWrite = changedRows.filter((r) => !clash.has(r.id));
+  for (let i = 0; i < toWrite.length; i += 50) {
+    const values = toWrite
       .slice(i, i + 50)
       .map(
         (row) =>
           `(${esc(row.id)},${esc(row.number)},${esc(row.reference)},${esc(row.customer)},${row.amount},` +
-          `${esc(row.status)},${esc(row.warehouse)},${esc(row.return_date)},${esc(row.paid)},datetime('now'))`
+          `${esc(row.status)},${esc(row.warehouse)},${esc(row.return_date)},${esc(row.paid)},datetime('now'),${esc(store)})`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO return_orders_v2 (id, number, reference, customer, amount, status, warehouse, return_date, paid, updated_at)
+      `INSERT INTO return_orders_v2 (id, number, reference, customer, amount, status, warehouse, return_date, paid, updated_at, source)
        VALUES ${values}
        ON CONFLICT(id) DO UPDATE SET
          number=excluded.number, reference=excluded.reference, customer=excluded.customer, amount=excluded.amount,
          status=excluded.status, warehouse=excluded.warehouse, return_date=excluded.return_date,
-         paid=excluded.paid, updated_at=excluded.updated_at`
+         paid=excluded.paid, updated_at=excluded.updated_at
+       WHERE return_orders_v2.source = excluded.source`
     );
   }
-  const written = changedRows.length;
+  const written = toWrite.length;
 
   const complete = !hitPageCap && pagesFailed === 0 && missingId === 0 && uniq.length >= total;
   /* ชีพจรซิงก์ใบคืน (15 ก.ย. 2569) — จอยอดขายหักคืนจากตารางนี้ ต้องรู้ว่าสดแค่ไหน
@@ -1032,19 +1051,23 @@ export async function syncReturnOrders(opt = {}) {
       ⚠️ จดไม่สำเร็จ = กลืนแบบตั้งใจ (ท่าเดียวกับ sync_orders) ซิงก์ห้ามล้มเพราะชีพจร */
   try {
     await coreQuery(
-      `INSERT INTO core_meta (k,v,at) VALUES ('sync_returns', ?, datetime('now'))
+      `INSERT INTO core_meta (k,v,at) VALUES (?, ?, datetime('now'))
        ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`,
-      [complete ? "complete" : "incomplete"]
+      // ชีพจรแยกร้าน — z1 ใช้คีย์เดิม (จอยอดขายอ่านอยู่) · z2 คีย์ใหม่ ไม่ทับกัน
+      [store === "z1" ? "sync_returns" : "sync_returns_z2", complete ? "complete" : "incomplete"]
     );
   } catch {
     // ไม่ทำอะไร — ดูคำอธิบายข้างบน
   }
   return {
     ok: true,
+    store,
     zortTotal: total,
     fetched: uniq.length,
     written,
     skipped,
+    collisions: clash.size, // > 0 = id ชนกับอีกร้าน ไม่ได้เขียน
+    collisionIds: [...clash].slice(0, 20),
     /* 🔴 ทั้งสองธงนี้ห้ามกลืน — ชนเพดาน/หน้าล้ม = "ยังไม่ครบ" ไม่ใช่ "ครบแล้ว" */
     hitPageCap,
     pagesFailed,
@@ -1059,23 +1082,24 @@ export async function syncReturnOrders(opt = {}) {
     ⚠️ ผลค้นมาจากกระจก ไม่ใช่ ZORT สด ⇒ ส่ง source + ชีพจรซิงก์ (syncedAtUtc/syncComplete) ให้จอเขียนบอก
     🔒 อ่านกระจกไม่ได้ ⇒ error ห้ามคืน rows:[] (ไม่งั้นเหมือน "ค้นแล้วไม่เจอ")
     🔒 จอใช้ `applied.q` ตัดสินว่าไฟล์กรองแล้วจริงไหม — ห้ามเชื่อแค่ว่าตัวเองส่ง q ไป */
-async function searchReturnOrdersMirror(limit, page, needle) {
+async function searchReturnOrdersMirror(limit, page, needle, store = "z1") {
   const applied = { q: needle, source: "mirror" };
   if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   const p = Math.max(1, Math.min(50, num(page) || 1));
   /* 🔴 ห้าม LIKE '%คำค้น%' — D1 จำกัดรูปแบบ LIKE 50 ไบต์ ⇒ ชื่อไทย ≥17 ตัวทำคำขอล้ม
       (รุ่นแรก 8d4b031 ใช้ LIKE+ESCAPE · gucut2 ยิงจับได้ 15 ก.ย. 2569) ⇒ ดู sql-contains.mjs */
-  const where = `${contains("number")} OR ${contains("reference")} OR ${contains("customer")}`;
+  // วงเล็บต้องครอบ OR ก่อนต่อ AND source ไม่งั้นร้านกรองแค่ช่องสุดท้าย
+  const where = `(${contains("number")} OR ${contains("reference")} OR ${contains("customer")}) AND source = ?`;
   let total;
   let rows;
   try {
-    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [needle, needle, needle]);
+    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [needle, needle, needle, store]);
     total = num(cnt?.c);
     rows = await coreQuery(
       `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2
        WHERE ${where} ORDER BY return_date DESC, id DESC LIMIT ${n} OFFSET ${(p - 1) * n}`,
-      [needle, needle, needle]
+      [needle, needle, needle, store]
     );
   } catch {
     return { error: "ค้นใบคืนในกระจกไม่ได้", applied };
@@ -1083,7 +1107,7 @@ async function searchReturnOrdersMirror(limit, page, needle) {
   // ชีพจรอ่านไม่ได้ = ไม่รู้ (null) ไม่ใช่ "ครบ"
   let meta = null;
   try {
-    [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = 'sync_returns'`);
+    [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = '${store === "z2" ? "sync_returns_z2" : "sync_returns"}'`);
   } catch {
     meta = null;
   }
@@ -1093,6 +1117,7 @@ async function searchReturnOrdersMirror(limit, page, needle) {
     pages: Math.max(1, Math.ceil(total / n)),
     live: false,
     source: "mirror",
+    store,
     applied,
     syncedAtUtc: meta?.at ?? null,
     syncComplete: meta ? meta.v === "complete" : null,
@@ -1110,11 +1135,11 @@ async function searchReturnOrdersMirror(limit, page, needle) {
   };
 }
 
-export async function listReturnOrders(limit = 50, page = 1, q = "") {
+export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1") {
   const needle = String(q ?? "").trim().slice(0, 60);
-  if (needle) return searchReturnOrdersMirror(limit, page, needle);
-  const h = headers();
-  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  if (needle) return searchReturnOrdersMirror(limit, page, needle, store);
+  const h = store === "z2" ? storeCreds("z2") : headers();
+  if (!h) return { error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   /* 🔴 **ต้องส่ง page ต่อให้ ZORT** (แก้ 14 ก.ย. 2569 · งานกระดาน t_mtzx0wp4)
       เดิมส่งแค่ limit ⇒ ได้ 200 ใบล่าสุดจาก 688 เสมอ · ใครไล่ offset=200,400… ได้ชุดเดิมซ้ำทุกหน้า
@@ -1134,6 +1159,7 @@ export async function listReturnOrders(limit = 50, page = 1, q = "") {
     page: p,
     pages: Math.max(1, Math.ceil(num(data?.count) / n)),
     live: true,
+    store,
     applied: { q: null, source: "zort" },
     rows: list.map((r) => ({
       /* 🔴 **ต้องส่ง `id` ออกไปด้วยเสมอ** (เพิ่ม 9 ก.ย. 2569 · ฝั่งจอจับได้ก่อน push)
