@@ -23,6 +23,9 @@ const json = (o, s = 200) =>
     headers: { "content-type": "application/json", "cache-control": "no-store" },
   });
 
+const storageError = (e, fallback = 500) =>
+  json({ error: String(e?.message || e) }, e?.status === 503 ? 503 : fallback);
+
 // ---------- กันเดา PIN ----------
 const MAX_TRIES = 8;                  // ผิดเกินนี้ต่อ IP
 const WINDOW_MS = 10 * 60 * 1000;     // ในช่วงเวลานี้ → พักไว้
@@ -92,7 +95,12 @@ export default async function handler(req, context) {
   // ค่าตั้งค่าที่หน้าพนักงานต้องรู้ก่อนกด — เปิดโล่งได้ ไม่มีอะไรเป็นความลับ
   // (ต้องรู้ล่วงหน้าว่าจะถ่ายรูปไหม เพื่อขอสิทธิ์กล้องก่อนผู้ใช้กดปุ่ม)
   if (req.method === "GET" && url.searchParams.get("public") === "1") {
-    const cfg = await readCfg();
+    let cfg;
+    try {
+      cfg = await readCfg();
+    } catch (e) {
+      return storageError(e);
+    }
     // ⚠️ ส่งแค่ "ต้องขอสิทธิ์อะไรบ้าง" ไม่ส่งพิกัดร้านหรือรัศมีออกไป
     //    ถ้าบอกพิกัดกับรัศมี พนักงานปลอมตำแหน่งให้อยู่ในวงได้พอดีเป๊ะ
     return json({ photo: !!cfg.photo, gps: !!(cfg.gps && cfg.lat && cfg.lng), workStart: cfg.start });
@@ -112,7 +120,13 @@ export default async function handler(req, context) {
     if (await tooMany(ip)) {
       return json({ error: "ใส่ PIN ผิดหลายครั้งเกินไป รอสัก 10 นาทีแล้วลองใหม่" }, 429);
     }
-    const emp = await findByPin(body?.pin);
+    let emp;
+    try {
+      emp = await findByPin(body?.pin);
+    } catch (e) {
+      // อ่านรายชื่อไม่ได้ต้องไม่กล่าวหาว่า PIN ผิด และต้องไม่เพิ่มตัวนับเดาผิด
+      return storageError(e);
+    }
     if (!emp) {
       await noteFail(ip);
       // ⚠️ ห้ามบอกว่า "ไม่มี PIN นี้" หรือ "ถูกพักงาน" แยกกัน — จะกลายเป็นเครื่องมือไล่เดา
@@ -130,7 +144,7 @@ export default async function handler(req, context) {
           : null,
       });
     } catch (e) {
-      return json({ error: String(e?.message || e) }, e?.status === 503 ? 503 : 500);
+      return storageError(e);
     }
 
     // แจ้งเตือนเข้ากลุ่มร้านเมื่อมีคนมาสายหรือกดจากนอกร้าน
@@ -178,8 +192,12 @@ export default async function handler(req, context) {
     const month = /^\d{4}-\d{2}$/.test(url.searchParams.get("month") || "")
       ? url.searchParams.get("month")
       : today.slice(0, 7);
-    const [emp, cfg, days] = await Promise.all([readEmp(), readCfg(), monthTable(month)]);
-    return json({ month, today, emp: publicEmp(emp), cfg, days });
+    try {
+      const [emp, cfg, days] = await Promise.all([readEmp(), readCfg(), monthTable(month)]);
+      return json({ month, today, emp: publicEmp(emp), cfg, days });
+    } catch (e) {
+      return storageError(e);
+    }
   }
 
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -190,7 +208,7 @@ export default async function handler(req, context) {
     if (action === "edit") { await editDay(body); return json({ ok: true }); }
   } catch (e) {
     // ข้อความจาก saveEmp/editDay เขียนเป็นไทยไว้แล้ว ส่งกลับให้หน้าเว็บโชว์ได้เลย
-    return json({ error: String(e?.message || e) }, 400);
+    return storageError(e, 400);
   }
   return json({ error: "ไม่รู้จักคำสั่งนี้" }, 400);
 }

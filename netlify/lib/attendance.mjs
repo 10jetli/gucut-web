@@ -17,6 +17,8 @@ const CFG_KEY = "cfg";
 const EMP_KEY = "emp";
 const DEFAULT_CFG = { start: "08:30", end: "17:30", photo: false, gps: false, lat: 0, lng: 0, radius: 200 };
 
+const unavailable = (message) => Object.assign(new Error(message), { status: 503 });
+
 const TZ_OFFSET_MS = 7 * 60 * 60 * 1000;   // ไทย = UTC+7 (ไม่มีปรับเวลาตามฤดู)
 
 /** วันที่แบบไทย "YYYY-MM-DD" จากเวลา epoch */
@@ -50,7 +52,8 @@ export async function readCfg() {
     const v = await store().get(CFG_KEY, { type: "json" });
     return { ...DEFAULT_CFG, ...(v || {}) };
   } catch {
-    return { ...DEFAULT_CFG };
+    // อ่านไม่ได้ไม่เท่ากับยังไม่เคยตั้งค่า: ค่า default อาจปิด GPS/รูปและเปลี่ยนเวลาเข้างาน
+    throw unavailable("อ่านตั้งค่าลงเวลาไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
   }
 }
 
@@ -81,7 +84,9 @@ export async function readEmp() {
     const v = await store().get(EMP_KEY, { type: "json" });
     return Array.isArray(v) ? v : [];
   } catch {
-    return [];
+    // อ่านไม่ได้ไม่เท่ากับไม่มีพนักงาน: saveEmp จะเขียนก้อนใหม่ทับรายชื่อเดิมได้
+    // และ findByPin จะกล่าวหาว่า PIN ผิดทั้งที่ระบบเก็บข้อมูลอ่านไม่ได้
+    throw unavailable("อ่านรายชื่อพนักงานไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
   }
 }
 
@@ -188,7 +193,7 @@ export async function punch(emp, { peek = false, photo = null, loc = null } = {}
   /* 🔴 B05 (รายงานล่าบั๊ก codex 14 ก.ย. · แก้ 15 ก.ย. 2569 ใบ t_mu205dfl) — **อ่านเวลาวันนี้ไม่สำเร็จ ห้ามเดาว่ายังไม่ลงเวลา**
       เดิม .catch(() => null) ⇒ rec = null ⇒ !rec?.in เป็นจริง ⇒ **เขียนเข้างานใหม่ out:null ทับของจริง**
       ⇒ เวลาเข้าตอนเช้าหายถาวร และคิดสายจากเวลากดออกตอนเย็น · peek ก็ต้องโยน ไม่งั้นจอบอกว่ายังไม่ลงเวลา
-      null (ไม่มีคีย์) = ยังไม่ลงเวลาจริง ⇒ ทำงานตามปกติ · ⚠️ readCfg/readEmp/editDay ในไฟล์นี้ยังกลืนอยู่ = B17/B27 ใบแยก */
+      null (ไม่มีคีย์) = ยังไม่ลงเวลาจริง ⇒ ทำงานตามปกติ · B17/B27 แก้ทางอ่าน cfg/emp/month และ delete แยกในใบ t_mu20nia9 */
   let rec;
   try {
     rec = (await s.get(key, { type: "json" })) || null;
@@ -246,7 +251,11 @@ export async function editDay({ date, id, in: tIn, out: tOut }) {
   const key = dayKey(date, id);
 
   if (!String(tIn || "").trim()) {
-    await s.delete(key).catch(() => {});
+    try {
+      await s.delete(key);
+    } catch {
+      throw unavailable("ลบเวลาลงงานไม่สำเร็จ — ข้อมูลเดิมยังอยู่ กรุณาลองใหม่อีกครั้ง");
+    }
     return true;
   }
 
@@ -275,16 +284,22 @@ export async function editDay({ date, id, in: tIn, out: tOut }) {
 export async function monthTable(month) {
   const s = store();
   const days = {};
+  let blobs;
   try {
-    const { blobs } = await s.list({ prefix: `d/${month}` });
-    for (const b of blobs) {
-      const [, date, id] = b.key.split("/");
-      const rec = await s.get(b.key, { type: "json" }).catch(() => null);
-      if (!rec) continue;
-      (days[date] ||= {})[id] = rec;
-    }
+    ({ blobs } = await s.list({ prefix: `d/${month}` }));
   } catch {
-    /* ยังไม่มีข้อมูลเดือนนี้ */
+    throw unavailable("อ่านรายการลงเวลาประจำเดือนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+  }
+  for (const b of blobs || []) {
+    const [, date, id] = b.key.split("/");
+    let rec;
+    try {
+      rec = await s.get(b.key, { type: "json" });
+    } catch {
+      throw unavailable("อ่านรายละเอียดลงเวลาประจำเดือนไม่สำเร็จ กรุณาลองใหม่อีกครั้ง");
+    }
+    if (!rec) continue;
+    (days[date] ||= {})[id] = rec;
   }
   return days;
 }
