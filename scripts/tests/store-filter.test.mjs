@@ -90,7 +90,8 @@ test('core.mjs ไม่เหลือจุดที่ปัดค่าร�
   const multi = src.match(/\.parseStore\(url\.searchParams\.get\("store"\)\)/g) || [];
   // +2 เส้นใบโอน 15 ก.ย. 2569 (ใบ t_mu2pfve9) — ใช้ตัวแปร st ไม่ใช่ storeParsed จึงไม่เพิ่มยอดบรรทัดล่าง
   // +2 เส้นใบคืน 15 ก.ย. 2569 (syncreturns · list=returnorders)
-  assert.equal(single.length, 7, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders');
+  // +3 ใบซื้อ/ใบเสนอราคา 15 ก.ย. 2569 (syncpurchases · ด่าน STORE_LISTS · ?purchase=)
+  assert.equal(single.length, 10, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders · syncpurchases · STORE_LISTS · purchase');
   assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
   assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
 });
@@ -110,20 +111,22 @@ test('parseZ1OnlyStore: ว่าง/z1 = z1 · z2/all/ค่าแปลก = e
   assert.match(Z1_ONLY_SCOPE.storeScope, /z1/);
 });
 
-test('core.mjs สี่เส้นที่มีแค่ z1: ด่านอยู่ก่อนทุกเส้น และทุกคำตอบติดขอบเขต', () => {
+test('core.mjs ไม่เหลือเส้นที่ตอบแค่ z1 — ใบซื้อ/รายการสินค้าในใบซื้อ/ใบเสนอราคา ผ่านด่านร้านตัวเดียว และทุกคำตอบติดขอบเขต', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
-  // transfers ออกจากรายชื่อ 15 ก.ย. 2569 (กระจกมีคอลัมน์ร้านแล้ว · ดู transfers-store.test.mjs)
-  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations"];');
-  assert.ok(guard > 0, 'ต้องมีรายชื่อสี่เส้น');
-  const gblock = src.slice(guard, guard + 800);
-  assert.match(gblock, /if \(z1\.error\) return json\(\{ error: z1\.error, \.\.\.Z1_ONLY_SCOPE \}, 400\);/);
+  assert.equal(src.includes('Z1_ONLY_LISTS'), false, 'ด่าน z1 อย่างเดียวถูกถอดแล้ว — ทุกชนิดแยกร้านได้');
+  const guard = src.indexOf('const STORE_LISTS = ["purchases", "purchaseitems", "quotations"];');
+  assert.ok(guard > 0, 'ต้องมีด่านร้านของสามเส้น');
+  const gblock = src.slice(guard, guard + 900);
+  assert.match(gblock, /parseSingleStore\(url\.searchParams\.get\("store"\)\)/);
+  assert.match(gblock, /if \(st\.error\) return json\(\{ error: st\.error \}, 400\);/);
   assert.match(gblock, /url\.searchParams\.has\("source"\) && !url\.searchParams\.has\("store"\)/);
   for (const k of ['purchases', 'purchaseitems', 'quotations']) {
     const at = src.indexOf(`if (url.searchParams.get("list") === "${k}") {`);
     assert.ok(at > guard, `${k} ต้องอยู่หลังด่าน`);
-    // เนื้อของเส้นนี้ = ตั้งแต่หัวเส้นถึงหัวเส้นถัดไป (ไม่ใช้หน้าต่างตายตัว — คอมเมนต์ยาวจะดันโค้ดหลุดหน้าต่าง)
     const next = src.indexOf('if (url.searchParams.get(', at + 10);
     const body = src.slice(at, next > at ? next : at + 4000);
-    assert.match(body, /\.\.\.z1Scope/, `${k} ต้องติดขอบเขตในคำตอบ`);
+    assert.match(body, /\.\.\.listStore/, `${k} ต้องติดขอบเขตในคำตอบ`);
+    assert.match(body, /listStore\.store/, `${k} ต้องส่งร้านต่อให้ตัวอ่าน`);
+    assert.match(body, /okJson\(/, `${k} ต้องใช้ okJson (ตัวอ่านตอบ error ได้)`);
   }
 });

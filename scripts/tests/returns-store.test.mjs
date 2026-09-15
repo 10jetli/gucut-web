@@ -67,7 +67,7 @@ test('ยอดหักคืนใน core-orders จับคู่ร้า�
   assert.match(o, /orders\.number = return_orders_v2\.reference AND orders\.source = return_orders_v2\.source AND \$\{w\.sql\}/);
   assert.match(o, /NOT EXISTS \(SELECT 1 FROM orders o WHERE o\.number = r\.reference AND o\.source = r\.source\)/);
   const c = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
-  assert.match(c, /const Z1_ONLY_LISTS = \["purchases", "purchaseitems", "quotations"\];/);
+  assert.doesNotMatch(c, /Z1_ONLY_LISTS = \[[^\]]*"returnorders"/);
   const at = c.indexOf('if (url.searchParams.get("list") === "returnorders") {');
   const body = c.slice(at, c.indexOf('if (url.searchParams.get("list") === "stockcard")', at));
   assert.match(body, /parseSingleStore\(url\.searchParams\.get\("store"\)\)/);

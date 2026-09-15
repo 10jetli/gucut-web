@@ -1774,9 +1774,9 @@ export async function zortDocCoverage() {
       coreQuery(
         `SELECT DISTINCT o.number AS number FROM orders o
          JOIN order_items i ON i.order_id = o.id WHERE o.number IN (${ph})`, c),
-      coreQuery(`SELECT number FROM purchase_orders WHERE number IN (${ph})`, c),
+      coreQuery(`SELECT number FROM purchase_orders_v2 WHERE source = 'z1' AND number IN (${ph})`, c),
       coreQuery(
-        `SELECT DISTINCT number FROM purchase_order_items WHERE number IN (${ph})`, c),
+        `SELECT DISTINCT number FROM purchase_order_items_v2 WHERE source = 'z1' AND number IN (${ph})`, c),
     ]);
     for (const r of o ?? []) inOrders.add(String(r.number));
     for (const r of oi ?? []) withOrderItems.add(String(r.number));

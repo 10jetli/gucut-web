@@ -1024,29 +1024,35 @@ async function route(req, context) {
     }
     // ── ใบสั่งซื้อ (PO) จาก ZORT — คนละชุดกับ "ระบบสั่งของโรงงาน" ที่หลังร้านมีอยู่ ──
     if (url.searchParams.get("syncpurchases")) {
-      return json({ ok: true, purchases: await syncPurchases({ repairItems: url.searchParams.get("repairitems") }) });
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      return json({ ok: true, purchases: await syncPurchases({ repairItems: url.searchParams.get("repairitems"), store: st.source }) });
     }
-    /* 🔴 สี่เส้นนี้มีแค่ร้าน z1 (ดู parseZ1OnlyStore) — ด่านเดียวก่อนถึงทั้งสี่ · ติดขอบเขตในคำตอบทุกเส้น */
-    // purchaseitems เพิ่ม 15 ก.ย. 2569 — ตาราง purchase_order_items เขียนโดย syncPurchases ตัวเดียวกัน (รหัสร้าน z1 ชุดเดียว) · ฝั่งจอชี้ว่าเส้นนี้ไม่ส่ง storeScope
-    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations"];
-    let z1Scope = null;
-    if (Z1_ONLY_LISTS.includes(url.searchParams.get("list"))) {
+    /* 🏷️ ใบซื้อ · รายการสินค้าในใบซื้อ · ใบเสนอราคา แยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9)
+       เดิมมีด่าน "เส้นที่มีแค่ร้าน z1" ตอบ 400 ถ้าขอ z2 — ถอดแล้วเพราะทุกชนิดแยกร้านได้ครบ (ใบโอน 7351c3c · ใบคืน e546240 · ชิ้นนี้)
+       ขาเข้าจากจอ: store= ว่าง ⇒ z1 (จอเดิมเลขเท่าเดิม) · z1 | z2 · all/ค่าอื่น ⇒ 400 · source= เฉย ๆ ⇒ 400
+       ขาออก: store · storeDefaulted · storeScope */
+    const STORE_LISTS = ["purchases", "purchaseitems", "quotations"];
+    let listStore = null;
+    if (STORE_LISTS.includes(url.searchParams.get("list"))) {
       if (url.searchParams.has("source") && !url.searchParams.has("store"))
         return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
-      const { parseZ1OnlyStore, Z1_ONLY_SCOPE } = await import("../lib/core-orders.mjs");
-      const z1 = parseZ1OnlyStore(url.searchParams.get("store"));
-      if (z1.error) return json({ error: z1.error, ...Z1_ONLY_SCOPE }, 400);
-      z1Scope = Z1_ONLY_SCOPE;
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      listStore = { store: st.source, storeDefaulted: st.defaulted, storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}` };
     }
     if (url.searchParams.get("list") === "purchases") {
-      return json({
-        ...z1Scope,
-        ok: true,
+      // okJson ไม่ใช่ json({ok:true,…}) — ตัวอ่านตอบ error ได้ (ยังไม่ซิงก์ตารางใหม่) ต้องไม่ติด ok:true
+      return okJson({
         ...(await listPurchases({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          store: listStore.store,
         })),
+        ...listStore,
       });
     }
     // เครดิต Netlify — อะไรกินเยอะสุด (เจ้าของร้านสั่ง 3 ก.ย. 2569)
@@ -1071,17 +1077,20 @@ async function route(req, context) {
        ⚠️ คนละอันกับ list=purchaseitems ซึ่งเป็นการรวมยอดรายสินค้าทั้งคลัง */
     if (url.searchParams.get("purchase")) {
       const { getPurchaseDetail } = await import("../lib/core-purchases.mjs");
-      return okJson(await getPurchaseDetail(url.searchParams.get("purchase")));
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      return okJson(await getPurchaseDetail(url.searchParams.get("purchase"), st.source));
     }
     if (url.searchParams.get("list") === "purchaseitems") {
-      return json({
-        ...z1Scope,
-        ok: true,
+      return okJson({
         ...(await listPurchaseItems({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          store: listStore.store,
         })),
+        ...listStore,
       });
     }
     // ทะเบียนการเชื่อมต่อ — ยิงของจริงทุกเจ้า ไม่มีค่าเขียนตายตัว
@@ -1132,7 +1141,7 @@ async function route(req, context) {
     }
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
-      return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"))), ...z1Scope });
+      return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"), listStore.store)), ...listStore });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
@@ -1157,7 +1166,7 @@ async function route(req, context) {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
       /* q= (15 ก.ย. 2569) มีคำค้น ⇒ ค้นจากกระจก return_orders_v2 · ไม่มี ⇒ ดึงสด ZORT เหมือนเดิม
          ขาออกมี applied {q, source} — จอเช็คตัวนี้ก่อนเขียนว่าไฟล์กรองแล้ว */
-      /* 🏷️ แยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจาก Z1_ONLY_LISTS · store ว่าง ⇒ z1 · all/ค่าอื่น 400 */
+      /* 🏷️ แยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจากด่านเส้นที่มีแค่ร้าน z1 · store ว่าง ⇒ z1 · all/ค่าอื่น 400 */
       if (url.searchParams.has("source") && !url.searchParams.has("store"))
         return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
       const { parseSingleStore } = await import("../lib/core-orders.mjs");
@@ -1213,7 +1222,7 @@ async function route(req, context) {
     if (url.searchParams.get("resettransfers")) {
       return json({ ok: true, reset: await resetTransfers() });
     }
-    /* 🏷️ ใบโอนแยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจาก Z1_ONLY_LISTS
+    /* 🏷️ ใบโอนแยกร้านได้แล้ว (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ออกจากด่านเส้นที่มีแค่ร้าน z1
        ขาเข้าจากจอ: store= ว่าง ⇒ z1 (จอเดิมได้เลขเท่าเดิม) · z1 | z2 · all/ค่าอื่น ⇒ 400 (ตอบทีละร้าน) · source= เฉย ๆ ⇒ 400
        ขาออก: store · storeDefaulted · storeScope (StoreScopeLine ของจออ่านช่องนี้) */
     if (url.searchParams.get("synctransfers")) {

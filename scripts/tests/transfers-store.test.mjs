@@ -74,9 +74,7 @@ test('จอรายการ — ทุกคำสั่งกรองร้
 test('core.mjs — transfers ออกจาก Z1_ONLY · list/sync ใช้ parseSingleStore · คำตอบมี storeScope', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
   // ตรึงแค่ว่า transfers ไม่อยู่ในรายชื่อ — ชนิดอื่นจะทยอยออกจากรายชื่อตามมา ห้ามตรึงทั้งบรรทัด
-  const z1Line = /const Z1_ONLY_LISTS = \[[^\]]*\];/.exec(src)?.[0];
-  assert.ok(z1Line, 'ต้องมีรายชื่อ Z1_ONLY_LISTS');
-  assert.doesNotMatch(z1Line, /"transfers"/);
+  assert.doesNotMatch(src, /Z1_ONLY_LISTS = \[[^\]]*"transfers"/);
   const at = src.indexOf('if (url.searchParams.get("list") === "transfers") {');
   const body = src.slice(at, src.indexOf('if (url.searchParams.get("list") === "warehouses")', at));
   assert.match(body, /parseSingleStore\(url\.searchParams\.get\("store"\)\)/);

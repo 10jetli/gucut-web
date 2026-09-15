@@ -35,5 +35,5 @@ test('เส้น list=quotations ใน core.mjs ส่ง page ต่อใ�
   assert.ok(start > 0, 'หาเส้น quotations ไม่เจอ');
   const next = src.indexOf('url.searchParams.get("list") ===', start + 10);
   const block = src.slice(start, next > 0 ? next : start + 800);
-  assert.match(block, /listQuotations\(url\.searchParams\.get\("limit"\),\s*url\.searchParams\.get\("page"\)\)/);
+  assert.match(block, /listQuotations\(url\.searchParams\.get\("limit"\),\s*url\.searchParams\.get\("page"\),\s*listStore\.store\)/);
 });

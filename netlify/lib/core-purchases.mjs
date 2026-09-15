@@ -41,14 +41,47 @@ async function ensureTables() {
        qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0,
        PRIMARY KEY (number, line))`
   );
+  /* 🏷️ ตารางใบซื้อรุ่นแยกร้าน (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ตัวอ่าน/ตัวเขียนย้ายมาใช้ _v2 ทั้งหมด
+     ทำไมต้องตารางใหม่ ไม่ ALTER: ตารางเดิมกุญแจ = number · เลขที่ใบซ้ำได้ **แม้ร้านเดียว** (zortFindPurchaseOrder เจอจริง)
+     และร้าน z2 (64 ใบ) จะเขียนทับ z1 · SQLite เปลี่ยนกุญแจตารางเดิมไม่ได้
+     ⇒ กุญแจ = id ของ ZORT (พิสูจน์แล้วว่าไม่ชนข้ามร้าน: ใบโอน 27,517 · ใบคืน 928 ชน 0) + คอลัมน์ source
+     ⚠️ ตารางเดิมไม่มี id ⇒ ย้ายแถวข้ามไม่ได้ ต้องซิงก์ใหม่จาก ZORT · ตัวอ่านเช็คชีพจร ถ้ายังไม่เคยซิงก์ตอบ error ไม่ตอบ 0
+     ⚠️ ตารางเดิม (purchase_orders · purchase_order_items) ไม่มีใครเขียนแล้ว เก็บไว้เป็นหลักฐาน ห้ามอ่าน */
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS purchase_orders_v2 (
+       id TEXT PRIMARY KEY, source TEXT NOT NULL, number TEXT, vendor TEXT, po_date TEXT, status TEXT,
+       amount REAL NOT NULL DEFAULT 0, payment_status TEXT, warehouse TEXT, note TEXT, updated_at TEXT)`
+  );
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_po2_src_date ON purchase_orders_v2(source, po_date)`);
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_po2_number ON purchase_orders_v2(number)`);
+  await coreQuery(
+    `CREATE TABLE IF NOT EXISTS purchase_order_items_v2 (
+       po_id TEXT NOT NULL, line INTEGER NOT NULL, source TEXT NOT NULL, number TEXT, sku TEXT, name TEXT,
+       qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0, PRIMARY KEY (po_id, line))`
+  );
+  await coreQuery(`CREATE INDEX IF NOT EXISTS idx_poi2_sku ON purchase_order_items_v2(sku)`);
   tablesReady = true;
+}
+
+/** ร้านนี้เคยซิงก์ใบซื้อเข้าตาราง _v2 หรือยัง — ยังไม่เคย ⇒ ตัวอ่านตอบ error (ห้ามตอบ 0 ใบ)
+ *  อ่านชีพจรไม่ได้ ⇒ error คนละข้อความ (ไม่รู้ ≠ ยังไม่ซิงก์) */
+async function purchasesSyncedError(store) {
+  let row;
+  try {
+    [row] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [`sync_purchases_${store}`]);
+  } catch {
+    return `อ่านชีพจรซิงก์ใบซื้อของร้าน ${store} ไม่ได้ — ยังไม่รู้ว่ามีใบซื้อหรือไม่`;
+  }
+  return row ? null : `ยังไม่ได้ซิงก์ใบซื้อของร้าน ${store} เข้าตารางใหม่ — สั่ง ?syncpurchases=1&store=${store} ก่อน (ไม่ได้แปลว่าไม่มีใบซื้อ)`;
 }
 
 /** ดึงใบสั่งซื้อทั้งหมดจาก ZORT มาเก็บ — เขียนเฉพาะใบที่เปลี่ยนจริง (โควตา D1) */
 export async function syncPurchases(opt = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const h = headers();
-  if (!h) return { skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const store = opt.store ?? "z1";
+  if (store !== "z1" && store !== "z2") return { error: `store ต้องเป็น z1 หรือ z2 (ได้มา "${String(store).slice(0, 20)}")` };
+  const h = store === "z1" ? headers() : storeCreds("z2");
+  if (!h) return { skip: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   await ensureTables();
 
   const all = [];
@@ -62,10 +95,11 @@ export async function syncPurchases(opt = {}) {
     all.push(...list);
     if (list.length < 100) break;
   }
-  if (!all.length) return { error: "ดึงใบสั่งซื้อจาก ZORT ไม่ได้" };
+  if (!all.length) return { store, error: "ดึงใบสั่งซื้อจาก ZORT ไม่ได้" };
 
   const rows = all
     .map((p) => ({
+      id: String(p?.id ?? "").trim().slice(0, 60),
       number: String(p?.number ?? "").trim().slice(0, 60),
       vendor: String(p?.customername ?? "").trim().slice(0, 160),
       date: String(p?.purchaseorderdate ?? "").slice(0, 10),
@@ -77,18 +111,22 @@ export async function syncPurchases(opt = {}) {
       items: Array.isArray(p?.list) ? p.list : [],
     }))
     .filter((r) => r.number);
+  // ไม่มี id = ไม่มีกุญแจ ⇒ ไม่เขียน และนับบอก (ท่าเดียวกับใบคืน)
+  const missingId = rows.filter((r) => !r.id).length;
+  const withId = rows.filter((r) => r.id);
 
   const prev = new Map(
     (
       await coreQuery(
-        `SELECT number, vendor, po_date, status, amount, payment_status, warehouse, note, note FROM purchase_orders`
+        `SELECT id, number, vendor, po_date, status, amount, payment_status, warehouse, note FROM purchase_orders_v2 WHERE source = ${esc(store)}`
       )
-    ).map((r) => [r.number, r])
+    ).map((r) => [String(r.id), r])
   );
-  const changed = rows.filter((r) => {
-    const p = prev.get(r.number);
+  const changed = withId.filter((r) => {
+    const p = prev.get(r.id);
     return (
       !p ||
+      String(p.number ?? "") !== r.number ||
       String(p.vendor ?? "") !== r.vendor ||
       String(p.po_date ?? "") !== r.date ||
       String(p.status ?? "") !== r.status ||
@@ -101,21 +139,30 @@ export async function syncPurchases(opt = {}) {
     );
   });
 
-  for (let i = 0; i < changed.length; i += 40) {
-    const values = changed
+  /* 🔒 กันเขียนทับข้ามร้าน — ท่าเดียวกับใบโอน/ใบคืน · อ่านล้ม = โยน */
+  const clash = new Set();
+  for (let i = 0; i < changed.length; i += 100) {
+    const ids = changed.slice(i, i + 100).map((r) => esc(r.id)).join(",");
+    const hit = await coreQuery(`SELECT id FROM purchase_orders_v2 WHERE id IN (${ids}) AND source <> ${esc(store)}`);
+    for (const x of hit) if (x?.id !== undefined && x?.id !== null) clash.add(String(x.id));
+  }
+  const toWrite = changed.filter((r) => !clash.has(r.id));
+  for (let i = 0; i < toWrite.length; i += 40) {
+    const values = toWrite
       .slice(i, i + 40)
       .map(
         (r) =>
-          `(${esc(r.number)},${esc(r.vendor)},${esc(r.date)},${esc(r.status)},${r.amount},` +
+          `(${esc(r.id)},${esc(store)},${esc(r.number)},${esc(r.vendor)},${esc(r.date)},${esc(r.status)},${r.amount},` +
           `${esc(r.pay)},${esc(r.wh)},${esc(r.note)},datetime('now'))`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO purchase_orders (number,vendor,po_date,status,amount,payment_status,warehouse,note,updated_at)
+      `INSERT INTO purchase_orders_v2 (id,source,number,vendor,po_date,status,amount,payment_status,warehouse,note,updated_at)
        VALUES ${values}
-       ON CONFLICT(number) DO UPDATE SET vendor=excluded.vendor, po_date=excluded.po_date,
+       ON CONFLICT(id) DO UPDATE SET number=excluded.number, vendor=excluded.vendor, po_date=excluded.po_date,
          status=excluded.status, amount=excluded.amount, payment_status=excluded.payment_status,
-         warehouse=excluded.warehouse, note=excluded.note, updated_at=excluded.updated_at`
+         warehouse=excluded.warehouse, note=excluded.note, updated_at=excluded.updated_at
+       WHERE purchase_orders_v2.source = excluded.source`
     );
   }
 
@@ -140,44 +187,62 @@ export async function syncPurchases(opt = {}) {
          (ใบที่เนื้อหาเปลี่ยนจริงยังถูกเขียนตามปกติ — ไม่ได้หยุดทั้งการซิงก์) */
   let haveLines = null;
   try {
-    const got = await coreQuery(`SELECT DISTINCT number FROM purchase_order_items`);
-    if (Array.isArray(got)) haveLines = new Set(got.map((r) => String(r.number)));
+    const got = await coreQuery(`SELECT DISTINCT po_id FROM purchase_order_items_v2 WHERE source = ${esc(store)}`);
+    if (Array.isArray(got)) haveLines = new Set(got.map((r) => String(r.po_id)));
   } catch {
     haveLines = null; // อ่านไม่ได้จริง ๆ
   }
 
   // repairItems=1 ⇒ เขียนบรรทัดใหม่ทุกใบ (ใช้ตอนแก้การจับคู่ฟิลด์ที่ผิด)
   const linesUnknown = haveLines === null && !opt.repairItems;
-  const needLines = opt.repairItems
-    ? rows.filter((r) => r.items.length)
+  const needLines = (opt.repairItems
+    ? withId.filter((r) => r.items.length)
     : linesUnknown
       ? [] // ไม่รู้ว่าใบไหนมีบรรทัดแล้ว ⇒ ไม่เดา ไม่เขียนทับทั้งระบบ
-      : rows.filter((r) => r.items.length && !haveLines.has(r.number));
-  const todo = [...new Map([...changed, ...needLines].map((r) => [r.number, r])).values()];
+      : withId.filter((r) => r.items.length && !haveLines.has(r.id))
+  ).filter((r) => !clash.has(r.id)); // ใบที่ชนข้ามร้านห้ามแตะบรรทัดของอีกร้าน
+  const todo = [...new Map([...toWrite, ...needLines].map((r) => [r.id, r])).values()];
   let lines = 0;
   for (const r of todo) {
     if (!r.items.length) continue;
-    await coreQuery(`DELETE FROM purchase_order_items WHERE number = ${esc(r.number)}`);
+    await coreQuery(`DELETE FROM purchase_order_items_v2 WHERE po_id = ${esc(r.id)} AND source = ${esc(store)}`);
     const values = r.items
       .slice(0, 200)
       .map(
         (it, i) =>
-          `(${esc(r.number)},${i + 1},${esc(String(it?.sku ?? "").slice(0, 60))},` +
+          `(${esc(r.id)},${i + 1},${esc(store)},${esc(r.number)},${esc(String(it?.sku ?? "").slice(0, 60))},` +
           `${esc(String(it?.name ?? "").slice(0, 160))},${num(it?.number ?? it?.quantity ?? it?.qty)},${num(it?.pricepernumber ?? it?.price)})`
       )
       .join(",");
     if (values) {
       await coreQuery(
-        `INSERT INTO purchase_order_items (number,line,sku,name,qty,price) VALUES ${values}`
+        `INSERT INTO purchase_order_items_v2 (po_id,line,source,number,sku,name,qty,price) VALUES ${values}`
       );
       lines += r.items.length;
     }
   }
 
+  /* ชีพจรแยกร้าน — ตัวอ่านใช้ตัดสินว่า "ยังไม่เคยซิงก์" (ตอบ error) กับ "ซิงก์แล้วมีจริง" ⇒ จดเมื่อดึงสำเร็จเท่านั้น
+     ⚠️ จดไม่สำเร็จ = กลืน (ซิงก์ห้ามล้มเพราะชีพจร) — ผลคือตัวอ่านยังตอบ "ยังไม่ซิงก์" ซึ่งเป็นทางปลอดภัย */
+  const purchasesComplete = missingId === 0 && clash.size === 0;
+  try {
+    await coreQuery(
+      `INSERT INTO core_meta (k,v,at) VALUES (?, ?, datetime('now'))
+       ON CONFLICT(k) DO UPDATE SET v=excluded.v, at=excluded.at`,
+      [`sync_purchases_${store}`, purchasesComplete ? "complete" : "incomplete"]
+    );
+  } catch {
+    // ดูคำอธิบายข้างบน
+  }
   return {
+    store,
     fetched: rows.length,
-    written: changed.length,
-    skipped: rows.length - changed.length,
+    written: toWrite.length,
+    skipped: withId.length - changed.length,
+    missingId, // ใบที่ ZORT ไม่ส่ง id — ไม่ถูกเก็บ
+    collisions: clash.size,
+    collisionIds: [...clash].slice(0, 20),
+    complete: purchasesComplete,
     lines,
     lineRepairs: needLines.length, // ใบเก่าที่ไม่เคยมีบรรทัดแล้วเพิ่งเติมให้
     /* ⚠️ **ต้องบอกออกไปว่ารอบนี้ข้ามงานเติมบรรทัด** ไม่งั้น lineRepairs:0 จะอ่านได้ว่า
@@ -193,24 +258,28 @@ export async function syncPurchases(opt = {}) {
 export async function listPurchases(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureTables();
+  // ร้าน: ผู้เรียกตรวจค่าแล้ว (parseSingleStore) · ไม่ส่งมา = z1
+  const store = o.store === "z2" ? "z2" : "z1";
+  const notSynced = await purchasesSyncedError(store);
+  if (notSynced) return { store, error: notSynced };
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (${containsLit("number", esc(q))} OR ${containsLit("vendor", esc(q))})` : "";
+  const filter = `AND source = ${esc(store)}` + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("vendor", esc(q))})` : "");
 
   const [sum] = await coreQuery(
-    `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS total FROM purchase_orders WHERE 1=1 ${filter}`
+    `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS total FROM purchase_orders_v2 WHERE 1=1 ${filter}`
   );
   // แท็บสถานะแบบ ZORT — **นับข้ามตัวกรองสถานะเสมอ** (กติกาเดียวกับจอรายการขาย)
   const byStatus = await coreQuery(
-    `SELECT status, COUNT(*) AS c FROM purchase_orders WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
+    `SELECT status, COUNT(*) AS c FROM purchase_orders_v2 WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
   );
   const rows = await coreQuery(
-    `SELECT number, vendor, po_date, status, amount, payment_status, warehouse
-     FROM purchase_orders WHERE 1=1 ${filter}
+    `SELECT id, number, vendor, po_date, status, amount, payment_status, warehouse
+     FROM purchase_orders_v2 WHERE 1=1 ${filter}
      ORDER BY po_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
   );
-  return { total: num(sum?.c), amount: num(sum?.total), limit, offset, byStatus, rows };
+  return { store, total: num(sum?.c), amount: num(sum?.total), limit, offset, byStatus, rows };
 }
 
 /** รายชื่อคลังสินค้าจาก ZORT — **คนละอย่างกับ "สาขาที่ขายหน้าร้าน"**
@@ -575,9 +644,10 @@ export async function listTransfers(o = {}) {
 /** ใบเสนอราคา — จอ "รายการขาย → ใบเสนอราคา" ของ ZORT
  *  ⚠️ ร้านมีแค่ 3 ใบ (ไม่ค่อยได้ใช้) — ดึงสดทุกครั้ง ไม่ต้องทำกระจก
  *     ทำกระจกให้ของที่มี 3 แถวคือเพิ่มที่ให้ข้อมูลไม่ตรงกันได้เปล่า ๆ */
-export async function listQuotations(limit = 50, page = 1) {
-  const h = headers();
-  if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
+export async function listQuotations(limit = 50, page = 1, store = "z1") {
+  // ใบเสนอราคาไม่มีกระจก — แยกร้านด้วยรหัส ZORT ของร้านนั้น (15 ก.ย. 2569 · ใบ t_mu2pfve9)
+  const h = store === "z2" ? storeCreds("z2") : headers();
+  if (!h) return { error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   /* 🔴 **ต้องส่ง page ต่อให้ ZORT** (แก้ 15 ก.ย. 2569 · คลาสเดียวกับ returnorders t_mtzx0wp4)
       เดิมส่งแค่ limit ⇒ ได้แค่ limit ใบล่าสุดเสมอ · จอไล่ offset= แล้วได้ก้อนเดิมซ้ำ
@@ -591,6 +661,7 @@ export async function listQuotations(limit = 50, page = 1) {
   const list = Array.isArray(data?.list) ? data.list : null;
   if (!list) return { error: "ดึงใบเสนอราคาจาก ZORT ไม่ได้" };
   return {
+    store,
     total: num(data?.count),
     live: true, // ดึงสดจาก ZORT ไม่ใช่กระจก — จอเขียนบอกได้ว่าเป็นข้อมูลสด
     rows: list.map((q) => ({
@@ -615,6 +686,10 @@ export async function listQuotations(limit = 50, page = 1) {
  *     ⇒ ฝั่งจอจึงเข้าใจว่าคลังเงาเก็บแค่หัวใบ · ของมีอยู่ แค่ไม่มีประตู */
 export async function listPurchaseItems(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  await ensureTables();
+  const store = o.store === "z2" ? "z2" : "z1";
+  const notSynced = await purchasesSyncedError(store);
+  if (notSynced) return { store, error: notSynced };
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
@@ -622,17 +697,17 @@ export async function listPurchaseItems(o = {}) {
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT i.sku) AS skus, COUNT(*) AS lines,
             ROUND(COALESCE(SUM(i.qty * i.price),0),2) AS amount
-     FROM purchase_order_items i WHERE 1=1 ${filter}`
+     FROM purchase_order_items_v2 i WHERE i.source = ${esc(store)} ${filter}`
   );
   // รวมรายสินค้า — แบบเดียวกับที่ ZORT แสดงในรายงานยอดซื้อ
   const rows = await coreQuery(
     `SELECT i.sku AS sku, MAX(i.name) AS name,
             SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount,
-            COUNT(DISTINCT i.number) AS orders,
+            COUNT(DISTINCT i.po_id) AS orders,
             MAX(po.po_date) AS lastDate
-     FROM purchase_order_items i
-     LEFT JOIN purchase_orders po ON po.number = i.number
-     WHERE 1=1 ${filter}
+     FROM purchase_order_items_v2 i
+     LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+     WHERE i.source = ${esc(store)} ${filter}
      GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
   );
   /* ⚠️ **บรรทัดสรุปที่ถูก + ตารางที่ไม่ครบ = อันตรายกว่าตัวเลขผิดตรง ๆ**
@@ -649,6 +724,7 @@ export async function listPurchaseItems(o = {}) {
     total: num(sum?.skus), // จำนวนรหัสทั้งหมดในตัวกรองนี้ (ตารางจัดกลุ่มตาม sku)
     shown,
     truncated: num(sum?.skus) > shown + offset,
+    store,
     applied: { q: q || null, limit, offset },
     limit,
     offset,
@@ -1205,26 +1281,33 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
  *  ⚠️ อ่านจาก **กระจก** ไม่ใช่ยิง ZORT สด — ใบเก่าที่ ZORT ลบไปแล้วจะยังเห็นที่นี่
  *     ซึ่งเป็นเรื่องดี (กระจกคือหลักฐานของเรา) แต่จอต้องเขียนว่าเป็นข้อมูลกระจก
  *     ไม่ใช่ปล่อยให้เข้าใจว่ายิงสด (ดู updatedAt เทียบกับรอบซิงก์ล่าสุด) */
-export async function getPurchaseDetail(number) {
+export async function getPurchaseDetail(number, store = "z1") {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureTables();
   const no = String(number ?? "").trim().slice(0, 60);
   if (!no) return { error: "ต้องระบุเลขที่ใบสั่งซื้อ" };
 
-  const head = (
-    await coreQuery(`SELECT * FROM purchase_orders WHERE number = ${esc(no)}`)
-  )[0];
-  if (!head) return { error: `ไม่พบใบสั่งซื้อ ${no} ในกระจก` };
+  const st = store === "z2" ? "z2" : "z1";
+  const notSynced = await purchasesSyncedError(st);
+  if (notSynced) return { store: st, error: notSynced };
+  const heads = await coreQuery(`SELECT * FROM purchase_orders_v2 WHERE source = ${esc(st)} AND number = ${esc(no)}`);
+  const head = heads[0];
+  if (!head) return { store: st, error: `ไม่พบใบสั่งซื้อ ${no} ของร้าน ${st} ในกระจก` };
+  /* 🔴 เลขที่ใบซ้ำได้แม้ร้านเดียว ⇒ เจอหลายใบ **ห้ามเลือกให้** — คืนรายการ id ให้จอพาไปเลือก */
+  if (heads.length > 1)
+    return { store: st, error: `เลขที่ใบ ${no} ซ้ำกัน ${heads.length} ใบในร้าน ${st} — ไม่เดาว่าใบไหน`, duplicate: true, ids: heads.map((x) => String(x.id)) };
 
   const lines = await coreQuery(
-    `SELECT line, sku, name, qty, price FROM purchase_order_items
-      WHERE number = ${esc(no)} ORDER BY line`
+    `SELECT line, sku, name, qty, price FROM purchase_order_items_v2
+      WHERE po_id = ${esc(head.id)} ORDER BY line`
   );
   /* ⚠️ **ยอดรวมของบรรทัด ≠ ยอดหัวใบเสมอไป** — หัวใบมีส่วนลด/ค่าส่ง/ภาษีที่กระจกไม่ได้เก็บ
      ⇒ ส่งทั้งสองค่าไปให้จอ **ห้ามเลือกให้ค่าเดียว** และห้ามคิดว่าต่างกัน = ข้อมูลผิด
      (คลาสเดียวกับใบเสนอราคาที่ท่อจงใจส่งช่องเงินทุกช่อง ไม่ตีความแทน) */
   const lineTotal = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
   return {
+    store: st,
+    id: String(head.id),
     number: head.number,
     vendor: head.vendor || null,
     poDate: head.po_date || null,

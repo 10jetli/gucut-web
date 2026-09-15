@@ -751,12 +751,14 @@ export async function stockCard(o = {}) {
            ORDER BY o.order_date DESC, o.number DESC, oi.line DESC LIMIT ${depth}`
         )
       : none(),
+    /* ใบซื้อ: อ่านตาราง _v2 (กุญแจ id · 15 ก.ย. 2569) และ **เฉพาะร้าน z1** — เท่ากับของเดิมที่ตารางมีแต่ z1
+       ร้าน z2 เป็นคลังคนละชุด ห้ามรวมเข้าบัตรสต็อกโดยไม่มีใครตัดสิน */
     wantBuy
       ? coreQuery(
           `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
                   i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
-           FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
-           WHERE i.sku = ${esc(sku)}${range("po.po_date")}
+           FROM purchase_order_items_v2 i LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+           WHERE i.source = 'z1' AND i.sku = ${esc(sku)}${range("po.po_date")}
            ORDER BY po.po_date DESC, i.number DESC, i.line DESC LIMIT ${depth}`
         )
       : none(),
@@ -781,8 +783,8 @@ export async function stockCard(o = {}) {
       : none(),
     wantBuy
       ? coreQuery(
-          `SELECT COUNT(*) AS c FROM purchase_order_items i LEFT JOIN purchase_orders po ON po.number = i.number
-           WHERE i.sku = ${esc(sku)}${range("po.po_date")}`
+          `SELECT COUNT(*) AS c FROM purchase_order_items_v2 i LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+           WHERE i.source = 'z1' AND i.sku = ${esc(sku)}${range("po.po_date")}`
         )
       : none(),
     wantAdjust

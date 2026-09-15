@@ -109,6 +109,10 @@ export default async function handler() {
         transfers: await syncTransfers(30).catch((e) => ({ error: String(e?.message || e) })),
         // ร้าน z2 (15 ก.ย. 2569 · ใบ t_mu2pfve9) — ย้อน 30 วันเหมือนกัน · กวาดของเก่าทั้งกองต้องสั่งมือเป็นช่วงหน้า (?synctransfers=1&store=z2&startpage=)
         transfersZ2: await syncTransfers(30, { store: "z2" }).catch((e) => ({ error: String(e?.message || e) })),
+        /* ใบซื้อ (15 ก.ย. 2569 · ใบ t_mu2pfve9) — เดิม syncPurchases **ไม่มีงานตามเวลาเรียกเลย** มีแต่สั่งมือ [[nothing-triggers-it]]
+           ร้านละไม่เกิน ~100 ใบ ดึงหน้าเดียวจบ · ตัวอ่านตาราง _v2 ตอบ error ถ้ายังไม่เคยซิงก์ ⇒ ต้องมีตัวจุดชนวน */
+        purchasesZ1: await (await import("../lib/core-purchases.mjs")).syncPurchases({ store: "z1" }).catch((e) => ({ error: String(e?.message || e) })),
+        purchasesZ2: await (await import("../lib/core-purchases.mjs")).syncPurchases({ store: "z2" }).catch((e) => ({ error: String(e?.message || e) })),
       };
       // ⚠️ ต้องอยู่หลัง snapshotStock เสมอ — ตัวเทียบใช้ภาพถ่ายของ "วันนี้" เป็นวันปลาย
       //    สลับลำดับเมื่อไหร่ = เทียบกับภาพถ่ายเมื่อวานทั้งสองฝั่ง ส่วนต่างเป็นศูนย์หลอก ๆ
