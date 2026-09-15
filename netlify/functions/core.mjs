@@ -1766,7 +1766,7 @@ async function route(req, context) {
         ok: true,
         sync: await syncOrders(days, {
           // ?items=all บังคับเขียนบรรทัดใหม่ทุกใบในช่วง — ใช้ตอนแก้ตรรกะการแปลงบรรทัด
-          items: url.searchParams.get("items") === "all" ? "all" : undefined,
+          items: ["all", "none"].includes(url.searchParams.get("items")) ? url.searchParams.get("items") : undefined,
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
         }),

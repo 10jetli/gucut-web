@@ -194,7 +194,11 @@ export async function syncOrders(days = 3, range = {}) {
        ⇒ `range.items = "all"` บังคับเขียนบรรทัดใหม่ทุกใบในช่วง ไม่สนว่าหัวใบเปลี่ยนไหม
           **ใช้ตอนแก้ตรรกะการแปลงบรรทัดเท่านั้น** งานประจำห้ามเปิด (เผาโควตาเขียนของ D1) */
     const rewriteAll = range.items === "all";
-    const forItems = rewriteAll ? orders : changed;
+    /* items = "none" — เขียนเฉพาะหัวใบ (ใช้ตอนกวาดย้อนหลังคอลัมน์หัวใบ เช่น tag/คลัง ใบ t_mu2tzeb1 · 15 ก.ย. 2569)
+       ⚠️ ปกติใบที่หัวใบเปลี่ยนจะลบ+เขียนบรรทัดสินค้าใหม่ทั้งใบด้วย ⇒ กวาด ~58,000 ใบ = เขียนหลายเท่าของจำนวนใบ ชนโควตา D1 (100k แถว/วัน)
+       ⚠️ ใบที่ **ยังไม่มีในกระจก** ต้องเขียนบรรทัดเสมอแม้โหมดนี้ — ไม่งั้นได้หัวใบที่ไม่มีสินค้า (ยอดขายรายสินค้าหายเงียบ) */
+    const headerOnly = range.items === "none";
+    const forItems = rewriteAll ? orders : headerOnly ? changed.filter((o) => !prev.has(`${st.tag}/${o.number}`)) : changed;
     let itemRows = 0;
     for (let i = 0; i < forItems.length; i += 80) {
       const chunk = forItems.slice(i, i + 80);
@@ -262,6 +266,7 @@ export async function syncOrders(days = 3, range = {}) {
       items: itemRows,
       // บอกให้ชัดว่ารอบนี้เขียนบรรทัดใหม่ทุกใบ ไม่ใช่เฉพาะใบที่เปลี่ยน
       ...(rewriteAll ? { itemsRewrittenForAll: true } : {}),
+      ...(headerOnly ? { itemsHeaderOnly: true } : {}),
     };
   }
 
