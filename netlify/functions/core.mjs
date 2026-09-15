@@ -766,7 +766,14 @@ async function route(req, context) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
-      const staff = await R.staffFromReq(req);
+      /* อ่านรายชื่อพนักงานไม่ได้ (Blobs สะดุด) ⇒ findByPin โยน status 503 ตั้งแต่ใบ t_mu20nia9
+         ⇒ ตอบ 503 "ลองใหม่" ตรงนี้ ไม่ปล่อยไปตกตัวครอบนอกสุดที่ตอบ 500 · และห้ามรับคืนต่อโดยไม่รู้ว่าใครรับ */
+      let staff;
+      try {
+        staff = await R.staffFromReq(req);
+      } catch (e) {
+        return json({ error: String(e?.message || e) }, e?.status === 503 ? 503 : 500);
+      }
 
       if (url.searchParams.get("return-receive")) return out(await R.receiveReturn(body, staff));
       if (url.searchParams.get("return-grade")) return out(await R.gradeReturn(body, staff));

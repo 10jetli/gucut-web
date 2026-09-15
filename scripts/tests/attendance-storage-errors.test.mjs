@@ -149,3 +149,13 @@ test('B27 ลบเวลาพลาด: โยน 503 ไม่บอกสำ
   assert.match((await res.json()).error, /ลบเวลา/);
   assert.deepEqual(data.get(key), old);
 });
+
+test('จอรับคืน: อ่านรายชื่อพนักงานไม่ได้ต้องตอบ 503 ไม่ใช่ตกไป 500 ของตัวครอบนอกสุด (CEO เพิ่ม 15 ก.ย. 2569)', async () => {
+  const { readFileSync } = await import('node:fs');
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const at = src.indexOf('staff = await R.staffFromReq(req);');
+  assert.ok(at > 0, 'ต้องครอบ staffFromReq ด้วย try');
+  const around = src.slice(src.lastIndexOf('let staff;', at), at + 220);
+  assert.match(around, /try \{\s*staff = await R\.staffFromReq\(req\);\s*\} catch \(e\) \{\s*return json\(\{ error: String\(e\?\.message \|\| e\) \}, e\?\.status === 503 \? 503 : 500\);/);
+  assert.equal(src.includes('const staff = await R.staffFromReq(req);'), false, 'ห้ามเรียกแบบไม่ครอบ');
+});
