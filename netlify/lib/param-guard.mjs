@@ -6,7 +6,7 @@
    ⇒ ตอบ 400 พร้อมเหตุผลไทย **ก่อนถึงเส้นใดเลย** · ค่าว่าง (`limit=`) = ไม่ได้ส่ง ใช้ค่าเริ่มต้นเหมือนเดิม
    ⚠️ ตรวจวันที่เฉพาะเส้นที่ใช้วันที่กรองข้อมูลจริง (DATE_LISTS) — เส้นเครื่องมืออื่นที่รับ day แบบอื่นไม่แตะ
    ⚠️ จอเดิมส่งวันที่จาก thaiDay()/ช่องเลือกวัน (YYYY-MM-DD) และตัวเลขจาก String(number) ⇒ ไม่โดนด่าน */
-export const DATE_LISTS = new Set(["orders", "orderfacets", "topproducts", "sales", "stockcard"]);
+export const DATE_LISTS = new Set(["orders", "orderfacets", "topproducts", "sales", "stockcard", "purchaseitems"]);
 
 /** วันที่จริงตามปฏิทิน — รูปถูกไม่พอ ต้องย้อนกลับเป็นข้อความเดิมได้ (2026-02-30 → 2026-03-02 ⇒ ไม่ผ่าน) */
 export function isRealDay(s) {

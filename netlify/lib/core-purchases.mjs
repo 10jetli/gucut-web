@@ -1,3 +1,4 @@
+import { isRealDay } from "./param-guard.mjs";
 // กระจก "ใบสั่งซื้อ" (Purchase Order) จาก ZORT เข้าคลังเงา + รายชื่อคลังสินค้า
 //
 // ⚠️ **นี่คือคนละชุดข้อมูลกับ "ระบบสั่งของโรงงาน" ที่หลังร้านมีอยู่แล้ว** (ฝั่งจอทักมา 3 ก.ย. 2569)
@@ -721,6 +722,21 @@ export async function listQuotations(limit = 50, page = 1, store = "z1") {
 const PO_NOT_CANCELLED =
   "COALESCE(po.status,'') NOT LIKE '%cancel%' AND COALESCE(po.status,'') NOT LIKE '%void%' AND COALESCE(po.status,'') NOT LIKE '%ยกเลิก%'";
 
+/* 🧾 BY_GROUPS — จัดกลุ่มรายงานยอดซื้อแบบ ZORT (tableoption: สินค้า · หมวดหมู่ · ผู้ติดต่อ · ผู้ใช้งาน · คลัง/สาขา)
+   ⚠️ "ผู้ใช้งาน" (ผู้สร้างใบซื้อ) ไม่มีในกระจก purchase_orders_v2 ⇒ ตอบ 400 พร้อมเหตุผล ห้ามแกล้งจัดกลุ่มเป็นก้อนเดียว */
+export const PURCHASE_BY = {
+  sku: null,
+  category: "COALESCE(NULLIF(p.category,''),'(ยังไม่ได้จัดหมวดใน ZORT)')",
+  vendor: "COALESCE(NULLIF(po.vendor,''),'(ไม่ระบุผู้ติดต่อ)')",
+  warehouse: "COALESCE(NULLIF(po.warehouse,''),'(ไม่ระบุคลัง)')",
+};
+export function purchaseByError(by) {
+  const v = String(by ?? "").trim();
+  if (!v || v in PURCHASE_BY) return null;
+  if (v === "user") return "by=user ยังทำไม่ได้ — กระจกใบซื้อไม่ได้เก็บผู้สร้างใบ (ZORT มี แต่ท่อยังไม่ดึง)";
+  return `by รับแค่ ${Object.keys(PURCHASE_BY).join(" · ")} (ได้มา "${v.slice(0, 20)}")`;
+}
+
 export async function listPurchaseItems(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureTables();
@@ -730,25 +746,52 @@ export async function listPurchaseItems(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = q ? `AND (${containsLit("i.sku", esc(q))} OR ${containsLit("i.name", esc(q))})` : "";
+  /* 📅 from/to = วันที่ใบซื้อ (po_date) — เพิ่ม 16 ก.ย. 2569
+     🔴 เดิมไม่มีตัวกรองวันเลย ⇒ จอยอดซื้อ (เมนู 3) มีปุ่มช่วงเวลา 8 ค่า แต่ตารางรายสินค้าเป็น "ทั้งหมดตลอดกาล" เสมอ โดยไม่มีอะไรบอก
+     ⚠️ ตรวจรูปวันจริงที่ param-guard แล้ว (DATE_LISTS) · ใบซื้อที่ไม่มีวันที่ ไม่เข้าเงื่อนไขช่วงวัน */
+  const from = isRealDay(o.from) ? o.from : null;
+  const to = isRealDay(o.to) ? o.to : null;
+  const by = String(o.by ?? "").trim() || "sku";
+  const byErr = purchaseByError(by);
+  if (byErr) return { store, error: byErr };
+  const dateSql = `${from ? ` AND po.po_date >= ${esc(from)}` : ""}${to ? ` AND po.po_date <= ${esc(to)}` : ""}`;
+  const qSql = q ? ` AND (${containsLit("i.sku", esc(q))} OR ${containsLit("i.name", esc(q))})` : "";
+  // ⚠️ บรรทัดสรุป กับ แถว ต้องใช้เงื่อนไขชุดเดียวกันเสมอ (บทเรียน 4 ก.ย. — สรุปถูก ตารางไม่ครบ)
+  const where = `i.source = ${esc(store)} AND ${PO_NOT_CANCELLED}${dateSql}${qSql}`;
+  const groupExpr = PURCHASE_BY[by];
+  const joinProducts = by === "category" ? "LEFT JOIN products p ON p.sku = i.sku" : "";
   const [sum] = await coreQuery(
     `SELECT COUNT(DISTINCT i.sku) AS skus, COUNT(*) AS lines,
             ROUND(COALESCE(SUM(i.qty * i.price),0),2) AS amount
+            ${groupExpr ? `, COUNT(DISTINCT ${groupExpr}) AS groups` : ""}
      FROM purchase_order_items_v2 i
      LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
-     WHERE i.source = ${esc(store)} AND ${PO_NOT_CANCELLED} ${filter}`
+     ${joinProducts}
+     WHERE ${where}`
   );
-  // รวมรายสินค้า — แบบเดียวกับที่ ZORT แสดงในรายงานยอดซื้อ
-  const rows = await coreQuery(
-    `SELECT i.sku AS sku, MAX(i.name) AS name,
-            SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount,
-            COUNT(DISTINCT i.po_id) AS orders,
-            MAX(po.po_date) AS lastDate
-     FROM purchase_order_items_v2 i
-     LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
-     WHERE i.source = ${esc(store)} AND ${PO_NOT_CANCELLED} ${filter}
-     GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
-  );
+  // รวมรายสินค้า — แบบเดียวกับที่ ZORT แสดงในรายงานยอดซื้อ · by อื่นรวมตามกลุ่ม
+  const rows = groupExpr
+    ? await coreQuery(
+        `SELECT ${groupExpr} AS groupKey,
+                SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount,
+                COUNT(DISTINCT i.po_id) AS orders, COUNT(DISTINCT i.sku) AS skus,
+                MAX(po.po_date) AS lastDate
+         FROM purchase_order_items_v2 i
+         LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+         ${joinProducts}
+         WHERE ${where}
+         GROUP BY 1 ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
+      )
+    : await coreQuery(
+        `SELECT i.sku AS sku, MAX(i.name) AS name,
+                SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount,
+                COUNT(DISTINCT i.po_id) AS orders,
+                MAX(po.po_date) AS lastDate
+         FROM purchase_order_items_v2 i
+         LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+         WHERE ${where}
+         GROUP BY i.sku ORDER BY SUM(i.qty * i.price) DESC LIMIT ${limit} OFFSET ${offset}`
+      );
   /* ⚠️ **บรรทัดสรุปที่ถูก + ตารางที่ไม่ครบ = อันตรายกว่าตัวเลขผิดตรง ๆ**
       (ฝั่งจอเจอตอนยิงจริง 4 ก.ย. 2569) — จอเขียนสรุป '217 รหัส ฿6,225,166'
       ซึ่งถูก เพราะเป็นเลขรวมจากท่อ **แต่ตารางมีแค่ 200 แถว ขาด 17 รหัส**
@@ -756,16 +799,19 @@ export async function listPurchaseItems(o = {}) {
       ⇒ คนละฐานกันเงียบ ๆ · ไม่มีอะไรดูขัดตาเลย
       ⇒ ส่ง total · shown · truncated · applied ไปด้วยเสมอ **ห้ามตัดเงียบ** */
   const shown = rows.length;
+  const total = groupExpr ? num(sum?.groups) : num(sum?.skus);
   return {
     skus: num(sum?.skus),
     lines: num(sum?.lines),
     amount: num(sum?.amount),
-    total: num(sum?.skus), // จำนวนรหัสทั้งหมดในตัวกรองนี้ (ตารางจัดกลุ่มตาม sku)
+    total, // จำนวนแถวทั้งหมดของการจัดกลุ่มนี้ (รหัส หรือ กลุ่ม)
     shown,
-    truncated: num(sum?.skus) > shown + offset,
+    truncated: total > shown + offset,
     store,
-    excludesCancelled: true, // รวมเฉพาะใบซื้อที่ไม่ได้ยกเลิก (ตาม ZORT) — จอเลิกขึ้นป้าย "รวมใบยกเลิก" ได้
-    applied: { q: q || null, limit, offset },
+    by,
+    excludesCancelled: true, // รวมเฉพาะใบซื้อที่ไม่ได้ยกเลิก (ตาม ZORT)
+    dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
+    applied: { q: q || null, limit, offset, from, to, by },
     limit,
     offset,
     rows,

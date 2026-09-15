@@ -1134,6 +1134,9 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           store: listStore.store,
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          by: url.searchParams.get("by"),
         })),
         ...listStore,
       });
