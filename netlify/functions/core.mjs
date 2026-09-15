@@ -446,8 +446,13 @@ async function route(req, context) {
     /* GET ?zortpo=<เลขที่ใบสั่งซื้อ> ⇒ {found, purchaseOrder:{id, number, status, warehousecode, amount, paymentstatus, lines}}
        หา id ของ ZORT ก่อนรับของ/ตรวจนับ (?poreceive ต้องใช้ id · กระจก D1 ไม่มี id) · งานกระดาน t_mu0tx40g
        🔴 เลขที่ใบซ้ำกันได้ ⇒ เจอหลายใบ = 400 + ids ไม่เดา · ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) · อ่านอย่างเดียว */
+    /* 🔒 ด่านร้าน (15 ก.ย. 2569 · ใบ t_mu2pekwt) — zort-write ใช้รหัส ZORT ร้าน z1 อย่างเดียว
+       จอใบซื้อรายใบเปิดใบร้าน z2 ได้แล้ว แต่กล่องรับของยิงเส้นนี้ ⇒ เลขที่ใบซ้ำข้ามร้านได้ = อาจได้ใบ z1 คนละใบ
+       ⇒ ส่ง store ที่ไม่ใช่ z1 มา = 400 ชัด · ไม่ส่ง = z1 เหมือนเดิม (จอเดิมไม่พัง) */
     if (url.searchParams.has("zortpo")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      if (url.searchParams.get("store") && url.searchParams.get("store") !== "z1")
+        return json({ ok: false, error: "ร้าน z2 ยังไม่รองรับ — เส้นนี้อ่าน/เขียน ZORT ด้วยรหัสร้าน z1 เท่านั้น (zort-write creds) · ไม่ถอยไปใช้ z1 เงียบ ๆ" }, 400);
       const { zortFindPurchaseOrder } = await import("../lib/zort-write.mjs");
       const r = await zortFindPurchaseOrder(url.searchParams.get("zortpo"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
@@ -457,6 +462,8 @@ async function route(req, context) {
        ถามไม่สำเร็จ = 502 (ไม่รู้) · ไม่พบ = 200 found:false */
     if (url.searchParams.has("zortpoid")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      if (url.searchParams.get("store") && url.searchParams.get("store") !== "z1")
+        return json({ ok: false, error: "ร้าน z2 ยังไม่รองรับ — เส้นนี้อ่าน/เขียน ZORT ด้วยรหัสร้าน z1 เท่านั้น (zort-write creds) · ไม่ถอยไปใช้ z1 เงียบ ๆ" }, 400);
       const { zortGetPurchaseOrderById } = await import("../lib/zort-write.mjs");
       const r = await zortGetPurchaseOrderById(url.searchParams.get("zortpoid"));
       return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
@@ -597,6 +604,9 @@ async function route(req, context) {
       const body = await req.json().catch(() => null);
       if (!body || typeof body !== "object" || Array.isArray(body))
         return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON object)" }, 400);
+      // 🔒 ด่านร้านของเส้นเขียนทั้งชุดนี้ (poreceive · voidpo · ordershipping · addpurchasereturn …) — เขียนเข้า ZORT ร้าน z1 เท่านั้น
+      if (body.store !== undefined && body.store !== null && body.store !== "" && body.store !== "z1")
+        return json({ ok: false, error: "ร้าน z2 ยังไม่รองรับ — เส้นนี้อ่าน/เขียน ZORT ด้วยรหัสร้าน z1 เท่านั้น (zort-write creds) · ไม่ถอยไปใช้ z1 เงียบ ๆ" }, 400);
       const mod = await import("../lib/zort-write.mjs");
       const r = await mod[fnName](body);
       return json(r, r.ok || r.complete === false ? 200 : 400);
