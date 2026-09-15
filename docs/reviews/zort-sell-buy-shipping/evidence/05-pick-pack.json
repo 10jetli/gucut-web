@@ -1,0 +1,45 @@
+{
+  "menuLabel": "แพ็คสินค้า",
+  "requestedPath": "/Pickandpack/Main?&mc=OTI4Mzg=&type=2",
+  "finalUrl": "/Pickandpack/Main?&mc=OTI4Mzg=&type=2",
+  "title": "แพ็คสินค้า",
+  "httpStatus": 200,
+  "headings": [
+    "เริ่มต้นการแพ็คสินค้า"
+  ],
+  "tableHeaders": [],
+  "visibleControls": [],
+  "inputsWithoutValues": [
+    {
+      "type": "text",
+      "placeholder": null
+    },
+    {
+      "type": "button",
+      "placeholder": null
+    }
+  ],
+  "onclickFunctionsWithoutArguments": [
+    {
+      "function": "changelanguage",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "Submit",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "closeSuccessPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closeErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    }
+  ],
+  "redaction": "ไม่มี body text, ค่า input, arguments, record IDs, customer/contact data หรือ external auth URLs"
+}

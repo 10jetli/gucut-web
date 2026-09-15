@@ -1,0 +1,512 @@
+{
+  "menuLabel": "บริการส่งสินค้า",
+  "requestedPath": "/Logistics/list?",
+  "finalUrl": "/Logistics/list?",
+  "title": "บริการขนส่ง",
+  "httpStatus": 200,
+  "headings": [
+    "สถานะเรียกขนส่ง",
+    "อัปโหลดใบหักภาษี ณ ที่จ่าย",
+    "ต่ออายุการใช้งาน",
+    "พิมพ์ฉลากจัดส่ง",
+    "บริการขนส่ง",
+    "ค้นหาขั้นสูง",
+    "เลือกผู้รับ",
+    "นำเข้ารายการ Dropoff",
+    "รายละเอียดการส่ง",
+    "ลงทะเบียน",
+    "ข้อมูล Flash ID",
+    "ข้อมูล Shopee Express User ID",
+    "บริการขนส่ง Flash Express",
+    "ระบบแชทขายของออนไลน์"
+  ],
+  "tableHeaders": [
+    "รายการ",
+    "วันที่",
+    "ชื่อผู้รับ",
+    "จำนวนรายการขาย",
+    "ชำระเงิน",
+    "สถานะ",
+    "หมายเลขออเดอร์",
+    "รหัส",
+    "ชื่อ",
+    "เลขผู้เสียภาษี",
+    "เบอร์โทรศัพท์",
+    "อีเมล",
+    "ราคา"
+  ],
+  "visibleControls": [
+    {
+      "tag": "button",
+      "label": "นำเข้ารายการไฟล์ Excel",
+      "functions": [
+        "openImportLogistics"
+      ]
+    },
+    {
+      "tag": "button",
+      "label": "ขนส่ง",
+      "functions": [
+        "setAddress"
+      ]
+    },
+    {
+      "tag": "input",
+      "label": "พิมพ์คำค้นหา",
+      "functions": []
+    },
+    {
+      "tag": "a",
+      "label": "ค้นหาขั้นสูง",
+      "functions": []
+    },
+    {
+      "tag": "select",
+      "label": "10 20 50 100",
+      "functions": []
+    },
+    {
+      "tag": "button",
+      "label": "Export to Excel",
+      "functions": [
+        "exportfile"
+      ]
+    }
+  ],
+  "inputsWithoutValues": [
+    {
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "type": "radio",
+      "placeholder": null
+    },
+    {
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์คำค้นหา"
+    },
+    {
+      "type": "button",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "รายการ"
+    },
+    {
+      "type": "text",
+      "placeholder": "ชื่อผู้รับ"
+    },
+    {
+      "type": "text",
+      "placeholder": "ตั้งแต่วันที่"
+    },
+    {
+      "type": "text",
+      "placeholder": "ถึงวันที่"
+    },
+    {
+      "type": "select",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์ข้อความ 'confirm' เพื่อยืนยันการเรียกขนส่งด้วยรายการนี้"
+    },
+    {
+      "type": "text",
+      "placeholder": "ชื่อผู้ส่ง"
+    },
+    {
+      "type": "text",
+      "placeholder": "เบอร์โทรศัพท์ผู้ส่ง"
+    },
+    {
+      "type": "text",
+      "placeholder": "เลขที่"
+    },
+    {
+      "type": "textarea",
+      "placeholder": "ที่อยู่ผู้ส่ง"
+    },
+    {
+      "type": "number",
+      "placeholder": "น้ำหนัก"
+    },
+    {
+      "type": "number",
+      "placeholder": "กว้าง"
+    },
+    {
+      "type": "number",
+      "placeholder": "ยาว"
+    },
+    {
+      "type": "number",
+      "placeholder": "สูง"
+    },
+    {
+      "type": "text",
+      "placeholder": "จำนวนเงินที่เรียกเก็บ (บาท)"
+    },
+    {
+      "type": "text",
+      "placeholder": "เบอร์โทรศัพท์ผู้รับ"
+    },
+    {
+      "type": "textarea",
+      "placeholder": "ที่อยู่ผู้รับ"
+    },
+    {
+      "type": "textarea",
+      "placeholder": "รายละเอียดสินค้า"
+    },
+    {
+      "type": "file",
+      "placeholder": null
+    },
+    {
+      "type": "textarea",
+      "placeholder": "กรุณาใส่ข้อความ"
+    },
+    {
+      "type": "text",
+      "placeholder": null
+    },
+    {
+      "type": "textarea",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "โปรดระบุ"
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์รหัสเปิดใช้งาน"
+    }
+  ],
+  "onclickFunctionsWithoutArguments": [
+    {
+      "function": "closeLogisticDialogBox",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "addSessionMenuStyle",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "อัพเดต",
+      "visible": true
+    },
+    {
+      "function": "doGetNotificationList",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "doGenerateTempUserKey",
+      "label": "Request Key",
+      "visible": false
+    },
+    {
+      "function": "clearAllSessions",
+      "label": "Logout",
+      "visible": false
+    },
+    {
+      "function": "createSingleShippingLabels",
+      "label": "พิมพ์ฉลากจัดส่ง",
+      "visible": false
+    },
+    {
+      "function": "openImportLogistics",
+      "label": "นำเข้ารายการไฟล์ Excel",
+      "visible": true
+    },
+    {
+      "function": "setAddress",
+      "label": "ขนส่ง",
+      "visible": true
+    },
+    {
+      "function": "advanceSearch",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "exportfile",
+      "label": "Export to Excel",
+      "visible": true
+    },
+    {
+      "function": "onClickCloseButton",
+      "label": "Close",
+      "visible": false
+    },
+    {
+      "function": "openSetAllModal",
+      "label": "กำหนดขนาดและน้ำหนักพัสดุทั้งหมด",
+      "visible": false
+    },
+    {
+      "function": "openCarrierAnnouncement",
+      "label": "ประกาศจากขนส่ง",
+      "visible": false
+    },
+    {
+      "function": "AddRowRecipient",
+      "label": "+เพิ่มผู้รับ",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "DHL อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั้ง ขนาดหรื",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "DHL อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั้ง ขนาดหรื",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Shopee Express อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกคร",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Shopee Express อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกคร",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Flash Express อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Flash Express อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Thai Post (Dropoff EMS) อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Thai Post (Dropoff EMS) อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "KEX อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั้ง ขนาดหรื",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "KEX อัตราค่าขนส่งพัสดุ คลิกที่นี่ ตรวจสอบราคา กำลังคำนวณ ไม่สามารถตรวจสอบราคาได้ ลองอีกครั้ง ขนาดหรื",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Flash Express รับถึงบ้านทั่วประเทศ ลงทะเบียน",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Flash Express รับถึงบ้านทั่วประเทศ ลงทะเบียน",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "KEX บริการส่งพัสดุทั่วประเทศ ดูรายละเอียด",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "KEX บริการส่งพัสดุทั่วประเทศ ดูรายละเอียด",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Thai Post (Dropoff EMS) บริการส่งพัสดุทั่วประเทศ ตรวจสอบสาขาที่มีบริการ",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Thai Post (Dropoff EMS) บริการส่งพัสดุทั่วประเทศ ตรวจสอบสาขาที่มีบริการ",
+      "visible": false
+    },
+    {
+      "function": "UsePointOption",
+      "label": "Shopee Express Shopee Express ลงทะเบียน",
+      "visible": false
+    },
+    {
+      "function": "CarrierSelected",
+      "label": "Shopee Express Shopee Express ลงทะเบียน",
+      "visible": false
+    },
+    {
+      "function": "GetLogisticsInfo",
+      "label": "ต่อไป",
+      "visible": false
+    },
+    {
+      "function": "closeSetAllModal",
+      "label": "กำหนดขนาดและน้ำหนักพัสดุทั้งหมด กรุณาเลือกน้ำหนัก 0.5 กิโลกรัม 1 กิโลกรัม 2 กิโลกรัม 3 กิโลกรัม 4 กิ",
+      "visible": false
+    },
+    {
+      "function": "closeSetAllModal",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "setAllDimensionAndWeight",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "chooseFromAllContact",
+      "label": "เลือก",
+      "visible": false
+    },
+    {
+      "function": "ImportLogistics",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "doSendSMSLogistic",
+      "label": "ส่ง SMS",
+      "visible": false
+    },
+    {
+      "function": "handleAcceptingConsent",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "GoToLogisticPointTopup",
+      "label": "เติมพอยท์",
+      "visible": false
+    },
+    {
+      "function": "LogisticsBooking",
+      "label": "ยืนยันการเรียกขนส่ง",
+      "visible": false
+    },
+    {
+      "function": "doSyncFlashExpressAccount",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "doSyncSpxAccount",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "CloseFlashPopup",
+      "label": "ปิด",
+      "visible": false
+    },
+    {
+      "function": "closeSuccessLogisticPopup",
+      "label": "พิมพ์ใบแปะกล่อง",
+      "visible": false
+    },
+    {
+      "function": "closeConfirmPopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmPopup",
+      "label": "ยืนยัน",
+      "visible": false
+    },
+    {
+      "function": "changeOther",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSetup",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSample",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "closeActivationCodePopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmActivationCodePopup",
+      "label": "ดำเนินการต่อ",
+      "visible": false
+    },
+    {
+      "function": "closeSuccessPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closeErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closePointErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "goToTopup",
+      "label": "เติมพอยท์",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "×",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "แจ้งเตือน",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "อัพเดต",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "การแจ้งเตือนระบบ",
+      "visible": false
+    }
+  ],
+  "redaction": "ไม่มี body text, ค่า input, arguments, record IDs, customer/contact data หรือ external auth URLs"
+}

@@ -1,0 +1,458 @@
+{
+  "menuLabel": "สร้างรายการซื้อ",
+  "requestedPath": "/Buy/Add?",
+  "finalUrl": "/Buy/Add?",
+  "title": "สร้างรายการซื้อ",
+  "httpStatus": 200,
+  "headings": [
+    "สถานะเรียกขนส่ง",
+    "อัปโหลดใบหักภาษี ณ ที่จ่าย",
+    "ต่ออายุการใช้งาน",
+    "สร้างรายการซื้อ",
+    "เลือกสินค้า",
+    "เลือกผู้ติดต่อ",
+    "เลือกตัวแทนจำหน่าย",
+    "เลือกสินค้าหลายรายการ",
+    "ชำระเงิน",
+    "เพิ่มตัวแทนจำหน่าย",
+    "นำเข้าไฟล์",
+    "10 รายการซื้อย้อนหลัง",
+    "เลือกข้อมูลเลขประจำตัวผู้เสียภาษี",
+    "ระบบแชทขายของออนไลน์"
+  ],
+  "tableHeaders": [
+    "รหัส",
+    "ชื่อสินค้า*",
+    "จำนวน*",
+    "มูลค่าต่อหน่วย*",
+    "ส่วนลดต่อหน่วย",
+    "รวม",
+    "คงเหลือ",
+    "พร้อมขาย",
+    "ราคาซื้อ",
+    "ชื่อ",
+    "เลขผู้เสียภาษี",
+    "เบอร์โทรศัพท์",
+    "อีเมล",
+    "ชื่อคลัง/สาขา",
+    "จำนวนคงเหลือ",
+    "จำนวนพร้อมขาย",
+    "#",
+    "ประเภท",
+    "รายการ",
+    "วันที่",
+    "มูลค่า",
+    "สถานะ",
+    "การชำระเงิน",
+    "จำนวน",
+    "ราคาต่อหน่วย",
+    "มูลค่ารวมก่อนภาษี",
+    "ภาษีมูลค่าเพิ่ม",
+    "สาขา",
+    "ที่อยู่"
+  ],
+  "visibleControls": [
+    {
+      "tag": "select",
+      "label": "ไม่มีภาษี แยกภาษีมูลค่าเพิ่ม 7% รวมภาษีมูลค่าเพิ่ม 7%",
+      "functions": []
+    },
+    {
+      "tag": "input",
+      "label": "พิมพ์ ชื่อ,รหัส",
+      "functions": []
+    },
+    {
+      "tag": "button",
+      "label": "แสดงผู้ติดต่อ",
+      "functions": [
+        "showAllContact"
+      ]
+    },
+    {
+      "tag": "button",
+      "label": "แสดงรายการย้อนหลังล่าสุด",
+      "functions": [
+        "showContactTransaction"
+      ]
+    },
+    {
+      "tag": "a",
+      "label": "เลือกสินค้า",
+      "functions": [
+        "showMultiAllProduct"
+      ]
+    },
+    {
+      "tag": "a",
+      "label": "เลือก",
+      "functions": [
+        "showAllProduct"
+      ]
+    },
+    {
+      "tag": "input",
+      "label": "0.00",
+      "functions": []
+    },
+    {
+      "tag": "input",
+      "label": "จำนวนเงิน หรือ %",
+      "functions": []
+    },
+    {
+      "tag": "a",
+      "label": "เพิ่มสินค้า",
+      "functions": [
+        "addRow"
+      ]
+    },
+    {
+      "tag": "button",
+      "label": "ไม่ระบุ",
+      "functions": []
+    },
+    {
+      "tag": "select",
+      "label": "ไม่ระบุ Flash (เก็บเงินปลายทาง COD) Flash express ลูกค้ารับเอง",
+      "functions": []
+    },
+    {
+      "tag": "a",
+      "label": "เพิ่มการชำระเงิน",
+      "functions": [
+        "openAddPayment"
+      ]
+    },
+    {
+      "tag": "select",
+      "label": "ไม่ระบุ โกดัง KLD ANJ",
+      "functions": []
+    },
+    {
+      "tag": "button",
+      "label": "บันทึก + สร้างใหม่",
+      "functions": [
+        "insertTransaction"
+      ]
+    },
+    {
+      "tag": "button",
+      "label": "บันทึก",
+      "functions": [
+        "insertTransaction"
+      ]
+    }
+  ],
+  "inputsWithoutValues": [
+    {
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": null
+    },
+    {
+      "type": "search",
+      "placeholder": null
+    },
+    {
+      "type": "select",
+      "placeholder": null
+    },
+    {
+      "type": "radio",
+      "placeholder": null
+    },
+    {
+      "type": "search",
+      "placeholder": "พิมพ์ ชื่อ,รหัส"
+    },
+    {
+      "type": "textarea",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "0.00"
+    },
+    {
+      "type": "text",
+      "placeholder": "จำนวนเงิน หรือ %"
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์คำค้นหา"
+    },
+    {
+      "type": "text",
+      "placeholder": "เลขรายการขาย ชื่อลูกค้า ช่องทางการขาย และอื่นๆ"
+    },
+    {
+      "type": "text",
+      "placeholder": "จำนวนเงิน..."
+    },
+    {
+      "type": "file",
+      "placeholder": null
+    },
+    {
+      "type": "input",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "เลขประจำตัวผู้เสียภาษี"
+    },
+    {
+      "type": "text",
+      "placeholder": "โปรดระบุ"
+    },
+    {
+      "type": "button",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์รหัสเปิดใช้งาน"
+    }
+  ],
+  "onclickFunctionsWithoutArguments": [
+    {
+      "function": "closeLogisticDialogBox",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "addSessionMenuStyle",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "อัพเดต",
+      "visible": true
+    },
+    {
+      "function": "doGetNotificationList",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "doGenerateTempUserKey",
+      "label": "Request Key",
+      "visible": false
+    },
+    {
+      "function": "clearAllSessions",
+      "label": "Logout",
+      "visible": false
+    },
+    {
+      "function": "setCustomerTaxType",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "showAllContact",
+      "label": "แสดงผู้ติดต่อ",
+      "visible": true
+    },
+    {
+      "function": "showContactTransaction",
+      "label": "แสดงรายการย้อนหลังล่าสุด",
+      "visible": true
+    },
+    {
+      "function": "findTaxLegalModalShow",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "plusNumber",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "updateTotalPrice",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "minusNumberNotLessMoreThanZero",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "autocalculate",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "changeWHTType",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "disablewarehouselist",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "insertTransaction",
+      "label": "บันทึก + สร้างใหม่",
+      "visible": true
+    },
+    {
+      "function": "insertTransaction",
+      "label": "บันทึก",
+      "visible": true
+    },
+    {
+      "function": "chooseFromAllProduct",
+      "label": "เลือก",
+      "visible": false
+    },
+    {
+      "function": "chooseFromAllContact",
+      "label": "เลือก",
+      "visible": false
+    },
+    {
+      "function": "addMultiRow",
+      "label": "เลือกสินค้า",
+      "visible": false
+    },
+    {
+      "function": "clearFileInput",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "ChangeWithholdingTaxStatus",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "insertMainPayment",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "insertAgent",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "_showUploadStep",
+      "label": "เลือกไฟล์ใหม่",
+      "visible": false
+    },
+    {
+      "function": "onAnalyzePODocumentSuccess",
+      "label": "ใช้ข้อมูลนี้",
+      "visible": false
+    },
+    {
+      "function": "UploadAttachmentFile",
+      "label": "อัพโหลด",
+      "visible": false
+    },
+    {
+      "function": "closeModal",
+      "label": "×",
+      "visible": false
+    },
+    {
+      "function": "inputTaxNumberOnKeyPress",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "closeConfirmPopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmPopup",
+      "label": "ยืนยัน",
+      "visible": false
+    },
+    {
+      "function": "changeOther",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSetup",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSample",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "closeActivationCodePopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmActivationCodePopup",
+      "label": "ดำเนินการต่อ",
+      "visible": false
+    },
+    {
+      "function": "closeSuccessPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closeErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closePointErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "goToTopup",
+      "label": "เติมพอยท์",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "×",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "แจ้งเตือน",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "อัพเดต",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "การแจ้งเตือนระบบ",
+      "visible": false
+    }
+  ],
+  "redaction": "ไม่มี body text, ค่า input, arguments, record IDs, customer/contact data หรือ external auth URLs"
+}

@@ -1,0 +1,483 @@
+{
+  "menuLabel": "รับคืนสินค้า (คืนจากลูกค้า)",
+  "requestedPath": "/Buy/list?&sttype=1",
+  "finalUrl": "/Buy/list?&sttype=1",
+  "title": "รายการรับคืนสินค้าเข้า",
+  "httpStatus": 200,
+  "headings": [
+    "สถานะเรียกขนส่ง",
+    "อัปโหลดใบหักภาษี ณ ที่จ่าย",
+    "ต่ออายุการใช้งาน",
+    "รับคืนสินค้า",
+    "ค้นหาขั้นสูง",
+    "การโอนสินค้า",
+    "สถานะการชำระเงิน",
+    "นำเข้ารายการรับคืนใหม่",
+    "แก้ไขคำนำหน้าเอกสาร",
+    "ชำระเงิน",
+    "สร้างอย่างง่าย",
+    "เลือกสินค้า",
+    "เพิ่ม Tag",
+    "ระบบแชทขายของออนไลน์"
+  ],
+  "tableHeaders": [
+    "#",
+    "วันที่",
+    "รายการ",
+    "อ้างอิง",
+    "ลูกค้า",
+    "มูลค่า",
+    "สถานะ",
+    "ชำระเงิน",
+    "รหัส",
+    "ชื่อสินค้า*",
+    "จำนวน*",
+    "มูลค่าต่อหน่วย*",
+    "รวม",
+    "คงเหลือ",
+    "พร้อมขาย",
+    "ราคาซื้อ",
+    "ชื่อคลัง/สาขา",
+    "จำนวนคงเหลือ",
+    "จำนวนพร้อมขาย"
+  ],
+  "visibleControls": [
+    {
+      "tag": "button",
+      "label": "นำเข้าไฟล์ (Excel)",
+      "functions": [
+        "openImportTransaction"
+      ]
+    },
+    {
+      "tag": "button",
+      "label": "สร้าง",
+      "functions": [
+        "clickMenu"
+      ]
+    },
+    {
+      "tag": "input",
+      "label": "พิมพ์คำค้นหา",
+      "functions": []
+    },
+    {
+      "tag": "a",
+      "label": "ค้นหาขั้นสูง",
+      "functions": []
+    },
+    {
+      "tag": "input",
+      "label": "...",
+      "functions": []
+    },
+    {
+      "tag": "select",
+      "label": "10 20 50 100",
+      "functions": []
+    },
+    {
+      "tag": "button",
+      "label": "Export to Excel",
+      "functions": []
+    }
+  ],
+  "inputsWithoutValues": [
+    {
+      "type": "checkbox",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์คำค้นหา"
+    },
+    {
+      "type": "button",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "หมายเลขรายการ"
+    },
+    {
+      "type": "text",
+      "placeholder": "มูลค่าเริ่มต้น (0)"
+    },
+    {
+      "type": "text",
+      "placeholder": "จนถึงมูลค่า (999,999)"
+    },
+    {
+      "type": "text",
+      "placeholder": "อ้างอิง"
+    },
+    {
+      "type": "select",
+      "placeholder": null
+    },
+    {
+      "type": "hidden",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "สินค้า"
+    },
+    {
+      "type": "text",
+      "placeholder": "Serial no"
+    },
+    {
+      "type": "text",
+      "placeholder": "ชื่อลูกค้า"
+    },
+    {
+      "type": "text",
+      "placeholder": "เบอร์โทรศัพท์"
+    },
+    {
+      "type": "text",
+      "placeholder": "อีเมลลูกค้า"
+    },
+    {
+      "type": "text",
+      "placeholder": "วันที่ ตั้งแต่"
+    },
+    {
+      "type": "text",
+      "placeholder": "ถึง"
+    },
+    {
+      "type": "text",
+      "placeholder": "วันที่ชำระเงิน ตั้งแต่"
+    },
+    {
+      "type": "text",
+      "placeholder": "วันที่โอนสินค้า ตั้งแต่"
+    },
+    {
+      "type": "radio",
+      "placeholder": null
+    },
+    {
+      "type": "search",
+      "placeholder": null
+    },
+    {
+      "type": "file",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "จำนวนเงิน"
+    },
+    {
+      "type": "input",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์ข้อความ 'confirm' เพื่อยืนยันการชำระเงินทั้งหมด"
+    },
+    {
+      "type": "text",
+      "placeholder": "0.00"
+    },
+    {
+      "type": "search",
+      "placeholder": "ช่องทางการชำระเงิน..."
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์ข้อความ 'confirm' เพื่อยืนยันการลบข้อมูล"
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์ข้อความ 'confirm' เพื่อยืนยันการโอนสินค้าทั้งหมด"
+    },
+    {
+      "type": "textarea",
+      "placeholder": null
+    },
+    {
+      "type": "text",
+      "placeholder": "โปรดระบุ"
+    },
+    {
+      "type": "text",
+      "placeholder": "พิมพ์รหัสเปิดใช้งาน"
+    }
+  ],
+  "onclickFunctionsWithoutArguments": [
+    {
+      "function": "closeLogisticDialogBox",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "addSessionMenuStyle",
+      "label": null,
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "switchSysNotifSidebarTab",
+      "label": "อัพเดต",
+      "visible": true
+    },
+    {
+      "function": "doGetNotificationList",
+      "label": "แจ้งเตือน",
+      "visible": true
+    },
+    {
+      "function": "doGenerateTempUserKey",
+      "label": "Request Key",
+      "visible": false
+    },
+    {
+      "function": "clearAllSessions",
+      "label": "Logout",
+      "visible": false
+    },
+    {
+      "function": "openImportTransaction",
+      "label": "นำเข้าไฟล์ (Excel)",
+      "visible": true
+    },
+    {
+      "function": "clickMenu",
+      "label": "สร้าง",
+      "visible": true
+    },
+    {
+      "function": "advanceSearch",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "changetransactiondate",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "changepaymentdate",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "changeadjusthavetransactionnumber",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "OnClickChkSetSignatureDate",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doDownloadPdf",
+      "label": "พิมพ์เอกสาร",
+      "visible": false
+    },
+    {
+      "function": "doDownloadLetter",
+      "label": "พิมพ์ใบแปะจดหมาย/กล่อง",
+      "visible": false
+    },
+    {
+      "function": "ImportTransaction",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "changeadjusthavetransactionnumbermulti",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "OnClickChkSetSignatureDateMulti",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doDownloadMultiPdf",
+      "label": "พิมพ์เอกสาร",
+      "visible": false
+    },
+    {
+      "function": "updateAdjustDocument",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "ChangeWithholdingTaxStatus",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "insertMainPayment",
+      "label": "ยืนยันการชำระเงิน",
+      "visible": false
+    },
+    {
+      "function": "ChangeMultiWithholdingTaxStatus",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "insertMultiPayment",
+      "label": "ยืนยันการชำระเงิน",
+      "visible": false
+    },
+    {
+      "function": "updateTransaction",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "plusNumber",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "updateTotalPrice",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "minusNumberNotLessMoreThanZero",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "insertQuickcreateTransaction",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "doDownloadMultiLetter",
+      "label": "พิมพ์ใบแปะจดหมาย/กล่อง",
+      "visible": false
+    },
+    {
+      "function": "closeConfirmDeletePopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmDeletePopup",
+      "label": "ยืนยัน",
+      "visible": false
+    },
+    {
+      "function": "updateTransactionList",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "doApprovePendingPayment",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "approvePendingTransaction",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "addTag",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "addMultiTag",
+      "label": "บันทึก",
+      "visible": false
+    },
+    {
+      "function": "closeConfirmPopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmPopup",
+      "label": "ยืนยัน",
+      "visible": false
+    },
+    {
+      "function": "changeOther",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSetup",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "doInsertSample",
+      "label": null,
+      "visible": false
+    },
+    {
+      "function": "closeActivationCodePopup",
+      "label": "ยกเลิก",
+      "visible": false
+    },
+    {
+      "function": "confirmActivationCodePopup",
+      "label": "ดำเนินการต่อ",
+      "visible": false
+    },
+    {
+      "function": "closeSuccessPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closeErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "closePointErrorPopup",
+      "label": "ตกลง",
+      "visible": false
+    },
+    {
+      "function": "goToTopup",
+      "label": "เติมพอยท์",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "×",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "แจ้งเตือน",
+      "visible": false
+    },
+    {
+      "function": "switchSysNotifTab",
+      "label": "อัพเดต",
+      "visible": false
+    },
+    {
+      "function": "toggleSysNotifWidget",
+      "label": "การแจ้งเตือนระบบ",
+      "visible": false
+    }
+  ],
+  "redaction": "ไม่มี body text, ค่า input, arguments, record IDs, customer/contact data หรือ external auth URLs"
+}

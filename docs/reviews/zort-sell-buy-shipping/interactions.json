@@ -1,0 +1,388 @@
+[
+  {
+    "page": "01-sell-add",
+    "action": "contact",
+    "ok": true,
+    "headings": [
+      "เลือกผู้ติดต่อ"
+    ],
+    "buttons": [],
+    "fieldLabelsOrPlaceholders": [
+      "เลขรายการขาย ชื่อลูกค้า ช่องทางการขาย และอื่นๆ"
+    ]
+  },
+  {
+    "page": "01-sell-add",
+    "action": "history",
+    "ok": true,
+    "headings": [],
+    "buttons": [
+      "ตกลง"
+    ],
+    "fieldLabelsOrPlaceholders": []
+  },
+  {
+    "page": "01-sell-add",
+    "action": "products",
+    "ok": true,
+    "headings": [
+      "เลือกสินค้าหลายรายการ"
+    ],
+    "buttons": [
+      "เลือกสินค้า"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "เลขรายการขาย ชื่อลูกค้า ช่องทางการขาย และอื่นๆ"
+    ]
+  },
+  {
+    "page": "01-sell-add",
+    "action": "payment",
+    "ok": true,
+    "headings": [
+      "ชำระเงิน"
+    ],
+    "buttons": [
+      "เงินสด",
+      "ตกลง"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "จำนวนเงิน...",
+      "tmppaymentname",
+      "paymentdate",
+      "withholdingtaxstatus"
+    ]
+  },
+  {
+    "page": "01-sell-add",
+    "action": "agent",
+    "ok": true,
+    "headings": [
+      "เลือกตัวแทนจำหน่าย"
+    ],
+    "buttons": [],
+    "fieldLabelsOrPlaceholders": [
+      "เลขรายการขาย ชื่อลูกค้า ช่องทางการขาย และอื่นๆ"
+    ]
+  },
+  {
+    "page": "02-quotation-list",
+    "action": "advanced",
+    "ok": true,
+    "headings": [
+      "ใบเสนอราคา",
+      "ค้นหาขั้นสูง",
+      "สถานะ",
+      "การจัดส่ง"
+    ],
+    "buttons": [
+      "แจ้งเตือน",
+      "อัพเดต",
+      "SITAKAN",
+      "นำเข้าไฟล์ (Excel)",
+      "สร้าง",
+      "ค้นหาขั้นสูง",
+      "ค้นหา",
+      "Export to Excel"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "เลขรายการขาย ชื่อลูกค้า ช่องทางการขาย และอื่นๆ",
+      "หมายเลขรายการ",
+      "มูลค่าเริ่มต้น (0)",
+      "จนถึงมูลค่า (999,999)",
+      "อ้างอิง",
+      "ช่องทางการขาย",
+      "searchcreateuserid",
+      "สินค้า - ใส่รหัสหรือชื่อของสินค้า...",
+      "checkshowarchive",
+      "ชื่อลูกค้า",
+      "เบอร์โทรศัพท์",
+      "อีเมลลูกค้า",
+      "status",
+      "transactiondatecheck",
+      "วันที่ ตั้งแต่",
+      "ถึง",
+      "PageSize"
+    ]
+  },
+  {
+    "page": "02-quotation-list",
+    "action": "import",
+    "ok": true,
+    "headings": [
+      "นำเข้าใบเสนอราคาใหม่"
+    ],
+    "buttons": [
+      "บันทึก"
+    ],
+    "fieldLabelsOrPlaceholders": []
+  },
+  {
+    "page": "03-logistics-list",
+    "action": "advanced",
+    "ok": true,
+    "headings": [
+      "บริการขนส่ง",
+      "ค้นหาขั้นสูง"
+    ],
+    "buttons": [
+      "แจ้งเตือน",
+      "อัพเดต",
+      "SITAKAN",
+      "นำเข้ารายการไฟล์ Excel",
+      "ขนส่ง",
+      "ค้นหาขั้นสูง",
+      "ค้นหา",
+      "Export to Excel"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "พิมพ์คำค้นหา",
+      "รายการ",
+      "ชื่อผู้รับ",
+      "ตั้งแต่วันที่",
+      "ถึงวันที่",
+      "logisticsstatus",
+      "searchstatus",
+      "PageSize"
+    ]
+  },
+  {
+    "page": "03-logistics-list",
+    "action": "import",
+    "ok": true,
+    "headings": [
+      "นำเข้ารายการ Dropoff"
+    ],
+    "buttons": [
+      "บันทึก"
+    ],
+    "fieldLabelsOrPlaceholders": []
+  },
+  {
+    "page": "03-logistics-list",
+    "action": "shipping",
+    "ok": true,
+    "headings": [
+      "บริการขนส่ง"
+    ],
+    "buttons": [
+      "+เพิ่มผู้รับ",
+      "ต่อไป"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "ชื่อผู้ส่ง",
+      "เบอร์โทรศัพท์ผู้ส่ง",
+      "เลขที่",
+      "sender-province",
+      "sender-district",
+      "sender-tambon",
+      "sender-zipcode",
+      "ที่อยู่ผู้ส่ง",
+      "iscod-checkbox",
+      "parcel-weight",
+      "parcel-dimension",
+      "ชื่อผู้รับ",
+      "เบอร์โทรศัพท์ผู้รับ",
+      "recipient-province",
+      "recipient-district",
+      "recipient-tambon",
+      "recipient-zipcode",
+      "ที่อยู่ผู้รับ",
+      "ShippingPointChannel",
+      "ShippingChannel"
+    ]
+  },
+  {
+    "page": "04-customer-return-list",
+    "action": "advanced",
+    "ok": true,
+    "headings": [
+      "รับคืนสินค้า",
+      "ค้นหาขั้นสูง",
+      "การโอนสินค้า",
+      "สถานะการชำระเงิน"
+    ],
+    "buttons": [
+      "แจ้งเตือน",
+      "อัพเดต",
+      "SITAKAN",
+      "นำเข้าไฟล์ (Excel)",
+      "สร้าง",
+      "ค้นหาขั้นสูง",
+      "ค้นหา",
+      "คลัง / สาขา - ทั้งหมด",
+      "ค้นหา",
+      "Export to Excel"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "พิมพ์คำค้นหา",
+      "หมายเลขรายการ",
+      "มูลค่าเริ่มต้น (0)",
+      "จนถึงมูลค่า (999,999)",
+      "อ้างอิง",
+      "searchcreateuserid",
+      "searchwarehouseid",
+      "สินค้า",
+      "Serial no",
+      "checkshowarchive",
+      "ชื่อลูกค้า",
+      "เบอร์โทรศัพท์",
+      "อีเมลลูกค้า",
+      "status",
+      "paymentstatus",
+      "transactiondatecheck",
+      "วันที่ ตั้งแต่",
+      "ถึง",
+      "paymentdatecheck",
+      "วันที่ชำระเงิน ตั้งแต่",
+      "วันที่โอนสินค้า ตั้งแต่"
+    ]
+  },
+  {
+    "page": "04-customer-return-list",
+    "action": "import",
+    "ok": true,
+    "headings": [
+      "นำเข้ารายการรับคืนใหม่"
+    ],
+    "buttons": [
+      "บันทึก"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "importtype-order"
+    ]
+  },
+  {
+    "page": "06-buy-add",
+    "action": "contact",
+    "ok": true,
+    "headings": [
+      "เลือกผู้ติดต่อ"
+    ],
+    "buttons": [],
+    "fieldLabelsOrPlaceholders": [
+      "พิมพ์คำค้นหา"
+    ]
+  },
+  {
+    "page": "06-buy-add",
+    "action": "history",
+    "ok": true,
+    "headings": [],
+    "buttons": [
+      "ตกลง"
+    ],
+    "fieldLabelsOrPlaceholders": []
+  },
+  {
+    "page": "06-buy-add",
+    "action": "products",
+    "ok": true,
+    "headings": [
+      "เลือกสินค้าหลายรายการ"
+    ],
+    "buttons": [
+      "เลือกสินค้า"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "พิมพ์คำค้นหา"
+    ]
+  },
+  {
+    "page": "06-buy-add",
+    "action": "payment",
+    "ok": true,
+    "headings": [
+      "ชำระเงิน"
+    ],
+    "buttons": [
+      "เงินสด",
+      "ตกลง"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "จำนวนเงิน...",
+      "tmppaymentname",
+      "paymentdate",
+      "withholdingtaxstatus"
+    ]
+  },
+  {
+    "page": "07-buy-list",
+    "action": "advanced",
+    "ok": true,
+    "headings": [
+      "รายการซื้อ",
+      "ค้นหาขั้นสูง",
+      "การโอนสินค้า",
+      "สถานะการชำระเงิน"
+    ],
+    "buttons": [
+      "แจ้งเตือน",
+      "อัพเดต",
+      "SITAKAN",
+      "นำเข้าไฟล์ (Excel)",
+      "สร้าง",
+      "สร้างอย่างง่าย",
+      "ค้นหาขั้นสูง",
+      "ค้นหา",
+      "คลัง / สาขา - ทั้งหมด",
+      "ค้นหา",
+      "Export to Excel"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "พิมพ์คำค้นหา",
+      "หมายเลขรายการ",
+      "มูลค่าเริ่มต้น (0)",
+      "จนถึงมูลค่า (999,999)",
+      "อ้างอิง",
+      "searchcreateuserid",
+      "searchwarehouseid",
+      "สินค้า",
+      "Serial no",
+      "checkshowarchive",
+      "ชื่อผู้ติดต่อ",
+      "เบอร์โทรศัพท์",
+      "อีเมลผู้ติดต่อ",
+      "status",
+      "paymentstatus",
+      "transactiondatecheck",
+      "วันที่ ตั้งแต่",
+      "ถึง",
+      "paymentdatecheck",
+      "วันที่ชำระเงิน ตั้งแต่",
+      "วันที่โอนสินค้า ตั้งแต่"
+    ]
+  },
+  {
+    "page": "07-buy-list",
+    "action": "import",
+    "ok": true,
+    "headings": [
+      "นำเข้ารายการซื้อใหม่"
+    ],
+    "buttons": [
+      "บันทึก"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "importtype-order"
+    ]
+  },
+  {
+    "page": "07-buy-list",
+    "action": "quick",
+    "ok": true,
+    "headings": [
+      "สร้างอย่างง่าย",
+      "เลือกสินค้า"
+    ],
+    "buttons": [
+      "บันทึก"
+    ],
+    "fieldLabelsOrPlaceholders": [
+      "q",
+      "0.00",
+      "ช่องทางการชำระเงิน...",
+      "quickwarehouseid"
+    ]
+  }
+]
