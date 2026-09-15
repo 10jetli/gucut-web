@@ -487,6 +487,35 @@ async function route(req, context) {
       const r = await slipArchiveSummary({ expectedFiles: url.searchParams.get("expected") ?? undefined });
       return json(r, r.ok ? 200 : 502);
     }
+    /* GET ?slips=<เลขที่ใบ> — รายการสลิปที่เก็บไว้ของใบเดียว (15 ก.ย. 2569 · จอรายละเอียดใบขาย)
+       ขาเข้าจากจอ: ?slips=SO-… · ขาออก: {ok, docno, count, files:[{fileid, kind, bytes, archivedAt}], note}
+       GET ?slip=<เลขที่ใบ>&fileid=<ตัวเลข> — ตัวไฟล์หนึ่งไฟล์ (ไบต์จริง ไม่ใช่ JSON)
+       🔒 ต้องผ่าน adminGate (ตั๋วอัปโหลดเข้าไม่ถึง — ตั๋วถูกกันไว้เฉพาะ UPLOAD_PATHS) · ไม่มีเส้นรายชื่อทั้งถัง
+       ⚠️ ท่อกลาง /api/web ของจอส่งต่อแค่ content-type กับหัว x- ⇒ cache-control ข้างล่างไม่ถึงเบราว์เซอร์ถ้าไม่แก้ฝั่งนั้น */
+    if (url.searchParams.has("slips")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { listOrderSlips } = await import("../lib/slip-archive.mjs");
+      const r = await listOrderSlips({ docno: url.searchParams.get("slips") });
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
+    if (url.searchParams.has("slip")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { readOrderSlip } = await import("../lib/slip-archive.mjs");
+      const r = await readOrderSlip({ docno: url.searchParams.get("slip"), fileid: url.searchParams.get("fileid") });
+      if (!r.ok) return json(r, r.status || 400);
+      return new Response(r.buf, {
+        status: 200,
+        headers: {
+          "content-type": r.contentType,
+          "x-core-build": CORE_BUILD,
+          "x-slip-archived-at": String(r.archivedAt ?? ""),
+          "cache-control": "private, no-store",
+          "x-content-type-options": "nosniff",
+          // ชื่อไฟล์ตั้งจาก fileid เอง ไม่ใช้ชื่อเดิมที่ ZORT ส่งมา (อาจมีชื่อลูกค้า)
+          "content-disposition": `inline; filename="slip-${r.fileid}.${r.kind === "jpeg" ? "jpg" : r.kind}"`,
+        },
+      });
+    }
     /* GET ?zortfiles=<order|purchaseorder|quotation|returnorder|returnpurchaseorder>&docid=<id ของ ZORT> | &docno=<เลขที่เอกสาร> [&fileid=<id ไฟล์>]
        ขาเข้าจากจอ/ตัวตรวจ: พารามิเตอร์ใน URL ตามนี้ (ตั้งชื่อ docid/docno ไม่ใช้ id/number กันชนเส้นอื่น)
        ขาออกไป ZORT: <โมดูล>/Get<โมดูล>Files · <โมดูล>/Get<โมดูล>FileDetail (GET อย่างเดียว)

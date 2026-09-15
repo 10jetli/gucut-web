@@ -135,3 +135,71 @@ export async function slipArchiveSummary(o = {}) {
     note: "นับเฉพาะไฟล์ที่ผ่านตรวจชนิดจากไบต์ (jpeg/png/webp/gif/pdf) · complete ต้องส่ง expected จากจำนวนท้ายจอ ZORT /FileUpload/list · ไม่ส่ง = null (ไม่รู้)",
   };
 }
+
+/* 🔍 อ่านสลิปของ "ใบเดียว" ให้จอรายละเอียดใบขาย (15 ก.ย. 2569 · ผังเดียวกับ ZORT ที่แนบสลิปไว้ในหน้าใบ)
+   🔒 ขอบเขตตั้งใจแคบ: ต้องรู้เลขที่ใบก่อน · **ไม่มีเส้นรายชื่อทั้งถัง** (สรุปทั้งถังมีแค่ตัวนับ slipArchiveSummary)
+      ⇒ ไล่ดูสลิปลูกค้าทั้งร้านในที่เดียวไม่ได้ · ต้องผ่าน adminGate เหมือนทุกเส้นใน core.mjs
+   ⚠️ prefix ต้องปิดท้ายด้วย "/" — ไม่งั้น SO-1 ลากไฟล์ของ SO-10 · SO-11 มาด้วย (มีเทสต์เฝ้า)
+   ⚠️ ของในถังคือภาพ ณ วันที่เก็บ (ช่อง at ต่อไฟล์) — ZORT รับสลิปใหม่ทุกวัน ⇒ ว่าง ≠ ใบนี้ไม่มีสลิปใน ZORT */
+const SLIP_MIME = { jpeg: "image/jpeg", png: "image/png", webp: "image/webp", gif: "image/gif", pdf: "application/pdf" };
+
+export async function listOrderSlips(o = {}) {
+  const docno = cleanDocno(o.docno);
+  if (!docno) return { ok: false, error: "เลขที่ใบไม่ถูกต้อง (A-Z a-z 0-9 . _ - ไม่เกิน 60 ตัว)" };
+  const store = o.store ?? getStore({ name: SLIP_STORE, consistency: "strong" });
+  const prefix = `f/${encodeURIComponent(docno)}/`;
+  let blobs;
+  try {
+    ({ blobs } = await store.list({ prefix }));
+  } catch {
+    return { ok: false, unknown: true, error: "อ่านที่เก็บสลิปไม่ได้ — ห้ามแปลว่าใบนี้ไม่มีสลิป" };
+  }
+  if (!Array.isArray(blobs)) return { ok: false, unknown: true, error: "รายการที่เก็บตอบรูปไม่รู้จัก" };
+  const files = [];
+  for (const b of blobs) {
+    const key = String(b?.key ?? "");
+    if (!key.startsWith(prefix)) continue;
+    let meta;
+    try {
+      meta = (await store.getMetadata(key))?.metadata ?? null;
+    } catch {
+      return { ok: false, unknown: true, error: "อ่านรายละเอียดไฟล์ในที่เก็บไม่ได้ — รายการอาจไม่ครบ" };
+    }
+    const kind = String(meta?.kind ?? "");
+    files.push({
+      fileid: key.slice(prefix.length),
+      kind: SLIP_MIME[kind] ? kind : null,
+      bytes: Number(meta?.bytes) || null,
+      archivedAt: meta?.at ?? null,
+    });
+  }
+  return {
+    ok: true,
+    docno,
+    count: files.length,
+    files,
+    note: "สลิปที่เก็บไว้ ณ วันที่ในช่อง archivedAt — ZORT รับสลิปใหม่ทุกวัน ⇒ ว่างไม่ได้แปลว่าใบนี้ไม่มีสลิปใน ZORT",
+  };
+}
+
+/** ตัวไฟล์ของสลิปหนึ่งไฟล์ — content-type คิดจาก kind ที่ตรวจจากไบต์ตอนเก็บ **ไม่เชื่อ type ที่ ZORT บอก** */
+export async function readOrderSlip(o = {}) {
+  const docno = cleanDocno(o.docno);
+  if (!docno) return { ok: false, status: 400, error: "เลขที่ใบไม่ถูกต้อง" };
+  const fileid = String(o.fileid ?? "").trim();
+  if (!/^\d{1,20}$/.test(fileid)) return { ok: false, status: 400, error: "fileid ต้องเป็นตัวเลข" };
+  const store = o.store ?? getStore({ name: SLIP_STORE, consistency: "strong" });
+  const key = keyOf(docno, fileid);
+  let meta, buf;
+  try {
+    meta = (await store.getMetadata(key))?.metadata ?? null;
+    if (!meta) return { ok: false, status: 404, error: "ไม่พบสลิปนี้ในที่เก็บ (อาจยังไม่ได้เก็บ — ไม่ได้แปลว่าไม่มีใน ZORT)" };
+    buf = await store.get(key, { type: "arrayBuffer" });
+  } catch {
+    return { ok: false, status: 502, unknown: true, error: "อ่านที่เก็บสลิปไม่ได้" };
+  }
+  if (!buf || !buf.byteLength) return { ok: false, status: 502, unknown: true, error: "ไฟล์ในที่เก็บว่าง" };
+  const contentType = SLIP_MIME[String(meta.kind ?? "")];
+  if (!contentType) return { ok: false, status: 415, error: "ชนิดไฟล์ไม่อยู่ในรายการที่เปิดให้ดู" };
+  return { ok: true, buf, contentType, kind: meta.kind, fileid, archivedAt: meta.at ?? null };
+}
