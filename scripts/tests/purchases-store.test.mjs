@@ -91,6 +91,9 @@ test('ใบเสนอราคา z2 ใช้รหัส _2 · บัตร
   const k = readFileSync(new URL('../../netlify/lib/core-stock.mjs', import.meta.url), 'utf8');
   assert.equal((k.match(/FROM purchase_order_items_v2 i LEFT JOIN purchase_orders_v2 po ON po\.id = i\.po_id/g) || []).length, 2);
   assert.equal((k.match(/WHERE i\.source = 'z1' AND i\.sku =/g) || []).length, 2);
+  // ใบซื้อที่ยกเลิกไม่ใช่ของเข้า — ทั้งคำสั่งดึงแถวและตัวนับต้องกรอง (พบ PO-202609001 Voided ขึ้นเป็นซื้อเข้า)
+  assert.equal((k.match(/AND \$\{BUY_NOT_CANCELLED\}\$\{range\("po\.po_date"\)\}/g) || []).length, 2);
+  assert.match(k, /const BUY_NOT_CANCELLED = CANCEL_SQL\.replace\(\/status\/g, "COALESCE\(po\.status,''\)"\);/);
   assert.doesNotMatch(k, /FROM purchase_order_items i\b/);
   const c = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
   const at = c.indexOf('if (url.searchParams.get("purchase")) {');

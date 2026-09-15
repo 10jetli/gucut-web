@@ -42,6 +42,11 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const esc = (v) => `'${String(v ?? "").replace(/'/g, "''")}'`;
 const CANCEL_SQL =
   `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+/* 🔴 ใบซื้อที่ยกเลิกต้องไม่ขึ้นเป็น "ของเข้า" ในบัตรสต็อก (15 ก.ย. 2569 · พบหลังย้ายตาราง _v2)
+   เดิมคิวรีชนิดซื้อไม่กรองสถานะเลย (ต่างจากชนิดขายที่กรอง CANCEL_SQL) — ไม่ออกอาการเพราะกระจกเก่าไม่เคยดึงใบใหม่
+   พอซิงก์ใหม่ ใบทดสอบ PO-202609001 (Voided · 00313 × 1 · ฿1) ขึ้นเป็นซื้อเข้า 00313 ทั้งที่ของไม่เคยเข้า
+   ⚠️ COALESCE จำเป็น — LEFT JOIN แล้วบรรทัดที่ไม่มีหัวใบได้ NULL NOT LIKE = NULL ⇒ แถวหายเงียบ */
+const BUY_NOT_CANCELLED = CANCEL_SQL.replace(/status/g, "COALESCE(po.status,'')");
 
 /** ท่อนกลางที่ใช้ร่วมกันทั้งตัวนับและตัวลงรายละเอียด — ผูกค่าด้วย ? ตามลำดับ base,cur,base,cur,base,cur */
 const CALC_CTE = `
@@ -758,7 +763,7 @@ export async function stockCard(o = {}) {
           `SELECT po.po_date AS date, 'ซื้อ' AS kind, po.status AS status,
                   i.number AS ref, po.vendor AS party, i.qty AS qty, ROUND(i.qty * i.price, 2) AS amount
            FROM purchase_order_items_v2 i LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
-           WHERE i.source = 'z1' AND i.sku = ${esc(sku)}${range("po.po_date")}
+           WHERE i.source = 'z1' AND i.sku = ${esc(sku)} AND ${BUY_NOT_CANCELLED}${range("po.po_date")}
            ORDER BY po.po_date DESC, i.number DESC, i.line DESC LIMIT ${depth}`
         )
       : none(),
@@ -784,7 +789,7 @@ export async function stockCard(o = {}) {
     wantBuy
       ? coreQuery(
           `SELECT COUNT(*) AS c FROM purchase_order_items_v2 i LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
-           WHERE i.source = 'z1' AND i.sku = ${esc(sku)}${range("po.po_date")}`
+           WHERE i.source = 'z1' AND i.sku = ${esc(sku)} AND ${BUY_NOT_CANCELLED}${range("po.po_date")}`
         )
       : none(),
     wantAdjust
