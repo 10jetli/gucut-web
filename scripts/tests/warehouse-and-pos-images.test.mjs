@@ -45,7 +45,10 @@ test('orderfacets warehouses=1 ⇒ แยกคลังในเงื่อน
   const rq = calls.find((c) => /FROM return_orders_v2/.test(c.s) && /GROUP BY 1/.test(c.s));
   assert.ok(rq, 'ต้องมีคิวรีใบคืนรายคลัง');
   assert.deepEqual(rq.params, ch.params, 'ใบคืนต้องใช้ตัวกรองชุดเดียวกัน');
-  for (const re of [/orders\.source = return_orders_v2\.source AND/, /NOT LIKE '%void%'/, /NOT LIKE '%cancel%'/]) assert.match(rq.s, re);
+  assert.match(rq.s, /orders\.source = return_orders_v2\.source AND/);
+  // ⚠️ ต้องเป็นเงื่อนไขของ "ใบคืน" หลังปิด EXISTS — w.sql ของใบขายก็มี NOT LIKE '%void%' อยู่แล้ว
+  //    ถ้าจับแค่คำ จะผ่านทั้งที่ใบคืนยกเลิกถูกนับ (รุ่นแรกของเทสต์นี้พลาดตรงนี้ · mutation รอด)
+  assert.match(rq.s, /\)\s*AND COALESCE\(status,''\) NOT LIKE '%void%' AND COALESCE\(status,''\) NOT LIKE '%cancel%'\s*GROUP BY 1/);
   assert.match(r.warehouseScope, /ยังไม่รู้คลัง/);
 });
 
