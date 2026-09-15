@@ -19,7 +19,9 @@ const store = () => getStore({ name: "gucut-push", consistency: "strong" });
 
 export async function vapid() {
   const s = store();
-  let k = await s.get(KEYS, { type: "json" }).catch(() => null);
+  // อ่านพลาดไม่เท่ากับยังไม่เคยมีคีย์: ถ้าสร้างใหม่แล้วเขียนทับ
+  // subscription ทุกเครื่องที่ผูกกับ public key เดิมจะใช้ไม่ได้พร้อมกัน
+  let k = await s.get(KEYS, { type: "json" });
   if (!k?.publicKey) {
     k = webpush.generateVAPIDKeys();
     await s.setJSON(KEYS, k);
