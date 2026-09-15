@@ -75,8 +75,38 @@ export function sqlWrites(sql) {
   return true;
 }
 
+/* ── ซ่อมโครงตารางเองเมื่อเจอ "no such column" ── (15 ก.ย. 2569 · ใบ t_mu2ugvf0)
+   🔴 เหตุจริง: 270f04e เพิ่มคอลัมน์ tag ใน SELECT แต่ ALTER อยู่ใน coreInit() ที่ไม่มีอะไรเรียกอัตโนมัติ
+      ⇒ list=orders ตอบ 500 "no such column: tag" 3 นาที (22:42–22:45 ไทย) จนคนยิง ?init=1
+      fc52832 (image_path) ซ้ำอีกรอบ — ตัวตรวจรอหัว build ใหม่แล้วยิง init แต่หัวโผล่ช้า 2 นาที
+   ⇒ ทางที่ไม่พึ่งคน: เจอ "no such column" ⇒ รัน coreInit() **ครั้งเดียวต่ออินสแตนซ์** (คำขอพร้อมกันใช้ promise เดียว) แล้วลองซ้ำ **หนึ่งครั้ง**
+   ⚠️ ทางปกติไม่เสียอะไรเลย (ไม่ยิง ensure ทุกคำขอ — D1 อยู่ไกล ไป-กลับละ ~286ms)
+   ⚠️ error อื่นไม่แตะ · ซ่อมแล้วยังไม่มีคอลัมน์ = โยน error เดิม (สะกดชื่อผิดในโค้ด ไม่ใช่โครงตารางค้าง) ห้ามวน
+   ⚠️ คำสั่งใน coreInit เองส่ง { heal: false } กันวนซ้อน */
+let healing = null;
+const NO_COLUMN = /no such column/i;
+
 /** ยิง SQL หนึ่งประโยค (พารามิเตอร์ใช้ ? ตามลำดับ) — คืน rows */
-export async function coreQuery(sql, params = []) {
+export async function coreQuery(sql, params = [], opts = {}) {
+  try {
+    return await coreQueryOnce(sql, params);
+  } catch (e) {
+    if (opts.heal === false || !NO_COLUMN.test(String(e?.message ?? e))) throw e;
+    const first = !healing;
+    if (first) healing = coreInit().catch((err) => { healing = null; throw err; });
+    await healing;
+    try {
+      return await coreQueryOnce(sql, params);
+    } catch (e2) {
+      if (NO_COLUMN.test(String(e2?.message ?? e2))) {
+        throw new Error(`${String(e2?.message ?? e2)} · ซ่อมโครงตาราง (coreInit) แล้วยังไม่มีคอลัมน์ ⇒ ชื่อคอลัมน์ในโค้ดผิด หรือไม่ได้เพิ่ม ALTER ใน coreInit`);
+      }
+      throw e2;
+    }
+  }
+}
+
+async function coreQueryOnce(sql, params = []) {
   const token = process.env.CLOUDFLARE_D1_TOKEN;
   if (!token) throw new Error("ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN");
   const meter = d1Meter.getStore();
@@ -188,7 +218,7 @@ export async function coreInit() {
       mismatched INTEGER, abs_diff REAL, notes TEXT,
       at TEXT DEFAULT (datetime('now')))`,
   ];
-  for (const sql of stmts) await coreQuery(sql);
+  for (const sql of stmts) await coreQuery(sql, [], { heal: false });
   // ⚠️ คอลัมน์ที่เพิ่มทีหลังต้องมาทาง ALTER TABLE เสมอ — แก้ CREATE TABLE ข้างบนไม่มีผล
   //    เพราะ IF NOT EXISTS จะไม่แตะตารางที่มีอยู่แล้ว คอลัมน์ใหม่จะไม่เกิดขึ้นแบบเงียบ ๆ
   //    SQLite ไม่มี ADD COLUMN IF NOT EXISTS → ยิงซ้ำจะ error จึงกลืนทิ้ง
@@ -248,7 +278,7 @@ export async function coreInit() {
        ⚠️ SELECT อ่านคอลัมน์นี้ ⇒ ต้องยิง ?init=1 ทันทีที่ท่อขึ้น (บทเรียน new-column-select-before-migration) */
     `ALTER TABLE products ADD COLUMN image_path TEXT`,
   ]) {
-    await coreQuery(sql).catch(() => null);
+    await coreQuery(sql, [], { heal: false }).catch(() => null);
   }
   // นับจากคำสั่ง CREATE TABLE จริงใน stmts — เพิ่มตารางแล้วเลขนี้ตามเอง
   // (เคยเขียนตายตัวว่า 10 ซึ่งจะกลายเป็นเท็จเงียบ ๆ ทันทีที่มีคนเพิ่มตาราง)
