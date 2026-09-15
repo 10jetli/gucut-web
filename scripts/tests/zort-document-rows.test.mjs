@@ -15,7 +15,16 @@ const allRows = Array.from({ length: 694 }, (_, i) => ({
   header: i < 58 ? 'ใบเสร็จรับเงิน' : 'ใบส่งสินค้า',
   documentnumber: `DOC-${String(i + 1).padStart(3, '0')}`,
   referencetype: i % 2 ? 1 : 2,
-  detail: { source: i % 2 ? 'order' : 'purchase' },
+  customerName: `ลูกค้าลับ-${i + 1}`,
+  customerAddress: `ที่อยู่ลับ-${i + 1}`,
+  customerTaxId: `TAX-SECRET-${i + 1}`,
+  newSensitiveFieldFromZort: `NEW-SECRET-${i + 1}`,
+  detail: {
+    source: i % 2 ? 'order' : 'purchase',
+    customerName: `ชื่อลับใน-detail-${i + 1}`,
+    address: `ที่อยู่ลับใน-detail-${i + 1}`,
+    taxId: `เลขภาษีลับ-${i + 1}`,
+  },
 }));
 let calls = [];
 let replyMode = 'fixture';
@@ -53,13 +62,30 @@ test('694 ใบแบ่งหน้าโดย ZORT: หน้า 7 เหล
   assert.equal(r.hasMore, false);
   assert.equal(r.rows.length, 94);
   assert.equal(r.rows[0].documentnumber, 'DOC-601');
-  assert.deepEqual(r.rows[0].detail, { source: 'purchase' }, 'ต้องส่งแถวดิบรวม detail ให้ Export');
+  assert.equal(r.rows[0].detail, undefined, 'ห้ามส่ง detail ซึ่งอาจมีข้อมูลลูกค้า');
   assert.equal(calls.length, 1, 'เส้นรายแถวต้องถามเฉพาะหน้าที่ขอ ไม่กวาด 7 หน้าแบบเส้นสรุป');
   assert.equal(calls[0].method, 'GET');
   const q = new URL(calls[0].url).searchParams;
   assert.equal(q.get('page'), '7');
   assert.equal(q.get('limit'), '100');
   assert.equal(q.get('documenttype'), null);
+});
+
+test('whitelist กันข้อมูลลูกค้าและช่องใหม่ทั้งระดับแถว/detail · ส่งเฉพาะชื่อช่องไว้ตรวจรูป', async () => {
+  reset();
+  const r = await zortDocumentRows({ page: 1, limit: 2 });
+  assert.deepEqual(Object.keys(r.rows[0]), ['id', 'documentnumber', 'header', 'referencetype']);
+  assert.equal(r.rows[0].customerName, undefined);
+  assert.equal(r.rows[0].newSensitiveFieldFromZort, undefined, 'ช่องใหม่จาก ZORT ต้องไม่หลุดโดยอัตโนมัติ');
+  const encoded = JSON.stringify(r);
+  for (const secret of ['ลูกค้าลับ-1', 'ที่อยู่ลับ-1', 'TAX-SECRET-1', 'NEW-SECRET-1',
+    'ชื่อลับใน-detail-1', 'ที่อยู่ลับใน-detail-1', 'เลขภาษีลับ-1']) {
+    assert.ok(!encoded.includes(secret), `ค่าลับต้องไม่อยู่ในคำตอบ: ${secret}`);
+  }
+  assert.ok(r.rowKeys.includes('customerName'), 'rowKeys บอกชื่อช่องต้นทางได้ แต่ไม่ส่งค่า');
+  assert.ok(r.rowKeys.includes('newSensitiveFieldFromZort'));
+  assert.deepEqual(r.detailKeys, ['address', 'customerName', 'source', 'taxId'],
+    'detailKeys รวมชื่อช่องจากทุกแถว โดยไม่มีค่า detail');
 });
 
 test('type กรองด้วย documenttype ที่ ZORT ก่อนแบ่งหน้า — ไม่ใช้ referencetype/header กรองทีหลัง', async () => {
@@ -97,6 +123,8 @@ test('list ว่างจริงคือ rows [] · ไม่มี count �
   const r = await zortDocumentRows({ page: 1, limit: 20, type: 'all' });
   assert.equal(r.ok, true);
   assert.deepEqual(r.rows, []);
+  assert.deepEqual(r.rowKeys, []);
+  assert.deepEqual(r.detailKeys, []);
   assert.equal(r.count, null);
   assert.equal(r.totalPages, null);
   assert.equal(r.hasMore, null);

@@ -12,6 +12,22 @@ export const ZORT_DOCUMENT_TYPES = {
   5: "ใบหัก ณ ที่จ่าย",
 };
 
+// 🔒 เอกสารอาจมีชื่อลูกค้า ที่อยู่ และเลขผู้เสียภาษีทั้งระดับแถวและใน detail
+// ส่งได้เฉพาะสารบัญที่จอต้องใช้ ช่องใหม่ที่ ZORT เพิ่มภายหลังจึงไม่หลุดออกเอง
+export const DOCUMENT_ROW_FIELDS = [
+  "id",
+  "documentnumber",
+  "documentdate",
+  "documentdateString",
+  "createdatetime",
+  "createdatetimeString",
+  "header",
+  "referenceid",
+  "referencenumber",
+  "referencetype",
+  "linkurl",
+];
+
 function creds() {
   const { ZORT_STORENAME, ZORT_APIKEY, ZORT_APISECRET } = process.env;
   if (!ZORT_STORENAME) return null;
@@ -29,7 +45,8 @@ function positiveInt(value, fallback) {
 /**
  * ขาเข้าจากจอ: { page?, limit?, type? }
  * type = 1 ใบเสร็จ · 2 ใบกำกับภาษี · 3 ใบแจ้งหนี้ · 4 ใบเสนอราคา · 5 ใบหัก ณ ที่จ่าย
- * ไม่ส่ง type = ทุกชนิด · ส่งแถวดิบเพราะช่อง detail ต่างกันตามเอกสารอ้างอิง
+ * ไม่ส่ง type = ทุกชนิด · ส่งเฉพาะช่องสารบัญใน DOCUMENT_ROW_FIELDS
+ * detail ส่งเพียงชื่อช่องที่พบไว้ตรวจรูปข้อมูล ห้ามส่งค่าออกไปจนกว่าจะรู้ว่าเป็นข้อมูลอะไร
  */
 export async function zortDocumentRows(input = {}) {
   const page = positiveInt(input.page, 1);
@@ -88,7 +105,22 @@ export async function zortDocumentRows(input = {}) {
   const count = body.count !== null && body.count !== undefined && Number.isFinite(countValue)
     ? countValue
     : null;
-  const rows = body.list;
+  const sourceRows = body.list;
+  const sourceKeys = new Set();
+  const detailKeys = new Set();
+  for (const row of sourceRows) {
+    if (!row || typeof row !== "object" || Array.isArray(row)) continue;
+    for (const key of Object.keys(row)) sourceKeys.add(key);
+    if (row.detail && typeof row.detail === "object" && !Array.isArray(row.detail)) {
+      for (const key of Object.keys(row.detail)) detailKeys.add(key);
+    }
+  }
+  const rows = sourceRows.map((row) => {
+    if (!row || typeof row !== "object" || Array.isArray(row)) return {};
+    return Object.fromEntries(
+      DOCUMENT_ROW_FIELDS.filter((key) => Object.hasOwn(row, key)).map((key) => [key, row[key]])
+    );
+  });
   return {
     ok: true,
     applied: {
@@ -101,7 +133,9 @@ export async function zortDocumentRows(input = {}) {
     count,
     totalPages: count === null ? null : Math.ceil(count / limit),
     hasMore: count === null ? null : page * limit < count,
-    rowKeys: rows[0] && typeof rows[0] === "object" ? Object.keys(rows[0]) : [],
+    // ชื่อช่องเท่านั้น ใช้ดูว่า ZORT เปลี่ยนรูปหรือเพิ่มช่อง โดยไม่เปิดค่าของช่องนั้น
+    rowKeys: [...sourceKeys].sort(),
+    detailKeys: [...detailKeys].sort(),
     rows,
   };
 }
