@@ -185,6 +185,16 @@ async function route(req, context) {
   }
 
   const url = new URL(req.url);
+  /* 🛡️ ด่านค่าพารามิเตอร์ (15 ก.ย. 2569) — ค่าผิดตอบ 400 ก่อนถึงเส้นใด ๆ ห้ามปัดเงียบเป็นผลว่าง · รายละเอียดใน param-guard.mjs */
+  {
+    const { badParamError } = await import("../lib/param-guard.mjs");
+    const bad = badParamError(url.searchParams);
+    if (bad)
+      return new Response(JSON.stringify({ ok: false, error: bad }), {
+        status: 400,
+        headers: { "content-type": "application/json", "x-core-build": CORE_BUILD },
+      });
+  }
   /* ⚠️ **ถ้าเราตัดค่าที่ผู้เรียกขอมา ต้องบอกทุกครั้ง — ที่เดียว ใช้ได้ทุก endpoint**
       (ฝั่งจอชี้ 5 ก.ย. 2569: ขอ list=topproducts&limit=200 ได้กลับมา 100
        มี applied.limit บอกอยู่ แต่จอไม่ได้อ่าน ⇒ ถ้าใครนึกว่าได้ 200 ก็เข้าใจผิดเงียบ ๆ)
