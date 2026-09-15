@@ -984,7 +984,8 @@ async function route(req, context) {
       return json({ ok: true, purchases: await syncPurchases({ repairItems: url.searchParams.get("repairitems") }) });
     }
     /* 🔴 สี่เส้นนี้มีแค่ร้าน z1 (ดู parseZ1OnlyStore) — ด่านเดียวก่อนถึงทั้งสี่ · ติดขอบเขตในคำตอบทุกเส้น */
-    const Z1_ONLY_LISTS = ["purchases", "quotations", "returnorders", "transfers"];
+    // purchaseitems เพิ่ม 15 ก.ย. 2569 — ตาราง purchase_order_items เขียนโดย syncPurchases ตัวเดียวกัน (รหัสร้าน z1 ชุดเดียว) · ฝั่งจอชี้ว่าเส้นนี้ไม่ส่ง storeScope
+    const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders", "transfers"];
     let z1Scope = null;
     if (Z1_ONLY_LISTS.includes(url.searchParams.get("list"))) {
       if (url.searchParams.has("source") && !url.searchParams.has("store"))
@@ -1031,6 +1032,7 @@ async function route(req, context) {
     }
     if (url.searchParams.get("list") === "purchaseitems") {
       return json({
+        ...z1Scope,
         ok: true,
         ...(await listPurchaseItems({
           q: url.searchParams.get("q"),

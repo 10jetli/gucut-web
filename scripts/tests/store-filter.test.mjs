@@ -110,12 +110,12 @@ test('parseZ1OnlyStore: ว่าง/z1 = z1 · z2/all/ค่าแปลก = e
 
 test('core.mjs สี่เส้นที่มีแค่ z1: ด่านอยู่ก่อนทุกเส้น และทุกคำตอบติดขอบเขต', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
-  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "quotations", "returnorders", "transfers"];');
+  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "purchaseitems", "quotations", "returnorders", "transfers"];');
   assert.ok(guard > 0, 'ต้องมีรายชื่อสี่เส้น');
   const gblock = src.slice(guard, guard + 800);
   assert.match(gblock, /if \(z1\.error\) return json\(\{ error: z1\.error, \.\.\.Z1_ONLY_SCOPE \}, 400\);/);
   assert.match(gblock, /url\.searchParams\.has\("source"\) && !url\.searchParams\.has\("store"\)/);
-  for (const k of ['purchases', 'quotations', 'returnorders', 'transfers']) {
+  for (const k of ['purchases', 'purchaseitems', 'quotations', 'returnorders', 'transfers']) {
     const at = src.indexOf(`if (url.searchParams.get("list") === "${k}") {`);
     assert.ok(at > guard, `${k} ต้องอยู่หลังด่าน`);
     // เนื้อของเส้นนี้ = ตั้งแต่หัวเส้นถึงหัวเส้นถัดไป (ไม่ใช้หน้าต่างตายตัว — คอมเมนต์ยาวจะดันโค้ดหลุดหน้าต่าง)
