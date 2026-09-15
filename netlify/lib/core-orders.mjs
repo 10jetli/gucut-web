@@ -233,7 +233,7 @@ export async function listOrderFacets(o = {}) {
       ⚠️ ใบที่ไม่รู้คลัง (warehouse_code NULL/'' — ใบก่อน 1 ก.ย. 2569 ที่ยังไม่กวาดย้อนหลัง) รวมเป็นแถว code "" ของตัวเอง
          ⇒ จอไม่ต้องคิด "ยอดรวม − ผลรวมคลัง" เอง (คิดเองพังเงียบเมื่อมีคลังใหม่หรือขอบเขตไม่ตรงกัน) */
   const wantWarehouses = o.warehouses === true || o.warehouses === "1";
-  const [storeRows, byChannel, byWarehouse] = await Promise.all([
+  const [storeRows, byChannel, byWarehouse, retByWarehouse] = await Promise.all([
     coreQuery(
       `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders WHERE ${w.sql}
@@ -254,7 +254,24 @@ export async function listOrderFacets(o = {}) {
           w.params
         )
       : Promise.resolve(null),
+    /* ใบรับคืนรายคลัง (ZORT แท็บ ตามคลัง/สาขา มีคอลัมน์ "จำนวนรายการรายรับคืน") — ขอพร้อม warehouses=1 เท่านั้น
+       ⚠️ นิยามเดียวกับ returnedAmount ของ listOrders: ใบคืนของ "ใบขายที่อยู่ในตัวกรองนี้" จับคู่เลขที่ + ร้าน · ใบคืนยกเลิกไม่นับ
+       ⚠️ จัดกองตาม **คลังของใบขาย** (ให้แถวตรงกับ byWarehouse) ไม่ใช่คลังที่รับคืน
+       ⚠️ เลขที่ใบขายซ้ำในร้านเดียวกันได้ ⇒ คลังของใบคืนแบบนั้นหยิบใบแรกที่เจอ (หายากมาก ยอมรับได้)
+       ⚠️ อ่านไม่ได้ ⇒ null ทั้งก้อน (จอขึ้น "ยังไม่รู้") ห้ามเป็น 0 */
+    wantWarehouses
+      ? coreQuery(
+          `SELECT COALESCE((SELECT o.warehouse_code FROM orders o WHERE o.number = return_orders_v2.reference AND o.source = return_orders_v2.source LIMIT 1),'') AS code,
+                  COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s
+           FROM return_orders_v2
+           WHERE EXISTS (SELECT 1 FROM orders WHERE orders.number = return_orders_v2.reference AND orders.source = return_orders_v2.source AND ${w.sql})
+             AND COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%'
+           GROUP BY 1`,
+          w.params
+        ).catch(() => null)
+      : Promise.resolve(null),
   ]);
+  const retMap = retByWarehouse ? new Map(retByWarehouse.map((r) => [String(r.code ?? ""), r])) : null;
 
   return {
     from, to,
@@ -272,7 +289,17 @@ export async function listOrderFacets(o = {}) {
     byChannel,
     ...(byWarehouse
       ? {
-          byWarehouse: byWarehouse.map((r) => ({ code: String(r.code ?? ""), orders: num(r.orders), amount: num(r.amount) })),
+          byWarehouse: byWarehouse.map((r) => {
+            const code = String(r.code ?? "");
+            const ret = retMap ? retMap.get(code) : undefined;
+            return {
+              code, orders: num(r.orders), amount: num(r.amount),
+              // null = อ่านใบคืนไม่ได้ (ไม่รู้) · 0 = อ่านได้และไม่มีใบคืน
+              returns: retMap ? num(ret?.c) : null,
+              returnsAmount: retMap ? num(ret?.s) : null,
+            };
+          }),
+          returnsScope: "returns = ใบคืนของใบขายในตัวกรองนี้ (จับคู่เลขที่+ร้าน · ไม่นับใบคืนยกเลิก) จัดกองตามคลังของใบขาย · null = อ่านใบคืนไม่ได้",
           warehouseScope: "code \"\" = ใบที่ยังไม่รู้คลัง (เก็บคลังของใบตั้งแต่ 1 ก.ย. 2569 · ใบเก่ากำลังกวาดย้อนหลัง) · ผลรวมทุกแถว = ยอดของ stores ในคำขอเดียวกัน",
         }
       : {}),
