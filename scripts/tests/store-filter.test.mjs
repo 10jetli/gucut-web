@@ -92,3 +92,35 @@ test('core.mjs ไม่เหลือจุดที่ปัดค่าร�
   assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
   assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
 });
+
+test('parseZ1OnlyStore: ว่าง/z1 = z1 · z2/all/ค่าแปลก = error ห้ามตอบของ z1 ในชื่อร้านอื่น', async () => {
+  const { parseZ1OnlyStore, Z1_ONLY_SCOPE } = await import('../../netlify/lib/core-orders.mjs');
+  assert.deepEqual(parseZ1OnlyStore(undefined), { source: 'z1' });
+  assert.deepEqual(parseZ1OnlyStore(''), { source: 'z1' });
+  assert.deepEqual(parseZ1OnlyStore('z1'), { source: 'z1' });
+  for (const bad of ['z2', 'all', 'zzz']) {
+    const r = parseZ1OnlyStore(bad);
+    assert.ok(r.error, `ต้อง error: ${bad}`);
+    assert.equal(r.source, undefined);
+  }
+  assert.match(parseZ1OnlyStore('z2').error, /ยังไม่ได้ดึง/);
+  assert.equal(Z1_ONLY_SCOPE.store, 'z1');
+  assert.match(Z1_ONLY_SCOPE.storeScope, /z1/);
+});
+
+test('core.mjs สี่เส้นที่มีแค่ z1: ด่านอยู่ก่อนทุกเส้น และทุกคำตอบติดขอบเขต', () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const guard = src.indexOf('const Z1_ONLY_LISTS = ["purchases", "quotations", "returnorders", "transfers"];');
+  assert.ok(guard > 0, 'ต้องมีรายชื่อสี่เส้น');
+  const gblock = src.slice(guard, guard + 800);
+  assert.match(gblock, /if \(z1\.error\) return json\(\{ error: z1\.error, \.\.\.Z1_ONLY_SCOPE \}, 400\);/);
+  assert.match(gblock, /url\.searchParams\.has\("source"\) && !url\.searchParams\.has\("store"\)/);
+  for (const k of ['purchases', 'quotations', 'returnorders', 'transfers']) {
+    const at = src.indexOf(`if (url.searchParams.get("list") === "${k}") {`);
+    assert.ok(at > guard, `${k} ต้องอยู่หลังด่าน`);
+    // เนื้อของเส้นนี้ = ตั้งแต่หัวเส้นถึงหัวเส้นถัดไป (ไม่ใช้หน้าต่างตายตัว — คอมเมนต์ยาวจะดันโค้ดหลุดหน้าต่าง)
+    const next = src.indexOf('if (url.searchParams.get(', at + 10);
+    const body = src.slice(at, next > at ? next : at + 4000);
+    assert.match(body, /\.\.\.z1Scope/, `${k} ต้องติดขอบเขตในคำตอบ`);
+  }
+});

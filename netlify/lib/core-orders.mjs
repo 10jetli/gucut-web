@@ -92,6 +92,21 @@ export function parseSingleStore(raw) {
   return { error: `store ต้องเป็น z1 หรือ z2 — เส้นนี้ตอบทีละร้าน ${v === "all" ? "(all ใช้ไม่ได้ ยิง z1 และ z2 แยกแล้วรวมเอง)" : `(ได้มา "${v.slice(0, 20)}")`}` };
 }
 
+/** ตัวกรองร้านของ **เส้นที่มีแค่ร้าน z1** (list=purchases · transfers · quotations · returnorders)
+ *  🔴 (15 ก.ย. 2569) พิสูจน์จากโค้ด: core-purchases.mjs อ่านรหัส ZORT แค่ ZORT_STORENAME ชุดเดียว
+ *     ตารางกระจกไม่มีคอลัมน์ source ⇒ ทุกแถวคือร้าน z1 · ร้าน z2 **ไม่เคยถูกดึง**
+ *     เดิม store=z2/all ได้เลขเท่ากับ z1 เป๊ะ (ฝั่งจอวัด: 689/689/689 · 32 · 6 · 12,003) = ร้านเดียวหน้าตาเหมือนทุกร้าน
+ *  ว่าง / "z1" ⇒ z1 · "z2" / "all" / ค่าอื่น ⇒ `{ error }` — ห้ามตอบของ z1 ในชื่อร้านอื่น
+ *  ⏳ ถอดตัวนี้ได้เมื่อตัวซิงก์ดึงร้าน z2 จริง (คอลัมน์ source + กุญแจกันเลขซ้ำข้ามร้าน + กวาดย้อนหลัง) */
+export function parseZ1OnlyStore(raw) {
+  const v = String(raw ?? "").trim();
+  if (v === "" || v === "z1") return { source: "z1" };
+  if (v === "z2" || v === "all")
+    return { error: `เส้นนี้มีแค่ร้าน z1 — ยังไม่ได้ดึงเอกสารของร้าน z2 เข้าระบบ (ขอ store=${v} ไม่ได้)` };
+  return { error: `store ต้องเป็น z1 — เส้นนี้มีแค่ร้าน z1 (ได้มา "${v.slice(0, 20)}")` };
+}
+export const Z1_ONLY_SCOPE = { store: "z1", storeScope: "เฉพาะร้าน z1 — ยังไม่ได้ดึงเอกสารของร้าน z2 เข้าระบบ" };
+
 function buildWhere({ from, to, channel, status, q, includeCancelled, source }) {
   const where = ["order_date >= ?", "order_date <= ?"];
   const params = [from, to];

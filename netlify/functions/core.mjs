@@ -965,8 +965,20 @@ async function route(req, context) {
     if (url.searchParams.get("syncpurchases")) {
       return json({ ok: true, purchases: await syncPurchases({ repairItems: url.searchParams.get("repairitems") }) });
     }
+    /* 🔴 สี่เส้นนี้มีแค่ร้าน z1 (ดู parseZ1OnlyStore) — ด่านเดียวก่อนถึงทั้งสี่ · ติดขอบเขตในคำตอบทุกเส้น */
+    const Z1_ONLY_LISTS = ["purchases", "quotations", "returnorders", "transfers"];
+    let z1Scope = null;
+    if (Z1_ONLY_LISTS.includes(url.searchParams.get("list"))) {
+      if (url.searchParams.has("source") && !url.searchParams.has("store"))
+        return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
+      const { parseZ1OnlyStore, Z1_ONLY_SCOPE } = await import("../lib/core-orders.mjs");
+      const z1 = parseZ1OnlyStore(url.searchParams.get("store"));
+      if (z1.error) return json({ error: z1.error, ...Z1_ONLY_SCOPE }, 400);
+      z1Scope = Z1_ONLY_SCOPE;
+    }
     if (url.searchParams.get("list") === "purchases") {
       return json({
+        ...z1Scope,
         ok: true,
         ...(await listPurchases({
           q: url.searchParams.get("q"),
@@ -1057,7 +1069,7 @@ async function route(req, context) {
     }
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
-      return okJson(await listQuotations(url.searchParams.get("limit")));
+      return okJson({ ...(await listQuotations(url.searchParams.get("limit"))), ...z1Scope });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
@@ -1079,7 +1091,7 @@ async function route(req, context) {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
       /* q= (15 ก.ย. 2569) มีคำค้น ⇒ ค้นจากกระจก return_orders_v2 · ไม่มี ⇒ ดึงสด ZORT เหมือนเดิม
          ขาออกมี applied {q, source} — จอเช็คตัวนี้ก่อนเขียนว่าไฟล์กรองแล้ว */
-      return okJson(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q")));
+      return okJson({ ...(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q"))), ...z1Scope });
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
@@ -1135,6 +1147,7 @@ async function route(req, context) {
     }
     if (url.searchParams.get("list") === "transfers") {
       return json({
+        ...z1Scope,
         ok: true,
         ...(await listTransfers({
           q: url.searchParams.get("q"),
