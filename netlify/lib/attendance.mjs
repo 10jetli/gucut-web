@@ -185,7 +185,16 @@ export async function punch(emp, { peek = false, photo = null, loc = null } = {}
   const key = dayKey(date, emp.id);
   const s = store();
 
-  let rec = (await s.get(key, { type: "json" }).catch(() => null)) || null;
+  /* 🔴 B05 (รายงานล่าบั๊ก codex 14 ก.ย. · แก้ 15 ก.ย. 2569 ใบ t_mu205dfl) — **อ่านเวลาวันนี้ไม่สำเร็จ ห้ามเดาว่ายังไม่ลงเวลา**
+      เดิม .catch(() => null) ⇒ rec = null ⇒ !rec?.in เป็นจริง ⇒ **เขียนเข้างานใหม่ out:null ทับของจริง**
+      ⇒ เวลาเข้าตอนเช้าหายถาวร และคิดสายจากเวลากดออกตอนเย็น · peek ก็ต้องโยน ไม่งั้นจอบอกว่ายังไม่ลงเวลา
+      null (ไม่มีคีย์) = ยังไม่ลงเวลาจริง ⇒ ทำงานตามปกติ · ⚠️ readCfg/readEmp/editDay ในไฟล์นี้ยังกลืนอยู่ = B17/B27 ใบแยก */
+  let rec;
+  try {
+    rec = (await s.get(key, { type: "json" })) || null;
+  } catch {
+    throw Object.assign(new Error("อ่านเวลาของวันนี้ไม่สำเร็จ — ยังไม่ได้บันทึกอะไร กรุณากดใหม่อีกครั้ง"), { status: 503 });
+  }
 
   // ระยะห่างจากร้าน — คิดไว้ก่อนเพื่อติดธง แต่ "ไม่บล็อกการลงเวลา"
   //

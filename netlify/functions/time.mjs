@@ -118,13 +118,20 @@ export default async function handler(req, context) {
       // ⚠️ ห้ามบอกว่า "ไม่มี PIN นี้" หรือ "ถูกพักงาน" แยกกัน — จะกลายเป็นเครื่องมือไล่เดา
       return json({ error: "PIN ไม่ถูกต้อง" }, 401);
     }
-    const res = await punch(emp, {
-      peek: action === "status",
-      photo: typeof body?.photo === "string" ? body.photo : null,
-      loc: body?.loc && typeof body.loc === "object"
-        ? { lat: Number(body.loc.lat), lng: Number(body.loc.lng) }
-        : null,
-    });
+    /* B05 (15 ก.ย. 2569): punch โยนเมื่ออ่านเวลาวันนี้ไม่ได้ — ต้องบอกพนักงานให้กดใหม่ ไม่ใช่ 500 ว่างเปล่า
+       ⚠️ เดิมทางนี้ไม่มี try เลย (มีแต่ทางแอดมินด้านล่าง) ⇒ error หลุดออกไปเป็นหน้า error ของ Netlify */
+    let res;
+    try {
+      res = await punch(emp, {
+        peek: action === "status",
+        photo: typeof body?.photo === "string" ? body.photo : null,
+        loc: body?.loc && typeof body.loc === "object"
+          ? { lat: Number(body.loc.lat), lng: Number(body.loc.lng) }
+          : null,
+      });
+    } catch (e) {
+      return json({ error: String(e?.message || e) }, e?.status === 503 ? 503 : 500);
+    }
 
     // แจ้งเตือนเข้ากลุ่มร้านเมื่อมีคนมาสายหรือกดจากนอกร้าน
     //
