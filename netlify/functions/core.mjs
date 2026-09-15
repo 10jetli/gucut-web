@@ -467,6 +467,26 @@ async function route(req, context) {
       });
       return json(r, r.ok || r.skip ? 200 : r.unknown ? 502 : 400);
     }
+    /* POST ?archiveslips=1  body {docnos:[เลขที่ออเดอร์ ≤8]} ⇒ ดึงสลิปของออเดอร์จาก ZORT เก็บลง Blobs ถังปิด gucut-zort-slips
+            ⇒ {ok, orders:[{docno, zortFiles, stored, already, bad, errors}], notStarted, totals, complete}
+       GET  ?slipsarchive=1[&expected=<จำนวนท้ายจอ ZORT>] ⇒ {files, orders, byOrder, complete} — นับอย่างเดียว
+       ขาเข้า: ตัวขับ (สคริปต์ CEO) ส่งเลขที่ออเดอร์จากจอ /FileUpload/list · ขาออกไป ZORT: Order/GetOrderFiles · GetOrderFileDetail (GET)
+       🔒 ไม่มีเส้นไหนคืนตัวไฟล์ · ถังแยกจาก gucut-zort-archive โดยตั้งใจ · เก็บแล้วไม่ดึงซ้ำ · html/ว่าง = ไม่เก็บ นับไม่ครบ
+       ⚠️ สรุปอ่านรายการที่เก็บไม่ได้ = 502 unknown (ห้ามแปลว่ายังไม่มีไฟล์) · งานกระดาน t_mu1y49yb */
+    if (url.searchParams.has("archiveslips")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { archiveSlips } = await import("../lib/slip-archive.mjs");
+      const r = await archiveSlips({ docnos: body.docnos });
+      return json(r, r.ok ? 200 : 400);
+    }
+    if (url.searchParams.has("slipsarchive")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { slipArchiveSummary } = await import("../lib/slip-archive.mjs");
+      const r = await slipArchiveSummary({ expectedFiles: url.searchParams.get("expected") ?? undefined });
+      return json(r, r.ok ? 200 : 502);
+    }
     /* GET ?zortfiles=<order|purchaseorder|quotation|returnorder|returnpurchaseorder>&docid=<id ของ ZORT> | &docno=<เลขที่เอกสาร> [&fileid=<id ไฟล์>]
        ขาเข้าจากจอ/ตัวตรวจ: พารามิเตอร์ใน URL ตามนี้ (ตั้งชื่อ docid/docno ไม่ใช้ id/number กันชนเส้นอื่น)
        ขาออกไป ZORT: <โมดูล>/Get<โมดูล>Files · <โมดูล>/Get<โมดูล>FileDetail (GET อย่างเดียว)

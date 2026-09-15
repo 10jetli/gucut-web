@@ -140,3 +140,45 @@ export async function zortDocFiles(o = {}) {
     },
   };
 }
+
+/**
+ * ไบต์ของไฟล์แนบหนึ่งไฟล์ — **ใช้ภายในท่อเท่านั้น** (ตัวเก็บสลิป slip-archive.mjs · งานกระดาน t_mu1y49yb)
+ * 🔒 ห้ามเอาไปต่อเส้นที่ส่งผลออกนอกท่อ — สลิปมีชื่อ/เลขบัญชีลูกค้า (เส้นให้จอใช้ zortDocFiles ซึ่งไม่คืนตัวไฟล์)
+ * ⚠️ ไม่มี content = noContent (ไม่ใช่ไฟล์ว่างที่เก็บได้) · ชนิดดูจากไบต์จริงเสมอ (ZORT บอก PNG แต่ไบต์เป็น JPEG ได้)
+ * @param {{doc?: string, docid?: string|number, docno?: string, fileid?: string|number}} o
+ */
+export async function zortDocFileBytes(o = {}) {
+  const mod = FILE_DOCS[txt(o.doc, 40).toLowerCase()];
+  const docid = posInt(o.docid);
+  const docno = docid ? "" : txt(o.docno, 60);
+  const fileid = posInt(o.fileid);
+  if (!mod || (!docid && !docno) || !fileid) return { ok: false, error: "ต้องมี doc · docid หรือ docno · fileid" };
+  const headers = creds();
+  if (!headers) return { ok: false, skip: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  const qs = new URLSearchParams(docid ? { id: String(docid) } : { number: docno });
+  qs.set("fileid", String(fileid));
+  let r;
+  try {
+    r = await fetch(`${BASE}/${mod}/Get${mod}FileDetail?${qs}`, { headers, signal: AbortSignal.timeout(15000) });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message ?? e).slice(0, 120)}` };
+  }
+  let body;
+  try {
+    body = JSON.parse(await r.text());
+  } catch {
+    return { ok: false, unknown: true, http: r.status, error: "ZORT ตอบไม่ใช่ JSON" };
+  }
+  const code = body?.res?.resCode ?? body?.resCode ?? null;
+  if (code !== null && String(code) !== "200") {
+    return { ok: false, zortCode: String(code), zortDesc: body?.res?.resDesc ?? body?.resDesc ?? null };
+  }
+  const f = [body?.detail, body].find((x) => x && typeof x === "object" && !Array.isArray(x) && ("content" in x || "fileName" in x));
+  if (!f) return { ok: false, unknown: true, error: "ไม่เจอรายละเอียดไฟล์ในคำตอบ — รูปคำตอบไม่รู้จัก" };
+  if (typeof f.content !== "string" || !f.content) {
+    return { ok: false, noContent: true, fileName: txt(f.fileName, 200), error: "ZORT ไม่ส่งตัวไฟล์มา" };
+  }
+  const buf = Buffer.from(f.content.replace(/^data:[^,]*,/, ""), "base64");
+  return { ok: true, buf, bytes: buf.length, kind: sniffBytes(buf), fileName: txt(f.fileName, 200),
+    type: txt(f.type, 80), uploadType: f.uploadType ?? null, fileId: f.id ?? fileid };
+}
