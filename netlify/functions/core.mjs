@@ -2941,6 +2941,16 @@ async function route(req, context) {
         "warehousecode",
         "isCOD",
       ]);
+      const HEADER_PROBE = new Set(["tag", "agent", "createdby", "createusername", "createuserid", "paymentdate", "reference", "reference2", "warehousecode"]);
+      const hasValue = (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0);
+      const filledCounts = (objs) => {
+        const out = {};
+        for (const x of objs) {
+          if (!x || typeof x !== "object") continue;
+          for (const [k, v] of Object.entries(x)) out[k] = (out[k] ?? 0) + (hasValue(v) ? 1 : 0);
+        }
+        return out;
+      };
       const rows = list.filter((o) => !/success|void|cancel/i.test(String(o.status || "")));
       const seen = {};
       for (const o of rows) {
@@ -2970,6 +2980,13 @@ async function route(req, context) {
         guess: cnt, // เทียบกับการ์ดหน้าแรก ZORT: ค้างชำระเงิน 24 · ค้างโอนสินค้า 132
         pendingRows: rows.length,
         allFieldNames: Object.keys(list[0] || {}),
+        /* ชื่อช่องของ "รายการสินค้าในใบ" (o.list[]) + จำนวนบรรทัดที่ช่องนั้นมีค่า — **คืนแค่ชื่อกับจำนวน ห้ามคืนค่า**
+            ใช้ตอบว่า ZORT ส่ง Serial ต่อบรรทัดมาไหม (ใบ t_mu2tm88b) โดยไม่ดึงข้อมูลลูกค้า/ราคาออกมา */
+        itemFieldsFilled: filledCounts(list.flatMap((o) => (Array.isArray(o.list) ? o.list : []))),
+        /* ช่องหัวใบที่จอค้นหาขั้นสูงของ ZORT ใช้ แต่กระจกยังไม่เก็บ — นับว่ากี่ใบมีค่า (รายชื่อตรงตัว ห้าม regex) */
+        headerFieldsFilled: Object.fromEntries(
+          Object.entries(filledCounts(list)).filter(([k]) => HEADER_PROBE.has(k))
+        ),
         statusFields: Object.fromEntries(
           Object.entries(seen).map(([k, v]) => [k, [...v].slice(0, 12)])
         ),
