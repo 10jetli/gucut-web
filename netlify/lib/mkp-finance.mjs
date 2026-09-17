@@ -289,7 +289,16 @@ export async function readShopeeOrderFees(orderSn, deps = {}) {
       shippingActual: money(inc.actual_shipping_fee),               // ⇒ "ค่าจัดส่งตามจริง"
       shippingSubsidyByShopee: money(inc.shopee_shipping_rebate),   // ⇒ "ค่าส่งออกโดย Marketplace"
       shippingDiscountSeller: money(inc.shipping_fee_discount_from_3pl ?? inc.seller_shipping_discount),
-      voucherByShopee: money(inc.voucher_from_shopee),  // ⇒ **"รายได้จาก Platform"** (แพลตฟอร์มออกเงิน)
+      /* 📏 **วัดสูตรกับของจริง 8 ใบ (18 ก.ย. 2569) — voucher ของ Shopee ห้ามบวกเข้ายอดสุทธิ**
+         items − commission − serviceFee − sellerTransactionFee − paymentFee − shippingActual
+           + shippingSubsidyByShopee + shippingPaidByBuyer  ⇒ ต่างจาก escrow ที่เขาบอก **แค่ 1 บาท** ใน 6/8 ใบ
+           (อีก 2 ใบต่าง 13 และ 19 — ยังไม่รู้ว่ามาจากช่องไหน ยังมีช่องที่เราไม่ได้จับคู่อีก ~70 ช่อง)
+         ถ้า **บวก** voucherByShopee เข้าไปด้วย ⇒ ต่าง 47 · 124 · 160 · 55 ⇒ **ผิดชัดเจน**
+         ⇒ `voucher_from_shopee` เป็น "ข้อมูลว่าแพลตฟอร์มออกส่วนลดเท่าไร" **ไม่ใช่เงินที่เพิ่มเข้ายอดโอน**
+            (ราคาสินค้าที่เห็นรวมส่วนลดนั้นไว้แล้ว)
+         ⚠️ จับคู่กับคอลัมน์ "รายได้จาก Platform" ของ ZORT ได้ในความหมาย **แต่ห้ามเอาไปบวกยอด**
+            — ตรงนี้คือจุดที่การเดาจะทำให้ยอดโอนพองขึ้นทุกใบแบบเนียน */
+      voucherByShopee: money(inc.voucher_from_shopee),  // ⇒ ความหมายตรงกับ "รายได้จาก Platform" (ห้ามบวกยอด)
       voucherBySeller: money(inc.voucher_from_seller),  // ⇒ ส่วนลดที่ร้านออกเอง (ค่าใช้จ่าย) — คนละช่องกัน
       coinsByShopee: money(inc.shopee_coin_cash_back ?? inc.coins),
       /* 🔴 **`cost_of_goods_sold` ของ Shopee ใช้เป็นฐานต้นทุนไม่ได้ — วัดแล้ว 18 ก.ย. 2569**
@@ -331,6 +340,8 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
     return {
       ok: true, platform: "tiktok", grain: "statement-line", statementId: id, count: raw.length,
       truncated: Boolean(d?.data?.next_page_token) || raw.length >= limit,
+      /* 📏 ยิงจริง 18 ก.ย. 2569: เส้นนี้ให้ช่องละเอียด **57 ช่อง** ⇒ เติมคอลัมน์ของ ZORT ได้ครบกว่าใบสรุป
+         จับคู่ตามชื่อที่เห็นจริง · ช่องที่ยังไม่แน่ใจความหมายไม่จับคู่ (ดู fieldsSeen) */
       rows: raw.map((x) => ({
         id: x?.id != null ? String(x.id) : null,
         orderRef: x?.order_id != null ? String(x.order_id) : null,
@@ -339,9 +350,22 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
         settlement: money(x?.settlement_amount),
         revenue: money(x?.revenue_amount),
         fee: money(x?.fee_amount),
-        shippingCost: money(x?.shipping_cost_amount),
         adjustment: money(x?.adjustment_amount),
         currency: x?.currency ?? null,
+        /* ⇒ คอลัมน์ของ ZORT */
+        commission: money(x?.platform_commission_amount),          // คอมมิชชั่น
+        transactionFee: money(x?.transaction_fee_amount),          // ค่าธรรมเนียมการชำระเงิน
+        referralFee: money(x?.referral_fee_amount),
+        affiliateCommission: money(x?.affiliate_commission_amount),
+        platformDiscount: money(x?.platform_discount_amount),      // **รายได้จาก Platform** (แพลตฟอร์มออกส่วนลด)
+        sellerDiscount: money(x?.seller_discount_amount),          // ส่วนลดที่ร้านออกเอง (คนละช่อง ห้ามปน)
+        shippingPaidByCustomer: money(x?.customer_paid_shipping_fee_amount), // ค่าส่งเก็บจากลูกค้า
+        shippingActual: money(x?.actual_shipping_fee_amount),      // ค่าจัดส่งตามจริง
+        shippingSubsidy: money(x?.shipping_fee_subsidy_amount),    // ค่าส่งออกโดย Marketplace
+        shippingCost: money(x?.shipping_cost_amount),
+        grossSales: money(x?.gross_sales_amount),
+        netSales: money(x?.net_sales_amount),
+        /* 🔒 ไม่เอา: ช่องที่อาจมีชื่อ/ข้อความอิสระ · ภาษี (pit/iva/sales_tax) ยังไม่ได้ตรวจว่าใช้ยังไง */
       })),
       fieldsSeen: fieldsOf(raw),
       /* 🔒 ไม่เอา: ช่องที่อาจมีข้อความอิสระ/ชื่อ (เช่น sku_name, customer) */
