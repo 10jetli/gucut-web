@@ -1323,8 +1323,33 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
   /* ⚠️ แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีใบสักใบ" — จอต้องเขียนคนละคำ
       (สอง 0 ที่หน้าตาเหมือนกันแต่คนละความหมาย) */
   if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้", applied: { q: null, source: "zort" } };
+  /* 💰 ยอดรวมทั้งหมดจาก**กระจก** (17 ก.ย. 2569 · B3 ในใบสำรวจ t_mu5bhh84)
+     หัวจอ ZORT เขียน "มูลค่าทั้งหมด X บาท" แต่ API ส่งแค่จำนวนใบ ⇒ ไล่ทุกหน้าจาก ZORT สด = ช้า/เปลืองโควตา
+     ⇒ รวมจากกระจก return_orders_v2 ของร้านนั้น แล้ว **ส่งจำนวนใบของกระจกคู่ไปด้วย**
+     ⚠️ คนละแหล่งกับ `total` (ZORT สด) — จอต้องใช้ยอดนี้เป็น "ทั้งหมด" ได้ก็ต่อเมื่อ mirrorTotals.count === total
+     ⚠️ ยังไม่รู้ว่า "มูลค่าทั้งหมด" ของ ZORT รวมใบยกเลิกไหม ⇒ ส่งทั้งสองแบบ ห้ามเดา · อ่านไม่ได้ = null ไม่ใช่ 0 */
+  let mirrorTotals = null;
+  try {
+    const [t] = await coreQuery(
+      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s,
+              SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN 1 ELSE 0 END) AS c_live,
+              ROUND(COALESCE(SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN amount ELSE 0 END),0),2) AS s_live
+       FROM return_orders_v2 WHERE source = ?`,
+      [store]
+    );
+    const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [store === "z2" ? "sync_returns_z2" : "sync_returns"]).catch(() => []);
+    mirrorTotals = {
+      count: num(t?.c), amount: Number(t?.s) || 0,
+      countExcludingVoided: num(t?.c_live), amountExcludingVoided: Number(t?.s_live) || 0,
+      syncedAtUtc: meta?.at ?? null, syncComplete: meta ? meta.v === "complete" : null,
+      note: "รวมจากกระจกของร้านนี้ (ไม่ใช่ ZORT สด) · ใช้เป็นยอดทั้งหมดได้เมื่อ count เท่ากับ total ของ ZORT",
+    };
+  } catch (e) {
+    mirrorTotals = null;
+  }
   return {
     total: num(data?.count),
+    mirrorTotals,
     page: p,
     pages: Math.max(1, Math.ceil(num(data?.count) / n)),
     live: true,

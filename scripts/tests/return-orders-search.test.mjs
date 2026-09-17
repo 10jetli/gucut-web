@@ -111,7 +111,20 @@ test('ไม่มีคำค้น (หรือช่องว่างล้
       assert.deepEqual(r.applied, { q: null, source: 'zort' });
       assert.equal(r.live, true);
       assert.equal(r.total, 689);
-      assert.equal(sqls.filter((x) => /return_orders_v2/.test(x.s)).length, 0, 'ไม่มีคำค้นต้องไม่อ่านกระจก');
+      /* 17 ก.ย. 2569: เส้นสดอ่านกระจกได้ **เฉพาะยอดรวม** (mirrorTotals) — แถวต้องมาจาก ZORT สดเท่านั้น */
+      const อ่านแถวจากกระจก = sqls.filter((x) => /return_orders_v2/.test(x.s) && !/COUNT\(\*\) AS c, ROUND\(COALESCE\(SUM\(amount\)/.test(x.s));
+      assert.equal(อ่านแถวจากกระจก.length, 0, 'ไม่มีคำค้นต้องไม่อ่านแถวจากกระจก (อ่านได้แค่ยอดรวม)');
     });
   }
+});
+
+test('ยอดรวมจากกระจกส่งคู่กับ total ของ ZORT · อ่านกระจกพัง ⇒ mirrorTotals = null ไม่ใช่ 0', async () => {
+  sqls = [];
+  await withFetch(async () => {
+    const r = await listReturnOrders(50, 1, '');
+    assert.ok('mirrorTotals' in r);
+    const q = sqls.find((x) => /return_orders_v2/.test(x.s) && /SUM\(amount\)/.test(x.s));
+    assert.ok(q, 'ต้องมีคำสั่งรวมยอด');
+    assert.match(q.s, /WHERE source = \?/);
+  });
 });
