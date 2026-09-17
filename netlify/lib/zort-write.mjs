@@ -505,7 +505,9 @@ export async function zortUpdateProduct(o = {}) {
       return { ok: false, error: "vat ต้องเป็น 0-3 (sell_vat_status)" };
     body.sell_vat_status = Number(o.vat);
   }
-  /* ช่องข้อความว่าง = ไม่ส่ง (ยังไม่รู้ว่า ZORT ตีความ "" เป็นล้างค่าหรือเมิน ⇒ ห้ามเดา) */
+  /* ช่องข้อความว่าง = ไม่ส่ง (ยังไม่รู้ว่า ZORT ตีความ "" เป็นล้างค่าหรือเมิน ⇒ ห้ามเดา)
+     ⚠️ ยังตอบไม่ได้ ณ 18 ก.ย. 2569 — **ข้อนี้พิสูจน์ได้ด้วยการเขียนจริงเท่านั้น** (อ่านอย่างเดียวไม่มีทางรู้)
+     ⇒ รอท่านประธานอนุมัติใบทดสอบมูลค่าน้อย · ห้ามเดาแล้วส่ง "" ไปลบชื่อสินค้าของจริง */
   for (const [key, field, n] of [["name", "name", 200], ["description", "description", 500],
     ["unit", "unittext", 40], ["barcode", "barcode", 60], ["category", "category", 80]]) {
     const v = txt(o[key], n);
@@ -648,7 +650,8 @@ export async function zortUpdateProductImage(o = {}) {
 
   if (!o.confirm) return { ok: true, dryRun: true, ref, expectSku: sku,
     willSend: { query: { id }, file: { field: "file", name: fileName, type, bytes: buf.length } },
-    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT แทนรูปเดิมหรือต่อท้าย · ตอน confirm ท่อถาม ZORT ก่อนว่า id ตรง sku" };
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT แทนรูปเดิมหรือต่อท้าย (ยังตอบไม่ได้ ณ 18 ก.ย. 2569 — "
+      + "พิสูจน์ได้ด้วยการอัปจริงเท่านั้น ⇒ รอท่านประธานอนุมัติ) · ตอน confirm ท่อถาม ZORT ก่อนว่า id ตรง sku" };
 
   const seen = await seenRef("product-image", ref);
   if (seen.state === "unknown")
@@ -755,7 +758,8 @@ export async function zortOrderShipping(o = {}) {
   const path = `Order/EditOrderInfo?id=${id}`;
 
   if (!o.confirm) return { ok: true, dryRun: true, ref, willSend: { path, body },
-    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT ล้างช่องที่ไม่ได้ส่งไหม ใบแรกต้องดึงกลับมาเทียบ" };
+    note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ⚠️ ยังไม่รู้ว่า ZORT ล้างช่องที่ไม่ได้ส่งไหม (ยังตอบไม่ได้ ณ 18 ก.ย. 2569 — "
+      + "พิสูจน์ได้ด้วยการเขียนจริงเท่านั้น) ⇒ ใบแรกต้องดึงกลับมาเทียบทุกช่องก่อนส่งใบที่สอง" };
 
   const seen = await seenRef("order-shipping", ref);
   if (seen.state === "unknown")
@@ -1666,7 +1670,8 @@ export const ZORT_CAN_BUT_NOT_BUILT = [
   /* 🔎 กวาดซ้ำ 15 ก.ย. 2569 07:15 (ยิงเปล่า · ตัวควบคุมผ่านก่อน/หลัง) — คำกล่าวอ้าง 3 ก.ย. "ZORT ไม่มี API ไฟล์แนบ"
       **ผิดตระกูลชื่อ** (ยิงแค่ File/GetFiles · Attachment/GetAttachments = 404 จริง) · งานกระดาน t_mu1xao7r
       ท่ออ่าน GET ?zortfiles= มีแล้ว (netlify/lib/zort-files.mjs) · ⚠️ ชื่อแรกใน probe ต้องเป็นเส้นที่อ้างว่ามี — zortclaims ยิงแค่ตัวแรก
-      ⚠️ ยังไม่พิสูจน์ด้วยรหัสร้านว่าได้ตัวไฟล์จริง ⇒ **สลิป 376 ใบยังอยู่ในกองคัดมือ** จนกว่าจะเห็น kind เป็นรูป/PDF */
+      ✅ ตอบแล้ว 18 ก.ย. 2569: ได้ตัวไฟล์จริง — คลังสลิป (?slipsarchive=1) มี **381 ไฟล์ · 373 ใบ** ในถังปิด gucut-zort-slips
+      ⇒ ข้อความเดิม "สลิป 376 ใบยังอยู่ในกองคัดมือ" **หมดอายุแล้ว** · ที่เหลือคือไล่สลิปใหม่ตามเวลา (slip-scan.mjs) */
   { what: "อ่านไฟล์แนบรายเอกสาร (สลิป · ไฟล์ในออเดอร์/ใบซื้อ/ใบเสนอราคา/ใบคืน)", at: "2026-09-15", untested: true,
     probe: "Order/GetOrderFiles → 200 · Order/GetOrderFileDetail · PurchaseOrder/GetPurchaseOrderFiles · Quotation/GetQuotationFiles · " +
       "ReturnOrder/GetReturnOrderFiles · ReturnPurchaseOrder/GetReturnPurchaseOrderFiles → 200 · Transfer/GetTransferFiles = 404",
