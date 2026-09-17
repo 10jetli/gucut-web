@@ -393,6 +393,18 @@ async function route(req, context) {
       });
       return okJson(r, r?.error ? 400 : 200);
     }
+    /* 🧾 เติมสมุด push_state จากประวัติการยิง — POST · ค่าเริ่มต้นดูอย่างเดียว · body {apply:true, platforms?, since?} */
+    if (url.searchParams.get("pushledgerbackfill")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST — ตัวนี้เขียนสมุดได้" }, 405);
+      const body = await req.json().catch(() => ({}));
+      const { เติมสมุดจากประวัติ } = await import("../lib/stock-push-sweep.mjs");
+      const r = await เติมสมุดจากประวัติ({
+        platforms: Array.isArray(body?.platforms) && body.platforms.length ? body.platforms : undefined,
+        since: typeof body?.since === "string" ? body.since : null,
+        apply: body?.apply === true,
+      });
+      return okJson(r, r?.error ? 400 : 200);
+    }
     if (url.searchParams.get("pushstate")) {
       const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
       return okJson(await สถานะดันสต็อก());

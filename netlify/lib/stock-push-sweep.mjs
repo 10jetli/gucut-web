@@ -205,6 +205,35 @@ export async function จดยิงมือลงสมุด(platform, resul
   return { เขียนแล้ว };
 }
 
+/** 🧾 เติมสมุดย้อนหลังจากประวัติการยิง (Blobs `stockpush/log`) — ท่านประธานสั่ง 17 ก.ย. 2569
+ *  สำหรับรอบยิงมือที่เกิดก่อนเส้นยิงมือจดสมุด (Shopee 1 · TikTok 17 รหัส คืนนั้น)
+ *  · ค่าเริ่มต้น **ดูอย่างเดียว** — เขียนจริงต้อง apply:true
+ *  · ใช้เวลาของรอบเดิมเป็น pushed_at (ไม่ใช่ตอนนี้) · เรียงจากรอบเก่าไปใหม่ ⇒ รหัสที่ยิงหลายรอบได้ค่ารอบล่าสุด
+ *  · เขียนซ้ำได้ไม่เสียหาย (upsert) · แต่ **ล้าง verified_*** ของแถวนั้น ⇒ รอบกวาดถัดไปพิสูจน์ใหม่
+ *  · platforms ไม่ระบุ = shopee+tiktok (Lazada มีตัวกวาดจดอยู่แล้ว ห้ามเขียนทับโดยไม่ตั้งใจ) */
+export async function เติมสมุดจากประวัติ({ platforms = ["shopee", "tiktok"], since = null, apply = false } = {}, อ่านประวัติ = null) {
+  const อ่าน = อ่านประวัติ || (async () => {
+    const { getStore } = await import("@netlify/blobs");
+    return getStore({ name: "gucut-coupon", consistency: "strong" }).get("stockpush/log", { type: "json" });
+  });
+  let log;
+  try { log = await อ่าน(); } catch (e) { return { error: `อ่านประวัติการยิงไม่ได้: ${String(e?.message || e).slice(0, 160)}` }; }
+  if (!Array.isArray(log)) return { error: "ประวัติการยิงว่างหรือรูปไม่ถูก — ไม่มีอะไรให้เติม" };
+  const เอา = new Set(platforms.map(String));
+  const รอบ = log
+    .filter((x) => x && เอา.has(String(x.platform)) && (!since || String(x.at) >= since) && Array.isArray(x.rows))
+    .sort((a, b) => String(a.at).localeCompare(String(b.at)));
+  const สรุป = รอบ.map((x) => ({
+    at: x.at, platform: x.platform,
+    ออกจริง: x.rows.filter((r) => r?.result === "pushed" || r?.result === "rejected").length,
+    รหัส: x.rows.filter((r) => r?.result === "pushed" || r?.result === "rejected").map((r) => r.sku),
+  }));
+  if (!apply) return { ok: true, mode: "ดูอย่างเดียว — ส่ง apply:true เพื่อเขียนจริง", รอบ: สรุป, รวม: สรุป.reduce((a, x) => a + x.ออกจริง, 0) };
+  let เขียนแล้ว = 0;
+  for (const x of รอบ) เขียนแล้ว += (await จดยิงมือลงสมุด(String(x.platform), x.rows, x.at)).เขียนแล้ว;
+  return { ok: true, mode: "เขียนจริง", รอบ: สรุป, เขียนแล้ว };
+}
+
 export async function กวาดดันสต็อก({ platform = "lazada", force = false } = {}) {
   const เริ่ม = Date.now();
   const now = new Date().toISOString();

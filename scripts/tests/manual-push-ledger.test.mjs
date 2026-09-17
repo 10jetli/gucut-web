@@ -46,3 +46,30 @@ test('เส้น HTTP: จดหลังยิง · ไม่จดโหม
   assert.match(ช่วง, /!r\.error && !r\.dryCheck && Array\.isArray\(r\.results\)/);
   assert.match(ช่วง, /catch \(e\)[\s\S]*ledgerError/);
 });
+
+const { เติมสมุดจากประวัติ } = await import('../../netlify/lib/stock-push-sweep.mjs');
+const ประวัติ = async () => [
+  { at: '2026-09-17T15:32:39.775Z', platform: 'tiktok', rows: [{ sku: 'T2', to: 9, result: 'pushed' }, { sku: 'T1', to: 6, result: 'pushed' }] },
+  { at: '2026-09-17T15:30:00.000Z', platform: 'lazada', rows: [{ sku: 'L1', to: 3, result: 'pushed' }] },
+  { at: '2026-09-17T15:13:52.557Z', platform: 'shopee', rows: [{ sku: 'S1', to: 4, result: 'pushed' }, { sku: 'SX', result: 'not_sent' }] },
+  { at: '2026-09-17T15:13:55.612Z', platform: 'tiktok', rows: [{ sku: 'T1', to: 5, result: 'pushed' }] },
+];
+
+test('เติมย้อนหลัง: ค่าเริ่มต้นดูอย่างเดียว ไม่เขียน · ไม่เอา Lazada · ไม่นับ not_sent', async () => {
+  คำสั่ง.length = 0;
+  const r = await เติมสมุดจากประวัติ({}, ประวัติ);
+  assert.equal(r.รวม, 4);
+  assert.ok(!r.รอบ.some((x) => x.platform === 'lazada'));
+  assert.equal(คำสั่ง.filter((c) => /INSERT INTO push_state/.test(c.sql)).length, 0);
+});
+
+test('เติมย้อนหลัง apply: ใช้เวลาของรอบเดิม · เรียงเก่า→ใหม่ ให้รอบล่าสุดชนะ', async () => {
+  คำสั่ง.length = 0;
+  const r = await เติมสมุดจากประวัติ({ apply: true }, ประวัติ);
+  assert.equal(r.เขียนแล้ว, 4);
+  const ins = คำสั่ง.filter((c) => /INSERT INTO push_state/.test(c.sql)).map((c) => c.params);
+  assert.equal(ins.length, 3);
+  assert.deepEqual(ins[0].slice(0, 5), ['S1', 'shopee', 4, '2026-09-17T15:13:52.557Z', 'pushed']);
+  assert.deepEqual(ins[1].slice(0, 5), ['T1', 'tiktok', 5, '2026-09-17T15:13:55.612Z', 'pushed']);
+  assert.equal(ins[2][3], '2026-09-17T15:32:39.775Z');
+});
