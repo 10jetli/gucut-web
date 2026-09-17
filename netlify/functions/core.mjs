@@ -1222,8 +1222,12 @@ async function route(req, context) {
     /* ลูกค้า/ผู้ติดต่อ — เจ้าของร้านสั่งดึง 3 ก.ย. 2569
        🔒 ข้อมูลส่วนบุคคลจริง 28,250 ราย · ผ่าน adminGate เหมือนทุกเส้นทางในไฟล์นี้
        ⚠️ **ห้ามเพิ่มโหมด "เอาทั้งหมด"** เพดาน 100 แถว/ครั้งเป็นของตั้งใจ */
-    /* ภาพรวมลูกค้ารายคน — ตาม ContactDetail ของ ZORT (งานเทียบกดได้ 8 ก.ย. 2569) */
-    if (url.searchParams.get("customer")) {
+    /* ภาพรวมลูกค้ารายคน — ตาม ContactDetail ของ ZORT (งานเทียบกดได้ 8 ก.ย. 2569)
+       🔴 **ต้องไม่มี `list=`** (แก้ 17 ก.ย. 2569 · gucut2) — เดิมจับ `customer` อย่างเดียว
+          ⇒ `list=orders&customer=…` / `list=orderfacets&customer=…` ถูกเส้นนี้กลืนก่อนถึงตัวกรอง
+          ได้ก้อนคนละรูป (ไม่มี total/rows) ⇒ จอขึ้น "ไม่มีข้อมูล" เงียบ ๆ ทั้งที่มีของ
+          ตัวกรองชื่อลูกค้าของจอขายจึงต่อไม่ได้มาตลอด ทั้งที่ buildWhere รับ customer ไว้แล้ว */
+    if (url.searchParams.get("customer") && !url.searchParams.get("list")) {
       const { getCustomerDetail } = await import("../lib/core-contacts.mjs");
       return okJson(await getCustomerDetail(url.searchParams.get("customer")));
     }
