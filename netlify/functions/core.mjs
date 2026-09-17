@@ -353,8 +353,19 @@ async function route(req, context) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST — ตัวนี้เขียนของจริงขึ้นแพลตฟอร์ม" }, 405);
       const body = await req.json().catch(() => null);
       if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
-      const { stockPushLive } = await import("../lib/stock-push-live.mjs");
-      const r = await stockPushLive(body);
+      /* ตัวยิงแยกไฟล์ต่อเจ้า (17 ก.ย. 2569) — Lazada เส้นเดิมไม่แตะ · ทุกตัวรับ body อย่างเดียว (ยัดแผนจากข้างนอกไม่ได้) */
+      const pf = String(body?.platform ?? "");
+      let r;
+      if (pf === "shopee") {
+        const { shopeePushLive } = await import("../lib/stock-push-shopee.mjs");
+        r = await shopeePushLive(body);
+      } else if (pf === "tiktok") {
+        const { tiktokPushLive } = await import("../lib/stock-push-tiktok.mjs");
+        r = await tiktokPushLive(body);
+      } else {
+        const { stockPushLive } = await import("../lib/stock-push-live.mjs");
+        r = await stockPushLive(body);
+      }
       return okJson(r, r?.error ? 400 : 200);
     }
     /* 🔄 ตัวกวาดดันสต็อกอัตโนมัติ — ท่านประธานสั่ง 17 ก.ย. 2569 "อยากให้ออโต้ อัปเดตเอง"

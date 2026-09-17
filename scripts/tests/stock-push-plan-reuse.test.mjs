@@ -55,7 +55,7 @@ test('แผนรูปไม่ครบ / เวลาจากอนาค�
 
 test('เส้น HTTP เรียกตัวยิงด้วย body อย่างเดียว — ยัดแผนจากข้างนอกไม่ได้', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
-  const calls = [...src.matchAll(/stockPushLive\(([^)]*)\)/g)].map((m) => m[1].trim());
-  assert.ok(calls.length >= 1);
+  const calls = [...src.matchAll(/(?:stock|shopee|tiktok)PushLive\(([^)]*)\)/g)].map((m) => m[1].trim());
+  assert.ok(calls.length >= 3, 'ต้องเจอตัวยิงครบสามเจ้าในเส้น HTTP');
   for (const a of calls) assert.equal(a, 'body', `core.mjs ต้องเรียก stockPushLive(body) เท่านั้น ได้ (${a})`);
 });
