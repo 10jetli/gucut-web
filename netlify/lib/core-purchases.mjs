@@ -506,9 +506,15 @@ export async function resetTransfers() {
  *     ❌ Transfer/GetTransfer · GetTransferList · list · Warehouse/GetTransfer(s|List|Detail)
  *     ตัวคุมกลุ่ม Product/GetProducts → resCode 100
  *
- *  ⚠️ **ยังไม่เคยยิงของจริง** — รู้แค่ว่า "เส้นมีอยู่" ยังไม่รู้ว่าคืนช่องอะไรบ้าง
- *     ⇒ ตัวนี้จึงคืน `fields` (ชื่อช่องที่เจอจริง) กลับไปด้วยเสมอ **ห้ามลบทิ้ง**
- *     จอจะได้รู้ว่ามีเลขพัสดุให้ใช้ไหม แทนที่จะเดาจากชื่อฟังก์ชัน
+ *  ✅ **ยิงของจริงแล้ว 18 ก.ย. 2569** — `?transfer=40522718` ⇒ TF-202609004 · status Success
+ *     · from NEW · to "" (ใบปรับยอด ไม่ได้โอนออกไปคลังอื่น) · 1 บรรทัด {sku 03505 · qty 57}
+ *     ช่องที่ ZORT คืนจริง 22 ช่อง: createdatetime(String) · description · fromWarehouse ·
+ *     fromwarehousecode/id · id · list · number · properties · reference · status · tag ·
+ *     toWarehouse · towarehousecode/id · transferType · transferdate(String) · uniquenumber · updatedatetime(String)
+ *  🔴 **ไม่มีช่องเลขพัสดุเลย** ⇒ คำถามเดิม "มีเลขพัสดุให้จอใช้ไหม" ตอบแล้วว่า **ไม่มี**
+ *     `tracking` ที่ท่อส่งออกไปจึงว่างเสมอสำหรับใบโอน — จอห้ามรอค่านี้
+ *  ⚠️ ยังคืน `fields` (ชื่อช่องที่เจอจริง) กลับไปด้วยเสมอ **ห้ามลบทิ้ง** — ZORT เพิ่มช่องได้ตลอด
+ *     และนี่คือทางเดียวที่จะรู้ว่าวันหนึ่งเขาเพิ่มเลขพัสดุมาให้
  *  ⚠️ ดึงสด ไม่เก็บลงกระจก — ใช้ตอนคนกำลังยืนรับของ ต้องได้ค่าล่าสุดเสมอ
  */
 /* ── แยก "หัวใบ" ออกจาก "บรรทัดสินค้า" — ใช้ร่วมกันทั้งใบเสนอราคาและใบโอน ──
