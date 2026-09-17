@@ -138,8 +138,14 @@ async function เขียนเป็นชุด(แถว, กันเว�
          pushed_qty    = COALESCE(excluded.pushed_qty,    push_state.pushed_qty),
          pushed_at     = COALESCE(excluded.pushed_at,     push_state.pushed_at),
          push_result   = COALESCE(excluded.push_result,   push_state.push_result),
-         verified_qty  = COALESCE(excluded.verified_qty,  push_state.verified_qty),
-         verified_at   = COALESCE(excluded.verified_at,   push_state.verified_at),
+         /* 🔴 **ยิงใหม่ต้องล้างการยืนยันเก่า** (แก้ 17 ก.ย. 2569 · gucut2)
+            ของเดิม COALESCE เก็บ verified_at ของรอบก่อนไว้ ⇒ รหัสที่เคยยืนยันแล้วถูกยิงซ้ำ
+            จะไม่ถูกหยิบไปพิสูจน์อีก (คำสั่งยืนยันเลือกเฉพาะ verified_at IS NULL)
+            ⇒ รอบยิงใหม่ที่พังจะดูเหมือนยืนยันแล้วตลอดกาล · แถวที่ไม่ได้ยิงรอบนี้ (pushed_at ว่าง) คงของเดิม */
+         verified_qty  = CASE WHEN excluded.pushed_at IS NOT NULL THEN NULL
+                              ELSE COALESCE(excluded.verified_qty, push_state.verified_qty) END,
+         verified_at   = CASE WHEN excluded.pushed_at IS NOT NULL THEN NULL
+                              ELSE COALESCE(excluded.verified_at, push_state.verified_at) END,
          last_error    = excluded.last_error,
          last_error_at = excluded.last_error_at,
          skip_reason   = excluded.skip_reason,

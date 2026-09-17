@@ -91,3 +91,11 @@ test('สถานะ: channelsWithoutWriter คิดจากทะเบี�
   assert.equal(r.byChannel.shopee.มีตัวยิง, true);
   assert.equal(typeof r.byChannel.tiktok.autoOn, 'boolean');
 });
+
+test('ยิงซ้ำในตัวกวาดต้องล้างการยืนยันเก่า — ไม่งั้นรอบยิงใหม่ที่พังดูเหมือนยืนยันแล้ว', async () => {
+  คำสั่ง.length = 0;
+  await กวาดดันสต็อก({ platform: 'lazada', force: true });
+  const แทรก = คำสั่ง.find((c) => /INSERT INTO push_state/.test(c.sql) && /ON CONFLICT\(sku,channel\)/.test(c.sql));
+  assert.match(แทรก.sql, /verified_at\s*= CASE WHEN excluded\.pushed_at IS NOT NULL THEN NULL/);
+  assert.match(แทรก.sql, /verified_qty\s*= CASE WHEN excluded\.pushed_at IS NOT NULL THEN NULL/);
+});
