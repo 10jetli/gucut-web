@@ -199,10 +199,15 @@ console.log('⑨ ค่าธรรมเนียมรายเอกสาร
   ok('เลขที่ออเดอร์ผิดรูป ⇒ ตีกลับก่อนยิง', (await readShopeeOrderFees('สั้น', { shopee: async () => { throw new Error('ไม่ควรถูกเรียก') } })).error?.includes('order_sn'))
   const none = await readShopeeOrderFees('2509ZZZZZZ', { shopee: async () => ({ response: {} }) })
   ok('ไม่มีก้อน order_income ⇒ found:false ไม่ใช่เลขศูนย์', none.found === false && none.escrowAmount === undefined, JSON.stringify(none))
+  // 💡 ต้นทุนสินค้าที่ Shopee ส่งมา: ไม่ส่ง ⇒ null (ห้ามกลายเป็น 0 เพราะจะคิดกำไรผิด)
+  const noCogs = await readShopeeOrderFees('2509ABCDEF', { shopee: async () => ({ response: { order_income: { escrow_amount: 1 } } }) })
+  ok('ไม่มีต้นทุนมา ⇒ null ไม่ใช่ 0', noCogs.cogs === null, String(noCogs.cogs))
+  ok('มีต้นทุนมา ⇒ อ่านได้', (await readShopeeOrderFees('2509ABCDEF', { shopee: async () => ({ response: { order_income: { cost_of_goods_sold: '123.45' } } }) })).cogs === 123.45)
 
   const tk = await readTiktokStatementLines('STMT123456', { limit: 5 }, {
     tiktok: async (path, o) => {
       ok('เรียกเส้นบรรทัดของใบสรุปด้วย id', path.includes('STMT123456') && path.includes('statement_transactions'), path)
+      ok('ส่ง sort_field ไปด้วย (เส้นนี้บังคับ ไม่ส่ง = 36009004)', o?.query?.sort_field === 'order_create_time', JSON.stringify(o?.query))
       return { data: { statement_transactions: [{ id: 'L1', order_id: 'O1', settlement_amount: '99.5', fee_amount: '-3', order_create_time: 1757000000 }], next_page_token: 'n' } }
     },
   })

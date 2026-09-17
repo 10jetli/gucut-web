@@ -292,6 +292,12 @@ export async function readShopeeOrderFees(orderSn, deps = {}) {
       voucherByShopee: money(inc.voucher_from_shopee),  // ⇒ **"รายได้จาก Platform"** (แพลตฟอร์มออกเงิน)
       voucherBySeller: money(inc.voucher_from_seller),  // ⇒ ส่วนลดที่ร้านออกเอง (ค่าใช้จ่าย) — คนละช่องกัน
       coinsByShopee: money(inc.shopee_coin_cash_back ?? inc.coins),
+      /* 💡 Shopee ส่ง **ต้นทุนสินค้า** มาด้วย (ถ้าร้านกรอกไว้ในระบบเขา) — มีค่ากับใบ "กำไรจากการขาย"
+         ⚠️ null = Shopee ไม่ได้ส่ง/ร้านไม่ได้กรอก **ไม่ใช่ต้นทุน 0 บาท** ห้ามเอาไปคิดกำไรถ้าเป็น null */
+      cogs: money(inc.cost_of_goods_sold),
+      cogsOriginal: money(inc.original_cost_of_goods_sold),
+      /* ภาษีหัก ณ ที่จ่ายที่ Shopee หักไว้ — ต้องใช้ตอนต่อสะพาน PEAK (ยังไม่ได้เอาไปใช้ที่ไหน) */
+      withholdingTax: money(inc.withholding_tax),
       fieldsSeen: Object.keys(inc).sort(),
       /* 🔒 ที่ไม่เอา: buyer_user_name · buyer_payment_method · ที่อยู่ · เบอร์ (มีในก้อนอื่นของ escrow) */
     };
@@ -310,8 +316,10 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
   const limit = Math.max(1, Math.min(50, parseInt(opts.limit ?? "10", 10) || 10));
   const tiktok = deps.tiktok ?? (await import("./tiktok.mjs")).shopCall;
   try {
+    /* ⚠️ เส้นนี้ **บังคับ sort_field** — ไม่ส่งไปจะได้ `36009004: SortField is a required field`
+       (วัดจริง 18 ก.ย. 2569 · เอกสารไม่ได้บอกว่าบังคับ) */
     const d = await tiktok(`/finance/202309/statements/${encodeURIComponent(id)}/statement_transactions`, {
-      method: "GET", query: { page_size: String(limit) },
+      method: "GET", query: { page_size: String(limit), sort_field: "order_create_time" },
     });
     const raw = d?.data?.statement_transactions ?? [];
     return {
