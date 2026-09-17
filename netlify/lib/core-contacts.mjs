@@ -274,7 +274,7 @@ export async function getCustomerDetail(idOrName) {
 
   // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
   const name = contact?.name || key;
-  const [sums, recent, money] = await Promise.all([
+  const [sums, recent, money, products, productSum] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) n, COALESCE(SUM(amount),0) total,
               MIN(order_date) first_day, MAX(order_date) last_day
@@ -303,6 +303,24 @@ export async function getCustomerDetail(idOrName) {
               strftime('%Y-%m','now','+7 hours') ym, strftime('%Y','now','+7 hours') y
          FROM orders
         WHERE customer = ${esc(name)} AND pay_status = 'Paid' AND ${CANCEL_SQL}`
+    ),
+    /* 🧺 กล่อง "ยอดขาย · รายสินค้า" ของจอ ZORT — ใบที่ชำระครบเท่านั้น (กติกาเดียวกับการ์ดเงิน)
+       🔬 ยืนยันว่าเป็นชุดเดียวกันจริง: รายที่วัดเมื่อ 18 ก.ย. 2569 ผลรวมรายสินค้าบนจอ ZORT
+          (4,580.96 + 1,026.77 + 494.70 + 420.18 + 47.39) = 6,570.00 = การ์ด "ยอดขายปีนี้" พอดี
+       ⚠️ เพดาน 20 แถว ⇒ ต้องส่ง "ทั้งหมดกี่รายการ/กี่บาท" มาด้วย ไม่งั้นจอเอาเลขที่ถูกตัด
+          ไปวางคู่ยอดรวมโดยไม่มีใครรู้ (กฎ: ตัวนับกับตัวแถวต้องมาที่เดียวกัน หรือเขียนบอกว่าต่างกัน) */
+    coreQuery(
+      `SELECT i.sku, i.name, COALESCE(SUM(i.qty),0) qty, COALESCE(SUM(i.amount),0) amount
+         FROM order_items i JOIN orders o ON o.id = i.order_id
+        WHERE o.customer = ${esc(name)} AND o.pay_status = 'Paid' AND ${CANCEL_SQL}
+        GROUP BY i.sku, i.name ORDER BY amount DESC LIMIT 20`
+    ),
+    coreQuery(
+      `SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM (
+         SELECT i.sku, SUM(i.amount) amount
+           FROM order_items i JOIN orders o ON o.id = i.order_id
+          WHERE o.customer = ${esc(name)} AND o.pay_status = 'Paid' AND ${CANCEL_SQL}
+          GROUP BY i.sku, i.name)`
     ),
   ]);
   const s = sums[0] || {};
@@ -334,7 +352,18 @@ export async function getCustomerDetail(idOrName) {
       outstanding: null,
       outstandingWhy:
         "ยังคิดไม่ได้ — วัดแล้วพบว่า ZORT ไม่ได้เอาผลรวมใบขายที่ยังไม่ชำระมาใส่ช่องนี้ " +
-        "(ลูกค้าที่มีใบรอชำระ 10,980 และ 55,200 จอ ZORT ยังขึ้น '-') ⇒ ต้องรู้ที่มาของตัวเลขก่อนจึงทำได้",
+        "(ลูกค้าที่มีใบรอชำระ 10,980 และ 55,200 จอ ZORT ยังขึ้น '-') ⇒ ต้องรู้ที่มาของตัวเลขก่อนจึงทำได้ · " +
+        "เมนูการเงินของ ZORT ในบัญชีนี้ก็ไม่มีหน้าลูกหนี้ (มีแค่ ภาพรวม · กระเป๋าเงิน · รายได้อื่น · รายจ่ายอื่น · โอนเงิน · รับเงิน COD) ตรวจ 18 ก.ย. 2569",
+    },
+    /* 🧺 "ยอดขาย · รายสินค้า" แบบจอ ZORT — ชุดเดียวกับการ์ดเงิน (เฉพาะใบที่ชำระครบ)
+       ⚠️ rows ถูกตัดที่ 20 ⇒ ส่ง count/amount ของทั้งชุดมาคู่กันเสมอ ให้จอเขียนได้ว่า "มี N แสดง M" */
+    products: {
+      rows: (products || []).map((r) => ({
+        sku: r.sku || null, name: r.name || null, qty: Number(r.qty) || 0, amount: Number(r.amount) || 0,
+      })),
+      count: Number(productSum?.[0]?.n) || 0,
+      amount: Number(productSum?.[0]?.s) || 0,
+      scope: "เฉพาะใบที่การชำระเงิน = ชำระครบ ไม่รวมใบยกเลิก (ชุดเดียวกับการ์ดเงิน) · เรียงตามมูลค่า เอา 20 อันดับแรก · รวมทุกร้านในกระจก",
     },
     matchNote: "จับคู่ออเดอร์ด้วยชื่อเต็มตรงตัว — ชื่อซ้ำกันจะปนกัน · ชื่อที่ถูก mask จับคู่ไม่ได้",
   };
