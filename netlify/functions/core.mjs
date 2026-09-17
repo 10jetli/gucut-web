@@ -382,6 +382,12 @@ async function route(req, context) {
         .get("stockpush/log", { type: "json" }).catch(() => null);
       return json({ ok: true, log: Array.isArray(log) ? log : [] });
     }
+    /* 🔐 ตรวจสิทธิ์เขียนสต็อก Shopee/TikTok ด้วยรหัสปลอม — GET · ไม่เปลี่ยนสต็อก (ดูหัวไฟล์ stock-write-probe.mjs) */
+    if (url.searchParams.get("stockwriteprobe")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น" }, 405);
+      const { ตรวจสิทธิ์เขียนสต็อก } = await import("../lib/stock-write-probe.mjs");
+      return okJson(await ตรวจสิทธิ์เขียนสต็อก());
+    }
     if (url.searchParams.get("stockpushverify")) {
       const skus = String(url.searchParams.get("stockpushverify")).split(",").filter(Boolean);
       const { lazadaReadBack } = await import("../lib/stock-push-live.mjs");
