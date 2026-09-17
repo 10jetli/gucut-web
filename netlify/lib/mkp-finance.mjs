@@ -126,6 +126,11 @@ async function one(platform, fn) {
  * ดึงรายการเงินของสามเจ้าในช่วง N วันย้อนหลัง แล้วคืนเป็นรูปเดียวกัน
  * @param days ย้อนหลังกี่วัน (1–90 · เกินนั้นตัด — เส้นการเงินของทุกเจ้าจำกัดช่วงวัน)
  * @param limit จำนวนแถวต่อเจ้า (1–100 · กันดึงยาวจนฟังก์ชันหมดเวลา 26 วิ ของ Netlify)
+ * @param page หน้าที่เท่าไหร่ (เริ่ม 0) — **สามเจ้าเลื่อนหน้าไม่เหมือนกัน**
+ *   · Shopee `page_no` (นับหน้า) · Lazada `offset` (นับแถว = page × limit) · TikTok ใช้ **โทเคน** ไม่ใช่เลขหน้า
+ *   ⚠️ TikTok จึงรับ `pageToken` แทน — ส่ง `page` ให้ TikTok ไม่มีผล และ **ห้ามแกล้งคิดโทเคนจากเลขหน้า**
+ *     (ตระกูล [[similar-name-other-unit]] ชื่อคล้ายกันแต่หน่วยคนละอย่าง)
+ * @param pageToken โทเคนหน้าถัดไปของ TikTok (ได้จาก nextPageToken ของรอบก่อน)
  *
  * ⚠️ **หนึ่งเจ้าล้ม ห้ามลากอีกสองเจ้า** — คืนผลรายเจ้า (ok/error/skip) แยกกันเสมอ
  * ⚠️ `truncated` = ได้เท่าที่ขอ อาจมีมากกว่านี้ ⇒ จอห้ามเขียนว่า "ทั้งหมด"
@@ -133,6 +138,8 @@ async function one(platform, fn) {
 export async function readMarketplaceFinance(opts = {}, deps = {}) {
   const days = Math.max(1, Math.min(90, parseInt(opts.days ?? "7", 10) || 7));
   const limit = Math.max(1, Math.min(100, parseInt(opts.limit ?? "20", 10) || 20));
+  const page = Math.max(0, Math.min(500, parseInt(opts.page ?? "0", 10) || 0));
+  const pageToken = String(opts.pageToken ?? "").slice(0, 400);
   const now = deps.now ? new Date(deps.now) : new Date();
   const from = new Date(now.getTime() - days * 864e5);
 
@@ -143,7 +150,7 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
   const results = await Promise.all([
     one("shopee", async () => {
       const d = await shopee("/api/v2/payment/get_wallet_transaction_list", {
-        page_no: "0", page_size: String(limit),
+        page_no: String(page), page_size: String(limit),
         create_time_from: String(Math.floor(from.getTime() / 1000)),
         create_time_to: String(Math.floor(now.getTime() / 1000)),
       });
@@ -157,7 +164,8 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
     }),
     one("lazada", async () => {
       const d = await lazada("/finance/transaction/details/get", {
-        start_time: ymd(from), end_time: ymd(now), limit: String(limit), offset: "0",
+        /* Lazada เลื่อนหน้าด้วย **จำนวนแถว** ไม่ใช่เลขหน้า ⇒ ต้องคูณด้วย limit เอง */
+        start_time: ymd(from), end_time: ymd(now), limit: String(limit), offset: String(page * limit),
       });
       const raw = Array.isArray(d?.data) ? d.data : [];
       return {
@@ -170,13 +178,19 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
     one("tiktok", async () => {
       const d = await tiktok("/finance/202309/statements", {
         method: "GET",
-        query: { page_size: String(limit), sort_field: "statement_time" },
+        query: {
+          page_size: String(limit), sort_field: "statement_time",
+          ...(pageToken ? { page_token: pageToken } : {}),
+        },
       });
       const raw = d?.data?.statements ?? [];
       return {
         ok: true, grain: "statement", rows: raw.map(mapTiktok), count: raw.length,
         /* TikTok ไม่รับช่วงวันในเส้นนี้ ⇒ ได้รอบล่าสุดเรียงตามเวลา · บอกให้ชัดว่าไม่ได้กรองวัน */
         truncated: Boolean(d?.data?.next_page_token) || raw.length >= limit,
+        /* ⚠️ ต้องส่งโทเคนกลับไป ไม่งั้นคนเรียกเลื่อนหน้าต่อไม่ได้เลย (เลขหน้าใช้กับเจ้านี้ไม่ได้)
+           ค่าว่าง ⇒ null = **ไม่มีหน้าถัดไป** (ต่างจาก "" ที่อ่านเหมือนมีโทเคนเปล่า) */
+        nextPageToken: d?.data?.next_page_token || null,
         fieldsSeen: fieldsOf(raw),
         scope: `ใบสรุปรอบโอนเงิน TikTok ล่าสุด ≤${limit} รอบ — **ไม่ได้กรองตามช่วงวัน** (เส้นนี้ไม่รับช่วงวัน)`,
       };
@@ -185,7 +199,10 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
 
   return {
     checkedAt: now.toISOString(),
-    days, limit,
+    days, limit, page,
+    /* ⚠️ `page` มีผลกับ Shopee/Lazada เท่านั้น — TikTok ใช้โทเคน ⇒ บอกให้ชัดบนคำตอบ
+       ไม่บอก = คนเลื่อนหน้าแล้วได้ TikTok ชุดเดิมทุกหน้า โดยไม่มีอะไรฟ้อง */
+    pageApplies: "shopee, lazada (TikTok ใช้ pageToken จาก nextPageToken)",
     /* ⚠️ ป้ายขอบเขตมาก่อนตัวเลข — คนอ่านต้องเห็นก่อนว่าเลขสามเจ้าคนละระดับกัน */
     note: "ยอดสามเจ้า **คนละระดับข้อมูล** (ดู grain ของแต่ละเจ้า) ⇒ ห้ามบวกรวมกัน · " +
       "ยังไม่เขียนลงฐาน — ขั้นนี้ให้ยืนยันการจับคู่คอลัมน์กับจอ Marketplace ของ ZORT ก่อน",

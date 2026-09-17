@@ -472,6 +472,7 @@ async function route(req, context) {
       const { readMarketplaceFinance } = await import("../lib/mkp-finance.mjs");
       return okJson({ ok: true, ...(await readMarketplaceFinance({
         days: url.searchParams.get("days"), limit: url.searchParams.get("limit"),
+        page: url.searchParams.get("page"), pageToken: url.searchParams.get("pagetoken"),
       })) });
     }
     if (url.searchParams.get("dbinfo")) {

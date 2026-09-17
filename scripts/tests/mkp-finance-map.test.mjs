@@ -87,5 +87,35 @@ console.log('⑤ ชื่อช่องที่ต้นทางส่งม
   ok('แต่ค่าของมันไม่หลุดออกมา', !JSON.stringify(sp).includes('ชื่อผู้ซื้อจริง'))
 }
 
+console.log('⑥ เลื่อนหน้า — สามเจ้าไม่เหมือนกัน ห้ามใช้เลขหน้ากับ TikTok')
+{
+  const seen = {}
+  await readMarketplaceFinance({ days: 7, limit: 50, page: 3, pageToken: 'tok-abc' }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async (_p, q) => { seen.shopee = q; return { response: { transaction_list: [] } } },
+    lazada: async (_p, q) => { seen.lazada = q; return { data: [] } },
+    tiktok: async (_p, o) => { seen.tiktok = o?.query; return { data: { statements: [], next_page_token: 'tok-next' } } },
+  })
+  ok('Shopee ใช้เลขหน้า (page_no = 3)', seen.shopee?.page_no === '3', JSON.stringify(seen.shopee))
+  ok('Lazada ใช้จำนวนแถว (offset = 3 × 50 = 150)', seen.lazada?.offset === '150', JSON.stringify(seen.lazada))
+  ok('TikTok ใช้โทเคน ไม่ใช่เลขหน้า', seen.tiktok?.page_token === 'tok-abc' && !('page_no' in (seen.tiktok || {})), JSON.stringify(seen.tiktok))
+
+  const r2 = await readMarketplaceFinance({ days: 7, limit: 10 }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }),
+    tiktok: async () => ({ data: { statements: [], next_page_token: 'tok-next' } }),
+  })
+  const tk = r2.results.find((x) => x.platform === 'tiktok')
+  ok('ส่ง nextPageToken กลับให้เลื่อนหน้าต่อได้', tk.nextPageToken === 'tok-next', JSON.stringify(tk.nextPageToken))
+  ok('ไม่มีหน้าถัดไป ⇒ null ไม่ใช่ ""', (await readMarketplaceFinance({}, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }),
+    tiktok: async () => ({ data: { statements: [] } }),
+  })).results.find((x) => x.platform === 'tiktok').nextPageToken === null)
+  ok('คำตอบบอกว่าเลขหน้าใช้กับใครได้', r2.pageApplies.includes('TikTok'))
+}
+
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')
 process.exit(fail ? 1 : 0)
