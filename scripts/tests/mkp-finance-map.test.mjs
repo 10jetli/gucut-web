@@ -6,7 +6,8 @@
  *   ② **"อ่านไม่ได้" ต้องเป็น null ห้ามเป็น 0** — 0 บาทแปลว่ามีรายการที่เป็นศูนย์ ซึ่งเป็นคำตอบคนละอัน
  *   ③ **วันต้องคิดแบบไทย (UTC+7)** — รายการช่วงเช้าไทยจะตกไปวันก่อนถ้าตัดวันด้วย UTC
  */
-import { mapShopee, mapLazada, mapTiktok, money, thaiDay, lazadaDay, readMarketplaceFinance } from '../../netlify/lib/mkp-finance.mjs'
+import { mapShopee, mapLazada, mapTiktok, money, thaiDay, lazadaDay, readMarketplaceFinance,
+  readShopeeOrderFees, readTiktokStatementLines } from '../../netlify/lib/mkp-finance.mjs'
 
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -171,6 +172,42 @@ console.log('⑧ วันของ Lazada เป็น "01 Sep 2026" ไม่�
   ok('รอบบัญชี (statement) เป็นช่วงวัน ส่งต่อครบ', row.statement === '01 Sep 2026 - 01 Sep 2026')
   // 🔴 กันของเดิมกลับมา: สตริงที่ถูกตัด 10 ตัวจะได้ "01 Sep 202" ⇒ ต้องไม่มีทางเกิดขึ้น
   ok('ไม่มีวันที่ปีขาดหลัก', !String(row.day).match(/\b\d{3}$/), String(row.day))
+}
+
+console.log('⑨ ค่าธรรมเนียมรายเอกสาร — escrow ของ Shopee มีชื่อผู้ซื้อ ห้ามหลุดเด็ดขาด')
+{
+  const r = await readShopeeOrderFees('2509ABCDEF', {
+    shopee: async (_p, q) => {
+      ok('ส่ง order_sn ไปให้ Shopee', q?.order_sn === '2509ABCDEF', JSON.stringify(q))
+      return { response: { order_income: {
+        escrow_amount: 900, commission_fee: 50, service_fee: 20, buyer_transaction_fee: 10,
+        buyer_paid_shipping_fee: 40, actual_shipping_fee: 45, shopee_shipping_rebate: 5,
+        voucher_from_shopee: 30, voucher_from_seller: 15, original_price: 1000,
+        buyer_user_name: 'ชื่อผู้ซื้อจริง', buyer_payment_method: 'บัตรเครดิต',
+      } } }
+    },
+  })
+  const s = JSON.stringify(r)
+  ok('ไม่มีชื่อผู้ซื้อในผล', !s.includes('ชื่อผู้ซื้อจริง'), s.slice(0, 200))
+  ok('ไม่มีวิธีชำระเงินของผู้ซื้อ', !s.includes('บัตรเครดิต'))
+  ok('fieldsSeen บอกชื่อช่องได้ (รวม buyer_user_name) แต่ไม่มีค่า',
+    r.fieldsSeen.includes('buyer_user_name') && !s.includes('ชื่อผู้ซื้อจริง'))
+  ok('แยกส่วนลดสองฝ่ายออกจากกัน (แพลตฟอร์มออก vs ร้านออก)',
+    r.voucherByShopee === 30 && r.voucherBySeller === 15)
+  ok('ค่าส่งแยก 3 ช่องตามที่ ZORT ต้องการ',
+    r.shippingPaidByBuyer === 40 && r.shippingActual === 45 && r.shippingSubsidyByShopee === 5)
+  ok('เลขที่ออเดอร์ผิดรูป ⇒ ตีกลับก่อนยิง', (await readShopeeOrderFees('สั้น', { shopee: async () => { throw new Error('ไม่ควรถูกเรียก') } })).error?.includes('order_sn'))
+  const none = await readShopeeOrderFees('2509ZZZZZZ', { shopee: async () => ({ response: {} }) })
+  ok('ไม่มีก้อน order_income ⇒ found:false ไม่ใช่เลขศูนย์', none.found === false && none.escrowAmount === undefined, JSON.stringify(none))
+
+  const tk = await readTiktokStatementLines('STMT123456', { limit: 5 }, {
+    tiktok: async (path, o) => {
+      ok('เรียกเส้นบรรทัดของใบสรุปด้วย id', path.includes('STMT123456') && path.includes('statement_transactions'), path)
+      return { data: { statement_transactions: [{ id: 'L1', order_id: 'O1', settlement_amount: '99.5', fee_amount: '-3', order_create_time: 1757000000 }], next_page_token: 'n' } }
+    },
+  })
+  ok('TikTok: อ่านบรรทัดได้ + บอกว่ายังมีต่อ', tk.rows[0].settlement === 99.5 && tk.truncated === true)
+  ok('TikTok: id ใบสรุปผิดรูป ⇒ ตีกลับ', (await readTiktokStatementLines('!!', {}, { tiktok: async () => { throw new Error('ไม่ควรถูกเรียก') } })).error?.includes('ใบสรุป'))
 }
 
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')

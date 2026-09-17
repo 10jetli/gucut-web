@@ -476,6 +476,19 @@ async function route(req, context) {
         to: url.searchParams.get("to"),
       })) });
     }
+    /* GET ?mkpfees=1&platform=shopee&id=<order_sn> | &platform=tiktok&id=<statement id>
+       ⇒ ค่าธรรมเนียม **รายเอกสาร** (ของที่จะเติมคอลัมน์ 13 ช่องของ ZORT ได้) · ใบ t_mu2xtzr2
+       🔒 allowlist เข้ม: escrow ของ Shopee มีชื่อผู้ซื้อ/ที่อยู่ ⇒ คืนเฉพาะช่องเงินที่ระบุไว้
+       ⚠️ Lazada ไม่มีในเส้นนี้ เพราะงบของเขาเป็นรายบรรทัดอยู่แล้ว (ดู ?mkpfinance=1) */
+    if (url.searchParams.get("mkpfees")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const plat = String(url.searchParams.get("platform") ?? "").trim().toLowerCase();
+      const id = url.searchParams.get("id");
+      const m = await import("../lib/mkp-finance.mjs");
+      if (plat === "shopee") return okJson(await m.readShopeeOrderFees(id));
+      if (plat === "tiktok") return okJson(await m.readTiktokStatementLines(id, { limit: url.searchParams.get("limit") }));
+      return json({ error: "platform ต้องเป็น shopee หรือ tiktok (Lazada ใช้ ?mkpfinance=1 ซึ่งเป็นรายบรรทัดอยู่แล้ว)" }, 400);
+    }
     if (url.searchParams.get("dbinfo")) {
       return okJson(await d1Info());
     }

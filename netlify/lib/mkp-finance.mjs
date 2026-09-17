@@ -255,3 +255,86 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
     results,
   };
 }
+
+/* ── รายละเอียดค่าธรรมเนียมรายเอกสาร — ของที่จะเติมคอลัมน์ 13 ช่องของ ZORT ได้จริง ─────────
+   (เพิ่ม 18 ก.ย. 2569 · ต่อจากผลไล่กอง: งบการเงินระดับกองไม่มีค่าส่ง/รายได้จาก Platform)
+
+   🎯 ZORT /Dashboard/MKPReport ตาราง "รายธุรกรรม" มี 13 คอลัมน์ รวมคอมมิชชั่น ·
+      ค่าธรรมเนียมการชำระเงิน · ค่าส่ง 3 แบบ · รายได้จาก Platform
+      ⇒ ของพวกนี้อยู่ใน **รายละเอียดรายเอกสาร** ไม่ใช่ในรายการกอง
+
+   🔒 escrow ของ Shopee มี **ชื่อผู้ซื้อ** (`buyer_user_name`) และที่อยู่ ⇒ allowlist เข้ม
+      คืนเฉพาะช่องเงินที่ระบุ + ชื่อช่องที่เจอ (ไม่มีค่า) เหมือนตัวอ่านกอง */
+
+/** ค่าธรรมเนียมรายออเดอร์ของ Shopee (escrow detail) — อ่านอย่างเดียว
+ *  ⚠️ ต้องมีเลขที่ออเดอร์ของ Shopee (order_sn) · ได้จาก rows ของ ?mkpfinance=1 (ช่อง orderRef) */
+export async function readShopeeOrderFees(orderSn, deps = {}) {
+  const sn = String(orderSn ?? "").trim().slice(0, 40);
+  if (!/^[A-Za-z0-9-]{6,40}$/.test(sn)) return { ok: false, error: "order_sn ต้องเป็นตัวอักษร/ตัวเลข 6–40 ตัว" };
+  const shopee = deps.shopee ?? (await import("./shopee.mjs")).shopCall;
+  try {
+    const d = await shopee("/api/v2/payment/get_escrow_detail", { order_sn: sn });
+    const inc = d?.response?.order_income ?? null;
+    if (!inc) return { ok: true, found: false, note: "Shopee ไม่ส่งก้อน order_income มา ⇒ ยังไม่รู้ว่าเพราะสิทธิ์หรือเพราะใบนี้ไม่มี" };
+    return {
+      ok: true, found: true, platform: "shopee", grain: "order-fees", orderRef: sn,
+      /* ชื่อช่องของ Shopee ↔ คอลัมน์ ZORT (จับคู่จากชื่อ **ยังไม่ยืนยันด้วยค่าจริงเทียบจอ ZORT**) */
+      escrowAmount: money(inc.escrow_amount),           // ยอดที่ร้านได้รับสุทธิ
+      itemsTotal: money(inc.original_price ?? inc.order_original_price),
+      commission: money(inc.commission_fee),            // ⇒ "คอมมิชชั่น"
+      serviceFee: money(inc.service_fee),               // ⇒ น่าจะเข้ากอง "ค่าใช้จ่ายอื่น"
+      paymentFee: money(inc.buyer_transaction_fee ?? inc.credit_card_transaction_fee),
+      sellerTransactionFee: money(inc.seller_transaction_fee),
+      shippingPaidByBuyer: money(inc.buyer_paid_shipping_fee),      // ⇒ "ค่าส่งเก็บจากลูกค้า"
+      shippingActual: money(inc.actual_shipping_fee),               // ⇒ "ค่าจัดส่งตามจริง"
+      shippingSubsidyByShopee: money(inc.shopee_shipping_rebate),   // ⇒ "ค่าส่งออกโดย Marketplace"
+      shippingDiscountSeller: money(inc.shipping_fee_discount_from_3pl ?? inc.seller_shipping_discount),
+      voucherByShopee: money(inc.voucher_from_shopee),  // ⇒ **"รายได้จาก Platform"** (แพลตฟอร์มออกเงิน)
+      voucherBySeller: money(inc.voucher_from_seller),  // ⇒ ส่วนลดที่ร้านออกเอง (ค่าใช้จ่าย) — คนละช่องกัน
+      coinsByShopee: money(inc.shopee_coin_cash_back ?? inc.coins),
+      fieldsSeen: Object.keys(inc).sort(),
+      /* 🔒 ที่ไม่เอา: buyer_user_name · buyer_payment_method · ที่อยู่ · เบอร์ (มีในก้อนอื่นของ escrow) */
+    };
+  } catch (e) {
+    const msg = cleanErr(e);
+    if (/ยังไม่ได้เชื่อมร้าน/.test(msg)) return { skip: msg };
+    return { ok: false, error: msg };
+  }
+}
+
+/** บรรทัดในใบสรุปรอบโอนเงินของ TikTok — อ่านอย่างเดียว
+ *  ⚠️ id ได้จาก rows ของ ?mkpfinance=1 (ช่อง id ของเจ้า tiktok) */
+export async function readTiktokStatementLines(statementId, opts = {}, deps = {}) {
+  const id = String(statementId ?? "").trim().slice(0, 40);
+  if (!/^[0-9A-Za-z_-]{6,40}$/.test(id)) return { ok: false, error: "id ของใบสรุปต้องเป็นตัวอักษร/ตัวเลข 6–40 ตัว" };
+  const limit = Math.max(1, Math.min(50, parseInt(opts.limit ?? "10", 10) || 10));
+  const tiktok = deps.tiktok ?? (await import("./tiktok.mjs")).shopCall;
+  try {
+    const d = await tiktok(`/finance/202309/statements/${encodeURIComponent(id)}/statement_transactions`, {
+      method: "GET", query: { page_size: String(limit) },
+    });
+    const raw = d?.data?.statement_transactions ?? [];
+    return {
+      ok: true, platform: "tiktok", grain: "statement-line", statementId: id, count: raw.length,
+      truncated: Boolean(d?.data?.next_page_token) || raw.length >= limit,
+      rows: raw.map((x) => ({
+        id: x?.id != null ? String(x.id) : null,
+        orderRef: x?.order_id != null ? String(x.order_id) : null,
+        type: x?.type ?? null,
+        day: thaiDay(x?.order_create_time ?? x?.statement_time),
+        settlement: money(x?.settlement_amount),
+        revenue: money(x?.revenue_amount),
+        fee: money(x?.fee_amount),
+        shippingCost: money(x?.shipping_cost_amount),
+        adjustment: money(x?.adjustment_amount),
+        currency: x?.currency ?? null,
+      })),
+      fieldsSeen: fieldsOf(raw),
+      /* 🔒 ไม่เอา: ช่องที่อาจมีข้อความอิสระ/ชื่อ (เช่น sku_name, customer) */
+    };
+  } catch (e) {
+    const msg = cleanErr(e);
+    if (/ยังไม่ได้เชื่อมร้าน/.test(msg)) return { skip: msg };
+    return { ok: false, error: msg };
+  }
+}
