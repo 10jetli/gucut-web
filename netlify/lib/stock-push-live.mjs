@@ -49,6 +49,22 @@ import { getStore } from "@netlify/blobs";
 
 const API = "https://api.lazada.co.th/rest";
 
+/** 🔴 **Lazada รับได้ไม่เกิน 50 SKU ต่อคำขอเขียนหนึ่งครั้ง** (พิสูจน์จากคำตอบจริง 17 ก.ย. 2569 14:01)
+ *  `4171: The updated SKU quantity exceeds the maximum number 50, please do not update more than 50 SKUs at once`
+ *  ของเดิมส่งทั้งก้อนในคำขอเดียว (กันไว้แค่ 100) ⇒ ยิง 76 ถูกปฏิเสธทั้ง 76
+ *  ⚠️ ประวัติที่ผ่านไม่เคยเกิน 15 ⇒ ไม่เคยชนเพดานจนวันที่ของเยอะ (ข้อมูลโตข้ามเส้นเอง)
+ *  ตั้งต่ำกว่าเพดานไว้ก่อน: ก้อนเล็กเสียหายน้อยเมื่อถูกปฏิเสธ (Lazada ตอบรวมทั้งก้อน) */
+export const LAZADA_SKU_ต่อคำขอ = 20;
+export const LAZADA_SKU_เพดาน = 50;
+
+/** แบ่งรายการเป็นก้อนไม่เกิน n ตัว — แยกออกมาเพื่อทดสอบได้โดยไม่ต้องยิงของจริง */
+export function แบ่งก้อน(รายการ, n) {
+  const size = Math.max(1, Math.min(Math.floor(n) || 1, LAZADA_SKU_เพดาน));
+  const out = [];
+  for (let i = 0; i < รายการ.length; i += size) out.push(รายการ.slice(i, i + size));
+  return out;
+}
+
 /* ยิง API เขียนของ Lazada — ตัวเซ็นลายเซ็นแบบเดียวกับ lazada.mjs
    ⚠️ ใช้ **POST แบบฟอร์ม** เพราะ payload ยาวเกินจะฝากใน query ได้อย่างปลอดภัย
    (Lazada รับ POST x-www-form-urlencoded โดยเซ็นพารามิเตอร์ชุดเดียวกับ query) */
@@ -79,7 +95,7 @@ async function lazadaWrite(path, extra) {
  *  ใช้เส้น /product/stock/sellable/update (payload JSON)
  *  ⚠️ ยังไม่เคยยิงจริงจนกว่า canary ตัวแรกจะผ่าน — คำตอบดิบของแพลตฟอร์ม
  *     ติดกลับไปในผลเสมอ เพื่อให้เห็นความจริง ไม่ใช่การตีความของเรา */
-async function lazadaPush(rows) {
+export async function lazadaPush(rows) {
   /* Lazada ฝั่งเขียนเลิกรับ SellerSku แล้ว (E0501 — เจอจาก canary ตัวแรก 8 ก.ย. 2569)
      ⇒ แปลงเป็น SkuId+ItemId ก่อนเสมอ · แปลงไม่ได้ = ไม่ยิงตัวนั้น พร้อมบอกเหตุผล */
   const { skuIdMap } = await import("./lazada.mjs");
@@ -92,31 +108,38 @@ async function lazadaPush(rows) {
     else noId.push({ ...r, result: "not_sent", why: "หา SkuId บน Lazada ไม่เจอ (สินค้าอาจถูกถอด)" });
   }
   if (!ready.length) return noId;
-  const payload = JSON.stringify({
-    Request: {
-      Product: {
-        Skus: {
-          Sku: ready.map((r) => ({
-            ItemId: String(r.itemId ?? ""),
-            SkuId: String(r.skuId),
-            SellableQuantity: String(r.to),
-          })),
+  /* 🔴 **ยิงทีละก้อน ≤ LAZADA_SKU_ต่อคำขอ** — คิดแผนสดครั้งเดียวข้างนอก แล้วแบ่งเฉพาะคำขอเขียน
+     ⚠️ **ห้ามย้ายการแบ่งก้อนไปไว้ที่ตัวกวาด** (เรียก stockPushLive หลายครั้ง) — ทุกครั้งจะคิดแผนสดใหม่ ~10 วิ
+        แล้วทะลุเพดาน 26 วิของ Netlify ทันที · ชั้นที่ถูกคือชั้นที่คุยกับ Lazada = ที่นี่
+     ⚠️ ก้อนหนึ่งถูกปฏิเสธ **ห้ามลากก้อนอื่นล้มตาม** — Lazada ตอบรวมต่อคำขอ ไม่ใช่ต่อรอบ */
+  const ผล = [];
+  for (const ก้อน of แบ่งก้อน(ready, LAZADA_SKU_ต่อคำขอ)) {
+    const payload = JSON.stringify({
+      Request: {
+        Product: {
+          Skus: {
+            Sku: ก้อน.map((r) => ({
+              ItemId: String(r.itemId ?? ""),
+              SkuId: String(r.skuId),
+              SellableQuantity: String(r.to),
+            })),
+          },
         },
       },
-    },
-  });
-  const r = await lazadaWrite("/product/stock/sellable/update", { payload });
-  if (r.error) return [...ready.map((x) => ({ ...x, result: "not_sent", why: r.error })), ...noId];
-  const ok = r.data && String(r.data.code) === "0";
-  /* Lazada ตอบรวมทั้งชุด — สำเร็จ = ทุกตัวในชุดสำเร็จ · ปฏิเสธ = แนบคำตอบดิบทั้งก้อน */
-  return [
-    ...ready.map((x) => ({
+    });
+    const r = await lazadaWrite("/product/stock/sellable/update", { payload }).catch((e) => ({
+      error: String(e?.message || e).slice(0, 200),
+    }));
+    if (r.error) { ผล.push(...ก้อน.map((x) => ({ ...x, result: "not_sent", why: r.error }))); continue; }
+    const ok = r.data && String(r.data.code) === "0";
+    /* Lazada ตอบรวมทั้งก้อน — สำเร็จ = ทุกตัวในก้อนสำเร็จ · ปฏิเสธ = แนบคำตอบดิบทั้งก้อน */
+    ผล.push(...ก้อน.map((x) => ({
       ...x,
       result: ok ? "pushed" : "rejected",
       ...(ok ? {} : { why: `${r.data?.code}: ${r.data?.message || ""}`.trim(), raw: r.data }),
-    })),
-    ...noId,
-  ];
+    })));
+  }
+  return [...ผล, ...noId];
 }
 
 /** พิสูจน์ว่าการเขียนติดจริง — **รันเทียบสดซ้ำ** แล้วดูว่ารหัสที่ยิงหายจากแผนหรือยัง
