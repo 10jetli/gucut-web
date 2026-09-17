@@ -117,5 +117,46 @@ console.log('⑥ เลื่อนหน้า — สามเจ้าไม�
   ok('คำตอบบอกว่าเลขหน้าใช้กับใครได้', r2.pageApplies.includes('TikTok'))
 }
 
+console.log('⑦ ช่วงวันของ Shopee ต้องถูกหดให้ < 15 วันเอง (วัดจริง 18 ก.ย.: 14 วันได้ · 15 วันขึ้นไป Shopee ตอบ time_invalid)')
+{
+  const seen = {}
+  const r = await readMarketplaceFinance({ days: 30, limit: 10 }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async (_p, q) => { seen.shopee = q; return { response: { transaction_list: [{ transaction_id: 1 }] } } },
+    lazada: async (_p, q) => { seen.lazada = q; return { data: [] } },
+    tiktok: async () => ({ data: { statements: [] } }),
+  })
+  const sp = r.results.find((x) => x.platform === 'shopee')
+  const span = (Number(seen.shopee.create_time_to) - Number(seen.shopee.create_time_from)) / 86400
+  ok('ช่วงที่ส่งให้ Shopee < 15 วัน', span < 15 && span > 13, String(span))
+  ok('ติดป้ายว่าหดช่วงแล้ว', sp.windowClamped === true && sp.windowDays === 14, JSON.stringify([sp.windowClamped, sp.windowDays]))
+  ok('เขียนบอกในป้ายขอบเขตด้วย', sp.scope.includes('หดช่วง'), sp.scope)
+  ok('Lazada ยังได้ช่วงเต็ม 30 วัน', seen.lazada.start_time === '2026-08-19' && seen.lazada.end_time === '2026-09-18',
+    JSON.stringify([seen.lazada.start_time, seen.lazada.end_time]))
+  ok('คำตอบบอกช่วงวันที่ใช้จริง', r.range?.from === '2026-08-19' && r.range?.to === '2026-09-18', JSON.stringify(r.range))
+
+  // ขอ 7 วัน = ไม่ต้องหด ⇒ ห้ามติดป้ายว่าหด (ป้ายที่ติดทุกครั้งเท่ากับไม่มีป้าย)
+  const r2 = await readMarketplaceFinance({ days: 7, limit: 10 }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
+  })
+  const sp2 = r2.results.find((x) => x.platform === 'shopee')
+  ok('7 วัน ⇒ ไม่ติดป้ายหดช่วง', sp2.windowClamped === false && !sp2.scope.includes('หดช่วง'))
+
+  // to= เลื่อนหน้าต่างย้อนหลังได้
+  const r3 = await readMarketplaceFinance({ days: 7, to: '2026-08-31' }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async (_p, q) => { seen.shopee3 = q; return { response: { transaction_list: [] } } },
+    lazada: async (_p, q) => { seen.lazada3 = q; return { data: [] } }, tiktok: async () => ({ data: { statements: [] } }),
+  })
+  ok('to= เลื่อนช่วงถอยหลังได้', r3.range?.to === '2026-08-31' && seen.lazada3.end_time === '2026-08-31', JSON.stringify(r3.range))
+  ok('to= รูปแบบผิด ⇒ ใช้วันนี้ ไม่พังคำขอ', (await readMarketplaceFinance({ to: 'ไม่ใช่วันที่' }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
+  })).range?.to === '2026-09-18')
+}
+
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')
 process.exit(fail ? 1 : 0)

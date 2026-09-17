@@ -131,6 +131,14 @@ async function one(platform, fn) {
  *   ⚠️ TikTok จึงรับ `pageToken` แทน — ส่ง `page` ให้ TikTok ไม่มีผล และ **ห้ามแกล้งคิดโทเคนจากเลขหน้า**
  *     (ตระกูล [[similar-name-other-unit]] ชื่อคล้ายกันแต่หน่วยคนละอย่าง)
  * @param pageToken โทเคนหน้าถัดไปของ TikTok (ได้จาก nextPageToken ของรอบก่อน)
+ * @param to วันสุดท้ายของช่วง (YYYY-MM-DD · ไม่ส่ง = วันนี้) — ใช้เลื่อนหน้าต่างย้อนหลังทีละช่วง
+ *
+ * 🔴 **Shopee จำกัดช่วงวันไม่ให้ถึง 15 วัน** (วัดจริง 18 ก.ย. 2569: 14 วันได้ · 15 วันขึ้นไป
+ *    ตอบ `wallet.time_invalid: time period too large`) ⇒ ตัวนี้ **หดช่วงของ Shopee ให้เหลือ 14 วันเอง**
+ *    แล้วติดป้าย `windowDays` + `windowClamped` บอกว่าหดแล้ว
+ *    ⚠️ ถ้าไม่หดให้: ขอ 30 วัน ⇒ Shopee ตอบ error ⇒ **คนอ่านเห็นแถวว่างแล้วสรุปว่า "เดือนนี้ไม่มีรายการ"**
+ *       (ผมเกือบสรุปแบบนั้นเองตอนไล่กอง — เห็น rows ว่างโดยไม่ได้ดู ok/error) [[http-200-empty-payload]]
+ *    ⚠️ อยากได้ย้อนไกลกว่า 14 วัน ต้องเลื่อน `to` ถอยหลังทีละช่วง ไม่ใช่เพิ่ม `days`
  *
  * ⚠️ **หนึ่งเจ้าล้ม ห้ามลากอีกสองเจ้า** — คืนผลรายเจ้า (ok/error/skip) แยกกันเสมอ
  * ⚠️ `truncated` = ได้เท่าที่ขอ อาจมีมากกว่านี้ ⇒ จอห้ามเขียนว่า "ทั้งหมด"
@@ -141,7 +149,15 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
   const page = Math.max(0, Math.min(500, parseInt(opts.page ?? "0", 10) || 0));
   const pageToken = String(opts.pageToken ?? "").slice(0, 400);
   const now = deps.now ? new Date(deps.now) : new Date();
-  const from = new Date(now.getTime() - days * 864e5);
+  /* วันสุดท้ายของช่วง — ส่ง to= มาได้เพื่อเลื่อนหน้าต่างย้อนหลัง · รูปแบบผิด = ใช้วันนี้ (ห้ามพังทั้งคำขอ) */
+  const toRaw = String(opts.to ?? "").trim();
+  const end = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) && !Number.isNaN(Date.parse(`${toRaw}T23:59:59Z`))
+    ? new Date(`${toRaw}T23:59:59Z`) : now;
+  const from = new Date(end.getTime() - days * 864e5);
+  /* ⚠️ Shopee: ช่วงต้องน้อยกว่า 15 วัน ⇒ หดให้เหลือ 14 วันนับจากวันสุดท้ายเดียวกัน */
+  const SHOPEE_MAX_DAYS = 14;
+  const shopeeDays = Math.min(days, SHOPEE_MAX_DAYS);
+  const shopeeFrom = new Date(end.getTime() - shopeeDays * 864e5);
 
   const shopee = deps.shopee ?? (await import("./shopee.mjs")).shopCall;
   const lazada = deps.lazada ?? (await import("./lazada.mjs")).shopCall;
@@ -151,28 +167,33 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
     one("shopee", async () => {
       const d = await shopee("/api/v2/payment/get_wallet_transaction_list", {
         page_no: String(page), page_size: String(limit),
-        create_time_from: String(Math.floor(from.getTime() / 1000)),
-        create_time_to: String(Math.floor(now.getTime() / 1000)),
+        create_time_from: String(Math.floor(shopeeFrom.getTime() / 1000)),
+        create_time_to: String(Math.floor(end.getTime() / 1000)),
       });
       const raw = d?.response?.transaction_list ?? [];
       return {
         ok: true, grain: "wallet-txn", rows: raw.map(mapShopee), count: raw.length,
         truncated: Boolean(d?.response?.more) || raw.length >= limit,
         fieldsSeen: fieldsOf(raw),
-        scope: `รายการเดินบัญชีกระเป๋าเงิน Shopee ${ymd(from)}–${ymd(now)} (≤${limit} แถว)`,
+        windowDays: shopeeDays,
+        windowClamped: shopeeDays < days,
+        scope: `รายการเดินบัญชีกระเป๋าเงิน Shopee ${ymd(shopeeFrom)}–${ymd(end)} (≤${limit} แถว)` +
+          (shopeeDays < days
+            ? ` ⚠️ **หดช่วงจาก ${days} วันเหลือ ${shopeeDays} วัน** เพราะ Shopee ไม่รับช่วง ≥15 วัน`
+            : ""),
       };
     }),
     one("lazada", async () => {
       const d = await lazada("/finance/transaction/details/get", {
         /* Lazada เลื่อนหน้าด้วย **จำนวนแถว** ไม่ใช่เลขหน้า ⇒ ต้องคูณด้วย limit เอง */
-        start_time: ymd(from), end_time: ymd(now), limit: String(limit), offset: String(page * limit),
+        start_time: ymd(from), end_time: ymd(end), limit: String(limit), offset: String(page * limit),
       });
       const raw = Array.isArray(d?.data) ? d.data : [];
       return {
         ok: true, grain: "fee-line", rows: raw.map(mapLazada), count: raw.length,
         truncated: raw.length >= limit,
         fieldsSeen: fieldsOf(raw),
-        scope: `รายการค่าธรรมเนียมรายบรรทัด Lazada ${ymd(from)}–${ymd(now)} (≤${limit} แถว)`,
+        scope: `รายการค่าธรรมเนียมรายบรรทัด Lazada ${ymd(from)}–${ymd(end)} (≤${limit} แถว)`,
       };
     }),
     one("tiktok", async () => {
@@ -200,6 +221,10 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
   return {
     checkedAt: now.toISOString(),
     days, limit, page,
+    /* ช่วงวันที่ใช้จริง — ผู้เรียกต้องเห็นว่าได้ช่วงไหนมา ไม่ใช่เดาจากพารามิเตอร์ที่ส่งไป
+       ⚠️ Shopee ได้ช่วงสั้นกว่าเจ้าอื่นเมื่อ days > 14 (ดู windowDays ของเจ้านั้น) */
+    range: { from: ymd(from), to: ymd(end) },
+    shopeeMaxDays: 14,
     /* ⚠️ `page` มีผลกับ Shopee/Lazada เท่านั้น — TikTok ใช้โทเคน ⇒ บอกให้ชัดบนคำตอบ
        ไม่บอก = คนเลื่อนหน้าแล้วได้ TikTok ชุดเดิมทุกหน้า โดยไม่มีอะไรฟ้อง */
     pageApplies: "shopee, lazada (TikTok ใช้ pageToken จาก nextPageToken)",

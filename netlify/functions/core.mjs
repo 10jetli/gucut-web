@@ -473,6 +473,7 @@ async function route(req, context) {
       return okJson({ ok: true, ...(await readMarketplaceFinance({
         days: url.searchParams.get("days"), limit: url.searchParams.get("limit"),
         page: url.searchParams.get("page"), pageToken: url.searchParams.get("pagetoken"),
+        to: url.searchParams.get("to"),
       })) });
     }
     if (url.searchParams.get("dbinfo")) {
