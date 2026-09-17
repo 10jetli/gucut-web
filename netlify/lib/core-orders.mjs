@@ -672,6 +672,35 @@ export async function listLogistics(o = {}) {
       ⇒ นับเฉพาะใบที่มีร่องรอยการส่งจริง (มีเลขพัสดุ หรือระบุขนส่งไว้) */
   const SCOPE = `(COALESCE(tracking_no,'') <> '' OR COALESCE(ship_channel,'') <> '')`;
   parts.push(SCOPE);
+  /* 📅 ช่วงวันที่ + 🚚 ขนส่ง (gucut2 17 ก.ย. 2569) — เดิมเมินเงียบ จอจึงทำตัวกรองแบบ ZORT ไม่ได้
+     วันที่ = **วันเดียวกับคอลัมน์ "วันที่" ของแถว** (วันส่ง ถ้าไม่มีใช้วันสั่ง) ⇒ กรองกับที่ตาเห็นตรงกัน
+     ตัดเหลือ 10 ตัวแรกก่อนเทียบ — ถ้าช่องมีเวลาต่อท้าย `<= 'yyyy-mm-dd'` จะตัดวันสุดท้ายทิ้งเงียบ ๆ */
+  const DATE = `substr(COALESCE(NULLIF(ship_date,''), order_date),1,10)`;
+  const from = isRealDay(o.from) ? o.from : null;
+  const to = isRealDay(o.to) ? o.to : null;
+  if (from) { parts.push(`${DATE} >= ?`); params.push(from); }
+  if (to) { parts.push(`${DATE} <= ?`); params.push(to); }
+  /* ขนส่ง: รับ **ชื่อกลุ่ม** (Flash · Kerry …) หรือ **ชื่อดิบ** ก็ได้ — ตัดสินจาก byChannel ของขอบเขตเดียวกัน
+     ⇒ ชื่อสะกดแปลกที่รวมเข้ากลุ่มแล้วก็ถูกกรองด้วย ไม่หลุดเงียบ · ไม่รู้จักเลย ⇒ ไม่กรอง + บอกใน ignored */
+  const carrierAsked = String(o.carrier ?? "").trim().slice(0, 60) || null;
+  let carrierUsed = null;
+  if (carrierAsked) {
+    const pre = await coreQuery(
+      `SELECT COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') AS channel, COUNT(*) AS c
+       FROM orders WHERE ${parts.join(" AND ")}
+       GROUP BY COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)')`,
+      params
+    );
+    const { groupCarriers } = await import("./carriers.mjs");
+    const g = groupCarriers(pre).groups.find((x) => x.carrier === carrierAsked);
+    const raw = g ? g.names.map((n) => n.name) : pre.some((r) => r.channel === carrierAsked) ? [carrierAsked] : [];
+    // เพดานตัวแปรผูกค่า D1 = 100 — กลุ่มหนึ่งมีชื่อสะกดไม่กี่แบบ แต่กันไว้ไม่ให้พังทั้งเส้น
+    if (raw.length && raw.length <= 60) {
+      parts.push(`COALESCE(NULLIF(ship_channel,''),'(ยังไม่ระบุขนส่ง)') IN (${raw.map(() => "?").join(",")})`);
+      params.push(...raw);
+      carrierUsed = carrierAsked;
+    }
+  }
   /* แท็บ: ส่งแล้ว / ยังไม่ได้ส่ง — ตัดสินจาก "มีเลขพัสดุหรือยัง" · เก็บเงินปลายทางดูที่ is_cod
      ⚠️ **แท็บ `cod` เคยหายไปจากรายการนี้ ทั้งที่จอมีแท็บนั้นและมีป้ายตัวเลขกำกับ**
         (เจอ 4 ก.ย. 2569) ⇒ `only=cod` ตกลงมาเป็น undefined = ไม่กรองอะไรเลย
@@ -728,6 +757,10 @@ export async function listLogistics(o = {}) {
       เดิมจอใช้ `total` ทำเลขหน้า ⇒ แท็บ "ยังไม่ได้ส่ง" มี 10 ใบ แต่เขียนว่า "แสดง 10 จาก 558"
       และปุ่มถัดไปยังกดได้ กดแล้วได้หน้าว่าง (เจอ 4 ก.ย. 2569) */
   const [shownRow] = await coreQuery(`SELECT COUNT(*) AS c FROM orders WHERE ${where}`, params);
+  const ignoredMsgs = [
+    known ? null : `ไม่รู้จักตัวกรอง "${asked}" — แสดงทั้งหมดแทน`,
+    carrierAsked && !carrierUsed ? `ไม่รู้จักขนส่ง "${carrierAsked}" ในช่วงนี้ — ไม่ได้กรองขนส่ง` : null,
+  ].filter(Boolean);
   return {
     total: num(sum?.c),
     shown: num(shownRow?.c),
@@ -737,8 +770,11 @@ export async function listLogistics(o = {}) {
     limit,
     offset,
     only: usedOnly,
-    applied: { only: usedOnly, limit, offset, q: q || null },
-    ...(known ? {} : { ignored: { only: asked }, note: `ไม่รู้จักตัวกรอง "${asked}" — แสดงทั้งหมดแทน` }),
+    applied: { only: usedOnly, limit, offset, q: q || null, from, to, carrier: carrierUsed },
+    dateBasis: "วันส่งสินค้า ถ้าไม่มีใช้วันที่สั่ง (ตรงกับคอลัมน์วันที่ของแถว)",
+    ...(ignoredMsgs.length ? {
+      ignored: { ...(known ? {} : { only: asked }), ...(carrierAsked && !carrierUsed ? { carrier: carrierAsked } : {}) },
+    } : {}),
     byChannel, // ชื่อดิบ — ห้ามถอด กลุ่มเป็นของสำหรับอ่าน ไม่ใช่ของแทนความจริง
     carrierGroups: carrierGroups.groups,
     // ⚠️ ตาข่าย: ขนส่งเจ้าใหม่ที่ยังไม่รู้จักจะโผล่ตรงนี้ ไม่ถูกยัดเข้ากลุ่มอื่นมั่ว ๆ
@@ -748,11 +784,16 @@ export async function listLogistics(o = {}) {
     //    เพราะเราเพิ่งเริ่มเก็บเลขพัสดุ ใบเก่าที่หัวใบไม่เปลี่ยนแล้วจึงยังไม่มีค่า
     //    ⇒ เขียนว่า "เท่าที่เก็บได้" ห้ามเขียนว่าเป็นทั้งหมด
     coversFrom: "เริ่มเก็บข้อมูลขนส่ง 3 ก.ย. 2569",
-    zortShows: 1644,
-    note:
+    /* ⚠️ เดิมเขียนว่า "ยังน้อยกว่าที่ ZORT แสดง" — วัด 17 ก.ย. 2569 **กลับทิศ**: เรา ~35,700 · ZORT 1,665
+       เพราะคนละหน่วยนับ (ZORT = การจองขนส่งผ่าน ZORT · เรา = ใบขายที่มีข้อมูลขนส่ง) ⇒ เทียบเลขตรง ๆ ไม่ได้ */
+    zortShows: 1665,
+    zortShowsAt: "2026-09-17",
+    /* 🔴 คำเตือนตัวกรองที่ไม่ได้ใช้ต้องมาก่อน — เดิม `note` ข้างล่างเขียนทับ note ของ ignored เงียบ ๆ
+          (ไม่รู้จัก only ⇒ คำเตือนหายทุกครั้ง · เทสต์ logistics-date-carrier จับได้ 17 ก.ย. 2569) */
+    note: [...ignoredMsgs,
       "อ่านจากกระจกออเดอร์ — ZORT ไม่มี API ขนส่งแยก · " +
-      "นับเฉพาะใบที่มีร่องรอยการส่ง (มีเลขพัสดุหรือระบุขนส่ง) ไม่ใช่ออเดอร์ทั้งหมด · " +
-      "ยังน้อยกว่าที่ ZORT แสดงเพราะใบเก่าที่ไม่ขยับแล้วยังไม่ถูกเก็บเลขพัสดุ",
+      "นับเฉพาะใบขายที่มีร่องรอยการส่ง (มีเลขพัสดุหรือระบุขนส่ง) ไม่ใช่ออเดอร์ทั้งหมด · " +
+      "คนละหน่วยนับกับจอ ZORT (ZORT นับการจองขนส่งผ่าน ZORT) ⇒ เลขของเรามากกว่ามาก เทียบกันตรง ๆ ไม่ได้"].join(" · "),
     rows: rows.map((r) => ({ ...r, isCod: num(r.isCod) === 1 })),
   };
 }

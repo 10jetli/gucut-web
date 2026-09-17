@@ -1180,6 +1180,9 @@ async function route(req, context) {
         ...(await listLogistics({
           q: url.searchParams.get("q"),
           only: url.searchParams.get("only"),
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          carrier: url.searchParams.get("carrier"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),
