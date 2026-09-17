@@ -19,7 +19,7 @@ const rows = (sql) => {
   // ⚠️ ต้องเช็คคำสั่ง "ยอดรวมรายสินค้า" ก่อน เพราะมันก็มี COUNT(*) n เหมือนกัน (ตัวปลอมเคยจับผิดอันมาแล้ว)
   if (/FROM \(\s*SELECT i\.sku/.test(sql)) return [{ n: 37, s: 24570 }];
   if (/COUNT\(\*\) n/.test(sql)) return [{ n: 54, total: 100000, first_day: '2023-01-01', last_day: '2026-09-14' }];
-  if (/month_paid/.test(sql)) return [{ month_paid: 18000, year_paid: 24570, ym: '2026-09', y: '2026' }];
+  if (/month_paid/.test(sql)) return [{ all_paid: 30000, month_paid: 18000, year_paid: 24570, ym: '2026-09', y: '2026' }];
   // ยอดรวมรายสินค้าทั้งชุด — จงใจให้มากกว่าผลรวมของแถวที่ส่งมา เพื่อจับกรณีจอเอาแถวที่ถูกตัดไปนับเอง
   if (/FROM order_items i JOIN orders o/.test(sql))
     return [{ sku: 'X1', name: 'ของ X', qty: 2, amount: 900 }, { sku: 'X2', name: 'ของ Y', qty: 1, amount: 100 }];
@@ -61,6 +61,10 @@ test('ยอดขายรายสินค้าถูกตัด 20 อั�
   assert.equal(p.amount, 24570);
   assert.notEqual(p.amount, p.rows.reduce((a, r) => a + r.amount, 0), 'ยอดทั้งชุดต้องไม่ใช่ผลบวกของแถวที่ถูกตัด');
   assert.match(String(p.scope), /ชำระครบ/, 'ต้องบอกว่าใช้ชุดเดียวกับการ์ดเงิน');
+  // 🔴 ยอดรวมรายสินค้า (ก่อนเกลี่ยส่วนลดท้ายบิล) กับยอดรวมหัวใบ ต่างกันได้จริง — ต้องส่งมาทั้งคู่พร้อมคำอธิบาย
+  assert.equal(p.ordersAmount, 30000, 'ต้องส่งยอดรวมหัวใบมาให้จอเทียบด้วย');
+  assert.notEqual(p.ordersAmount, p.amount, 'ตัวทดสอบเองพัง — ต้องจำลองกรณีสองเลขไม่ตรงกัน');
+  assert.match(String(p.diffNote), /ส่วนลดท้ายบิล/, 'สองเลขต่างกันแล้วต้องมีคำอธิบายติดมาเสมอ');
 });
 
 test('ยอดค้างชำระส่ง null พร้อมเหตุผล — ห้ามเป็น 0 และห้ามคิดจากใบที่ยังไม่ชำระ', async () => {
