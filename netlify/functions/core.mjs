@@ -383,6 +383,14 @@ async function route(req, context) {
       return json({ ok: true, log: Array.isArray(log) ? log : [] });
     }
     /* 🔐 ตรวจสิทธิ์เขียนสต็อก Shopee/TikTok ด้วยรหัสปลอม — GET · ไม่เปลี่ยนสต็อก (ดูหัวไฟล์ stock-write-probe.mjs) */
+    /* 🧱 ด่านใบค้างส่ง (⑧) — GET อ่านอย่างเดียว · คืนแค่จำนวน + ตัวอย่างรหัส ไว้ตรวจกับของจริงก่อนต่อตัวยิง */
+    if (url.searchParams.get("stockpushguards")) {
+      const { รหัสในใบค้างส่ง } = await import("../lib/stock-push-guards.mjs");
+      const r = await รหัสในใบค้างส่ง();
+      if (r.error) return okJson({ ok: false, error: r.error });
+      return okJson({ ok: true, ใบค้างส่ง: r.orders, บรรทัด: r.lines, รหัสที่ถูกกัน: r.skus.size,
+        ตัวอย่าง: [...r.skus].slice(0, 20), note: "รวมชุด↔ชิ้นส่วนสองทิศแล้ว · ทั้งสองร้าน" });
+    }
     if (url.searchParams.get("stockwriteprobe")) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น" }, 405);
       const { ตรวจสิทธิ์เขียนสต็อก } = await import("../lib/stock-write-probe.mjs");
