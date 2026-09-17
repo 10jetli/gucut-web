@@ -96,6 +96,8 @@ async function shopeeStock(status = "NORMAL") {
           const qty = num(m?.stock_info_v2?.seller_stock?.[0]?.stock);
           rows.push({
             itemId: id,
+            /* ที่อยู่สำหรับยิงเขียนสต็อก (update_stock ต่อ item_id + model_id) — เพิ่ม 17 ก.ย. 2569 ตัวยิง Shopee */
+            modelId: m.model_id ?? null,
             sku: String(m.model_sku || "").trim(),
             name: `${b.item_name || ""} ${m.model_name || ""}`.trim().slice(0, 120),
             qty,
@@ -105,6 +107,8 @@ async function shopeeStock(status = "NORMAL") {
         const s = d?.response?.tier_variation?.length ? null : b;
         rows.push({
           itemId: id,
+          /* สินค้าไม่มีตัวเลือก ⇒ update_stock ใช้ model_id 0 · แต่ถ้ามี tier_variation แต่อ่าน model ไม่ได้ = ไม่รู้ที่อยู่ */
+          modelId: d?.response?.tier_variation?.length ? null : 0,
           sku: String(b.item_sku || "").trim(),
           name: String(b.item_name || "").slice(0, 120),
           qty: num(s?.stock_info_v2?.seller_stock?.[0]?.stock),
@@ -375,6 +379,16 @@ export async function shopeeMissingSkus() {
 }
 
 /** เทียบสต็อก Shopee กับภาพถ่ายสต็อกล่าสุดในคลังเรา — อ่านอย่างเดียว */
+/** รวมแถวเป็น { รหัส: [ที่อยู่…] } — ใช้ทั้ง Shopee และ TikTok */
+export function ที่อยู่ของรหัส(rows, pick) {
+  const out = {};
+  for (const r of rows) {
+    if (!r?.sku) continue;
+    (out[r.sku] ||= []).push(pick(r));
+  }
+  return out;
+}
+
 export async function shopeeStockCompare(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const t = await validToken();
@@ -521,6 +535,9 @@ export async function shopeeStockCompare(o = {}) {
     sawAllItems: rows.coverage?.sawAll ?? null,
     itemsSeen: rows.coverage?.ids?.length ?? null,
     shopeeItemTotal: rows.coverage?.declared ?? null,
+    /* 📍 ที่อยู่บน Shopee ของแต่ละรหัส (เฉพาะ full — ตัวยิงใช้) · รหัสเดียวอยู่หลายที่ได้ ⇒ เป็นรายการ
+       ⚠️ ตัวยิงต้องปฏิเสธรหัสที่มี >1 ที่อยู่ — ดันเลขเต็มทุกที่ = ขายเกินของ */
+    ...(o.full ? { locations: ที่อยู่ของรหัส(withSku, (r) => ({ itemId: r.itemId ?? null, modelId: r.modelId ?? null })) } : {}),
   };
 }
 

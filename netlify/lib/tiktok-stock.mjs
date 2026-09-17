@@ -7,6 +7,7 @@
 //
 // ⚠️ ตัวเลขจาก TikTok คือ "ของที่ลงขายอยู่" เท่านั้น (status ACTIVATE)
 //    ของที่ปิดขายไว้ไม่อยู่ในนี้ ⇒ "ไม่เจอใน TikTok" ≠ "ไม่มีขายบน TikTok"
+import { ที่อยู่ของรหัส } from "./shopee-stock.mjs";
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { validToken, shopCall, ensureShop, VERSION } from "./tiktok.mjs";
 
@@ -114,7 +115,14 @@ export async function collectTiktokStock(fetchPage) {
         if (!sku) { noSku++; continue; }
         const qty = readQty(s);
         if (qty === undefined) unmapped.add("sku.quantity");
-        rows.push({ sku, name: String(it?.title ?? "").slice(0, 120), qty: num(qty) });
+        rows.push({
+          sku, name: String(it?.title ?? "").slice(0, 120), qty: num(qty),
+          /* ที่อยู่สำหรับยิงเขียน (inventory/update ต่อ product_id + sku id + warehouse) — เพิ่ม 17 ก.ย. 2569
+             ⚠️ จำนวนข้างบนรวมทุกคลัง ⇒ ตัวยิงต้องปฏิเสธรหัสที่มีมากกว่า 1 คลัง (ไม่รู้จะลงคลังไหน) */
+          productId: it?.id ?? null,
+          skuId: s?.id ?? null,
+          warehouses: Array.isArray(s?.inventory) ? s.inventory.map((i) => i?.warehouse_id ?? null) : null,
+        });
       }
     }
     pageToken = d?.data?.next_page_token || "";
@@ -153,7 +161,7 @@ export async function tiktokProductShape() {
  * เทียบสต็อก TikTok กับภาพถ่ายคลังของเรา
  * โครงผลลัพธ์ตั้งใจให้เหมือน shopeeStockCompare เพื่อให้ stock-push ใช้ตัววางแผนตัวเดียวกันได้
  */
-export async function tiktokStockCompare() {
+export async function tiktokStockCompare(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const got = await tiktokStock();
   if (got.skip) return { skip: got.skip };
@@ -268,6 +276,8 @@ export async function tiktokStockCompare() {
     /* ⚠️ ถามตารางสูตรชุดไม่ได้ ⇒ กอง "คลังไม่รู้จัก" สูงเกินจริง (สินค้าชุดตกมากองนี้หมด)
         **ห้ามอ่านตัวเลขนั้นเป็น "ของหาย"** · null = ถามได้ปกติ */
     recipeError: recipeErr,
+    /* 📍 ที่อยู่บน TikTok ของแต่ละรหัส (เฉพาะ full — ตัวยิงใช้) */
+    ...(o.full ? { locations: ที่อยู่ของรหัส(rows, (r) => ({ productId: r.productId ?? null, skuId: r.skuId ?? null, warehouses: r.warehouses ?? null })) } : {}),
   };
 }
 

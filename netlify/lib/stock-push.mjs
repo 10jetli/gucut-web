@@ -44,6 +44,15 @@ const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
  */
 /* ⚠️ export เพื่อให้ตัวทดสอบเรียก **ตัววางแผนตัวจริง** ได้ (ไม่ต้องประกอบคำตอบด้วยมือ)
    — ตัวทดสอบที่ประกอบแผนเองจะไม่มีวันเจอบั๊กของตัววางแผน (กฎ test-must-hit-the-path) */
+/** 📍 ตัดแผนที่ที่อยู่ให้เหลือเฉพาะรหัสที่จะยิง (คำตอบไม่บวม) — เพิ่ม 17 ก.ย. 2569 ตัวยิง Shopee/TikTok
+ *  ⚠️ ไม่มีที่อยู่ส่งมา (ตัวเทียบรุ่นเก่า) ⇒ null = ไม่รู้ ⇒ ตัวยิงต้องไม่ยิง ห้ามเดาที่อยู่ */
+export function ที่อยู่เฉพาะแผน(locations, push) {
+  if (!locations || typeof locations !== "object" || !Array.isArray(push)) return null;
+  const out = {};
+  for (const r of push) if (locations[r.sku]) out[r.sku] = locations[r.sku];
+  return out;
+}
+
 export function planFrom(rows, full = false) {
   const push = [];
   const skipNegative = [];
@@ -159,6 +168,7 @@ async function shopeePlan(full) {
   p.skipUnknown = num(c.missing);
   p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.skipConflict === p.platformSkus;
   p.day = c.day;
+  if (full) p.locations = ที่อยู่เฉพาะแผน(c.locations, p.push);
   return p;
 }
 
@@ -260,7 +270,7 @@ async function lazadaPlan(full) {
  */
 async function tiktokPlan(full) {
   const { tiktokStockCompare } = await import("./tiktok-stock.mjs");
-  const c = await tiktokStockCompare();
+  const c = await tiktokStockCompare({ full });
   /* ✅ เคยถูกอยู่แล้วเหมือน Shopee (เส้นสำเร็จไม่มี `note`) — ไม่ได้แก้เพราะพัง
       แต่ถอนชนวนให้เหมือนกันทั้งไฟล์: ต้นทางใช้ `skip` แล้ว เหลือเช็คทางเดียว */
   if (c.skip) return { skip: c.skip };
@@ -282,6 +292,7 @@ async function tiktokPlan(full) {
   p.skipUnknown = num(c.missing);
   p.bucketsAddUp = p.same + p.wouldPush + p.skipNegative + p.skipUnknown + p.skipConflict === p.platformSkus;
   p.day = c.day;
+  if (full) p.locations = ที่อยู่เฉพาะแผน(c.locations, p.push);
   return p;
 }
 
