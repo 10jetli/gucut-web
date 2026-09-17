@@ -243,7 +243,13 @@ export async function กวาดดันสต็อก({ platform = "lazada"
       รวม.pushed += r.pushed ?? 0;
       รวม.rejected += r.rejected ?? 0;
       รวม.notSent += r.notSent ?? 0;
-      if (Array.isArray(r.rows)) รวม.rows.push(...r.rows);
+      /* 🔴 **ตัวยิงคืนผลรายตัวในคีย์ `results` ไม่ใช่ `rows`** (แก้ 17 ก.ย. 2569 หลังยิงจริงผ่าน 76/76 ตอน 15:16)
+         `rows` มีเฉพาะในบันทึก stockpush/log · ของเดิมอ่าน `r.rows` ⇒ **ว่างทุกรอบ**
+         ⇒ ไม่มีแถวไหนได้ pushed_at ⇒ รอบกวาดถัดไปยืนยันไม่ได้สักรหัส ⇒ `เคยยืนยัน` = 0 ถาวร
+            ทั้งที่ 76 รหัสหายจากแผนแล้ว (ลงหน้าร้านจริง) = แถบ "อัปเดตออโต้" แดงตลอดกาลแม้ระบบทำงานถูก
+         ⚠️ คลาสเดียวกับ "ชื่อคีย์คล้ายกัน ค่าหน้าตาเหมือนกัน" — ชุดทดสอบ stock-push-sweep.test.mjs ใช้คำตอบรูปจริงของตัวยิง */
+      const ผลรายตัว = Array.isArray(r.results) ? r.results : Array.isArray(r.rows) ? r.rows : [];
+      รวม.rows.push(...ผลรายตัว);
     }
     ผลยิง = รวม;
 
