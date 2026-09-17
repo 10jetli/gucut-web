@@ -33,6 +33,21 @@ const เริ่มยิงได้ถึง = 16_000;
 /** ยิงจริงหรือซ้อม — ไม่ตั้ง = ซ้อม (ตั้งใจ · กันเปิดโดยไม่ตั้งใจ แบบเดียวกับ NEXT_PUBLIC_COD) */
 export const ยิงจริงอยู่ไหม = () => String(process.env.STOCK_PUSH_AUTO || "") === "1";
 
+/** ตัวยิงที่มีอยู่จริง — **ช่องทางที่ไม่มีตัวยิงคิดจากตรงนี้** ไม่ใช่รายชื่อฝังตายตัว (CEO สั่ง 17 ก.ย. 2569)
+ *  เพิ่มตัวยิงเจ้าใหม่ = เพิ่มบรรทัดเดียว แล้ว channelsWithoutWriter หายเองโดยไม่มีใครต้องไปแก้จอ */
+export const ตัวยิง = {
+  lazada: async () => (await import("./stock-push-live.mjs")).stockPushLive,
+  shopee: async () => (await import("./stock-push-shopee.mjs")).shopeePushLive,
+  tiktok: async () => (await import("./stock-push-tiktok.mjs")).tiktokPushLive,
+};
+export const ช่องทางทั้งหมด = ["lazada", "shopee", "tiktok"];
+
+/** สวิตช์ยิงอัตโนมัติ **แยกต่อเจ้า** — Lazada ใช้ STOCK_PUSH_AUTO เดิม (พิสูจน์แล้ว)
+ *  🔴 เจ้าใหม่ต้องมีสวิตช์ของตัวเอง ค่าเริ่มต้นปิด: STOCK_PUSH_AUTO=1 เปิดอยู่แล้ว ⇒ ถ้าใช้ตัวเดียวกัน
+ *     วินาทีที่ deploy ตัวกวาดจะยิง Shopee/TikTok ทั้งกอง โดยยังไม่เคยลองยิงทีละน้อย */
+export const ยิงจริงของ = (platform) =>
+  platform === "lazada" ? ยิงจริงอยู่ไหม() : String(process.env[`STOCK_PUSH_AUTO_${String(platform).toUpperCase()}`] || "") === "1";
+
 async function สร้างตาราง() {
   /* หนึ่งแถว = หนึ่ง (รหัส × ช่องทาง) — กติกาเดียวกับตัวนับคนเข้าเว็บ
      ห้ามเก็บรวมก้อนเดียวแล้วอ่านมาแก้เขียนกลับ สองรอบชนกันจะกินกันเอง */
@@ -149,7 +164,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   const เริ่ม = Date.now();
   const now = new Date().toISOString();
 
-  if (platform !== "lazada") {
+  if (!ตัวยิง[platform]) {
     /* 🔑 **ต้องตอบว่า "ทำไม่ได้" ไม่ใช่ "ทำแล้วได้ศูนย์"** — สองอย่างนี้หน้าตาเหมือนกันบนจอ
        แต่แปลคนละเรื่อง: ศูนย์ = ตรงกันหมดแล้ว · ทำไม่ได้ = ไม่รู้ว่าตรงไหม */
     return { skip: `ยังไม่มีตัวยิงสำหรับ ${platform}`, platform, at: now };
@@ -224,7 +239,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
     }
   }
 
-  const ยิงจริง = force || ยิงจริงอยู่ไหม();
+  const ยิงจริง = force || ยิงจริงของ(platform);
   let ผลยิง = null;
 
   if (ยิงจริง && p.push.length) {
@@ -232,7 +247,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
        ตัวยิงคิดแผนเองข้างในอีกชั้น เราส่งแค่รายชื่อรหัสให้มันไปคิดสด
        ⚠️ **ตัวยิงรับครั้งละไม่เกิน 100 รหัส** (อ่านจากโค้ดจริง ไม่ใช่เดา) ⇒ ต้องแบ่งก้อน
           เกินงบเวลาเมื่อไหร่หยุดส่งก้อนใหม่ ที่เหลือรอบหน้าทำต่อ — ไม่มีอะไรต้องจบในรอบเดียว */
-    const { stockPushLive } = await import("./stock-push-live.mjs");
+    const stockPushLive = await ตัวยิง[platform]();
     const ทั้งหมด = p.push.map((x) => String(x.sku));
     const รวม = { fired: 0, pushed: 0, rejected: 0, notSent: 0, rows: [], ก้อนที่ยิง: 0, ไม่ได้ยิง: 0 };
 
@@ -380,6 +395,36 @@ export async function สถานะดันสต็อก() {
             MIN(CASE WHEN skip_reason IS NOT NULL THEN skip_first_at END) AS ถูกข้ามนานสุดตั้งแต่
      FROM push_state`
   );
+  /* 📊 แยกรายช่องทาง (เพิ่ม 17 ก.ย. 2569 ตอนมีตัวกวาดสามเจ้า)
+     ⚠️ ช่องบนสุด (lastSweep · counts) **รวมทุกเจ้า** — พอ Shopee กวาดซ้อม lastSweep จะเป็นรอบซ้อมของ Shopee
+        ทั้งที่ Lazada ยิงจริงอยู่ ⇒ จอต้องอ่าน byChannel · ช่องบนสุดคงไว้ให้จอรุ่นเก่า */
+  const รอบล่าสุดราย = await coreQuery(
+    `SELECT l.at, l.channel, l.mode, l.planned, l.pushed, l.rejected, l.skipped, l.ms, l.note
+     FROM push_sweep_log l
+     JOIN (SELECT channel, MAX(at) AS at FROM push_sweep_log GROUP BY channel) m ON m.channel = l.channel AND m.at = l.at`
+  );
+  const นับราย = await coreQuery(
+    `SELECT channel, COUNT(*) AS ทั้งหมด,
+            SUM(CASE WHEN pushed_at IS NOT NULL THEN 1 ELSE 0 END) AS เคยยิง,
+            MAX(pushed_at) AS ยิงล่าสุด,
+            SUM(CASE WHEN verified_at IS NOT NULL THEN 1 ELSE 0 END) AS เคยยืนยัน,
+            SUM(CASE WHEN skip_reason IS NOT NULL THEN 1 ELSE 0 END) AS กำลังถูกข้าม,
+            SUM(CASE WHEN last_error IS NOT NULL THEN 1 ELSE 0 END) AS มีข้อผิดพลาด,
+            MAX(verified_at) AS ยืนยันล่าสุด,
+            MIN(CASE WHEN skip_reason IS NOT NULL THEN skip_first_at END) AS ถูกข้ามนานสุดตั้งแต่
+     FROM push_state GROUP BY channel`
+  );
+  const byChannel = {};
+  for (const ch of ช่องทางทั้งหมด) {
+    const { channel: _c, ...counts } = นับราย.find((r) => r.channel === ch) || {};
+    byChannel[ch] = {
+      มีตัวยิง: Boolean(ตัวยิง[ch]),
+      autoOn: ยิงจริงของ(ch),
+      lastSweep: รอบล่าสุดราย.find((r) => r.channel === ch) || null,
+      counts: Object.keys(counts).length ? counts : null,
+    };
+  }
+
   const ค้างนาน = await coreQuery(
     `SELECT sku, channel, skip_reason, skip_streak, skip_first_at, last_error
      FROM push_state WHERE skip_reason IS NOT NULL
@@ -395,6 +440,7 @@ export async function สถานะดันสต็อก() {
     lastSweep: รอบล่าสุด || null,
     counts: นับ || null,
     stuck: ค้างนาน,
-    channelsWithoutWriter: ["shopee", "tiktok"],
+    channelsWithoutWriter: ช่องทางทั้งหมด.filter((ch) => !ตัวยิง[ch]),
+    byChannel,
   };
 }

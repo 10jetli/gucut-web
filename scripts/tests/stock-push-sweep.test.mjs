@@ -13,7 +13,7 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreQuery: async (sql, params = []) => { คำสั่ง.push({ sql, params }); return []; },
 } });
 mock.module('../../netlify/lib/stock-push.mjs', { namedExports: {
-  stockPushDryRun: async () => ({ lazada: {
+  stockPushDryRun: async ({ platform = 'lazada' } = {}) => ({ [platform]: {
     push: [{ sku: 'A1', from: 1, to: 5, kind: 'up' }, { sku: 'B2', from: 2, to: 9, kind: 'up' }],
     skipNegativeFull: [], skipUnknownFull: [], skipConflictFull: [],
   } }),
@@ -29,7 +29,14 @@ mock.module('../../netlify/lib/stock-push-live.mjs', { namedExports: {
   }),
 } });
 
-const { กวาดดันสต็อก } = await import('../../netlify/lib/stock-push-sweep.mjs');
+const ยิงShopee = [];
+mock.module('../../netlify/lib/stock-push-shopee.mjs', { namedExports: {
+  shopeePushLive: async ({ skus }) => (ยิงShopee.push(skus), { fired: skus.length, pushed: skus.length, rejected: 0, notSent: 0,
+    results: skus.map((sku) => ({ sku, to: 5, result: 'pushed' })) }),
+} });
+mock.module('../../netlify/lib/stock-push-tiktok.mjs', { namedExports: { tiktokPushLive: async () => ({ results: [] }) } });
+
+const { กวาดดันสต็อก, สถานะดันสต็อก, ยิงจริงของ } = await import('../../netlify/lib/stock-push-sweep.mjs');
 
 test('ยิงจริงแล้ว ⇒ แถวที่ยิงต้องลงสมุดพร้อม pushed_qty และแถวที่ถูกปฏิเสธต้องมี last_error', async () => {
   คำสั่ง.length = 0;
@@ -56,4 +63,31 @@ test('ตัวกวาดส่งแผนที่เพิ่งคิด�
   assert.ok(o?.plan?.lazada?.push?.length === 2, 'ต้องส่งแผนเต็มชุดเดียวกับที่ตัวกวาดใช้');
   assert.ok(Date.now() - o.คิดเมื่อ < 5000, 'เวลาคิดแผนต้องเป็นของจริงรอบนี้');
   for (const k of ['แผน_ms', 'ยิง_ms', 'เขียนสมุด_ms']) assert.equal(typeof r.steps?.[k], 'number', k);
+});
+
+test('สวิตช์แยกต่อเจ้า: STOCK_PUSH_AUTO=1 เปิดแค่ Lazada · Shopee ต้องมีสวิตช์ของตัวเอง', async () => {
+  const เดิม = { a: process.env.STOCK_PUSH_AUTO, s: process.env.STOCK_PUSH_AUTO_SHOPEE };
+  process.env.STOCK_PUSH_AUTO = '1'; delete process.env.STOCK_PUSH_AUTO_SHOPEE;
+  assert.equal(ยิงจริงของ('lazada'), true);
+  assert.equal(ยิงจริงของ('shopee'), false);
+  ยิงShopee.length = 0; ส่งแผนมา.length = 0;
+  const r = await กวาดดันสต็อก({ platform: 'shopee' });
+  assert.equal(r.ok, true);
+  assert.equal(ยิงShopee.length, 0, 'ต้องไม่ยิง Shopee เพราะสวิตช์ของ Shopee ยังปิด');
+  assert.match(r.mode, /ซ้อม/);
+  process.env.STOCK_PUSH_AUTO_SHOPEE = '1';
+  const r2 = await กวาดดันสต็อก({ platform: 'shopee' });
+  assert.equal(ยิงShopee.length, 1, 'สวิตช์ Shopee เปิด ⇒ ยิงผ่านตัวยิงของ Shopee');
+  assert.equal(ส่งแผนมา.length, 0, 'ต้องไม่เรียกตัวยิง Lazada');
+  assert.equal(r2.pushed, 2);
+  if (เดิม.a === undefined) delete process.env.STOCK_PUSH_AUTO; else process.env.STOCK_PUSH_AUTO = เดิม.a;
+  if (เดิม.s === undefined) delete process.env.STOCK_PUSH_AUTO_SHOPEE; else process.env.STOCK_PUSH_AUTO_SHOPEE = เดิม.s;
+});
+
+test('สถานะ: channelsWithoutWriter คิดจากทะเบียนตัวยิง · มี byChannel ครบสามเจ้า', async () => {
+  const r = await สถานะดันสต็อก();
+  assert.deepEqual(r.channelsWithoutWriter, []);
+  assert.deepEqual(Object.keys(r.byChannel).sort(), ['lazada', 'shopee', 'tiktok']);
+  assert.equal(r.byChannel.shopee.มีตัวยิง, true);
+  assert.equal(typeof r.byChannel.tiktok.autoOn, 'boolean');
 });
