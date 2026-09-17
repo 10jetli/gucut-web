@@ -21,6 +21,8 @@ const rows = (sql) => {
   if (/COUNT\(\*\) n/.test(sql)) return [{ n: 54, total: 100000, first_day: '2023-01-01', last_day: '2026-09-14' }];
   if (/month_paid/.test(sql)) return [{ all_paid: 30000, month_paid: 18000, year_paid: 24570, ym: '2026-09', y: '2026' }];
   // ยอดรวมรายสินค้าทั้งชุด — จงใจให้มากกว่าผลรวมของแถวที่ส่งมา เพื่อจับกรณีจอเอาแถวที่ถูกตัดไปนับเอง
+  if (/LEFT JOIN products p/.test(sql))
+    return [{ cat: 'โซ่เลื่อยยนต์', amount: 800, skus: 2 }, { cat: null, amount: 200, skus: 1 }];
   if (/FROM order_items i JOIN orders o/.test(sql))
     return [{ sku: 'X1', name: 'ของ X', qty: 2, amount: 900 }, { sku: 'X2', name: 'ของ Y', qty: 1, amount: 100 }];
   // ตารางล่าสุด — จงใจส่งมาแค่ 2 แถว ยอดรวมน้อยกว่าการ์ดมาก ถ้าใครไปคิดการ์ดจากตรงนี้จะเห็นทันที
@@ -65,6 +67,9 @@ test('ยอดขายรายสินค้าถูกตัด 20 อั�
   assert.equal(p.ordersAmount, 30000, 'ต้องส่งยอดรวมหัวใบมาให้จอเทียบด้วย');
   assert.notEqual(p.ordersAmount, p.amount, 'ตัวทดสอบเองพัง — ต้องจำลองกรณีสองเลขไม่ตรงกัน');
   assert.match(String(p.diffNote), /ส่วนลดท้ายบิล/, 'สองเลขต่างกันแล้วต้องมีคำอธิบายติดมาเสมอ');
+  // 🔴 SKU ที่ไม่อยู่ในคลังสินค้า ต้องเป็นกอง "ยังไม่รู้หมวด" (null) ห้ามถูกยัดเป็นชื่อหมวด
+  const unknown = p.byCategory.find((c) => c.category === null);
+  assert.ok(unknown && unknown.amount === 200, 'ต้องเก็บกองที่ยังไม่รู้หมวดไว้แยก ไม่ใช่ทิ้งหรือยัดรวม');
 });
 
 test('ยอดค้างชำระส่ง null พร้อมเหตุผล — ห้ามเป็น 0 และห้ามคิดจากใบที่ยังไม่ชำระ', async () => {

@@ -274,7 +274,7 @@ export async function getCustomerDetail(idOrName) {
 
   // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
   const name = contact?.name || key;
-  const [sums, recent, money, products, productSum] = await Promise.all([
+  const [sums, recent, money, products, productSum, cats] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) n, COALESCE(SUM(amount),0) total,
               MIN(order_date) first_day, MAX(order_date) last_day
@@ -322,6 +322,17 @@ export async function getCustomerDetail(idOrName) {
            FROM order_items i JOIN orders o ON o.id = i.order_id
           WHERE o.customer = ${esc(name)} AND o.pay_status = 'Paid' AND ${CANCEL_SQL}
           GROUP BY i.sku, i.name)`
+    ),
+    /* 🗂 แท็บ "รายหมวดหมู่" ของกล่องเดียวกันบนจอ ZORT
+       ⚠️ **SKU ที่ไม่อยู่ในคลังสินค้า ต้องเป็นกองแยก "ยังไม่รู้หมวด" ห้ามยัดรวมหมวดใดหมวดหนึ่ง**
+          (LEFT JOIN ⇒ category เป็น null ได้ · null ที่ถูกแปลงเป็นชื่อหมวดคือการโกหกเงียบ ๆ)
+       ⚠️ ยอดที่ใช้เป็นราคาก่อนเกลี่ยส่วนลดท้ายบิลเหมือนแท็บรายสินค้า ⇒ ใช้คำอธิบายส่วนต่างชุดเดียวกัน */
+    coreQuery(
+      `SELECT p.category AS cat, COALESCE(SUM(i.amount),0) amount, COUNT(DISTINCT i.sku) skus
+         FROM order_items i JOIN orders o ON o.id = i.order_id
+         LEFT JOIN products p ON p.sku = i.sku
+        WHERE o.customer = ${esc(name)} AND o.pay_status = 'Paid' AND ${CANCEL_SQL}
+        GROUP BY p.category ORDER BY amount DESC LIMIT 20`
     ),
   ]);
   const s = sums[0] || {};
@@ -374,6 +385,13 @@ export async function getCustomerDetail(idOrName) {
             เพราะคนเปิดเทียบกับ ZORT จะเห็นของเราสูงกว่าแล้วไม่รู้ว่าใครผิด */
       ordersAmount: Number(money?.[0]?.all_paid) || 0,
       scope: "เฉพาะใบที่การชำระเงิน = ชำระครบ ไม่รวมใบยกเลิก (ชุดเดียวกับการ์ดเงิน) · ทุกช่วงเวลา · เรียงตามมูลค่า เอา 20 อันดับแรก · รวมทุกร้านในกระจก",
+      /* แท็บ "รายหมวดหมู่" — หมวดมาจากตาราง products (คนละตารางกับบรรทัดใบ)
+         category = null ⇒ SKU นั้นไม่อยู่ในคลังสินค้าของเรา = **ยังไม่รู้หมวด** ห้ามนับเป็นหมวดใดหมวดหนึ่ง */
+      byCategory: (cats || []).map((r) => ({
+        category: r.cat || null,
+        amount: Number(r.amount) || 0,
+        skus: Number(r.skus) || 0,
+      })),
       diffNote:
         "ยอดรายสินค้าเป็นราคาต่อบรรทัด **ก่อน** เกลี่ยส่วนลดท้ายบิล ส่วนยอดรวมใบเป็นหลังหักแล้ว ⇒ สองเลขนี้ต่างกันได้ " +
         "จอ ZORT เกลี่ยส่วนลดลงบรรทัดแล้ว เลขรายสินค้าของ ZORT จึงต่ำกว่าของที่นี่ · " +
