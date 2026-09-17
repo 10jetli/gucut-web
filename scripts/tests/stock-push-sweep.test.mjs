@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
 const คำสั่ง = [];
+const ส่งแผนมา = [];
 mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreReady: () => true,
   coreQuery: async (sql, params = []) => { คำสั่ง.push({ sql, params }); return []; },
@@ -19,7 +20,7 @@ mock.module('../../netlify/lib/stock-push.mjs', { namedExports: {
 } });
 /* รูปคำตอบจริงของ stockPushLive (อ่านจากโค้ด 17 ก.ย. 2569): ผลรายตัวอยู่ใน `results` · ไม่มี `rows` */
 mock.module('../../netlify/lib/stock-push-live.mjs', { namedExports: {
-  stockPushLive: async ({ skus }) => ({
+  stockPushLive: async ({ skus }, opts) => (ส่งแผนมา.push(opts), {
     fired: skus.length, pushed: 1, rejected: 1, notSent: 0,
     results: [
       { sku: 'A1', from: 1, to: 5, kind: 'up', result: 'pushed' },
@@ -45,4 +46,14 @@ test('ยิงจริงแล้ว ⇒ แถวที่ยิงต้อ
   assert.equal(a[6], 'pushed');
   assert.equal(b[6], 'rejected');
   assert.match(String(b[13]), /4171/, 'B2 ต้องมี last_error พร้อมเหตุผลจากแพลตฟอร์ม');
+});
+
+test('ตัวกวาดส่งแผนที่เพิ่งคิดให้ตัวยิงใช้ซ้ำ + บอกเวลารายขั้น', async () => {
+  ส่งแผนมา.length = 0;
+  const r = await กวาดดันสต็อก({ platform: 'lazada', force: true });
+  assert.equal(ส่งแผนมา.length, 1);
+  const o = ส่งแผนมา[0]?.แผนที่คิดแล้ว;
+  assert.ok(o?.plan?.lazada?.push?.length === 2, 'ต้องส่งแผนเต็มชุดเดียวกับที่ตัวกวาดใช้');
+  assert.ok(Date.now() - o.คิดเมื่อ < 5000, 'เวลาคิดแผนต้องเป็นของจริงรอบนี้');
+  for (const k of ['แผน_ms', 'ยิง_ms', 'เขียนสมุด_ms']) assert.equal(typeof r.steps?.[k], 'number', k);
 });

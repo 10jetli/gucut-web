@@ -22,8 +22,13 @@
 
 import { coreQuery, coreReady } from "./coredb.mjs";
 
-/** งบเวลาต่อรอบ — Netlify ให้ฟังก์ชันตอบได้ 26 วินาที เผื่อขอบไว้ */
+/** งบเวลาต่อรอบ — Netlify ให้ฟังก์ชันตอบได้ 26 วินาที (ตามเวลา ~30) เผื่อขอบไว้ */
 const งบเวลา = 18_000;
+/** ห้าม **เริ่ม** ยิงก้อนใหม่หลังวินาทีนี้ (แก้ 17 ก.ย. 2569)
+ *  เดิมเช็ค "เหลืองบ 18 วิไม่ถึง 5 วิ" = ต้องเริ่มก่อนวินาทีที่ 13 — แต่คิดแผนอย่างเดียวก็ 12–14 วิแล้ว
+ *  ⇒ รอบที่แผนช้านิดเดียว **ไม่ยิงเลยเงียบ ๆ** (notFiredThisRound) · ตอนนี้ตัวยิงไม่คิดแผนซ้ำแล้ว
+ *  ก้อนหนึ่ง (≤100 รหัส · Lazada ก้อนละ 20) + เขียนสมุด ใช้ไม่กี่วินาที ⇒ เริ่มได้ถึงวินาทีที่ 16 ยังจบก่อน 26 */
+const เริ่มยิงได้ถึง = 16_000;
 
 /** ยิงจริงหรือซ้อม — ไม่ตั้ง = ซ้อม (ตั้งใจ · กันเปิดโดยไม่ตั้งใจ แบบเดียวกับ NEXT_PUBLIC_COD) */
 export const ยิงจริงอยู่ไหม = () => String(process.env.STOCK_PUSH_AUTO || "") === "1";
@@ -155,6 +160,9 @@ export async function กวาดดันสต็อก({ platform = "lazada"
 
   const { stockPushDryRun } = await import("./stock-push.mjs");
   const แผนทั้งหมด = await stockPushDryRun({ platform, full: true });
+  /* ⏱️ จับเวลารายขั้น — 31.5 วิครั้งแรกไม่มีใครบอกได้ว่าหายไปตรงไหน ต้องเดาจากเลขรวม */
+  const แผนคิดเมื่อ = Date.now();
+  const ขั้น = { แผน_ms: แผนคิดเมื่อ - เริ่ม };
   const p = แผนทั้งหมด?.[platform];
 
   if (!p || p.skip) {
@@ -228,15 +236,21 @@ export async function กวาดดันสต็อก({ platform = "lazada"
     const ทั้งหมด = p.push.map((x) => String(x.sku));
     const รวม = { fired: 0, pushed: 0, rejected: 0, notSent: 0, rows: [], ก้อนที่ยิง: 0, ไม่ได้ยิง: 0 };
 
+    const เริ่มยิง = Date.now();
     for (let i = 0; i < ทั้งหมด.length; i += 100) {
-      if (งบเวลา - (Date.now() - เริ่ม) < 5000) {
+      if (Date.now() - เริ่ม > เริ่มยิงได้ถึง) {
         รวม.ไม่ได้ยิง = ทั้งหมด.length - i;
         break;
       }
       const ก้อน = ทั้งหมด.slice(i, i + 100);
-      const r = await stockPushLive({ platform, skus: ก้อน }).catch((e) => ({
+      /* 🔑 ส่งแผนที่เพิ่งคิดข้างบนให้ใช้ซ้ำ — ตัวยิงเช็คอายุเองและยังผ่านด่านทุกด่าน (ดู แผนใช้ซ้ำได้ไม่เกิน_ms) */
+      const r = await stockPushLive(
+        { platform, skus: ก้อน },
+        { แผนที่คิดแล้ว: { plan: แผนทั้งหมด, คิดเมื่อ: แผนคิดเมื่อ } }
+      ).catch((e) => ({
         error: String(e?.message || e).slice(0, 200),
       }));
+      if (r?.planSource) รวม.planSource = r.planSource;
       if (r?.error) { รวม.error = r.error; รวม.ไม่ได้ยิง = ทั้งหมด.length - i; break; }
       รวม.ก้อนที่ยิง += 1;
       รวม.fired += r.fired ?? 0;
@@ -252,6 +266,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
       รวม.rows.push(...ผลรายตัว);
     }
     ผลยิง = รวม;
+    ขั้น.ยิง_ms = Date.now() - เริ่มยิง;
 
     const ทีละรหัส = new Map(รวม.rows.map((r) => [String(r.sku), r]));
     for (const r of แถว) {
@@ -280,6 +295,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   const ยิงแล้ว = แถว.filter((r) => r.pushed_at);
   const ยังไม่ยิง = แถว.filter((r) => !r.pushed_at);
   ยังไม่ยิง.sort((a, b) => (a.skip_reason ? 1 : 0) - (b.skip_reason ? 1 : 0));
+  const เริ่มเขียน = Date.now();
   const ผลเขียนยิง = await เขียนเป็นชุด(ยิงแล้ว, null);
   const ผลเขียนที่เหลือ = await เขียนเป็นชุด(ยังไม่ยิง, () => Date.now() - เริ่ม > งบเวลา);
   const ผลเขียน = {
@@ -287,6 +303,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
     ไม่ได้เขียน: ผลเขียนยิง.ไม่ได้เขียน + ผลเขียนที่เหลือ.ไม่ได้เขียน,
   };
   const เขียนแล้ว = ผลเขียน.เขียนแล้ว;
+  ขั้น.เขียนสมุด_ms = Date.now() - เริ่มเขียน;
   const ms = Date.now() - เริ่ม;
 
   await coreQuery(
@@ -318,8 +335,10 @@ export async function กวาดดันสต็อก({ platform = "lazada"
        (กฎ: ครอบไม่ครบ แล้วรายงานเหมือนครอบครบ — กับดักที่โครงการนี้เจอบ่อยที่สุด) */
     ...(ผลเขียน.ไม่ได้เขียน ? { stateRowsPending: ผลเขียน.ไม่ได้เขียน } : {}),
     ms,
+    steps: ขั้น,
     ...(ผลยิง
       ? {
+          planSource: ผลยิง.planSource ?? null,
           fired: ผลยิง.fired ?? 0,
           pushed: ผลยิง.pushed ?? 0,
           rejected: ผลยิง.rejected ?? 0,

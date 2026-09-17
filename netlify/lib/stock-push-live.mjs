@@ -247,11 +247,21 @@ export async function lazadaReadBack(skus, deps = {}) {
   };
 }
 
+/** อายุสูงสุดของแผนที่ **ตัวกวาดคิดเองในคำขอเดียวกัน** แล้วส่งให้ใช้ซ้ำได้ (แก้ 17 ก.ย. 2569 · gucut2)
+ *  🔴 ต้นเรื่อง: กวาดแบบยิงจริง 20:22 ใช้ 31.5 วิ เกินเพดาน Netlify 26 วิ ⇒ คนเรียกได้ **HTTP 500 ตอน 25.4 วิ ทั้งที่ยิงสำเร็จ 21/21**
+ *     แยกไม่ออกว่าสำเร็จหรือพัง ⇒ เสี่ยงกดซ้ำ · ฟังก์ชันตามเวลาก็มีเพดาน ~30 วิเหมือนกัน
+ *     ครึ่งหนึ่งของเวลาคือ **คิดแผนสองรอบ**: ตัวกวาดคิดแผน (~12 วิ) แล้วตัวยิงคิดแผนเดิมซ้ำอีกรอบ (~12 วิ)
+ *  ⚠️ กติกา "คิดแผนสดเสมอ ห้ามยิงตามเลขที่คนเห็นเมื่อห้านาทีก่อน" **ยังอยู่ครบ**:
+ *     รับเฉพาะจากอาร์กิวเมนต์ที่สอง (เรียกภายในไฟล์เท่านั้น — เส้น HTTP ส่งแค่ body จึงยัดแผนจากข้างนอกไม่ได้)
+ *     และต้องอายุไม่เกินค่านี้ · เกิน/รูปไม่ครบ ⇒ คิดใหม่สดเหมือนเดิม · ด่านทุกด่านข้างล่างทำงานกับแผนนี้เหมือนเดิม */
+export const แผนใช้ซ้ำได้ไม่เกิน_ms = 60_000;
+
 /**
  * ยิงจริง — POST /api/core?stockpushlive=1
  * body: { platform:"lazada", skus:[...], allowClose?:false }
+ * opts: { แผนที่คิดแล้ว?: { plan, คิดเมื่อ: epoch ms } } — **ภายในเท่านั้น** (ตัวกวาด) ห้ามต่อจาก body
  */
-export async function stockPushLive(body) {
+export async function stockPushLive(body, { แผนที่คิดแล้ว = null } = {}) {
   const platform = String(body?.platform ?? "").trim();
   const wantSkus = Array.isArray(body?.skus) ? body.skus.map((s) => String(s).trim()).filter(Boolean) : [];
   if (!wantSkus.length) return { error: "ต้องระบุ skus เป็นรายการชัดเจน — ไม่มีโหมดยิงทั้งหมด" };
@@ -266,15 +276,28 @@ export async function stockPushLive(body) {
   }
 
   // ① คิดแผนใหม่สด ณ วินาทีนี้ — ไม่เชื่อเลขที่ใครเห็นก่อนหน้า
-  const { stockPushDryRun } = await import("./stock-push.mjs");
   // ขอเจ้าเดียว — เร็วกว่า และไม่เผางบ 26 วิไปกับเจ้าที่ไม่ได้ยิง (time-budget-is-shared)
   /* ✅ ขอ **รายการเต็ม** (full) ไม่ใช่ตัวอย่าง 25 แถว — แก้ 11 ก.ย. 2569
      คำทำนายในคอมเมนต์เดิมเป็นจริงแล้ว: วันที่ wouldPush=76 ด่านข้างล่างปฏิเสธทั้งรอบ
      ยิงไม่ออกเลยแม้ของพร้อมทุกอย่าง (token ก็ยังดี) ⇒ ต้นเหตุคือ **เอาเลขของการแสดงผล
      (pushSample 25) มาเป็นฐานของการตัดสินใจยิง** · เส้นสาธารณะยังไม่ได้ full เหมือนเดิม */
-  const plan = await stockPushDryRun({ platform: "lazada", full: true });
+  const อายุแผน = แผนที่คิดแล้ว ? Date.now() - Number(แผนที่คิดแล้ว.คิดเมื่อ) : null;
+  const ใช้ซ้ำ = Boolean(
+    แผนที่คิดแล้ว?.plan?.lazada && Number.isFinite(อายุแผน) && อายุแผน >= 0 && อายุแผน <= แผนใช้ซ้ำได้ไม่เกิน_ms
+  );
+  let plan;
+  if (ใช้ซ้ำ) {
+    plan = แผนที่คิดแล้ว.plan;
+  } else {
+    const { stockPushDryRun } = await import("./stock-push.mjs");
+    plan = await stockPushDryRun({ platform: "lazada", full: true });
+  }
+  /* ประกาศเสมอว่าแผนมาจากไหน — คำตอบที่ไม่บอกที่มาของเลขที่ใช้ยิง ไล่ย้อนไม่ได้ */
+  const ที่มาแผน = ใช้ซ้ำ
+    ? { planSource: "ตัวกวาดคิดในคำขอเดียวกัน", planAgeMs: อายุแผน }
+    : { planSource: "คิดสดในตัวยิง", ...(แผนที่คิดแล้ว ? { planReuseRejected: `แผนที่ส่งมาอายุ ${อายุแผน} ms หรือรูปไม่ครบ ⇒ คิดใหม่` } : {}) };
   const p = plan?.lazada;
-  if (!p || p.skip) return { error: `คิดแผนสดไม่ได้: ${p?.skip || "ไม่มีข้อมูล lazada"}` };
+  if (!p || p.skip) return { error: `คิดแผนสดไม่ได้: ${p?.skip || "ไม่มีข้อมูล lazada"}`, ...ที่มาแผน };
   /* ⚠️ ยังเผื่อ pushSample ไว้เป็นทางถอย **เฉพาะกรณีท่อรุ่นเก่ายังไม่มี full**
      (ท่อกับตัวยิงถูก deploy พร้อมกัน แต่เขียนเผื่อไว้ไม่ได้ทำให้เสียอะไร)
      🔴 ทางถอยนี้จะไปชนด่านข้างล่างเองถ้าของเกิน 25 — ซึ่งถูกต้องแล้ว ดีกว่ายิงไม่ครบเงียบ ๆ */
@@ -319,6 +342,7 @@ export async function stockPushLive(body) {
       wouldPush: p.wouldPush ?? null,
       wouldFire: fire.length,            // จำนวนที่จะยิงถ้าสั่งจริงด้วย body ชุดนี้
       wouldSkip: skipped.length,
+      ...ที่มาแผน,
       fireSample: fire.slice(0, 10),
       skipSample: skipped.slice(0, 10),
     };
@@ -332,6 +356,7 @@ export async function stockPushLive(body) {
     pushed: results.filter((r) => r.result === "pushed").length,
     rejected: results.filter((r) => r.result === "rejected").length,
     notSent: skipped.length,
+    ...ที่มาแผน,
     results: [...results, ...skipped],
     at: new Date().toISOString(),
   };
@@ -348,6 +373,7 @@ export async function stockPushLive(body) {
   log.unshift({
     at: out.at, platform: out.platform,
     fired: out.fired, pushed: out.pushed, rejected: out.rejected, notSent: out.notSent,
+    planSource: out.planSource, ...(out.planAgeMs != null ? { planAgeMs: out.planAgeMs } : {}),
     rows: out.results.map(({ raw, ...r }) => r),
   });
   await s.setJSON("stockpush/log", log.slice(0, 50));
