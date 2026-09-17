@@ -366,6 +366,16 @@ async function route(req, context) {
         const { stockPushLive } = await import("../lib/stock-push-live.mjs");
         r = await stockPushLive(body);
       }
+      /* ✍️ ยิงมือต้องลงสมุด push_state ด้วย (ท่านประธานสั่ง 17 ก.ย. 2569) — ตัวกวาดเรียกตัวยิงตรง ไม่ผ่านเส้นนี้ ⇒ ไม่จดซ้ำ
+         ⚠️ จดสมุดพลาด **ห้ามทำให้คำตอบการยิงหาย** — ยิงออกไปแล้ว ต้องบอกผลยิงเสมอ แล้วแนบว่าสมุดไม่ได้จด */
+      if (r && !r.error && !r.dryCheck && Array.isArray(r.results)) {
+        try {
+          const { จดยิงมือลงสมุด } = await import("../lib/stock-push-sweep.mjs");
+          r = { ...r, ledger: await จดยิงมือลงสมุด(pf || "lazada", r.results, r.at) };
+        } catch (e) {
+          r = { ...r, ledgerError: `ยิงแล้ว แต่จดลงสมุด push_state ไม่ได้: ${String(e?.message || e).slice(0, 160)}` };
+        }
+      }
       return okJson(r, r?.error ? 400 : 200);
     }
     /* 🔄 ตัวกวาดดันสต็อกอัตโนมัติ — ท่านประธานสั่ง 17 ก.ย. 2569 "อยากให้ออโต้ อัปเดตเอง"

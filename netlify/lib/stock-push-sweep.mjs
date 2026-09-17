@@ -160,6 +160,45 @@ async function เขียนเป็นชุด(แถว, กันเว�
  *  @param platform  ตอนนี้รองรับ "lazada" เท่านั้น — Shopee/TikTok **ยังไม่มีตัวยิง**
  *                   (ไม่ใช่ "มีแต่ปิดไว้" — ไม่มีคำสั่งเขียนอยู่จริง ๆ)
  *  @param opts.force  ยิงจริงแม้ env ไม่ได้ตั้ง (ใช้ตอนสั่งมือ ต้องมีรหัสหลังร้าน) */
+/** ✍️ จดผลยิงมือ (POST ?stockpushlive=1) ลงสมุด push_state — ท่านประธานสั่ง 17 ก.ย. 2569
+ *  เดิมเฉพาะตัวกวาดที่เขียนสมุด ⇒ ยิงมือ 18 รหัสคืนนั้น (Shopee 1 · TikTok 17) ยืนยันจากแผนแล้วแต่สมุดขึ้น เคยยิง 0
+ *  ⇒ แถบ "อัปเดตออโต้" ไม่รู้ตลอด ทั้งที่ของลงจริง
+ *  กติกา:
+ *   · จดเฉพาะแถวที่ **ยิงออกไปจริง** (pushed / rejected) — not_sent ไม่ได้ออกนอกระบบ ห้ามนับเป็นข้อผิดพลาด
+ *   · 🔴 **ล้าง verified_* ทุกครั้งที่ยิงใหม่** — ยิงใหม่ต้องพิสูจน์ใหม่ ไม่งั้นการยืนยันของรอบเก่าจะรับรองรอบนี้แทน
+ *   · ไม่แตะช่องแผน/การข้าม (planned_*, skip_*) — เป็นของตัวกวาด
+ *   · verified_at ยังตั้งได้ที่เดียว = รอบกวาดถัดไปพิสูจน์ว่ารหัสหายจากแผน (ตัวกวาดวิ่งทุกเจ้าแม้โหมดซ้อม)
+ *   · 7 คอลัมน์ ⇒ ไม่เกิน 12 แถวต่อคำสั่ง (84 ตัวแปร · เพดาน D1 100) */
+export async function จดยิงมือลงสมุด(platform, results, at = new Date().toISOString()) {
+  const ออกจริง = (Array.isArray(results) ? results : []).filter((r) => r && (r.result === "pushed" || r.result === "rejected") && r.sku);
+  if (!ออกจริง.length) return { เขียนแล้ว: 0 };
+  await สร้างตาราง();
+  let เขียนแล้ว = 0;
+  for (let i = 0; i < ออกจริง.length; i += 12) {
+    const ก้อน = ออกจริง.slice(i, i + 12);
+    const params = [];
+    for (const r of ก้อน) {
+      const พัง = r.result === "rejected";
+      params.push(String(r.sku), platform, r.to ?? null, at, r.result, พัง ? String(r.why || r.result).slice(0, 200) : null, พัง ? at : null);
+    }
+    await coreQuery(
+      `INSERT INTO push_state (sku,channel,pushed_qty,pushed_at,push_result,last_error,last_error_at)
+       VALUES ${ก้อน.map(() => "(?,?,?,?,?,?,?)").join(",")}
+       ON CONFLICT(sku,channel) DO UPDATE SET
+         pushed_qty    = excluded.pushed_qty,
+         pushed_at     = excluded.pushed_at,
+         push_result   = excluded.push_result,
+         verified_qty  = NULL,
+         verified_at   = NULL,
+         last_error    = excluded.last_error,
+         last_error_at = excluded.last_error_at`,
+      params
+    );
+    เขียนแล้ว += ก้อน.length;
+  }
+  return { เขียนแล้ว };
+}
+
 export async function กวาดดันสต็อก({ platform = "lazada", force = false } = {}) {
   const เริ่ม = Date.now();
   const now = new Date().toISOString();
