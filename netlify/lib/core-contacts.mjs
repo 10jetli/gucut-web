@@ -274,7 +274,7 @@ export async function getCustomerDetail(idOrName) {
 
   // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
   const name = contact?.name || key;
-  const [sums, recent] = await Promise.all([
+  const [sums, recent, money] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) n, COALESCE(SUM(amount),0) total,
               MIN(order_date) first_day, MAX(order_date) last_day
@@ -285,13 +285,52 @@ export async function getCustomerDetail(idOrName) {
          FROM orders WHERE customer = ${esc(name)}
         ORDER BY order_date DESC, number DESC LIMIT 20`
     ),
+    /* 💰 การ์ดเงินสองใบแรกของจอ `/Contact/ContactDetail` (ยอดขายเดือนนี้ · ยอดขายปีนี้)
+       🔬 **กติกาไม่ได้เดา — วัดจากจอ ZORT จริง 18 ก.ย. 2569 สามราย** (อ่านอย่างเดียว ผ่าน CDP 9223)
+         · รายที่ 1: ใบ "รอโอน/รอชำระ" 5 ใบ 10,980 + ใบ "สำเร็จ/ชำระครบ" 6,570 ⇒ ZORT ขึ้นปีนี้ **6,570**
+         · รายที่ 2: ใบเดียว **"รอโอน" แต่ "ชำระครบ"** 18,000 ⇒ ZORT ขึ้นทั้งเดือนนี้และปีนี้ **18,000**
+         ⇒ คู่นี้แยกได้ชัดว่า ZORT นับที่ **การชำระเงิน ไม่ใช่สถานะเอกสาร**
+           (ถ้านับที่สถานะ "สำเร็จ" รายที่ 2 ต้องเป็น "-" แต่ของจริงขึ้น 18,000)
+         · รายที่ 3 ใช้ **ทำนายก่อนเปิดดู**: กระจกเราบอกไม่มีใบชำระครบเลย ⇒ ทำนาย "-" ทั้งสองใบ · เปิดจริงได้ "-" ทั้งคู่ ✅
+       ⚠️ เดือน/ปี = **ปฏิทินไทย (UTC+7)** ⇒ ตัดเส้นใน SQL ด้วย 'now','+7 hours' ที่เดียว
+          ห้ามให้จอคิดเอง (จอกับท่ออยู่คนละเขตเวลาได้ ⇒ วันที่ 1 ของเดือนจะเพี้ยนเงียบ ๆ)
+       ⚠️ ยังตัดใบยกเลิกด้วย CANCEL_SQL เหมือนช่องอื่นของก้อนนี้ — ให้ทุกเลขบนจอเดียวกันมากติกาเดียว */
+    coreQuery(
+      `SELECT COALESCE(SUM(CASE WHEN substr(order_date,1,7) = strftime('%Y-%m','now','+7 hours')
+                                THEN amount ELSE 0 END),0) month_paid,
+              COALESCE(SUM(CASE WHEN substr(order_date,1,4) = strftime('%Y','now','+7 hours')
+                                THEN amount ELSE 0 END),0) year_paid,
+              strftime('%Y-%m','now','+7 hours') ym, strftime('%Y','now','+7 hours') y
+         FROM orders
+        WHERE customer = ${esc(name)} AND pay_status = 'Paid' AND ${CANCEL_SQL}`
+    ),
   ]);
   const s = sums[0] || {};
+  const m = money[0] || {};
   return {
     contact,                                   // null = ไม่อยู่ในทะเบียน (แต่มีออเดอร์ได้)
     name,
     orders: { count: Number(s.n) || 0, total: Number(s.total) || 0,
               firstDay: s.first_day || null, lastDay: s.last_day || null, recent },
+    /* การ์ดเงินแบบเดียวกับ ZORT — คิดจาก SQL ทั้งกอง **ไม่ใช่จาก recent ที่ถูกตัดเหลือ 20 แถว**
+       (คิดจาก recent จะได้เลขที่ดูสมเหตุสมผลแต่ผิดสำหรับลูกค้าที่ซื้อเกิน 20 ใบ) */
+    money: {
+      thisMonth: Number(m.month_paid) || 0,
+      thisYear: Number(m.year_paid) || 0,
+      month: m.ym || null,                     // เดือน/ปีที่ใช้ตัดจริง — จอเอาไปเขียนกำกับได้ ห้ามเดาเอง
+      year: m.y || null,
+      scope: "นับเฉพาะใบที่การชำระเงิน = ชำระครบ (ตรงกับกติกาการ์ดของ ZORT · วัดจริง 18 ก.ย. 2569) · " +
+             "ไม่รวมใบยกเลิก · เดือน/ปีตัดตามปฏิทินไทย",
+      /* 🔴 **ใบที่สามของ ZORT (ยอดค้างชำระ) จงใจส่ง null — ไม่ใช่ 0**
+         วัดจริงสองราย: รายหนึ่งมีใบ "รอชำระ" 10,980 อีกรายมี 55,200 แต่ **ZORT ขึ้น "-" ทั้งคู่**
+         ⇒ พิสูจน์ว่า "ยอดค้างชำระ" ของ ZORT **ไม่ใช่ผลรวมใบขายที่ยังไม่ชำระ** (ถ้าใช่ต้องขึ้นเลขนั้น)
+           ยังไม่รู้ว่ามันมาจากไหน (น่าจะเป็นฝั่งลูกหนี้ของโมดูลการเงิน ซึ่งเราไม่มีกระจก)
+         ⇒ ห้ามคำนวณจากใบขายมาใส่ให้ครบใบ — จะได้เลขที่ **ดูสมเหตุสมผลแต่ตอบคนละคำถามกับ ZORT** */
+      outstanding: null,
+      outstandingWhy:
+        "ยังคิดไม่ได้ — วัดแล้วพบว่า ZORT ไม่ได้เอาผลรวมใบขายที่ยังไม่ชำระมาใส่ช่องนี้ " +
+        "(ลูกค้าที่มีใบรอชำระ 10,980 และ 55,200 จอ ZORT ยังขึ้น '-') ⇒ ต้องรู้ที่มาของตัวเลขก่อนจึงทำได้",
+    },
     matchNote: "จับคู่ออเดอร์ด้วยชื่อเต็มตรงตัว — ชื่อซ้ำกันจะปนกัน · ชื่อที่ถูก mask จับคู่ไม่ได้",
   };
 }
