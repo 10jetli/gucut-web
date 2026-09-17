@@ -208,6 +208,7 @@ console.log('⑨ ค่าธรรมเนียมรายเอกสาร
     tiktok: async (path, o) => {
       ok('เรียกเส้นบรรทัดของใบสรุปด้วย id', path.includes('STMT123456') && path.includes('statement_transactions'), path)
       ok('ส่ง sort_field ไปด้วย (เส้นนี้บังคับ ไม่ส่ง = 36009004)', o?.query?.sort_field === 'order_create_time', JSON.stringify(o?.query))
+      ok('เรียงใหม่→เก่า (ไม่งั้นได้ของปี 2566 มาก่อน)', o?.query?.sort_order === 'DESC', JSON.stringify(o?.query))
       return { data: { statement_transactions: [{ id: 'L1', order_id: 'O1', settlement_amount: '99.5', fee_amount: '-3', order_create_time: 1757000000 }], next_page_token: 'n' } }
     },
   })

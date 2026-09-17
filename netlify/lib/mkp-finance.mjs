@@ -221,7 +221,10 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
       const d = await tiktok("/finance/202309/statements", {
         method: "GET",
         query: {
-          page_size: String(limit), sort_field: "statement_time",
+          /* ⚠️ ต้องเรียง **ใหม่→เก่า** ไม่งั้นได้ใบสรุปปี 2566 มาก่อน (วัดจริง 18 ก.ย. 2569:
+             ไม่ส่ง sort_order ⇒ ได้ใบของ ม.ค. 2566 เป็นใบแรก ซึ่งไม่มีใครอยากดู
+             และถ้าเอาไปเขียนลงฐานแบบไล่หน้าเดียว จะได้ของเก่าสุดแทนของล่าสุด) */
+          page_size: String(limit), sort_field: "statement_time", sort_order: "DESC",
           ...(pageToken ? { page_token: pageToken } : {}),
         },
       });
@@ -334,7 +337,7 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
     /* ⚠️ เส้นนี้ **บังคับ sort_field** — ไม่ส่งไปจะได้ `36009004: SortField is a required field`
        (วัดจริง 18 ก.ย. 2569 · เอกสารไม่ได้บอกว่าบังคับ) */
     const d = await tiktok(`/finance/202309/statements/${encodeURIComponent(id)}/statement_transactions`, {
-      method: "GET", query: { page_size: String(limit), sort_field: "order_create_time" },
+      method: "GET", query: { page_size: String(limit), sort_field: "order_create_time", sort_order: "DESC" },
     });
     const raw = d?.data?.statement_transactions ?? [];
     return {
