@@ -16,6 +16,9 @@ let asked = [];
 const rows = (sql) => {
   asked.push(sql);
   if (/FROM contacts/.test(sql)) return [{ id: 'c1', name: 'ลูกค้าทดสอบ', code: 'C1' }];
+  if (/FROM purchase_orders_v2/.test(sql) && /COUNT/.test(sql)) return [{ n: 3, s: 5000 }];
+  if (/FROM purchase_orders_v2/.test(sql))
+    return [{ id: 'z1/PO-1', source: 'z1', number: 'PO-1', po_date: '2022-07-21', status: 'Success', amount: 241750, payment_status: 'Paid' }];
   // ⚠️ ต้องเช็คคำสั่ง "ยอดรวมรายสินค้า" ก่อน เพราะมันก็มี COUNT(*) n เหมือนกัน (ตัวปลอมเคยจับผิดอันมาแล้ว)
   if (/FROM \(\s*SELECT i\.sku/.test(sql)) return [{ n: 37, s: 24570 }];
   if (/COUNT\(\*\) n/.test(sql)) return [{ n: 54, total: 100000, first_day: '2023-01-01', last_day: '2026-09-14' }];
@@ -76,4 +79,11 @@ test('ยอดค้างชำระส่ง null พร้อมเหต�
   const d = await getCustomerDetail('C1');
   assert.equal(d.money.outstanding, null, '0 แปลว่า "ไม่มีหนี้" ซึ่งเรายังไม่รู้ ⇒ ต้องเป็น null');
   assert.match(String(d.money.outstandingWhy), /\S/, 'ส่ง null แล้วต้องบอกเหตุผลด้วยเสมอ');
+});
+
+test('ใบซื้อของผู้ติดต่อ — อ่านไม่ได้ต้องเป็น null (ยังไม่รู้) ไม่ใช่ 0 ใบ', async () => {
+  const d = await getCustomerDetail('C1');
+  assert.equal(d.purchases.count, 3);
+  assert.equal(d.purchases.rows[0].number, 'PO-1');
+  assert.match(String(d.purchases.scope), /คนละชุดกับใบขาย/, 'ต้องบอกว่าตัด 20 ใบคนละชุดกับใบขาย');
 });

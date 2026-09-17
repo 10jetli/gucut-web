@@ -274,7 +274,7 @@ export async function getCustomerDetail(idOrName) {
 
   // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
   const name = contact?.name || key;
-  const [sums, recent, money, products, productSum, cats] = await Promise.all([
+  const [sums, recent, money, products, productSum, buys, buySum, cats] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) n, COALESCE(SUM(amount),0) total,
               MIN(order_date) first_day, MAX(order_date) last_day
@@ -327,6 +327,20 @@ export async function getCustomerDetail(idOrName) {
        ⚠️ **SKU ที่ไม่อยู่ในคลังสินค้า ต้องเป็นกองแยก "ยังไม่รู้หมวด" ห้ามยัดรวมหมวดใดหมวดหนึ่ง**
           (LEFT JOIN ⇒ category เป็น null ได้ · null ที่ถูกแปลงเป็นชื่อหมวดคือการโกหกเงียบ ๆ)
        ⚠️ ยอดที่ใช้เป็นราคาก่อนเกลี่ยส่วนลดท้ายบิลเหมือนแท็บรายสินค้า ⇒ ใช้คำอธิบายส่วนต่างชุดเดียวกัน */
+    /* 🧾 คอลัมน์ "ประเภท" ของตารางบนจอ ZORT — ตารางเดียวมีทั้ง **ขายออก** และ **ซื้อเข้า**
+       (เห็นจริงบนจอ ZORT 18 ก.ย. 2569: ผู้ติดต่อรายหนึ่งมีแถว "ซื้อเข้า PO-…" ปนกับใบขาย)
+       ผู้ติดต่อคนเดียวเป็นได้ทั้งลูกค้าและคู่ค้า ⇒ จับจาก vendor ของใบซื้อด้วยชื่อตรงตัวแบบเดียวกับใบขาย
+       ⚠️ ตารางใบซื้อของกระจกไม่มีคอลัมน์ลูกค้า มีแต่ vendor ⇒ ข้อจำกัดการจับคู่ชุดเดียวกัน (ชื่อซ้ำกันปนกันได้)
+       ⚠️ **ตัดคนละ 20 ใบกับใบขาย** ⇒ จอต้องเขียนว่าเป็น "20 ล่าสุดของแต่ละชนิด"
+          ห้ามเอามาเรียงรวมแล้วบอกว่านี่คือ 20 ล่าสุดของทั้งหมด (ใบเก่าของชนิดหนึ่งจะเบียดใบใหม่ของอีกชนิดหาย) */
+    coreQuery(
+      `SELECT id, source, number, po_date, status, amount, payment_status
+         FROM purchase_orders_v2 WHERE vendor = ${esc(name)}
+        ORDER BY po_date DESC, number DESC LIMIT 20`
+    ).catch(() => null),
+    coreQuery(
+      `SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM purchase_orders_v2 WHERE vendor = ${esc(name)}`
+    ).catch(() => null),
     coreQuery(
       `SELECT p.category AS cat, COALESCE(SUM(i.amount),0) amount, COUNT(DISTINCT i.sku) skus
          FROM order_items i JOIN orders o ON o.id = i.order_id
@@ -396,6 +410,19 @@ export async function getCustomerDetail(idOrName) {
         "ยอดรายสินค้าเป็นราคาต่อบรรทัด **ก่อน** เกลี่ยส่วนลดท้ายบิล ส่วนยอดรวมใบเป็นหลังหักแล้ว ⇒ สองเลขนี้ต่างกันได้ " +
         "จอ ZORT เกลี่ยส่วนลดลงบรรทัดแล้ว เลขรายสินค้าของ ZORT จึงต่ำกว่าของที่นี่ · " +
         "กระจกยังไม่มีค่าส่วนลดท้ายบิลของใบเก่า (null = ไม่รู้ ไม่ใช่ 0) จึงยังเกลี่ยตามไม่ได้",
+    },
+    /* 🧾 ใบซื้อของผู้ติดต่อรายนี้ — คอลัมน์ "ประเภท" ของ ZORT (ขายออก/ซื้อเข้าอยู่ตารางเดียวกัน)
+       🔴 อ่านตารางใบซื้อไม่ได้ ⇒ ส่ง null ทั้งก้อน = **ยังไม่รู้** ห้ามกลายเป็น "ไม่มีใบซื้อ"
+          (ตารางใบซื้อของบางร้านอาจยังไม่ถูกซิงก์ ⇒ เลข 0 ที่ไม่มีที่มาจะทำให้คนเชื่อว่าไม่เคยซื้อขายกัน) */
+    purchases: buys === null || buySum === null ? null : {
+      rows: (buys || []).map((r) => ({
+        id: r.id || null, source: r.source || null, number: r.number || null,
+        date: r.po_date || null, status: r.status || null,
+        amount: Number(r.amount) || 0, payStatus: r.payment_status || null,
+      })),
+      count: Number(buySum?.[0]?.n) || 0,
+      amount: Number(buySum?.[0]?.s) || 0,
+      scope: "จับคู่ด้วยชื่อคู่ค้าตรงตัวแบบเดียวกับใบขาย · 20 ใบล่าสุด (ตัดคนละชุดกับใบขาย) · ทุกสถานะ",
     },
     matchNote: "จับคู่ออเดอร์ด้วยชื่อเต็มตรงตัว — ชื่อซ้ำกันจะปนกัน · ชื่อที่ถูก mask จับคู่ไม่ได้",
   };
