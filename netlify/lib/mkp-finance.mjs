@@ -63,12 +63,31 @@ export function mapShopee(t) {
   };
 }
 
+/** วันของ Lazada — เขาส่งเป็น **"01 Sep 2026"** ไม่ใช่ ISO (วัดจริง 18 ก.ย. 2569)
+ *  🔴 เดิมเขียน `String(...).slice(0, 10)` เพราะเหมาว่าเป็น YYYY-MM-DD
+ *     ⇒ ได้ **"01 Sep 202"** (ปีขาดหลัก) ซึ่ง **ดูเหมือนวันที่** แต่เอาไปเรียง/จัดกลุ่มไม่ได้เลย
+ *     และไม่มีอะไรฟ้อง เพราะมันยังเป็นสตริงที่ไม่ว่าง [[field-answers-other-question]]
+ *  ⇒ แปลงเป็น YYYY-MM-DD จริง · อ่านไม่ออก = **null** (ห้ามคืนสตริงที่ตัดครึ่ง)
+ *  ⚠️ วันนี้เป็นวันตามปฏิทินที่ Lazada ออกรายการให้แล้ว **ไม่ต้องบวก 7 ชม.ซ้ำ** (ต่างจาก epoch ของ Shopee/TikTok) */
+const MONTHS = { jan: "01", feb: "02", mar: "03", apr: "04", may: "05", jun: "06", jul: "07", aug: "08", sep: "09", oct: "10", nov: "11", dec: "12" };
+export function lazadaDay(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return null;
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);          // เผื่อวันหนึ่งเขาเปลี่ยนเป็น ISO
+  const m = s.match(/^(\d{1,2})\s+([A-Za-z]{3})[a-z]*\.?\s+(\d{4})/); // "01 Sep 2026"
+  if (m && MONTHS[m[2].toLowerCase()]) return `${m[3]}-${MONTHS[m[2].toLowerCase()]}-${m[1].padStart(2, "0")}`;
+  return null;
+}
+
 export function mapLazada(r) {
   return {
     platform: "lazada",
     grain: "fee-line",
     id: r?.transaction_number != null ? String(r.transaction_number) : null,
-    day: r?.transaction_date ? String(r.transaction_date).slice(0, 10) : null,
+    day: lazadaDay(r?.transaction_date),
+    /* เก็บค่าดิบของวันไว้ด้วย — ถ้าแปลงไม่ออก คนไล่ปัญหาต้องเห็นว่าต้นทางส่งอะไรมา
+       (ไม่ใช่ข้อมูลส่วนบุคคล เป็นแค่รูปแบบวันที่) */
+    dayRaw: r?.transaction_date ? String(r.transaction_date).slice(0, 40) : null,
     type: r?.transaction_type ?? null,
     feeName: r?.fee_name ?? null,
     feeType: r?.fee_type ?? null,
@@ -77,6 +96,8 @@ export function mapLazada(r) {
     wht: money(r?.WHT_amount),
     orderRef: r?.order_no ?? null,
     orderItemRef: r?.orderItem_no ?? null,
+    /* `statement` ของ Lazada = **ช่วงวันของรอบจ่ายเงิน** เช่น "01 Sep 2026 - 01 Sep 2026"
+       ⇒ ตรงกับคอลัมน์ "รอบบัญชี" ของ ZORT ซึ่งเป็นช่วงวัน ไม่ใช่เลขที่เอกสาร (ฝั่งจอยืนยัน 18 ก.ย. 2569) */
     statement: r?.statement ?? null,
     paidStatus: r?.paid_status ?? null,
     /* 🔒 ไม่เอา: seller_sku · lazada_sku · details · comment (ข้อความอิสระ) */

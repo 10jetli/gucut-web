@@ -6,7 +6,7 @@
  *   ② **"อ่านไม่ได้" ต้องเป็น null ห้ามเป็น 0** — 0 บาทแปลว่ามีรายการที่เป็นศูนย์ ซึ่งเป็นคำตอบคนละอัน
  *   ③ **วันต้องคิดแบบไทย (UTC+7)** — รายการช่วงเช้าไทยจะตกไปวันก่อนถ้าตัดวันด้วย UTC
  */
-import { mapShopee, mapLazada, mapTiktok, money, thaiDay, readMarketplaceFinance } from '../../netlify/lib/mkp-finance.mjs'
+import { mapShopee, mapLazada, mapTiktok, money, thaiDay, lazadaDay, readMarketplaceFinance } from '../../netlify/lib/mkp-finance.mjs'
 
 let fail = 0
 const ok = (name, cond, extra = '') => {
@@ -156,6 +156,21 @@ console.log('⑦ ช่วงวันของ Shopee ต้องถูกห�
     shopee: async () => ({ response: { transaction_list: [] } }),
     lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
   })).range?.to === '2026-09-18')
+}
+
+console.log('⑧ วันของ Lazada เป็น "01 Sep 2026" ไม่ใช่ ISO — ตัดสตริงเอาไม่ได้')
+{
+  ok('แปลง "01 Sep 2026" ⇒ 2026-09-01', lazadaDay('01 Sep 2026') === '2026-09-01', String(lazadaDay('01 Sep 2026')))
+  ok('เลขวันหลักเดียวก็ได้', lazadaDay('5 Sep 2026') === '2026-09-05', String(lazadaDay('5 Sep 2026')))
+  ok('เดือนอื่นถูกต้อง', lazadaDay('31 Aug 2026') === '2026-08-31' && lazadaDay('01 Dec 2025') === '2025-12-01')
+  ok('ISO ก็ยังรับ (เผื่อต้นทางเปลี่ยน)', lazadaDay('2026-09-01') === '2026-09-01' && lazadaDay('2026-09-01 10:00') === '2026-09-01')
+  ok('อ่านไม่ออก ⇒ null ไม่ใช่สตริงตัดครึ่ง', lazadaDay('ไม่ใช่วัน') === null && lazadaDay('') === null && lazadaDay(null) === null)
+  const row = mapLazada({ transaction_number: 'T9', transaction_date: '01 Sep 2026', amount: '-22319.13', fee_name: 'Strategic Seller Program Participation Fee', statement: '01 Sep 2026 - 01 Sep 2026' })
+  ok('แถวจริงได้วันที่ใช้งานได้', row.day === '2026-09-01', String(row.day))
+  ok('เก็บค่าดิบของวันไว้ให้คนไล่ปัญหา', row.dayRaw === '01 Sep 2026', String(row.dayRaw))
+  ok('รอบบัญชี (statement) เป็นช่วงวัน ส่งต่อครบ', row.statement === '01 Sep 2026 - 01 Sep 2026')
+  // 🔴 กันของเดิมกลับมา: สตริงที่ถูกตัด 10 ตัวจะได้ "01 Sep 202" ⇒ ต้องไม่มีทางเกิดขึ้น
+  ok('ไม่มีวันที่ปีขาดหลัก', !String(row.day).match(/\b\d{3}$/), String(row.day))
 }
 
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')
