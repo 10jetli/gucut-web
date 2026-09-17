@@ -49,7 +49,10 @@ export async function ตรวจShopee() {
     { signal: AbortSignal.timeout(15000) }).then((r) => r.json()).catch((e) => ({ error: "fetch", message: String(e?.message || e) }));
   const เจอ = อ่าน?.response?.item_list;
   if (Array.isArray(เจอ) && เจอ.length) return { platform: "shopee", ผล: "ไม่รู้", ไม่ได้ยิง: `รหัสปลอม ${รหัสปลอม} มีอยู่ในร้านจริง — หยุด` };
-  if (!Array.isArray(เจอ) && !/not[ _]?found|not exist/i.test(`${อ่าน?.error} ${อ่าน?.message}`)) {
+  /* ของจริง 17 ก.ย. 2569 21:34: รหัสที่ไม่มีในร้าน Shopee ตอบ `error:""` และ **ไม่มี item_list เลย** (ไม่ใช่รายการว่าง)
+     ⇒ "ไม่มี error + ไม่มีของ" = ไม่มีในร้าน · มี error จริง (ไม่ใช่ไม่พบ) หรืออ่านพัง ⇒ ยังหยุดเหมือนเดิม */
+  const ไม่มีError = อ่าน && typeof อ่าน === "object" && !อ่าน.error;
+  if (!Array.isArray(เจอ) && !ไม่มีError && !/not[ _]?found|not exist/i.test(`${อ่าน?.error} ${อ่าน?.message}`)) {
     return { platform: "shopee", ผล: "ไม่รู้", ไม่ได้ยิง: "ยืนยันไม่ได้ว่ารหัสปลอมไม่มีในร้าน", อ่าน: { error: อ่าน?.error ?? null, message: อ่าน?.message ?? null } };
   }
 

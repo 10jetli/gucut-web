@@ -60,6 +60,14 @@ test('Shopee: ตอบเรื่องสิทธิ์ ⇒ ไม่มี�
   assert.match(r.เตือน, /ผิดคาด/);
 });
 
+test('Shopee: รูปคำตอบจริง error:"" ไม่มี item_list ⇒ นับว่าไม่มีในร้าน แล้วยิงเขียนได้', async () => {
+  writes.length = 0;
+  shopeeRead = { error: '', message: '', response: {} };
+  shopeeWrite = { error: 'product.error_item_not_found', message: 'item not found' };
+  assert.equal((await ตรวจShopee()).ผล, 'มีสิทธิ์');
+  assert.equal(writes.length, 1);
+});
+
 test('Shopee: อ่านเจอรหัสปลอมในร้าน หรืออ่านไม่ได้ ⇒ ไม่ยิงเขียนเลย', async () => {
   writes.length = 0;
   shopeeRead = { response: { item_list: [{ item_id: 1 }] } };
