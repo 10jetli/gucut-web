@@ -463,6 +463,17 @@ async function route(req, context) {
       const { probeMarketplaceFinance } = await import("../lib/mkp-finance-probe.mjs");
       return json({ ok: true, ...(await probeMarketplaceFinance()) });
     }
+    /* GET ?mkpfinance=1[&days=7&limit=20] — รายการเงินจริงของ 3 มาร์เก็ตเพลส ทำให้เป็นรูปเดียวกัน · ใบ t_mu2xtzr2
+       🔒 คืนเฉพาะช่องที่จับคู่ไว้ (allowlist) — ชื่อผู้ซื้อ/ข้อความอิสระไม่ออกมาด้วย ดู mkp-finance.mjs
+       ⚠️ ยังไม่เขียนลงฐาน โดยตั้งใจ: ขั้นนี้ให้ยืนยันการจับคู่คอลัมน์กับจอ Marketplace ของ ZORT ก่อน
+       ⚠️ ยอดสามเจ้าคนละระดับ (grain) ⇒ จอห้ามบวกรวมกัน ทุกเจ้ามีป้าย scope ติดมาแล้ว */
+    if (url.searchParams.get("mkpfinance")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { readMarketplaceFinance } = await import("../lib/mkp-finance.mjs");
+      return okJson({ ok: true, ...(await readMarketplaceFinance({
+        days: url.searchParams.get("days"), limit: url.searchParams.get("limit"),
+      })) });
+    }
     if (url.searchParams.get("dbinfo")) {
       return okJson(await d1Info());
     }
