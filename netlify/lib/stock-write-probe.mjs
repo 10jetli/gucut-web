@@ -38,7 +38,12 @@ async function postJson(url, body, headers = {}) {
   return { http: res.status, data };
 }
 
-export async function ตรวจShopee() {
+/** ข้อ ② หาเพดานจำนวนรายการต่อคำขอ — ส่งรายการปลอม N ตัวในสินค้าปลอมตัวเดียว
+ *  ⚠️ ถ้าแพลตฟอร์มหาสินค้าก่อนตรวจขนาด ทุกขนาดจะตอบ "ไม่พบ" เหมือนกัน ⇒ **หาเพดานด้วยวิธีนี้ไม่ได้** ต้องบอกตรง ๆ */
+export const ขนาดสูงสุดที่ลอง = 500;
+const ขนาดจาก = (n) => Math.max(1, Math.min(ขนาดสูงสุดที่ลอง, Math.floor(Number(n)) || 1));
+
+export async function ตรวจShopee({ ขนาด = 1 } = {}) {
   const เส้น = "/api/v2/product/update_stock";
   if (!shopeeReady()) return { platform: "shopee", ผล: "ไม่รู้", ไม่ได้ยิง: "ยังไม่ได้ตั้งกุญแจ Shopee" };
   const t = await shopeeToken().catch((e) => ({ error: String(e?.message || e) }));
@@ -56,19 +61,24 @@ export async function ตรวจShopee() {
     return { platform: "shopee", ผล: "ไม่รู้", ไม่ได้ยิง: "ยืนยันไม่ได้ว่ารหัสปลอมไม่มีในร้าน", อ่าน: { error: อ่าน?.error ?? null, message: อ่าน?.message ?? null } };
   }
 
-  const body = { item_id: Number(รหัสปลอม), stock_list: [{ model_id: 0, seller_stock: [{ stock: 0 }] }] };
+  const n = ขนาดจาก(ขนาด);
+  const body = {
+    item_id: Number(รหัสปลอม),
+    stock_list: n === 1 ? [{ model_id: 0, seller_stock: [{ stock: 0 }] }]
+      : Array.from({ length: n }, (_, i) => ({ model_id: i + 1, seller_stock: [{ stock: 0 }] })),
+  };
   const { http, data } = await postJson(shopUrl(เส้น, t.accessToken, t.shopId), body).catch((e) => ({ http: null, data: { error: "fetch", message: String(e?.message || e) } }));
   const code = data?.error || null;
   const message = data?.message || null;
   return {
-    platform: "shopee", เส้น, http,
+    platform: "shopee", เส้น, http, ขนาด: n,
     ผล: code ? แปลผล(code, message) : "ไม่รู้",
     code, message, requestId: data?.request_id ?? null,
     ...(code ? {} : { เตือน: "ไม่มี error กลับมากับรหัสที่ไม่มีอยู่ — ผิดคาด ห้ามอ่านว่ามีสิทธิ์" }),
   };
 }
 
-export async function ตรวจTikTok() {
+export async function ตรวจTikTok({ ขนาด = 1 } = {}) {
   const เส้น = `/product/${VERSION}/products/${รหัสปลอม}/inventory/update`;
   if (!tiktokReady()) return { platform: "tiktok", ผล: "ไม่รู้", ไม่ได้ยิง: "ยังไม่ได้ตั้งกุญแจ TikTok" };
   const t = await ensureShop().catch((e) => ({ error: String(e?.message || e) }));
@@ -86,20 +96,22 @@ export async function ตรวจTikTok() {
   }
 
   try {
-    const d = await tiktokCall(เส้น, { method: "POST", body: { skus: [{ id: รหัสปลอม, inventory: [{ quantity: 0 }] }] } });
+    const n = ขนาดจาก(ขนาด);
+    const skus = Array.from({ length: n }, (_, i) => ({ id: String(i + 1), inventory: [{ quantity: 0 }] }));
+    const d = await tiktokCall(เส้น, { method: "POST", body: { skus } });
     return { platform: "tiktok", เส้น, ผล: "ไม่รู้", code: d?.code ?? 0, message: d?.message ?? null, requestId: d?.request_id ?? null,
       เตือน: "ตอบสำเร็จกับรหัสที่ไม่มีอยู่ — ผิดคาด ห้ามอ่านว่ามีสิทธิ์", อ่านก่อนยิง: อ่านผิด };
   } catch (e) {
     const m = String(e?.message || e);
     const [, code, message] = m.match(/^(\d+):\s*(.*)$/s) || [null, null, m];
-    return { platform: "tiktok", เส้น, ผล: แปลผล(code, message), code, message: String(message).slice(0, 300), อ่านก่อนยิง: อ่านผิด?.slice(0, 200) ?? null };
+    return { platform: "tiktok", เส้น, ขนาด: ขนาดจาก(ขนาด), ผล: แปลผล(code, message), code, message: String(message).slice(0, 300), อ่านก่อนยิง: อ่านผิด?.slice(0, 200) ?? null };
   }
 }
 
-export async function ตรวจสิทธิ์เขียนสต็อก() {
+export async function ตรวจสิทธิ์เขียนสต็อก({ ขนาด = 1 } = {}) {
   const [shopee, tiktok] = await Promise.all([
-    ตรวจShopee().catch((e) => ({ platform: "shopee", ผล: "ไม่รู้", error: String(e?.message || e) })),
-    ตรวจTikTok().catch((e) => ({ platform: "tiktok", ผล: "ไม่รู้", error: String(e?.message || e) })),
+    ตรวจShopee({ ขนาด }).catch((e) => ({ platform: "shopee", ผล: "ไม่รู้", error: String(e?.message || e) })),
+    ตรวจTikTok({ ขนาด }).catch((e) => ({ platform: "tiktok", ผล: "ไม่รู้", error: String(e?.message || e) })),
   ]);
   return {
     ok: true, at: new Date().toISOString(), รหัสปลอม,

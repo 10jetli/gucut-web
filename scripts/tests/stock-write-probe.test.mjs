@@ -104,3 +104,16 @@ test('เส้น ?stockwriteprobe=1 รับ GET เท่านั้น', (
   assert.ok(i > 0);
   assert.match(src.slice(i, i + 200), /req\.method !== "GET"/);
 });
+
+test('ขนาด N ⇒ ส่งรายการปลอม N ตัว (เพดาน 500) · ยังเป็นสินค้าปลอมตัวเดียว', async () => {
+  writes.length = 0;
+  shopeeRead = { error: '', message: '', response: {} };
+  tiktokRead = () => { throw new Error('12052048: product not found'); };
+  tiktokWrite = () => { throw new Error('12052048: product not found'); };
+  await ตรวจShopee({ ขนาด: 51 });
+  await ตรวจTikTok({ ขนาด: 9999 });
+  assert.equal(writes[0].body.stock_list.length, 51);
+  assert.equal(writes[0].body.item_id, 1);
+  assert.equal(writes[1].body.skus.length, 500);
+  assert.match(writes[1].path, /\/products\/1\/inventory\/update$/);
+});

@@ -386,7 +386,7 @@ async function route(req, context) {
     if (url.searchParams.get("stockwriteprobe")) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น" }, 405);
       const { ตรวจสิทธิ์เขียนสต็อก } = await import("../lib/stock-write-probe.mjs");
-      return okJson(await ตรวจสิทธิ์เขียนสต็อก());
+      return okJson(await ตรวจสิทธิ์เขียนสต็อก({ ขนาด: url.searchParams.get("size") }));
     }
     if (url.searchParams.get("stockpushverify")) {
       const skus = String(url.searchParams.get("stockpushverify")).split(",").filter(Boolean);
