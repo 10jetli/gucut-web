@@ -30,10 +30,21 @@ function unwrap(name) {
 /* ชื่อจริงของแต่ละเจ้า → รายชื่อสะกดที่ยอมรับ (ตรงตัวหลัง normalize เท่านั้น)
    เจอสะกดใหม่ให้มาเติมที่นี่ที่เดียว */
 const CARRIERS = [
-  ["Flash Express", ["flash express", "flash", "flash express thailand", "flash express (th)", "flashexpress"]],
+  /* 📏 สะกดที่เติม 18 ก.ย. 2569 — **อ่านจากชื่อดิบของจริงในกระจก ไม่ได้นึกเอง**
+     ตอนไล่นับให้ CEO เจอว่า `ungrouped` = 835 ใบ ก้อนใหญ่สุดคือ **"ไปรษณีย์ไทย EMS" 780 ใบ**
+     ที่หลุดกลุ่มเพราะรายชื่อมีแค่ "ems" กับ "ไปรษณีย์ไทย" **แยกกัน** (ไฟล์นี้จับตรงตัวโดยตั้งใจ)
+     ⇒ ใครกรองด้วยกลุ่ม "ไปรษณีย์ไทย" จะ **ไม่เห็น 780 ใบนั้นเลย และไม่มีอะไรฟ้อง**
+        = ตัวกรองที่ดูใช้ได้แต่ตกของจริง · ที่เหลือเติมตามที่เห็นในข้อมูลจริงเช่นกัน
+     🚫 **ที่จงใจไม่เติม** (ไม่ใช่ชื่อขนส่ง ⇒ ปล่อยเป็น ungrouped ตามกฎ "ไม่รู้จัก = ไม่เดา"):
+        "ค่าจัดส่ง" 15 ใบ · "Order Arrangement On-hold (พักการดำเนินการชั่วคราว)" 5 ใบ ·
+        "ลูกค้ารับเอง" 7 ใบ — **กำกวมจริง** (รับที่ร้าน หรือ ลูกค้าเรียกขนส่งเอง ก็ได้) ⇒ ไม่ยัดเข้ากลุ่ม "รับเองที่ร้าน" */
+  ["Flash Express", ["flash express", "flash", "flash express thailand", "flash express (th)", "flashexpress",
+    "flash express (เรียกเก็บเงินปลายทาง)", "flash express (ชำระทั้งหมดแล้ว)",
+    "flash express (cod)", "flash (เก็บเงินปลายทาง cod)"]],
   ["Kerry Express", ["kerry express", "kerry", "kerry express thailand", "ket"]],
-  ["J&T Express", ["j&t express", "j&t", "jt express", "j and t express"]],
-  ["ไปรษณีย์ไทย", ["ไปรษณีย์ไทย", "thailand post", "thai post", "ems", "ไปรษณีย์"]],
+  ["J&T Express", ["j&t express", "j&t", "jt express", "j and t express", "j&texpress"]],
+  ["ไปรษณีย์ไทย", ["ไปรษณีย์ไทย", "thailand post", "thai post", "ems", "ไปรษณีย์",
+    "ไปรษณีย์ไทย ems", "ไปรษณีย์ไทย thailandpost"]],
   ["Shopee Express (SPX)", ["shopee express", "spx", "spx express", "spx th", "spx thailand"]],
   ["Ninja Van", ["ninja van", "ninjavan", "ninja"]],
   ["Best Express", ["best express", "best"]],
