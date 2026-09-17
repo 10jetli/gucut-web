@@ -357,6 +357,25 @@ async function route(req, context) {
       const r = await stockPushLive(body);
       return okJson(r, r?.error ? 400 : 200);
     }
+    /* 🔄 ตัวกวาดดันสต็อกอัตโนมัติ — ท่านประธานสั่ง 17 ก.ย. 2569 "อยากให้ออโต้ อัปเดตเอง"
+       POST ?pushsweep=1   สั่งกวาดเดี๋ยวนั้น (ตัวตามเวลาไม่มี URL จึงต้องมีเส้นนี้เสมอ)
+                           body {force:true} = ยิงจริงแม้ env `STOCK_PUSH_AUTO` ยังไม่เปิด
+       GET  ?pushstate=1   สรุปให้จอสถานะ — **อ่านฐานอย่างเดียว ไม่ยิงแพลตฟอร์ม จึงเร็ว**
+                           (ต่างจาก ?stockpush=1 ที่ยิงสดช้า ~10 วิ ⇒ เส้นนี้จอเรียกตอนเปิดหน้าได้) */
+    if (url.searchParams.get("pushsweep")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST — ตัวนี้อาจเขียนของจริงขึ้นแพลตฟอร์ม" }, 405);
+      const body = await req.json().catch(() => ({}));
+      const { กวาดดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
+      const r = await กวาดดันสต็อก({
+        platform: String(body?.platform || "lazada"),
+        force: body?.force === true,
+      });
+      return okJson(r, r?.error ? 400 : 200);
+    }
+    if (url.searchParams.get("pushstate")) {
+      const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
+      return okJson(await สถานะดันสต็อก());
+    }
     if (url.searchParams.get("stockpushlog")) {
       const { getStore } = await import("@netlify/blobs");
       const log = await getStore({ name: "gucut-coupon", consistency: "strong" })
