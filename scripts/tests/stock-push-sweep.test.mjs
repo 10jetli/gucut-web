@@ -19,8 +19,12 @@ mock.module('../../netlify/lib/stock-push.mjs', { namedExports: {
   } }),
 } });
 /* รูปคำตอบจริงของ stockPushLive (อ่านจากโค้ด 17 ก.ย. 2569): ผลรายตัวอยู่ใน `results` · ไม่มี `rows` */
+/* ⚠️ node:test ยอมให้ mock โมดูลเดิม **ครั้งเดียว** (ครั้งที่สองได้ ERR_INVALID_STATE)
+   ⇒ เทสต์ที่ต้องการคำตอบคนละแบบ ให้สลับผ่าน `ผลยิงที่จะคืน` ไม่ใช่ mock ซ้ำ
+   null = ใช้คำตอบมาตรฐาน (ยิงผ่าน 1 · ถูกปฏิเสธ 1) */
+let ผลยิงที่จะคืน = null;
 mock.module('../../netlify/lib/stock-push-live.mjs', { namedExports: {
-  stockPushLive: async ({ skus }, opts) => (ส่งแผนมา.push(opts), {
+  stockPushLive: async ({ skus }, opts) => (ส่งแผนมา.push(opts), ผลยิงที่จะคืน ?? {
     fired: skus.length, pushed: 1, rejected: 1, notSent: 0,
     results: [
       { sku: 'A1', from: 1, to: 5, kind: 'up', result: 'pushed' },
@@ -98,4 +102,37 @@ test('ยิงซ้ำในตัวกวาดต้องล้างก�
   const แทรก = คำสั่ง.find((c) => /INSERT INTO push_state/.test(c.sql) && /ON CONFLICT\(sku,channel\)/.test(c.sql));
   assert.match(แทรก.sql, /verified_at\s*= CASE WHEN excluded\.pushed_at IS NOT NULL THEN NULL/);
   assert.match(แทรก.sql, /verified_qty\s*= CASE WHEN excluded\.pushed_at IS NOT NULL THEN NULL/);
+});
+
+/* ── notSentKind: กองของเสียต้องมีแต่ของเสียจริง ────────────────────────────────
+   🔴 ฝั่งจอจับได้ 18 ก.ย. 2569: `?pushstuck=1&reason=error` ได้ 85 แถว
+      แต่ **ทุกแถว** เป็นทิศลงที่เราเลือกไม่ส่งเอง ⇒ ไม่ใช่ error สักแถว
+      ⇒ กองที่มีไว้ชี้ของเสีย กลบของเสียจริงไว้ใต้เสียงรบกวน [[noise-filters-eat-real-cases]]
+   ⚠️ เคส "ไม่มี notSentKind" ต้องถือเป็น error — ตัวยิงรุ่นเก่าต้องพังไปทาง "มีคนมาดู" */
+test('not_sent: policy_down/stale_plan ห้ามลง last_error · platform_error/unknown_id ต้องลง', async () => {
+  const เคส = [
+    { kind: 'policy_down',    why: 'ทิศลง (down 9→2) ต้องสั่งแยกด้วย allowClose:true', เป็นError: false },
+    { kind: 'stale_plan',     why: 'ไม่อยู่ในแผนสดแล้ว',                                เป็นError: false },
+    { kind: 'platform_error', why: 'timeout ยิงไม่ถึง Lazada',                          เป็นError: true  },
+    { kind: 'unknown_id',     why: 'หา SkuId บน Lazada ไม่เจอ',                          เป็นError: true  },
+    { kind: undefined,        why: 'ตัวยิงรุ่นเก่าไม่บอกเหตุ',                           เป็นError: true  },
+  ];
+  try {
+    for (const c of เคส) {
+      ผลยิงที่จะคืน = {
+        fired: 1, pushed: 0, rejected: 0, notSent: 1,
+        results: [{ sku: 'A1', from: 9, to: 2, kind: 'down', result: 'not_sent', notSentKind: c.kind, why: c.why }],
+      };
+      คำสั่ง.length = 0;
+      await กวาดดันสต็อก({ platform: 'lazada', force: true });
+      const ค่า = คำสั่ง.filter((x) => /INSERT INTO push_state/.test(x.sql)).flatMap((x) => x.params);
+      const i = ค่า.indexOf('A1');
+      assert.ok(i >= 0, `${c.kind}: ต้องมีแถว A1 ในคำสั่งเขียนสมุด`);
+      const err = ค่า.slice(i, i + 15)[13];
+      if (c.เป็นError) assert.ok(err, `${c.kind}: ต้องลง last_error เพราะต้องมีคนมาดู`);
+      else assert.equal(err, null, `${c.kind}: ห้ามลง last_error — เราเลือกไม่ส่งเอง ไม่ใช่ความผิดพลาด`);
+    }
+  } finally {
+    ผลยิงที่จะคืน = null;   // ⚠️ ต้องคืนค่าใน finally ไม่งั้นเทสต์ถัดไปแดงด้วยเหตุปลอม
+  }
 });

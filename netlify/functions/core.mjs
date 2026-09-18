@@ -426,6 +426,40 @@ async function route(req, context) {
        ฝั่งจอขอ 18 ก.ย. 2569 เพราะ ?pushstate=1 ส่ง stuck มาแค่ 20 แถวและ last_error เป็น null ทุกแถว
        ⇒ เขาต้องอนุมานเหตุจาก ?stockpushlog=1 ซึ่งเป็นคนละแหล่ง (สมุดรอบกวาด ไม่ใช่คอลัมน์ในตาราง)
        ⚠️ คำตอบมี "⚠️ ขอบเขต" กำกับว่าไม่รวมรหัสที่ไม่ถูกส่งเพราะทิศลง (ยังไม่ถูกบันทึกลงตาราง) */
+    /* 🕰️ ตารางงานตามเวลา — ฝั่งจอขอ 18 ก.ย. 2569 เพื่อเลิกพิมพ์ cron ซ้ำสองที่
+       🔴 วันนี้ตารางเปลี่ยนสองรอบ (ลดเหลือวันละครั้ง แล้วกลับเป็นทุก 15 นาที)
+          จอค้างค่าของรอบกลางอยู่ครึ่งวัน เพราะเลขถูกพิมพ์ไว้ทั้งฝั่งท่อและฝั่งจอ
+          🔑 เกณฑ์เดียวกันต้องมีแหล่งเดียว — สองจอบอกคนละเลขเรื่องเดียวกัน แย่กว่าไม่มีเกณฑ์
+       ⚠️ **ค่า cron ไม่ได้พิมพ์ไว้ที่นี่** มาจาก `netlify/lib/cron-table.mjs`
+          ที่ `scripts/gen-cron-table.mjs` สร้างตอน build โดยอ่าน `export const config`
+          ของไฟล์ฟังก์ชันจริง ⇒ แก้ตารางที่ไฟล์ฟังก์ชัน เส้นนี้เปลี่ยนเองรอบ build ถัดไป
+       ⚠️ อ่านไฟล์ไม่ได้ ⇒ `jobs: null` + `readError` **ห้ามคืน [] ** เพราะ [] อ่านได้ว่า
+          "ร้านไม่มีงานตามเวลา" ซึ่งดูเหมือนคำตอบสมบูรณ์ทั้งที่เป็นความพัง
+       ⚠️ `generatedAt` คือเวลาที่ **build** ไม่ใช่เวลาที่ยิงคำขอ ⇒ จอใช้บอกได้ว่าตารางนี้เก่าแค่ไหน
+          ไม่มี lastRunAt ให้ในรอบนี้โดยตั้งใจ — แหล่งเวลารันกระจายอยู่หลายตาราง
+          ถ้าเดารวมมาให้ จอจะได้ค่าที่ดูเหมือนจริงแต่เชื่อไม่ได้ ⇒ ขอทำเป็นงานแยก */
+    if (url.searchParams.get("crontable")) {
+      let t = null, readError = null;
+      try {
+        t = await import("../lib/cron-table.mjs");
+      } catch (e) {
+        readError = String(e?.message || e).slice(0, 200);
+      }
+      const jobs = Array.isArray(t?.jobs) ? t.jobs : null;
+      return okJson({
+        ok: !!jobs,
+        generatedAt: t?.generatedAt ?? null,
+        source: t?.source ?? null,
+        jobs,
+        ทั้งหมด: jobs ? jobs.length : null,
+        readError,
+        "⚠️ ขอบเขต":
+          "cron อ่านจาก export const config ของไฟล์ฟังก์ชันตอน build — ไม่ใช่ค่าที่พิมพ์ไว้ในเส้นนี้ · " +
+          "generatedAt คือเวลาที่ build ไม่ใช่เวลาที่ยิงคำขอ · " +
+          "ยังไม่มี lastRunAt/lastRunOk ในรอบนี้ (แหล่งเวลารันกระจายหลายตาราง จะเดารวมให้ไม่ได้) · " +
+          "jobs เป็น null = อ่านตารางไม่ได้ ไม่ใช่ไม่มีงานตามเวลา",
+      });
+    }
     if (url.searchParams.get("pushstuck")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { รายรหัสที่ค้าง } = await import("../lib/stock-push-sweep.mjs");

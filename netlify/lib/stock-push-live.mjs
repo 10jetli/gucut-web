@@ -8,6 +8,21 @@
 //    (ระหว่างนั้นอาจมีคนซื้อ) แผนจริง = stockPushDryRun() ณ วินาทียิง
 // ② **ยิงเฉพาะ SKU ที่ถูกส่งมาในคำสั่งเท่านั้น** — ตัดกับแผนสดอีกชั้น
 //    SKU ที่ขอมาแต่ไม่อยู่ในแผนสดแล้ว = รายงานว่า "แผนเปลี่ยน ไม่ยิง" ไม่ใช่ยิงมั่ว
+/* 🏷️ **`notSentKind` — ฟิลด์ความหมายเดียวของ "ทำไมไม่ได้ส่ง" (เพิ่ม 18 ก.ย. 2569)**
+   ฝั่งจอจับได้ว่ากอง "มี error จากแพลตฟอร์ม" ของ `?pushstuck=1` ได้ 85 แถว
+   แต่ **ทุกแถว**เป็นข้อความ "ทิศลง … ต้องสั่งแยกด้วย allowClose" ซึ่งเป็น**นโยบายของเราเอง
+   ไม่ใช่ความผิดพลาดของแพลตฟอร์ม** ⇒ กองที่มีไว้ชี้ของเสียกลายเป็นกองที่ไม่มีของเสียสักตัว
+   🔑 ต้นเหตุ: `result: "not_sent"` ใช้กับ **4 เรื่องคนละความหมาย** แล้วปลายทางต้องเดาจากข้อความ
+      ⇒ ผิดกฎ "ฟิลด์คำอธิบายห้ามมีอำนาจตัดสินใจ" · `why` เป็นคำอธิบายให้คนอ่าน
+        ส่วน `notSentKind` เป็นค่าที่เครื่องใช้ตัดสินใจ
+   | ค่า | ความหมาย | ปลายทางควรทำ |
+   |---|---|---|
+   | `platform_error` | ปลายทางตอบผิดพลาด/ยิงไม่ถึง | **นับเป็น error** ต้องมีคนดู |
+   | `unknown_id` | ปลายทางไม่รู้จักรหัสนี้ (อาจถูกถอดขาย) | ไม่ใช่ error ของเรา แต่ต้องตามแก้ |
+   | `policy_down` | เราเลือกไม่ส่งเอง (ทิศลงยังไม่ได้สั่ง) | **ห้ามนับเป็น error** |
+   | `stale_plan` | แผนเปลี่ยนระหว่างทาง เลขตรงกันอยู่แล้ว | เรื่องปกติ ไม่ต้องรายงาน |
+   ⚠️ เพิ่มเหตุ `not_sent` ใหม่เมื่อไหร่ **ต้องใส่ `notSentKind` ด้วยทุกครั้ง**
+      ไม่ใส่ = ปลายทางจัดลงกองผิด แล้วไม่มีอะไรฟ้อง (ตัวที่ไม่มีค่าจะตกไปกองไหนก็แล้วแต่ปลายทาง) */
 // ③ **ทิศลง (close/down) ต้องสั่งแยกด้วย allowClose:true** — ทิศขึ้นผิดอย่างมากขายช้า
 //    ทิศลงผิด = ปิดขายของที่มี เสียยอดทันที
 // ④ **ผลรายตัวต้องรายงานครบสามสถานะ**: ยิงแล้วสำเร็จ · ยิงแล้วแพลตฟอร์มปฏิเสธ (พร้อมรหัส)
@@ -105,7 +120,7 @@ export async function lazadaPush(rows) {
   for (const r of rows) {
     const m = ids.get(r.sku);
     if (m?.skuId) ready.push({ ...r, skuId: m.skuId, itemId: m.itemId });
-    else noId.push({ ...r, result: "not_sent", why: "หา SkuId บน Lazada ไม่เจอ (สินค้าอาจถูกถอด)" });
+    else noId.push({ ...r, result: "not_sent", notSentKind: "unknown_id", why: "หา SkuId บน Lazada ไม่เจอ (สินค้าอาจถูกถอด)" });
   }
   if (!ready.length) return noId;
   /* 🔴 **ยิงทีละก้อน ≤ LAZADA_SKU_ต่อคำขอ** — คิดแผนสดครั้งเดียวข้างนอก แล้วแบ่งเฉพาะคำขอเขียน
@@ -130,7 +145,7 @@ export async function lazadaPush(rows) {
     const r = await lazadaWrite("/product/stock/sellable/update", { payload }).catch((e) => ({
       error: String(e?.message || e).slice(0, 200),
     }));
-    if (r.error) { ผล.push(...ก้อน.map((x) => ({ ...x, result: "not_sent", why: r.error }))); continue; }
+    if (r.error) { ผล.push(...ก้อน.map((x) => ({ ...x, result: "not_sent", notSentKind: "platform_error", why: r.error }))); continue; }
     const ok = r.data && String(r.data.code) === "0";
     /* Lazada ตอบรวมทั้งก้อน — สำเร็จ = ทุกตัวในก้อนสำเร็จ · ปฏิเสธ = แนบคำตอบดิบทั้งก้อน */
     ผล.push(...ก้อน.map((x) => ({
@@ -317,9 +332,9 @@ export async function stockPushLive(body, { แผนที่คิดแล้
   const skipped = [];
   for (const sku of wantSkus) {
     const r = byPlan.get(sku);
-    if (!r) { skipped.push({ sku, result: "not_sent", why: "ไม่อยู่ในแผนสดแล้ว (เลขตรงกันอยู่/ของเปลี่ยนระหว่างทาง)" }); continue; }
+    if (!r) { skipped.push({ sku, result: "not_sent", notSentKind: "stale_plan", why: "ไม่อยู่ในแผนสดแล้ว (เลขตรงกันอยู่/ของเปลี่ยนระหว่างทาง)" }); continue; }
     if ((r.kind === "close" || r.kind === "down") && !body?.allowClose) {
-      skipped.push({ sku, result: "not_sent", why: `ทิศลง (${r.kind} ${r.from}→${r.to}) ต้องสั่งแยกด้วย allowClose:true` });
+      skipped.push({ sku, result: "not_sent", notSentKind: "policy_down", why: `ทิศลง (${r.kind} ${r.from}→${r.to}) ต้องสั่งแยกด้วย allowClose:true` });
       continue;
     }
     fire.push({ sku, from: r.from, to: r.to, kind: r.kind });

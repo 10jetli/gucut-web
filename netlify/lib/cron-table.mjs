@@ -1,0 +1,96 @@
+// ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
+// ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
+export const generatedAt = "2026-09-18T09:33:43.762Z";
+export const source = "netlify/functions/*.mjs (export const config)";
+export const jobs = [
+ {
+  "id": "backup-run",
+  "file": "netlify/functions/backup-run.mjs",
+  "cron": "40 */6 * * *",
+  "desc": "สำรองข้อมูลอัตโนมัติทุกคืน — ตี 3 เวลาไทย (20:00 UTC)"
+ },
+ {
+  "id": "beam-sweep",
+  "file": "netlify/functions/beam-sweep.mjs",
+  "cron": "*/30 * * * *",
+  "desc": "กวาดออเดอร์ Beam ค้างจ่าย — ฟังก์ชันตามเวลา รันเองทุกครึ่งชั่วโมง"
+ },
+ {
+  "id": "bundle-recipe-sync",
+  "file": "netlify/functions/bundle-recipe-sync.mjs",
+  "cron": "0 3 * * *",
+  "desc": "สินค้าเป็นชุด ZORT → คลังเงา — งานตามเวลาทุกครึ่งชั่วโมง"
+ },
+ {
+  "id": "contacts-sync",
+  "file": "netlify/functions/contacts-sync.mjs",
+  "cron": "19 * * * *",
+  "desc": "ผู้ติดต่อ ZORT → คลังเงา contacts — งานตามเวลาทุกชั่วโมง (งานกระดาน t_mu2045bl · 15 ก.ย. 2569)"
+ },
+ {
+  "id": "core-sync",
+  "file": "netlify/functions/core-sync.mjs",
+  "cron": "13 * * * *",
+  "desc": "คลังเงา GUCUT Core — งานตามเวลา รันเองทุกครึ่งชั่วโมง (เหลื่อมจาก beam-sweep 13 นาที)"
+ },
+ {
+  "id": "live-sweep",
+  "file": "netlify/functions/live-sweep.mjs",
+  "cron": "0 19 * * *",
+  "desc": "เก็บกวาดข้อมูลคนเข้าเว็บที่หมดอายุ — งานตามเวลา ตี 2 ทุกคืน"
+ },
+ {
+  "id": "mkp-fees-sync",
+  "file": "netlify/functions/mkp-fees-sync.mjs",
+  "cron": "47 * * * *",
+  "desc": "กระจกค่าธรรมเนียม Shopee (escrow รายใบ) → ตาราง shopee_fees — งานตามเวลาทุกชั่วโมง"
+ },
+ {
+  "id": "permit-remind",
+  "file": "netlify/functions/permit-remind.mjs",
+  "cron": "30 2 * * *",
+  "desc": "ตามเตือนลูกค้าเรื่องขอทะเบียน — ฟังก์ชันตามเวลา รันเองวันละครั้ง"
+ },
+ {
+  "id": "returns-sync",
+  "file": "netlify/functions/returns-sync.mjs",
+  "cron": "7 */3 * * *",
+  "desc": "ใบคืนสินค้า (ลูกค้าคืน · ReturnOrder) ZORT → คลังเงา return_orders_v2 (กุญแจ id) — งานตามเวลา **ทุก 3 ชั่วโมง** (ลดจากทุกชั่วโมง 18 ก.ย. 2569 · เหตุผลอยู่ท้ายไฟ"
+ },
+ {
+  "id": "shopee-reviews-pull",
+  "file": "netlify/functions/shopee-reviews-pull.mjs",
+  "cron": "20 17 * * *",
+  "desc": "งานตามเวลา: ดึงรีวิว Shopee ผ่าน API ทุกคืน 00:20 ไทย (17:20 UTC)"
+ },
+ {
+  "id": "slips-sync",
+  "file": "netlify/functions/slips-sync.mjs",
+  "cron": "50 * * * *",
+  "desc": "สลิปใหม่จาก ZORT → ถังปิด gucut-zort-slips ทีละ ≤8 ใบต่อชั่วโมง (ร้าน z1) — ใบกระดาน t_mu2sow9d · ดู netlify/lib/slip-scan.mjs"
+ },
+ {
+  "id": "stock-push-sweep-shopee",
+  "file": "netlify/functions/stock-push-sweep-shopee.mjs",
+  "cron": "5,20,35,50 * * * *",
+  "desc": "ปลุกตัวกวาดดันสต็อก **shopee** ตามเวลา — เพิ่ม 17 ก.ย. 2569 (gucut2 · ท่านประธานสั่ง \"ทำให้ครบ\")"
+ },
+ {
+  "id": "stock-push-sweep-tiktok",
+  "file": "netlify/functions/stock-push-sweep-tiktok.mjs",
+  "cron": "10,25,40,55 * * * *",
+  "desc": "ปลุกตัวกวาดดันสต็อก **tiktok** ตามเวลา — เพิ่ม 17 ก.ย. 2569 (gucut2 · ท่านประธานสั่ง \"ทำให้ครบ\")"
+ },
+ {
+  "id": "stock-push-sweep",
+  "file": "netlify/functions/stock-push-sweep.mjs",
+  "cron": "*/15 * * * *",
+  "desc": "ปลุกตัวกวาดดันสต็อกตามเวลา — ท่านประธานสั่ง 17 ก.ย. 2569 \"อยากให้มันออโต้ อัปเดตเอง\""
+ },
+ {
+  "id": "token-refresh",
+  "file": "netlify/functions/token-refresh.mjs",
+  "cron": "30 20 * * *",
+  "desc": "ต่ออายุ token ของมาร์เก็ตเพลสให้เอง — วันละครั้ง"
+ }
+];
