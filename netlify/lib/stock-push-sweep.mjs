@@ -179,6 +179,45 @@ export async function จดยิงมือลงสมุด(platform, resul
   const ออกจริง = (Array.isArray(results) ? results : []).filter((r) => r && (r.result === "pushed" || r.result === "rejected") && r.sku);
   if (!ออกจริง.length) return { เขียนแล้ว: 0 };
   await สร้างตาราง();
+
+  /* ===== FASTPATH_V1 — ทางออกเร็วเมื่อไม่มีอะไรเปลี่ยน =====
+     🔴 เหตุ (18 ก.ย. 2569): เครดิต Netlify หมด ⇒ Netlify **พักทุกโปรเจกต์**
+        ⇒ gucut.com คืน 503 ทั้งเว็บ ลูกค้าสั่งของไม่ได้
+        Netlify คิดเงินตาม **เวลาที่ฟังก์ชันทำงาน** ไม่ใช่จำนวนครั้ง
+        ตัวนี้คิดแผนใหม่ทั้งชุด (ยิง Lazada สด) **ทุกรอบ แม้สต็อกไม่ขยับเลย**
+        วัดจริงเมื่อวาน: 30–35 วินาที/รอบ × 96 รอบ/วัน = ~51 นาที/วัน
+     🔑 **ลดเวลาทำงาน ดีกว่าลดความถี่** — ลดความถี่คือยอมให้สต็อกช้าลง
+        สต็อกในคลังไม่ขยับ ⇒ ตัวเลขที่จะดันไม่มีทางเปลี่ยน ⇒ ไม่ต้องคิดใหม่
+     ⚠️ **ต้องบังคับคิดเต็มรอบเป็นระยะ** — ฝั่งแพลตฟอร์มเปลี่ยนเองได้ (คนแก้มือ)
+        ถ้าเชื่อสัญญาณฝั่งเราอย่างเดียว ความคลาดจะซ่อนได้ตลอดกาล
+     ⚠️ **ข้ามแล้วต้องรายงานว่าข้าม ห้ามเงียบ** — ไม่งั้นอ่านได้ว่า "ตรวจแล้วไม่มีอะไร"
+        ทั้งที่ยังไม่ได้ตรวจ (กฎ: ทางถอยต้องประกาศตัวเมื่อถูกใช้) */
+  const บังคับเต็มทุก = 8;   // ทุก 8 รอบที่ข้าม = ~4 ชม. ต้องคิดเต็มหนึ่งครั้ง
+  if (!force) {
+    try {
+      const [ล่าสุด] = await coreQuery(
+        `SELECT at, planned, pushed, note FROM push_sweep_log
+         WHERE channel = ? ORDER BY at DESC LIMIT 1`, [platform]);
+      const [ขยับ] = await coreQuery(`SELECT MAX(at) AS at FROM sync_marks`);
+      const กี่รอบข้าม = Number(String(ล่าสุด?.note || "").match(/ข้ามติดกัน (\d+)/)?.[1] || 0);
+      const คลังขยับหลังรอบก่อน =
+        ล่าสุด?.at && ขยับ?.at ? String(ขยับ.at) > String(ล่าสุด.at).slice(0, 19).replace("T", " ") : true;
+      const ไม่มีงานค้าง = Number(ล่าสุด?.planned ?? 1) === 0;
+      if (ล่าสุด && ไม่มีงานค้าง && !คลังขยับหลังรอบก่อน && กี่รอบข้าม + 1 < บังคับเต็มทุก) {
+        const ms0 = Date.now() - เริ่ม;
+        await coreQuery(
+          `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note)
+           VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(at) DO NOTHING`,
+          [now, platform, "fast-skip", 0, 0, 0, 0, 0, ms0,
+           `ข้ามติดกัน ${กี่รอบข้าม + 1} — คลังไม่ขยับหลังรอบก่อน · บังคับคิดเต็มทุก ${บังคับเต็มทุก} รอบ`]);
+        return { ok: true, platform, at: now, mode: "ข้ามเร็ว — คลังไม่ขยับ ไม่ต้องคิดแผนใหม่",
+                 fastSkip: true, skipStreak: กี่รอบข้าม + 1, forceFullEvery: บังคับเต็มทุก, ms: ms0 };
+      }
+    } catch {
+      /* อ่านสัญญาณไม่ได้ = คิดเต็มรอบตามปกติ — ระบบต้องพังไปทางทำงานครบ ไม่ใช่ทางข้าม */
+    }
+  }
+  /* ===== จบ FASTPATH_V1 ===== */
   let เขียนแล้ว = 0;
   for (let i = 0; i < ออกจริง.length; i += 12) {
     const ก้อน = ออกจริง.slice(i, i + 12);
