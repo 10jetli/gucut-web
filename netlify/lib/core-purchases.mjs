@@ -569,8 +569,16 @@ export function noDocHeader(data, label = "ใบ") {
     fields: Object.keys(d),
     resCode: d.resCode ?? d.rescode ?? null,
     resDesc: d.resDesc ?? d.resdesc ?? null,
-    // 100 = Access Denied ของ ZORT ⇒ จอบอกคนใช้ได้ตรง ๆ ว่าเป็นเรื่องสิทธิ์ ไม่ใช่ใบหาย
-    denied: String(d.resCode ?? d.rescode ?? "") === "100",
+    /* 🔴 **ห้ามตัดสินจาก resCode** — ยิงของจริง 18 ก.ย. 2569 พบว่า ZORT ใช้ `100`
+       เป็นรหัสรวมของความผิดพลาดหลายอย่าง: ใบที่มองไม่เห็น · id ไม่มีจริง · id เป็น 0
+       **ทั้งสามเคสได้ `100` + "Invalid ID." เหมือนกันเป๊ะ**
+       เดิมผมเขียน denied = (resCode === 100) ⇒ id ปลอมก็ขึ้นว่า "ถูกปฏิเสธสิทธิ์"
+       = แดงลวง ซึ่งแพงกว่าเขียวลวง เพราะคนลงมือแก้ตาม [[probe-fails-toward-alarm]]
+       ⇒ denied จริงต้องมาจากข้อความที่ ZORT บอกว่าปฏิเสธสิทธิ์เท่านั้น */
+    denied: /access\s*denied/i.test(String(d.resDesc ?? d.resdesc ?? "")),
+    /* ⚠️ "Invalid ID." **แยกไม่ออก**ว่า "ใบไม่มีจริง" หรือ "มีแต่เรามองไม่เห็น"
+       ⇒ จอต้องเขียนว่ายังไม่รู้สาเหตุ ห้ามเขียนว่าใบไม่มีอยู่ [[ข้อความปฏิเสธที่แยกสาเหตุไม่ออก]] */
+    ambiguousMissing: /invalid\s*id/i.test(String(d.resDesc ?? d.resdesc ?? "")),
   };
 }
 /** บรรทัดสินค้าในใบ · null = ZORT ไม่ส่งช่องบรรทัดมาเลย (คนละความหมายกับ []) */

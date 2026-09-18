@@ -123,17 +123,26 @@ test('รายงานยอดซื้อ (purchaseitems) ไม่นับ
       ⇒ แยกไม่ออกว่าเป็น Access Denied (สิทธิ์) หรือเส้นครอบแค่คลังหลัก
       ทั้งที่ ZORT ส่ง resCode/resDesc มาให้แล้ว [[truncated-error-hides-cause]]
    ⚠️ ด่านนี้ต้อง**แยกแยะได้** ไม่ใช่แค่ผ่าน — จึงมีทั้งเคส 100 · 200 · ไม่ส่งมาเลย */
-test("noDocHeader: resCode 100 ⇒ บอกว่าถูกปฏิเสธสิทธิ์", () => {
+test("noDocHeader: Access Denied ⇒ denied จริง", () => {
   const r = noDocHeader({ resCode: "100", resDesc: "Access Denied." }, "ใบโอน");
   assert.equal(r.resCode, "100");
-  assert.equal(r.resDesc, "Access Denied.");
   assert.equal(r.denied, true);
+  assert.equal(r.ambiguousMissing, false);
   assert.match(r.error, /ใบโอน/);
+});
+/* 🔴 เคสที่จับบั๊กของผมเองได้ในนาทีที่ยิงของจริง (18 ก.ย. 2569)
+   ZORT ใช้ resCode 100 กับทั้ง "ใบมองไม่เห็น" และ "id ไม่มีจริง" ⇒ ตัดสินจากรหัสไม่ได้
+   ยิงตัวควบคุม id 99999999 · 0 ได้ Invalid ID. เหมือนใบ KLD เป๊ะ */
+test("noDocHeader: resCode 100 + Invalid ID ⇒ ห้ามบอกว่าถูกปฏิเสธสิทธิ์", () => {
+  const r = noDocHeader({ resCode: "100", resDesc: "Invalid ID." });
+  assert.equal(r.denied, false, "id ปลอมต้องไม่ขึ้นว่าถูกปฏิเสธสิทธิ์ — แดงลวงแพงกว่าเขียวลวง");
+  assert.equal(r.ambiguousMissing, true, "ต้องบอกจอว่าแยกสาเหตุไม่ออก");
 });
 test("noDocHeader: resCode 200 แต่ไม่มีหัวใบ ⇒ ไม่ใช่เรื่องสิทธิ์", () => {
   const r = noDocHeader({ resCode: "200" });
   assert.equal(r.resCode, "200");
   assert.equal(r.denied, false);
+  assert.equal(r.ambiguousMissing, false);
 });
 test("noDocHeader: ZORT ไม่ส่งรหัสมา ⇒ null ไม่ใช่ 0 หรือค่าว่าง", () => {
   const r = noDocHeader({ อะไรก็ไม่รู้: 1 });
