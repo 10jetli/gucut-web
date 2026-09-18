@@ -466,6 +466,33 @@ async function route(req, context) {
        ⚠️ `generatedAt` คือเวลาที่ **build** ไม่ใช่เวลาที่ยิงคำขอ ⇒ จอใช้บอกได้ว่าตารางนี้เก่าแค่ไหน
           ไม่มี lastRunAt ให้ในรอบนี้โดยตั้งใจ — แหล่งเวลารันกระจายอยู่หลายตาราง
           ถ้าเดารวมมาให้ จอจะได้ค่าที่ดูเหมือนจริงแต่เชื่อไม่ได้ ⇒ ขอทำเป็นงานแยก */
+    /* 📇 GET ?endpoints=1 — รายชื่อเส้น list ทั้งหมดที่ท่อรับ ให้ด่านฝั่งจอเทียบว่า "จอใช้หรือยัง"
+       🔴 ที่มา: ฝั่งจอเจอ `list=channel-gaps` ที่ไม่มีจอไหนใช้เลย **ด้วยการยิงชื่อมั่วโดยบังเอิญ**
+          (และเป็นเรื่องเงิน — 91 รหัสที่เคยขายได้แล้วเงียบ ทั้งที่มีของในคลังเกือบแสนชิ้น)
+          ⇒ ท่อมีของที่ไม่มีใครรู้ว่ามี และวิธีค้นพบคือความบังเอิญ ⇒ เปิดเส้นให้ตรวจได้แทน
+       ⚠️ `lists: null` = อ่านรายชื่อไม่ได้ **ไม่ใช่ "ท่อไม่มีเส้นไหนเลย"** (สามสถานะ ห้ามยุบ)
+       ⚠️ รายชื่อนี้บอกแค่ว่า **ท่อรับชื่อนี้** ไม่ได้บอกว่าเส้นนั้นคืนข้อมูลได้จริง
+          ⇒ ด่านฝั่งจอใช้เทียบ "มี/ไม่มีคนเรียก" ได้ · **ห้ามใช้สรุปว่าเส้นนั้นใช้งานได้** */
+    if (url.searchParams.get("endpoints")) {
+      let t = null, readError = null;
+      try {
+        t = await import("../lib/endpoints.mjs");
+      } catch (e) {
+        readError = String(e?.message || e).slice(0, 200);
+      }
+      const lists = Array.isArray(t?.lists) ? t.lists : null;
+      return okJson({
+        generatedAt: t?.generatedAt ?? null,
+        source: t?.source ?? null,
+        lists,
+        ทั้งหมด: lists ? lists.length : null,
+        readError,
+        "⚠️ ขอบเขต":
+          "รายชื่อสร้างตอน build โดยอ่าน get(\"list\") จากซอร์ส core.mjs — ไม่ใช่รายชื่อที่คนพิมพ์ · " +
+          "บอกว่าท่อ 'รับชื่อนี้' เท่านั้น ไม่ได้บอกว่าเส้นนั้นคืนข้อมูลได้จริง · " +
+          "lists เป็น null = อ่านไม่ได้ ไม่ใช่ไม่มีเส้น · generatedAt คือเวลา build ไม่ใช่เวลายิงคำขอ",
+      });
+    }
     if (url.searchParams.get("crontable")) {
       let t = null, readError = null;
       try {
@@ -3580,17 +3607,26 @@ async function route(req, context) {
           ถ้าเอาไปเช็คหัวฟังก์ชันแทน ลืมเติมชื่อครั้งเดียว = ปิดเส้นที่ใช้งานอยู่ทันที */
     const listArg = p.get("list");
     if (listArg) {
-      const known = [
-        "branches", "bundleitems", "bundles", "categories", "channel-gaps", "contacts",
-        "deadstock", "logistics", "missing-sku", "moves", "orderfacets", "orders",
-        "poscats", "purchaseitems", "purchases", "quotations", "returnorders", "sales", "stock",
-        "stockcard", "topproducts", "transfers", "warehouses",
-      ];
+      /* 🔴 **เลิกเขียนรายชื่อด้วยมือแล้ว** (18 ก.ย. 2569) — รายชื่อเดิมล้าสมัยจริง
+         พิสูจน์แล้ว: เทียบกับซอร์สพบ `returns-inbox` มีอยู่จริงแต่ไม่อยู่ในรายชื่อ
+         ⇒ ฝั่งจอกำลังจะทำด่าน "จอใช้ทุกเส้นหรือยัง" โดยเชื่อ `accepts` นี้ ⇒ จะพลาดเส้นนั้นเงียบ ๆ
+         ตอนนี้มาจาก `scripts/gen-endpoints.mjs` ที่อ่าน `get("list") === "…"` จากไฟล์นี้เองตอน build
+         ⚠️ คอมเมนต์ข้างบนยังใช้อยู่: **การตัดสินใจไม่ได้อยู่ที่รายชื่อ** แค่ย้ายแหล่งของ "ข้อความบอกทาง"
+            ⇒ ห้ามเอา `lists` ไปเช็คหัวฟังก์ชันแทน ไม่งั้นวันที่ตัวสร้างอ่านพลาดหนึ่งชื่อ
+              = ปิดเส้นที่ใช้งานอยู่ทันที · อ่านไม่ได้ ⇒ ถอยไปใช้ข้อความที่ไม่มีรายชื่อ ไม่ใช่ล้ม */
+      let known = null;
+      try {
+        known = (await import("../lib/endpoints.mjs")).lists;
+      } catch {
+        known = null;
+      }
       return json(
         {
           error: `ไม่รู้จัก list=${listArg}`,
           hint: "สะกดผิด หรือเป็นเส้นที่ยังไม่ได้ deploy ขึ้นเว็บ",
+          /* null = อ่านรายชื่อไม่ได้ **ไม่ใช่ "ไม่มีเส้นไหนเลย"** ⇒ จออ่านว่ายังไม่รู้ ห้ามอ่านว่าว่าง */
           accepts: known,
+          acceptsSource: known ? "gen-endpoints (อ่านจากซอร์ส core.mjs ตอน build)" : null,
         },
         400
       );

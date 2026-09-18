@@ -190,3 +190,21 @@ test('listBundles: ต้องส่ง rowsMatched ที่เดินตา
     'ตัวนับที่เดินตามตัวกรองต้องรวม ${only} ด้วย ไม่งั้นได้เลขเดียวกับ total');
   assert.doesNotMatch(body, /\bshown:/, 'ห้ามใช้ชื่อ shown — เป็นของเลิกใช้เพราะความหมายกำกวม');
 });
+
+/* ── รายชื่อเส้น list ต้องมาจากซอร์ส ไม่ใช่คนพิมพ์ (18 ก.ย. 2569) ────────────────
+   🔴 ฝั่งจอเจอ list=channel-gaps ที่ไม่มีจอไหนใช้ **ด้วยการยิงชื่อมั่วโดยบังเอิญ**
+      และรายชื่อ known ที่เคยพิมพ์ด้วยมือ **ล้าสมัยจริง** — ขาด returns-inbox
+      ⇒ ถ้าด่านฝั่งจอเชื่อ accepts นั้น จะพลาดเส้นนั้นเงียบ ๆ
+   ⚠️ ด่านนี้ตรึงสองอย่าง: (ก) ไม่มีรายชื่อพิมพ์มือใน core.mjs อีก
+      (ข) ไฟล์ที่ generate ต้องครบเท่าที่ซอร์สรับจริง */
+test('รายชื่อเส้น list: ไม่พิมพ์มือใน core.mjs และไฟล์ที่ generate ต้องครบเท่าซอร์ส', async () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.doesNotMatch(code, /const known = \[/,
+    'ห้ามพิมพ์รายชื่อเส้นด้วยมือ — ให้ import จาก lib/endpoints.mjs ที่สร้างจากซอร์ส');
+  const จริง = new Set([...code.matchAll(/get\("list"\)\s*===\s*"([a-z-]+)"/g)].map((m) => m[1]));
+  const { lists } = await import('../../netlify/lib/endpoints.mjs');
+  const ขาด = [...จริง].filter((x) => !lists.includes(x));
+  assert.deepEqual(ขาด, [], `ไฟล์ที่ generate ขาดเส้นที่ซอร์สรับจริง: ${ขาด.join(', ')} — รัน gen-endpoints ใหม่`);
+  assert.ok(lists.includes('returns-inbox'), 'returns-inbox คือเส้นที่รายชื่อพิมพ์มือเคยขาด — ต้องมีเสมอ');
+});
