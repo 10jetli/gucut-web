@@ -1503,12 +1503,31 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
        FROM return_orders_v2 WHERE source = ?`,
       [store]
     );
+    /* 🔖 **byStatus จากกระจก** — ฝั่งจอขอ 18 ก.ย. 2569 เพราะจอใบคืน **ไม่มีแท็บเลยสักอัน**
+       และข้อมูลมีใบยกเลิกปนอยู่ (200 แถวแรกจาก 693 มี Voided 2 ใบ)
+       ⇒ คนดูไม่มีทางรู้ว่าใบไหนถูกยกเลิก นอกจากไล่อ่านคอลัมน์ทีละแถว
+       ⚠️ **เขานับเองไม่ได้** เพราะจอมีแค่ 200 แถวที่โหลดมา ⇒ จะได้เลขของ 200 ไม่ใช่ของ 693
+          = เลขที่ขอบเขตไม่ตรงกับที่คนอ่านคิด ⇒ ต้องมาจากท่อที่เห็นทั้งชุด
+       🔴 **มาจากกระจก ไม่ใช่ ZORT สด** — ต่างจาก `rows`/`total` ในคำตอบเดียวกันที่มาจาก ZORT สด
+          ⇒ ประกาศไว้ใน `byStatusScope` ให้ชัด ห้ามให้จอเดา
+          (ZORT GetReturnOrders ไม่ให้ยอดแยกสถานะ และไล่ทุกหน้าสดคือช้า/เปลืองโควตา)
+       ⚠️ ใช้ชื่อคอลัมน์ `c` รูปเดียวกับ `list=purchases` ตามที่ฝั่งจอขอ — อย่าคิดชื่อใหม่ */
+    const byStatusRows = await coreQuery(
+      `SELECT COALESCE(NULLIF(status,''),'(ว่าง)') AS status, COUNT(*) AS c
+       FROM return_orders_v2 WHERE source = ? GROUP BY 1 ORDER BY c DESC`,
+      [store]
+    ).catch(() => null);
     const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [store === "z2" ? "sync_returns_z2" : "sync_returns"]).catch(() => []);
     mirrorTotals = {
       count: num(t?.c), amount: Number(t?.s) || 0,
       countExcludingVoided: num(t?.c_live), amountExcludingVoided: Number(t?.s_live) || 0,
       syncedAtUtc: meta?.at ?? null, syncComplete: meta ? meta.v === "complete" : null,
       note: "รวมจากกระจกของร้านนี้ (ไม่ใช่ ZORT สด) · ใช้เป็นยอดทั้งหมดได้เมื่อ count เท่ากับ total ของ ZORT",
+      /* null = อ่านกระจกไม่ได้รอบนี้ **ไม่ใช่ "ไม่มีใบยกเลิก"** ⇒ จอต้องเขียนว่ายังไม่รู้ */
+      byStatus: Array.isArray(byStatusRows) ? byStatusRows : null,
+      byStatusScope:
+        "มาจากกระจก return_orders_v2 ของร้านนี้ทั้งชุด — ไม่ใช่จาก rows/total ในคำตอบนี้ซึ่งมาจาก ZORT สด · " +
+        "เอาไปเทียบกับ total ได้เมื่อ mirrorTotals.count เท่ากับ total · null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
     };
   } catch (e) {
     mirrorTotals = null;
