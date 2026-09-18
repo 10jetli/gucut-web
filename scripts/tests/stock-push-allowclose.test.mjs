@@ -43,7 +43,7 @@ test('ค่าเริ่มต้น = เปิดทิศลง ⇒ ส่
   assert.ok(ยิง.length > 0, 'ต้องมีการยิง');
   assert.ok(ยิง.every((b) => b.allowClose === true), 'ทุกก้อนต้องส่ง allowClose:true');
   assert.ok(รหัสที่ยิง().some((s) => s.startsWith('DN')), 'ต้องมีรหัสทิศลงถูกส่งไป');
-  assert.equal(r.ยิง?.เปิดทิศลง ?? r.ผลยิง?.เปิดทิศลง ?? true, true);
+  assert.equal(r.เปิดทิศลง, true);
 });
 
 test('🔴 เพดานทิศลงต่อรอบต้องกันจริง — ทิศลง 100 เพดาน 40 ⇒ ส่งแค่ 40 ที่เหลือรอรอบหน้า', async () => {
@@ -73,4 +73,29 @@ test('เพดาน 1 ⇒ ส่งทิศลง 1 รหัส (เลข�
   await กวาดดันสต็อก({ platform: 'lazada', force: true });
   assert.equal(รหัสที่ยิง().filter((s) => s.startsWith('DN') || s.startsWith('CL')).length, 1);
   delete process.env.STOCK_PUSH_CLOSE_CAP;
+});
+
+/* 📌 ท่านประธานติ๊กสั่งใบ t_mu6n1adh — ทิศลงที่ไม่ได้ยิงต้องมีตัวตนในสมุด
+   🔴 ก่อนหน้านี้ไม่ถูกบันทึกเลย ⇒ ตัวนับบนจอพาคนไปหาบั๊กที่ไม่มีอยู่
+   และต้องแยกสองเหตุ: policy_down (สวิตช์ปิด) vs cap_wait (เกินเพดาน) — คนละการลงมือ */
+const แถวที่เขียน = [];
+test('เกินเพดาน ⇒ ทิศลงที่รอต้องถูกบันทึกเป็น cap_wait (ไม่ใช่หายไปเงียบ)', async () => {
+  ยิง.length = 0; แถวที่เขียน.length = 0;
+  process.env.STOCK_PUSH_CLOSE_CAP = '5';
+  delete process.env.STOCK_PUSH_ALLOW_CLOSE;
+  const r = await กวาดดันสต็อก({ platform: 'lazada', force: true });
+  assert.equal(r.ok, true);
+  // ยิงทิศลง 5 · ที่เหลือ 95 ต้องรอรอบหน้า และตัวเลขต้องบอกออกมา
+  assert.equal(r.ทิศลงที่ยิงรอบนี้, 5);
+  assert.equal(r.ทิศลงที่รอรอบหน้า, 95);
+  delete process.env.STOCK_PUSH_CLOSE_CAP;
+});
+
+test('ปิดสวิตช์ ⇒ เหตุต้องเป็น policy_down ไม่ใช่ cap_wait (คนละการลงมือ)', async () => {
+  ยิง.length = 0;
+  process.env.STOCK_PUSH_ALLOW_CLOSE = '0';
+  const r = await กวาดดันสต็อก({ platform: 'lazada', force: true });
+  assert.equal(r.ทิศลงที่ยิงรอบนี้, 0);
+  assert.equal(r.ทิศลงที่รอรอบหน้า, 100, 'ปิดแล้วทั้ง 100 รหัสต้องถูกนับว่ารอ');
+  delete process.env.STOCK_PUSH_ALLOW_CLOSE;
 });
