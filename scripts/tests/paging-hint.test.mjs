@@ -30,10 +30,25 @@ test("คืนน้อยกว่าเพดาน = ประกาศจ�
   assert.equal(withPagingHint({ rows: rows(150) }, 200, {}).pagingDone, true);
 });
 
-test("เส้นที่ไล่ด้วย page ⇒ ได้ nextPage ไม่ใช่ nextOffset", () => {
+/* 🔄 **เปลี่ยนเจตนา 19 ก.ย. 2569** — เดิมเทสนี้ยืนยันว่า `nextOffset` เป็น `undefined`
+   (คือ "ไม่ใส่คีย์ที่ทางนี้ไม่ใช้") ⇒ เปลี่ยนเป็น **ต้องมีทั้งสองคีย์เสมอ ตัวที่ไม่ใช้เป็น null**
+   เหตุ: สารบัญ "ช่องที่แต่ละเส้นคืน" จับได้ว่าเส้นเดียวกันคืนคีย์ไม่เหมือนกันตามพารามิเตอร์
+   และปลายทางแยก `undefined` ("ท่อรุ่นเก่าไม่รองรับ") ออกจาก `null` ("รองรับ แต่ทางนี้ไม่ใช้") ไม่ได้
+   ✅ ตรวจก่อนเปลี่ยนว่าไม่มีใครเจ็บ: `grep -rn "nextOffset\|nextPage" ~/gucut-next/{app,lib}`
+      = **ไม่มีจอไหนอ่านคีย์นี้เลย** และไม่มีสคริปต์ฝั่งท่อใช้ ⇒ เปลี่ยนได้ปลอดภัย
+   ⚠️ ถ้าวันหนึ่งมีจออ่าน `"nextOffset" in d` ⇒ ความหมายเปลี่ยนไปแล้ว ต้องแก้ทั้งสองฝั่งพร้อมกัน */
+test("เส้นที่ไล่ด้วย page ⇒ nextPage มีค่า · nextOffset เป็น null (ไม่ใช่หายไป)", () => {
   const out = withPagingHint({ items: rows(200) }, 200, { page: "3" });
   assert.equal(out.nextPage, 4);
-  assert.equal(out.nextOffset, undefined);
+  assert.equal(out.nextOffset, null);
+  assert.ok("nextOffset" in out, "ต้องมีคีย์ ไม่ใช่หายไป — undefined แยกไม่ออกจากท่อรุ่นเก่า");
+});
+
+test("เส้นที่ไล่ด้วย offset ⇒ nextOffset มีค่า · nextPage เป็น null (รูปคำตอบสมมาตร)", () => {
+  const out = withPagingHint({ items: rows(200) }, 200, {});
+  assert.equal(out.nextOffset, 200);
+  assert.equal(out.nextPage, null);
+  assert.ok("nextPage" in out, "ทั้งสองทางต้องคืนคีย์ชุดเดียวกัน");
 });
 
 /* ข้อห้าม 1: ห้ามทับค่าที่ payload รู้ดีกว่าเรา */

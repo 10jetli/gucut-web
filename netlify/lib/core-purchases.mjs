@@ -1426,6 +1426,54 @@ export function returnDateRange({ from, to, days } = {}) {
   return { from: f, to: t, days: null };
 }
 
+/* ยอดรวมของกระจกใบคืน — **ใช้ร่วมกันทั้งทางสดและทางค้นในกระจก**
+ *
+ * 🔴 ที่มา 19 ก.ย. 2569 (สารบัญ "ช่องที่แต่ละเส้นคืน" จับได้ในการรันครั้งแรก):
+ *    `list=returnorders` มี **สองเส้นทางในเส้นเดียว** — ไม่ส่งตัวกรอง = ถาม ZORT สด ·
+ *    ส่ง q/from/to/days = ค้นในกระจก (บรรทัด `if (needle || range.from || range.to)`)
+ *    แล้วสองทางนั้น **ส่งคีย์ไม่เหมือนกัน**:
+ *      ทางสด  → `mirrorTotals.{count, byStatus, freshness, …}`
+ *      ทางกระจก → `syncedAtUtc` · `syncComplete` ที่ระดับบนสุด · **ไม่มี mirrorTotals เลย**
+ *    ⇒ จอที่เขียน `d.mirrorTotals?.byStatus` ใช้ได้ตอนเปิดจอ แล้ว **หายทันทีที่คนกดตัวกรอง**
+ *      โดยไม่มีอะไรฟ้อง — คีย์หายทั้งคีย์ อ่านได้ว่า "ยังไม่รู้" ทั้งที่กระจกมีข้อมูลครบ
+ *    🔑 คลาส: เส้นเดียวที่แตกเป็นหลายเส้นทางต้องคืน **รูปคำตอบเดียวกัน** ทุกทาง
+ *      ไม่งั้นปลายทางต้องเขียนโค้ดหลายชุดโดยไม่มีใครบอกว่าต้องเขียน
+ * ⚠️ อ่านกระจกไม่ได้ = คืน null (ไม่ใช่ 0) ⇒ ปลายทางต้องเขียนว่า "ยังไม่รู้" */
+async function ยอดกระจกใบคืน(store) {
+  try {
+    const [t] = await coreQuery(
+      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s,
+              SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN 1 ELSE 0 END) AS c_live,
+              ROUND(COALESCE(SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN amount ELSE 0 END),0),2) AS s_live
+       FROM return_orders_v2 WHERE source = ?`,
+      [store]
+    );
+    const byStatusRows = await coreQuery(
+      `SELECT COALESCE(NULLIF(status,''),'(ว่าง)') AS status, COUNT(*) AS c
+       FROM return_orders_v2 WHERE source = ? GROUP BY 1 ORDER BY c DESC`,
+      [store]
+    ).catch(() => null);
+    const metaKey = store === "z2" ? "sync_returns_z2" : "sync_returns";
+    const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [metaKey]).catch(() => []);
+    return {
+      count: num(t?.c), amount: Number(t?.s) || 0,
+      countExcludingVoided: num(t?.c_live), amountExcludingVoided: Number(t?.s_live) || 0,
+      syncedAtUtc: meta?.at ?? null, syncComplete: meta ? meta.v === "complete" : null,
+      note: "รวมจากกระจกของร้านนี้ (ไม่ใช่ ZORT สด) · ใช้เป็นยอดทั้งหมดได้เมื่อ count เท่ากับ total ของ ZORT",
+      /* null = อ่านกระจกไม่ได้รอบนี้ **ไม่ใช่ "ไม่มีใบยกเลิก"** ⇒ จอต้องเขียนว่ายังไม่รู้ */
+      byStatus: Array.isArray(byStatusRows) ? byStatusRows : null,
+      byStatusScope:
+        "มาจากกระจก return_orders_v2 ของร้านนี้ทั้งชุด — ไม่ใช่จาก rows/total ในคำตอบนี้ซึ่งอาจมาจาก ZORT สด · " +
+        "เอาไปเทียบกับ total ได้เมื่อ mirrorTotals.count เท่ากับ total · null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
+      /* 🕘 freshness อยู่ใต้ mirrorTotals โดยตั้งใจ — ทางสด rows/total มาจาก ZORT สด
+         เวลานี้พูดถึงกระจกเท่านั้น (ป้ายขอบเขตต้องอยู่ติดกับตัวเลขที่มันกำกับ) */
+      freshness: await freshnessOf(coreQuery, { table: "return_orders_v2", metaKey }),
+    };
+  } catch {
+    return null;
+  }
+}
+
 async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range = {}) {
   const applied = { q: needle || null, from: range.from ?? null, to: range.to ?? null, days: range.days ?? null, source: "mirror" };
   if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
@@ -1465,6 +1513,10 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
   } catch {
     meta = null;
   }
+  /* 🔴 ต้องส่ง mirrorTotals เหมือนทางสด — ดูเหตุผลเต็มที่หัวฟังก์ชัน ยอดกระจกใบคืน()
+     ⚠️ `syncedAtUtc`/`syncComplete` ระดับบนสุด **คงไว้** ห้ามถอด — จออาจอ่านอยู่
+        (ถอดคีย์ที่ปลายทางใช้ = จอพังเงียบ ๆ · เพิ่มอย่างเดียวปลอดภัยเสมอ) */
+  const mirrorTotals = await ยอดกระจกใบคืน(store);
   return {
     total,
     page: p,
@@ -1473,6 +1525,7 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
     source: "mirror",
     store,
     applied,
+    mirrorTotals,
     syncedAtUtc: meta?.at ?? null,
     syncComplete: meta ? meta.v === "complete" : null,
     rows: (Array.isArray(rows) ? rows : []).map((r) => ({
@@ -1521,59 +1574,20 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
      ⇒ รวมจากกระจก return_orders_v2 ของร้านนั้น แล้ว **ส่งจำนวนใบของกระจกคู่ไปด้วย**
      ⚠️ คนละแหล่งกับ `total` (ZORT สด) — จอต้องใช้ยอดนี้เป็น "ทั้งหมด" ได้ก็ต่อเมื่อ mirrorTotals.count === total
      ⚠️ ยังไม่รู้ว่า "มูลค่าทั้งหมด" ของ ZORT รวมใบยกเลิกไหม ⇒ ส่งทั้งสองแบบ ห้ามเดา · อ่านไม่ได้ = null ไม่ใช่ 0 */
-  let mirrorTotals = null;
-  try {
-    const [t] = await coreQuery(
-      `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s,
-              SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN 1 ELSE 0 END) AS c_live,
-              ROUND(COALESCE(SUM(CASE WHEN COALESCE(status,'') NOT LIKE '%void%' AND COALESCE(status,'') NOT LIKE '%cancel%' THEN amount ELSE 0 END),0),2) AS s_live
-       FROM return_orders_v2 WHERE source = ?`,
-      [store]
-    );
-    /* 🔖 **byStatus จากกระจก** — ฝั่งจอขอ 18 ก.ย. 2569 เพราะจอใบคืน **ไม่มีแท็บเลยสักอัน**
-       และข้อมูลมีใบยกเลิกปนอยู่ (200 แถวแรกจาก 693 มี Voided 2 ใบ)
-       ⇒ คนดูไม่มีทางรู้ว่าใบไหนถูกยกเลิก นอกจากไล่อ่านคอลัมน์ทีละแถว
-       ⚠️ **เขานับเองไม่ได้** เพราะจอมีแค่ 200 แถวที่โหลดมา ⇒ จะได้เลขของ 200 ไม่ใช่ของ 693
-          = เลขที่ขอบเขตไม่ตรงกับที่คนอ่านคิด ⇒ ต้องมาจากท่อที่เห็นทั้งชุด
-       🔴 **มาจากกระจก ไม่ใช่ ZORT สด** — ต่างจาก `rows`/`total` ในคำตอบเดียวกันที่มาจาก ZORT สด
-          ⇒ ประกาศไว้ใน `byStatusScope` ให้ชัด ห้ามให้จอเดา
-          (ZORT GetReturnOrders ไม่ให้ยอดแยกสถานะ และไล่ทุกหน้าสดคือช้า/เปลืองโควตา)
-       ⚠️ ใช้ชื่อคอลัมน์ `c` รูปเดียวกับ `list=purchases` ตามที่ฝั่งจอขอ — อย่าคิดชื่อใหม่ */
-    const byStatusRows = await coreQuery(
-      `SELECT COALESCE(NULLIF(status,''),'(ว่าง)') AS status, COUNT(*) AS c
-       FROM return_orders_v2 WHERE source = ? GROUP BY 1 ORDER BY c DESC`,
-      [store]
-    ).catch(() => null);
-    const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [store === "z2" ? "sync_returns_z2" : "sync_returns"]).catch(() => []);
-    mirrorTotals = {
-      count: num(t?.c), amount: Number(t?.s) || 0,
-      countExcludingVoided: num(t?.c_live), amountExcludingVoided: Number(t?.s_live) || 0,
-      syncedAtUtc: meta?.at ?? null, syncComplete: meta ? meta.v === "complete" : null,
-      note: "รวมจากกระจกของร้านนี้ (ไม่ใช่ ZORT สด) · ใช้เป็นยอดทั้งหมดได้เมื่อ count เท่ากับ total ของ ZORT",
-      /* null = อ่านกระจกไม่ได้รอบนี้ **ไม่ใช่ "ไม่มีใบยกเลิก"** ⇒ จอต้องเขียนว่ายังไม่รู้ */
-      byStatus: Array.isArray(byStatusRows) ? byStatusRows : null,
-      byStatusScope:
-        "มาจากกระจก return_orders_v2 ของร้านนี้ทั้งชุด — ไม่ใช่จาก rows/total ในคำตอบนี้ซึ่งมาจาก ZORT สด · " +
-        "เอาไปเทียบกับ total ได้เมื่อ mirrorTotals.count เท่ากับ total · null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
-      /* 🕘 **freshness อยู่ใต้ mirrorTotals โดยตั้งใจ ห้ามย้ายขึ้นระดับบนสุด**
-         เส้นนี้ต่างจากเส้นอื่นทั้งหมด: `rows`/`total` มาจาก **ZORT สด** ทุกคำขอ
-         ส่วน `byStatus` มาจากกระจก ⇒ เวลานี้พูดถึงกระจกเท่านั้น
-         วางไว้บนสุด = จอจะอ่านว่า "ทั้งคำตอบเก่าเท่านี้" แล้วเอาไปแคช rows ที่สดอยู่แล้ว
-         (ป้ายขอบเขตต้องอยู่ติดกับตัวเลขที่มันกำกับ [[scope-label-before-number]]) */
-      freshness: await freshnessOf(coreQuery, {
-        table: "return_orders_v2",
-        metaKey: store === "z2" ? "sync_returns_z2" : "sync_returns",
-      }),
-    };
-  } catch (e) {
-    mirrorTotals = null;
-  }
+  /* 🔑 ใช้ฟังก์ชันร่วมกับทางค้นในกระจก — **ห้ามลอกโค้ดกลับมาวางซ้ำที่นี่**
+     เดิมทางนี้คิดเอง ทางกระจกไม่คิดเลย ⇒ เส้นเดียวส่งคีย์ไม่เหมือนกันสองทาง
+     (สารบัญช่องที่แต่ละเส้นคืนจับได้ 19 ก.ย. 2569 · เหตุผลเต็มที่หัว ยอดกระจกใบคืน) */
+  const mirrorTotals = await ยอดกระจกใบคืน(store);
   return {
     total: num(data?.count),
     mirrorTotals,
     page: p,
     pages: Math.max(1, Math.ceil(num(data?.count) / n)),
     live: true,
+    /* 🔴 ทางค้นในกระจกส่ง `source: "mirror"` มาตั้งแต่แรก แต่ทางนี้ไม่ส่งอะไรเลย
+       ⇒ จอต้องเช็คสองแบบ (live กับ source) โดยไม่มีอะไรบอกว่าต้องเช็คสองแบบ
+       เพิ่มให้รูปคำตอบตรงกันทั้งสองทาง (เพิ่มอย่างเดียว `live` คงไว้ จออาจใช้อยู่) */
+    source: "zort",
     store,
     applied: { q: null, source: "zort" },
     rows: list.map((r) => ({
