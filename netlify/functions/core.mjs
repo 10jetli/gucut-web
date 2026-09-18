@@ -1362,7 +1362,9 @@ async function route(req, context) {
     if (url.searchParams.get("list") === "quotations") {
       /* ⚠️ ส่ง type ต่อไปด้วย **ไม่ใช่เพื่อกรอง** แต่เพื่อให้ท่อสะท้อนกลับว่าเมินค่านั้น (ดูคอมเมนต์ที่ listQuotations) */
       return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"), listStore.store,
-        { type: url.searchParams.get("type") })), ...listStore });
+        /* ส่ง q ต่อไปด้วย **เพื่อให้ท่อประกาศว่าเมิน** ไม่ใช่เพื่อกรอง (เส้นนี้ยังกรอง q ไม่ได้)
+           ไม่ส่งต่อ = ผู้เรียกส่ง q มาแล้วเงียบหาย ไม่มีทางรู้ว่าถูกเมิน */
+        { type: url.searchParams.get("type"), q: url.searchParams.get("q") })), ...listStore });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
