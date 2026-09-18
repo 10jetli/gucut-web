@@ -4,6 +4,7 @@
 //    reopen ไม่มีคนยืนยันไม่ยิง · ทิศลงต้อง allowClose · ด่าน ⑧ ทับทุกชนิดรวม up
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
+import { readFileSync } from 'node:fs';
 
 let lines = [];
 let recipe = [];
@@ -61,4 +62,25 @@ test('ด่านบนชั้น: ⑧ ทับทุกชนิด · ⑥ 
   assert.equal(ด่านบนชั้น({ sku: 'D', kind: 'down', from: 5, to: 3 }, { ค้างส่ง, allowClose: true }), null);
   assert.equal(ด่านบนชั้น({ sku: 'U', kind: 'up', from: 1, to: 3 }, { ค้างส่ง }), null);
   assert.match(ด่านบนชั้น({ sku: 'U', kind: 'up', from: 1, to: 3 }, { ค้างส่ง: null }), /ตรวจด่าน ⑧ ไม่ได้/);
+});
+
+/* ── คำปฏิเสธที่ซ้อนอยู่ในคำยืนยัน (18 ก.ย. 2569) ─────────────────────────────
+   🔴 ต่อยอดจากที่ฝั่งจอเจอบนจอ: "เปิดใช้งาน" มีคำว่า "ปิดใช้งาน" อยู่ข้างในเป๊ะ ๆ
+      รูปเดียวกันอยู่ในด่านนี้ และที่นี่ **แตะเงินจริง**:
+      "จัดส่งไม่สำเร็จ" มี "สำเร็จ" · "Unsuccessful" มี "Success"
+      ⇒ ใบที่ยังค้างจะถูกอ่านว่าเสร็จแล้ว ⇒ ไม่ถูกกัน ⇒ ดันสต็อกทั้งที่ของยังไม่ได้ส่ง
+   ⚠️ ด่านนี้ตรวจรูป SQL เพราะเงื่อนไขเป็นสตริงที่ประกอบเข้าคำสั่ง (ไม่มีทางเรียกทดสอบตรง ๆ)
+      ⇒ ตัดคอมเมนต์ก่อนตรวจ ไม่งั้นร้องใส่คำเตือนที่ต้องพิมพ์รูปที่ห้ามเอง */
+test('NOTDONE ต้องกันคำว่า "ไม่สำเร็จ" และ "unsuccess" ไม่ให้ถูกอ่านว่าเสร็จแล้ว', () => {
+  const src = readFileSync(new URL('../../netlify/lib/stock-push-guards.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const at = code.indexOf('const NOTDONE');
+  const block = code.slice(at, code.indexOf(';', at));
+  assert.match(block, /unsuccess/i, 'ต้องกัน Unsuccessful — มันมีคำว่า Success อยู่ข้างใน');
+  assert.match(block, /ไม่สำเร็จ/, 'ต้องกัน "ไม่สำเร็จ" — มันมีคำว่า "สำเร็จ" อยู่ข้างใน');
+  /* 🟢 และตัวตรงข้ามต้อง **ไม่** ถูกทำให้สมมาตร — NOTCANCEL พลาดไปทางไม่ดัน ซึ่งปลอดภัย */
+  const ac = code.indexOf('const NOTCANCEL');
+  const bc = code.slice(ac, code.indexOf(';', ac));
+  assert.doesNotMatch(bc, /ยกเลิกไม่/,
+    'ห้ามทำ NOTCANCEL ให้สมมาตรกับ NOTDONE — ที่นี่การพลาดไปทาง "ไม่ดัน" ปลอดภัยกว่า');
 });
