@@ -582,6 +582,31 @@ export default async function handler(req, context) {
       return { note: `ร้าน ${s.shopName ?? "-"} · token เหลือ ${left} ชม.` };
     }),
 
+    /* 💰 กระจกค่าธรรมเนียม Shopee (18 ก.ย. 2569) — ของใหม่ที่มีงานตามเวลาเป็นตัวจุดชนวน
+       🔑 ตัวตรวจนี้มีไว้ตอบคำถามเดียว: **งานตามเวลายังวิ่งอยู่ไหม** ไม่ใช่ "มีใบใหม่ไหม"
+          ⇒ อ่านชีพจร core_meta.mkp_fees_sync ที่เขียนทุกรอบไม่ว่าจะมีใบใหม่หรือไม่
+          ห้ามใช้ MAX(at) ของ shopee_fees แทน — คืนที่ไม่มีออเดอร์ Shopee ค่านั้นจะเก่าทั้งที่งานปกติ
+          (บทเรียนเดียวกับที่ตัวตรวจกระจกออเดอร์เคยเตือนผิดตอนของปกติ) */
+    check("กระจกค่าธรรมเนียม Shopee (ยอดโอนสุทธิ)", async () => {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      const [beat] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = 'mkp_fees_sync'`).catch(() => []);
+      /* ไม่มีชีพจรเลย = ยังไม่เคยวิ่ง (เพิ่ง deploy) — **ไม่ใช่ของเสีย** */
+      if (!beat?.at) return { off: true, note: "ยังไม่เคยวิ่งเลย (งานตามเวลาทุกชั่วโมง นาทีที่ 47) — ปกติถ้าเพิ่ง deploy" };
+      const mins = Math.round((Date.now() - Date.parse(`${String(beat.at).replace(" ", "T")}Z`)) / 60000);
+      const say = mins < 60 ? `${mins} นาทีที่แล้ว` : `${Math.round(mins / 60)} ชม.ที่แล้ว`;
+      const [cnt] = await coreQuery(
+        `SELECT COUNT(*) AS n, SUM(CASE WHEN ABS(formula_diff) > 2 THEN 1 ELSE 0 END) AS off
+         FROM shopee_fees`
+      ).catch(() => []);
+      const rows = Number(cnt?.n ?? 0);
+      const off = Number(cnt?.off ?? 0);
+      /* 🔴 สองเรื่องที่ต้องขึ้นเหลือง ไม่ใช่เขียว
+         ① งานตามเวลาเงียบเกิน 3 ชม. (ตั้งทุกชั่วโมง ⇒ พลาด 3 รอบติดคือมีอะไรผิด)
+         ② สูตรคิดยอดโอนเริ่มไม่ตรงเป็นกอง = สัญญากับ Shopee เปลี่ยน ⇒ ยอดที่คิดได้ผิดทั้งกอง */
+      if (mins > 180) return { warn: true, note: `งานตามเวลาเงียบไป ${say} (ตั้งไว้ทุกชั่วโมง) · ล่าสุด: ${String(beat.v ?? "").slice(0, 80)}` };
+      if (off > 0) return { warn: true, note: `สูตรคิดยอดโอนไม่ตรง ${off} ใบจาก ${rows} ใบ (ต่างเกิน 2 บาท) — ต้องวัดสูตรใหม่กับใบจริง ห้ามปรับเลขให้ต่างเป็น 0` };
+      return { note: `วิ่งล่าสุด ${say} · ในกระจก ${rows} ใบ · สูตรตรงทุกใบ (ต่างไม่เกิน 2 บาท) · ${String(beat.v ?? "").slice(0, 60)}` };
+    }),
     check("สะพานส่งบัญชีเข้า PEAK", async () => {
       const { peakStatus } = await import("../lib/peak.mjs");
       const r = await peakStatus();
