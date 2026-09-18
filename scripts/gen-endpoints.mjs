@@ -33,6 +33,24 @@ const ชื่อ = new Set();
 for (const m of code.matchAll(/get\("list"\)\s*===\s*"([a-z-]+)"/g)) ชื่อ.add(m[1]);
 for (const m of code.matchAll(/listArg\s*===\s*"([a-z-]+)"/g)) ชื่อ.add(m[1]);
 
+/* 🔴 **`list=` ไม่ใช่รูปเดียวของเส้นในท่อ** — จับได้ทันทีที่สร้างตัวนี้เสร็จ (18 ก.ย. 2569)
+   อีกสายเพิ่ม `?skuaudit=1` ในชั่วโมงเดียวกัน ⇒ รายชื่อ `lists` ไม่ขยับเลย
+   ⇒ ถ้าส่งแค่ `lists` ให้ด่านฝั่งจอ เขาจะเชื่อว่าครอบทุกเส้น แล้ว **พลาดเส้นทั้งกองนี้**
+     = ครอบไม่ครบแล้วรายงานเหมือนครอบครบ ซึ่งเป็นกับดักที่ทีมเจอซ้ำที่สุด
+   ⇒ เก็บกองที่สองด้วย: เส้นที่เปิดด้วยพารามิเตอร์ของตัวเอง (`get("xxx")` ใน if)
+   ⚠️ กองนี้ **หยาบกว่า** กองแรกโดยธรรมชาติ เพราะ `get()` ถูกใช้อ่านค่าตัวกรองด้วย
+      ⇒ ตัดชื่อที่รู้ว่าเป็นตัวกรองออก และเขียนกำกับว่าเป็น "รายชื่อคร่าว ๆ ต้องดูด้วยตา"
+      **ห้ามเอาไปนับเป็นจำนวนเส้นที่แน่นอน** */
+const ตัวกรองที่ไม่ใช่เส้น = new Set([
+  "list", "store", "q", "limit", "offset", "page", "days", "from", "to", "status", "sku",
+  "reason", "channel", "platform", "type", "keyword", "source", "only", "full", "detail",
+  "amountmax", "amountmin", "carrier", "cat", "category", "day", "confirm", "force",
+]);
+const เส้นพารามิเตอร์ = new Set();
+for (const m of code.matchAll(/if \(url\.searchParams\.get\("([a-zA-Z][a-zA-Z0-9_]*)"\)\)/g)) {
+  if (!ตัวกรองที่ไม่ใช่เส้น.has(m[1])) เส้นพารามิเตอร์.add(m[1]);
+}
+
 if (!ชื่อ.size) {
   throw new Error(
     "gen-endpoints: อ่าน core.mjs ไม่เจอเส้น list สักเส้น — รูปโค้ดเปลี่ยนไปแล้วหรือ path ผิด\n" +
@@ -48,6 +66,9 @@ writeFileSync(
   "// 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น\n" +
   `export const generatedAt = ${JSON.stringify(new Date().toISOString())};\n` +
   `export const source = ${JSON.stringify('netlify/functions/core.mjs (get("list") === "…")')};\n` +
-  `export const lists = ${JSON.stringify(เรียง, null, 1)};\n`
+  `export const lists = ${JSON.stringify(เรียง, null, 1)};\n` +
+  "// ⚠️ กองนี้ **หยาบกว่า** lists — มาจาก `if (url.searchParams.get(\"xxx\"))` ซึ่งปนกับตัวกรองได้\n" +
+  "//    ใช้เป็น 'รายการที่ต้องดูด้วยตา' ห้ามนับเป็นจำนวนเส้นที่แน่นอน\n" +
+  `export const paramRoutes = ${JSON.stringify([...เส้นพารามิเตอร์].sort(), null, 1)};\n`
 );
-console.log(`gen-endpoints: เขียนรายชื่อเส้น list ${เรียง.length} เส้น → netlify/lib/endpoints.mjs`);
+console.log(`gen-endpoints: list ${เรียง.length} เส้น · เส้นพารามิเตอร์ (หยาบ) ${เส้นพารามิเตอร์.size} ชื่อ → netlify/lib/endpoints.mjs`);

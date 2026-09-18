@@ -481,16 +481,26 @@ async function route(req, context) {
         readError = String(e?.message || e).slice(0, 200);
       }
       const lists = Array.isArray(t?.lists) ? t.lists : null;
+      /* 🔴 **กองที่สองสำคัญ** — `list=` ไม่ใช่รูปเดียวของเส้นในท่อ
+         อีกสายเพิ่ม `?skuaudit=1` ในชั่วโมงเดียวกับที่ผมสร้างเส้นนี้ ⇒ `lists` ไม่ขยับเลย
+         ⇒ ถ้าส่งแค่ `lists` ด่านฝั่งจอจะเชื่อว่าครอบทุกเส้น แล้วพลาดเส้นทั้งกองนี้ */
+      const paramRoutes = Array.isArray(t?.paramRoutes) ? t.paramRoutes : null;
       return okJson({
         generatedAt: t?.generatedAt ?? null,
         source: t?.source ?? null,
         lists,
         ทั้งหมด: lists ? lists.length : null,
+        paramRoutes,
+        paramRoutesนับได้: paramRoutes ? paramRoutes.length : null,
         readError,
         "⚠️ ขอบเขต":
-          "รายชื่อสร้างตอน build โดยอ่าน get(\"list\") จากซอร์ส core.mjs — ไม่ใช่รายชื่อที่คนพิมพ์ · " +
+          "รายชื่อสร้างตอน build โดยอ่านซอร์ส core.mjs — ไม่ใช่รายชื่อที่คนพิมพ์ · " +
           "บอกว่าท่อ 'รับชื่อนี้' เท่านั้น ไม่ได้บอกว่าเส้นนั้นคืนข้อมูลได้จริง · " +
-          "lists เป็น null = อ่านไม่ได้ ไม่ใช่ไม่มีเส้น · generatedAt คือเวลา build ไม่ใช่เวลายิงคำขอ",
+          "null = อ่านไม่ได้ ไม่ใช่ไม่มีเส้น · generatedAt คือเวลา build ไม่ใช่เวลายิงคำขอ",
+        "⚠️ ขอบเขตของ paramRoutes":
+          "กองนี้ **หยาบกว่า lists** มาจาก if (searchParams.get(\"xxx\")) ซึ่งปนกับตัวกรองได้ " +
+          "(ตัดชื่อที่รู้ว่าเป็นตัวกรองออกแล้ว แต่ไม่รับประกันว่าสะอาด) " +
+          "⇒ ใช้เป็น 'รายการที่ต้องดูด้วยตา' **ห้ามนับเป็นจำนวนเส้นที่แน่นอน** และห้ามเอาไปทำตัวเลขบนจอ",
       });
     }
     if (url.searchParams.get("crontable")) {
