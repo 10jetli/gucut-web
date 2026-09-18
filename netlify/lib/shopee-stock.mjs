@@ -12,6 +12,19 @@ import { recipeCheckedAt } from "./core-products.mjs";
 import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
 
+/** วันไทย (YYYY-MM-DD) จากเวลาที่ SQLite เขียนไว้ด้วย datetime('now') ซึ่งเป็น **UTC**
+ *  🔴 ที่มา 18 ก.ย. 2569: ฝั่งจอเอา `recipeAt` (UTC) ไปตัด 10 ตัวแรกเป็นวัน แล้วเทียบกับวันไทย
+ *     ⇒ ค่าที่ถูกเขียนช่วง 17:00–24:00 UTC ให้อายุ **แก่เกินจริง 1 วัน** (จอวัดเองแล้วเจอ 2 เคส)
+ *  🔑 ท่อเป็นฝ่ายรู้เขตเวลาของค่าตัวเอง ⇒ **ท่อต้องเป็นฝ่ายบอก** ไม่ใช่ให้จอเดา
+ *     และชื่อฟิลด์ต้องมี TH ติดไว้ เพื่อให้คนอ่านรู้เขตเวลาโดยไม่ต้องถาม
+ *  ⚠️ อ่านไม่ออก = null (ห้ามคืนวันนี้แทน — จอจะคิดว่าข้อมูลสดทั้งที่ไม่รู้) */
+const thaiDayOf = (utcish) => {
+  const s = String(utcish ?? "").trim();
+  if (!s) return null;
+  const ms = Date.parse(s.includes("T") ? s : `${s.replace(" ", "T")}Z`);
+  return Number.isFinite(ms) ? new Date(ms + 7 * 3600e3).toISOString().slice(0, 10) : null;
+};
+
 /* ⚠️ **แก้ตรรกะที่เขียนลงแคชเมื่อไหร่ ต้องเปลี่ยนชื่อคีย์ด้วยทุกครั้ง**
     ของเสียที่ถูกจำไว้แล้วจะไม่ถูกถามใหม่ ⇒ แก้โค้ดแล้วผลยังผิดเหมือนเดิม
     แล้วเราจะไปไล่หาบั๊กที่ไม่มีอยู่ (v2 = รอบที่ '?? []' จำค่าว่างถาวร) */
@@ -218,10 +231,16 @@ export async function shopeeUnlistedStock() {
   /* ⚠️ ไล่หน้าไม่ครบ ⇒ ตัวนับทุกตัวต่ำกว่าจริง **ห้ามส่งเลขออกไปเหมือนผลสมบูรณ์** */
   if (cov.sawAll === false)
     return { skip: `ไล่รายการ UNLIST ไม่ครบ (ได้ ${cov.ids?.length ?? "?"} จากที่ Shopee ประกาศ ${cov.declared})` };
+  const checkedAt = await recipeCheckedAt();
   return {
+    /* 📅 **สามช่องนี้เป็น "วันไทย" ทุกช่อง** (ชื่อมี TH กำกับ) — จอเอาไปคิดอายุได้ตรง ๆ ไม่ต้องแปลง
+       `stockDay` เดิมยังส่งไว้เพื่อไม่ให้จอรุ่นเก่าพัง (ค่าเท่ากับ stockDayTH อยู่แล้ว) */
     stockDay: day,
+    stockDayTH: day,              // ภาพถ่ายสต็อกล่าสุด — เขียนด้วย thaiDayOffset(0) ⇒ วันไทยอยู่แล้ว
+    recipeDayTH: thaiDayOf(recipeAt),          // สูตรสินค้าชุดเปลี่ยนล่าสุด (แปลงจาก UTC แล้ว)
+    recipeCheckedDayTH: thaiDayOf(checkedAt),  // ตรวจสูตรกับ ZORT ล่าสุด (แปลงจาก UTC แล้ว)
     recipeAt,
-    recipeCheckedAt: await recipeCheckedAt(), // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด
+    recipeCheckedAt: checkedAt, // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด (UTC)
     declaredByShopee: cov.declared ?? null,
     sawAll: cov.sawAll ?? null,
     ...summarizeUnlisted(rows, snap, recipe),
