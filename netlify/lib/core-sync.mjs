@@ -423,6 +423,18 @@ export async function zortOrderCountForMonth(ym, tag = "z1") {
   if (!d || typeof d.count !== "number")
     return { error: "ZORT ตอบมาแต่ไม่มีช่อง count", ym, store: tag, fields: Object.keys(d ?? {}) };
 
+/* ตัวเลขจากนอกบ้าน → เลข หรือ null (ยังไม่รู้) — **ห้ามใช้ Number(x) || 0**
+   🔴 กับดักที่จับได้ด้วยเทสของตัวเอง 18 ก.ย. 2569: `Number(null)` และ `Number("")` ให้ **0**
+      และ `Number.isFinite(0)` เป็นจริง ⇒ เช็คด้วย isFinite อย่างเดียวยังปล่อย null/สตริงว่างผ่านเป็น 0
+      ⇒ ต้องตัด null · undefined · สตริงว่าง ออกก่อน แล้วจึงดูว่าเป็นเลขจริงไหม
+   0 สงวนไว้แปลว่า "ต้นทางบอกว่าศูนย์จริง" เท่านั้น */
+function numOrNull(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
   return {
     ok: true,
     ym,
@@ -433,7 +445,12 @@ export async function zortOrderCountForMonth(ym, tag = "z1") {
        ⚠️ จอที่เอาไปเทียบกับกระจกต้องรู้ข้อนี้: กระจกฝั่งเรากรองใบยกเลิกออกในบางจอ
           ⇒ เลขสองฝั่งไม่ต้องเท่ากันเป๊ะก็ได้ สิ่งที่ตัดสินคือ **0 กับ ไม่ใช่ 0** */
     zortCount: d.count,
-    zortAmount: Number(d.totalAmount) || 0,
+    /* 🔴 **ห้าม `|| 0`** (แก้ 18 ก.ย. 2569 · คลาสที่ฝั่งจอเจอในจอหมวดหมู่วันเดียวกัน)
+       ถ้า ZORT ไม่ส่ง `totalAmount` มา `Number(undefined) || 0` จะให้ 0
+       ⇒ จอที่เอาไปเทียบกับกระจกจะอ่านว่า "ZORT มียอด 0 บาท"
+         ⇒ ส่วนต่างเท่ากับยอดฝั่งเราทั้งก้อน = **แดงลวงเต็มจำนวน** แล้วคนไปไล่หาว่ากระจกเกินมา
+       ⇒ ไม่มีค่า = `null` (ยังไม่รู้) · 0 สงวนไว้แปลว่า "ZORT บอกว่าศูนย์จริง" */
+    zortAmount: numOrNull(d.totalAmount),
     countsCancelled: true,
     source: "ZORT สด (ไม่ผ่านกระจก)",
   };
@@ -482,8 +499,32 @@ export async function zortOrderCountForMonthAll(ym) {
     stores: tags,
     from: parts[0].from,
     to: parts[0].to,
-    zortCount: parts.reduce((n, p) => n + p.zortCount, 0),
-    zortAmount: parts.reduce((n, p) => n + p.zortAmount, 0),
+    /* 🔴 **รวมค่าที่อาจ "ยังไม่รู้" ต้องประกาศ ไม่ใช่บวกเงียบ ๆ** (แก้ 18 ก.ย. 2569)
+       เดิม `reduce((n,p) => n + p.zortAmount, 0)` ⇒ ร้านใดคืน null/undefined ก็ได้ **NaN**
+       ซึ่งแย่กว่า 0 เพราะจอจะขึ้น NaN หรือคำนวณต่อพัง และไม่มีอะไรบอกว่าเกิดจากร้านไหน
+       ⇒ มีร้านใดไม่รู้ = ผลรวมเป็น null + บอกชื่อร้านที่ไม่รู้ (คนอ่านตัดสินเองได้ว่าจะใช้ต่อไหม) */
+    ...(() => {
+      const sum = (key) => {
+        const unknown = parts.filter((p) => numOrNull(p?.[key]) === null).map((p) => p.store);
+        return unknown.length
+          ? [null, unknown]
+          : [parts.reduce((n, p) => n + numOrNull(p[key]), 0), []];
+      };
+      const [count, cUnknown] = sum("zortCount");
+      const [amount, aUnknown] = sum("zortAmount");
+      const unknown = [...new Set([...cUnknown, ...aUnknown])];
+      return {
+        zortCount: count,
+        zortAmount: amount,
+        ...(unknown.length
+          ? {
+              ยอดรวมไม่ครบ: true,
+              ร้านที่ยังไม่รู้ยอด: unknown,
+              "⚠️ อ่านยอดรวมอย่างไร": "null = ยังไม่รู้ (ZORT ไม่ส่งยอดของบางร้านมา) ห้ามอ่านเป็น 0 และห้ามเอาไปเทียบกับกระจก",
+            }
+          : {}),
+      };
+    })(),
     perStore: parts.map((p) => ({ store: p.store, zortCount: p.zortCount, zortAmount: p.zortAmount })),
     countsCancelled: true,
     source: "ZORT สด รวมทุกร้าน (ไม่ผ่านกระจก)",
