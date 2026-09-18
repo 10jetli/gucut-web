@@ -1171,6 +1171,14 @@ async function route(req, context) {
        ฝั่งจอถามมา 18 ก.ย. 2569: ZORT คิดกำไรจากต้นทุนถัวเฉลี่ยเคลื่อนที่ แต่กระจกเรามีแค่ราคาซื้อในทะเบียน
        ⚠️ ต้องดู **ก้อนดิบ** — ตัวอ่านของเรา (zortFindProduct) คัดเหลือ 10 ช่อง
           ยิงตัวนั้นแล้วไม่เห็นช่องต้นทุน ไม่ได้แปลว่า ZORT ไม่ส่ง (กฎ probe-shares-the-bug) */
+    /* GET ?zortdocfilter=1 ⇒ ZORT ยอมกรองเอกสารด้วยช่วงวัน/คำค้นที่ต้นทางไหม — อ่านอย่างเดียว
+       ฝั่งจอต้องโหลดครบทุกหน้า (694 ใบ = 4 คำขอ) ทุกครั้งที่กรอง เพราะท่อรับแค่ page/limit/type
+       🔑 ตัวชี้ขาดคือคำตอบที่วัดไว้คนละครั้ง: ปี 2567 ต้องได้ 3 ใบ (ไม่ใช่แค่ดูว่า count ขยับ) */
+    if (url.searchParams.get("zortdocfilter")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortDocFilterProbe } = await import("../lib/zort-docfilter-probe.mjs");
+      return okJson(await zortDocFilterProbe());
+    }
     if (url.searchParams.get("zortcostfields")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductFieldsProbe } = await import("../lib/zort-product-fields-probe.mjs");
