@@ -1127,6 +1127,14 @@ async function route(req, context) {
     /* ยิงถาม ZORT ว่าให้สต็อกแยกรายคลังได้ไหม — อ่านอย่างเดียว
          GET /api/core?zortwarehouse=1[&sku=00894]
        ⚠️ ตัวตัดสินคือ "เปลี่ยนคลังแล้วเลขเปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม" */
+    /* GET ?zortarchived=1 ⇒ ยิงถาม ZORT ว่าขอ "ของที่ถูกลบ (archive)" ได้ไหม — อ่านอย่างเดียว
+       ฝั่งจอขอเป็นลำดับแรกทั้งจอสินค้า (ถูกลบ ~11,185) และจอผู้ติดต่อ (ถูกลบ 3,170)
+       ⚠️ ตัวชี้ขาดคือ count เทียบฐานเปล่า + มีตัวควบคุมชื่อมั่ว (ZORT เมินชื่อที่ไม่รู้จักแล้วตอบ 200) */
+    if (url.searchParams.get("zortarchived")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortArchivedProbe } = await import("../lib/zort-archived-probe.mjs");
+      return okJson(await zortArchivedProbe());
+    }
     if (url.searchParams.get("zortwarehouse")) {
       return okJson(await zortWarehouseProbe({ sku: url.searchParams.get("sku") }));
     }
