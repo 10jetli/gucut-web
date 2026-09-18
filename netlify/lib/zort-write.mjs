@@ -106,7 +106,26 @@ async function zortPost(path, body) {
     };
   }
   const d = await r.json().catch(() => null);
-  if (!d) return { ok: false, error: `ZORT ตอบไม่ใช่ JSON (HTTP ${r.status})` };
+  /* 🔴 **อ่านคำตอบไม่ได้ = ไม่รู้ผล ไม่ใช่ไม่สำเร็จ** (แก้ 18 ก.ย. 2569 · ฝั่งจอทักตอนเปิดปุ่มใบขาย)
+      ZORT ตอบ 5xx มาเป็นหน้า HTML ⇒ parse JSON ไม่ได้ ⇒ ของเดิมคืน `ok:false` **โดยไม่ติด unknown**
+      ⇒ จอจะอ่านว่า "ไม่สำเร็จ" แล้วชวนให้กดซ้ำ · แต่ ZORT อาจบันทึกใบไปแล้วและตอบ error กลับมา
+        ⇒ กดซ้ำ = ใบขายเข้าสองรอบ สต็อกถูกตัดสองรอบ (แก้คืนต้องยกเลิกเอกสารในระบบบัญชี)
+      ⚠️ และตัวกันซ้ำ (markRef) จดเฉพาะตอนสำเร็จ ⇒ ไม่มีตาข่ายรับการกดซ้ำหลัง 5xx เลย
+        ฝั่งจอจึงล็อกฟอร์มถาวรทุกกรณี ซึ่งถูกแล้ว (18 ก.ย. 2569)
+      🔑 ส่ง `zortHttp` / `zortDown` เป็น **ช่องจริง** ให้จอเช็ค — ฝั่งจอขอมาเพราะของเดิม
+        ต้องจับรูปข้อความ "HTTP 5xx" ซึ่งเปราะและด่านของเขาเฝ้าไม่ได้ */
+  if (!d) {
+    return {
+      ok: false,
+      unknown: true,
+      zortHttp: r.status,
+      zortDown: r.status >= 500,
+      error:
+        r.status >= 500
+          ? `ระบบ ZORT ตอบไม่ได้ (HTTP ${r.status}) — **ยังไม่รู้ว่าบันทึกหรือไม่** ไปตรวจใน ZORT ก่อนกดซ้ำ`
+          : `ZORT ตอบไม่ใช่ JSON (HTTP ${r.status}) — ยังไม่รู้ผล ไปตรวจใน ZORT ก่อนกดซ้ำ`,
+    };
+  }
   /* ⚠️ **ZORT วางรหัสผลไว้คนละที่แล้วแต่รุ่น** — ตัวส่งออเดอร์ที่วิ่งจริงมานาน
       (`functions/orders.mjs`) อ่าน `j.res.resCode` เป็นตัวแรก ส่วนที่ยิงตรวจ AddProduct
       เมื่อ 6 ก.ย. 2569 ได้ `resCode` ชั้นบนสุด ⇒ **ต้องอ่านให้ครบทุกรูปทรง**
@@ -118,6 +137,8 @@ async function zortPost(path, body) {
     return {
       ok: false,
       unknown: true,
+      zortHttp: r.status,
+      zortDown: r.status >= 500,
       error: "ZORT ตอบมาแต่หารหัสผลไม่เจอ — ยังไม่รู้ว่าบันทึกหรือไม่ ไปตรวจใน ZORT ก่อนกดซ้ำ",
     };
   }
@@ -164,6 +185,25 @@ async function markSafely(kind, ref, info) {
   } catch {
     return "บันทึกเข้า ZORT แล้ว แต่จดกันยิงซ้ำไม่สำเร็จ — **ห้ามกดซ้ำ** ไปตรวจใน ZORT ก่อน";
   }
+}
+
+/** ช่องสถานะจาก zortPost ที่ **ต้องส่งต่อให้ผู้เรียกทุกครั้ง**
+ *  🔴 เจอของจริง 18 ก.ย. 2569: เพิ่ม `zortHttp`/`zortDown` ที่ `zortPost` แล้ว
+ *     แต่ตัวเรียกทั้ง 17 จุดคัดเฉพาะ ok/ref/unknown/error ⇒ **ช่องใหม่ไม่ถึงจอเลย**
+ *     ⇒ ฝั่งจอยังต้องจับรูปข้อความ "HTTP 5xx" เหมือนเดิม ทั้งที่ท่อส่งช่องจริงมาแล้ว
+ *     คลาสเดียวกับ relay ที่ตัดช่องทิ้งจนตัวเตือนไม่เคยร้อง [[verify-along-the-path-not-at-the-endpoint]]
+ *  ⇒ รวมเป็นที่เดียว: เพิ่มช่องใหม่ที่ zortPost แล้วทุกตัวเรียกได้ตามเอง ไม่ต้องไล่แก้ 17 จุดอีก
+ *  ⚠️ ส่งต่อเฉพาะช่องที่ปลอดภัย — ห้าม spread ทั้งก้อน เพราะ `detail` ของ ZORT
+ *     มีข้อมูลลูกค้าปนอยู่ในบางเส้น */
+export function zortFail(r, extra = {}) {
+  return {
+    ok: false,
+    unknown: !!r.unknown,
+    ...(r.zortHttp === undefined ? {} : { zortHttp: r.zortHttp }),
+    ...(r.zortDown === undefined ? {} : { zortDown: r.zortDown }),
+    error: r.error,
+    ...extra,
+  };
 }
 
 /** เพิ่มสินค้าเข้า ZORT — จอ "เพิ่มสินค้า" ของหลังร้านเรียกตัวนี้
@@ -231,7 +271,7 @@ export async function zortAddProduct(o = {}) {
       message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Product/AddProduct", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("product", ref, { kind: "product", sku, name });
   return { ok: true, added: true, ref, sku, detail: r.detail, warn,
     message: `เพิ่มสินค้า ${sku} เข้า ZORT แล้ว` };
@@ -316,7 +356,7 @@ export async function zortAddSale(o = {}) {
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบขายนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Order/AddOrder", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("sale", ref, { kind: "sale", number, amount, lines: list.length });
   return { ok: true, added: true, ref, number, amount, detail: r.detail, warn,
     message: `บันทึกรายการขาย ${number} ยอด ฿${amount} เข้า ZORT แล้ว` };
@@ -367,7 +407,7 @@ export async function zortAddBundle(o = {}) {
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ชุดนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Bundle/AddBundle", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("bundle", ref, { kind: "bundle", sku, name, parts: list.length });
   return { ok: true, added: true, ref, sku, detail: r.detail, warn,
     message: `เพิ่มสินค้าชุด ${sku} (${list.length} ส่วนประกอบ) เข้า ZORT แล้ว` };
@@ -398,7 +438,7 @@ export async function zortAddWarehouse(o = {}) {
     return { ok: true, duplicate: true, ref, first: seen.info, message: "คลังนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Warehouse/AddWarehouse", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("warehouse", ref, { kind: "warehouse", code, name });
   return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มคลัง ${code} เข้า ZORT แล้ว` };
 }
@@ -439,7 +479,7 @@ export async function zortAddContact(o = {}) {
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ผู้ติดต่อนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Contact/AddContact", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("contact", ref, { kind: "contact", code, name });
   return { ok: true, added: true, ref, code, detail: r.detail, warn, message: `เพิ่มผู้ติดต่อ ${name} เข้า ZORT แล้ว` };
 }
@@ -527,7 +567,7 @@ export async function zortUpdateProduct(o = {}) {
   if (!who.ok) return { ref, ...who };
 
   const r = await zortPost(`Product/UpdateProduct?id=${id}`, body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("product-update", ref, { kind: "product-update", id, sku, fields: Object.keys(body) });
   return { ok: true, updated: true, ref, id, sku, warn, message: `แก้สินค้า ${sku} ใน ZORT แล้ว` };
 }
@@ -557,7 +597,7 @@ export async function zortDeleteProduct(o = {}) {
     return { ok: false, ref, error: `สินค้า ${sku} สต็อกใน ZORT = ${who.product.stock ?? "อ่านไม่ได้"} — ไม่ลบ (ต้องเป็น 0 ก่อน)` };
 
   const r = await zortPost(`Product/DeleteProduct?id=${id}`, {});
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("product-delete", ref, { kind: "product-delete", id, sku });
   return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบสินค้า ${sku} ออกจาก ZORT แล้ว` };
 }
@@ -664,7 +704,7 @@ export async function zortUpdateProductImage(o = {}) {
   const form = new FormData();
   form.append("file", new Blob([buf], { type }), fileName);
   const r = await zortPost(`Product/UpdateProductImage?id=${id}`, form);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("product-image", ref, { kind: "product-image", id, sku, bytes: buf.length });
   return { ok: true, updated: true, ref, id, sku, warn, message: `ส่งรูปสินค้า ${sku} เข้า ZORT แล้ว — ไปเปิดดูใน ZORT ว่าแทนหรือต่อท้าย` };
 }
@@ -767,7 +807,7 @@ export async function zortOrderShipping(o = {}) {
   if (seen.state === "seen")
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ข้อมูลจัดส่งแถวนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ" };
   const r = await zortPost(path, body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("order-shipping", ref, { kind: "order-shipping", id, fields: Object.keys(body) });
   return { ok: true, updated: true, ref, id, warn, message: `บันทึกข้อมูลจัดส่งออเดอร์ id ${id} แล้ว` };
 }
@@ -829,7 +869,7 @@ export async function zortReceivePurchaseOrder(o = {}) {
   if (seen.state === "seen")
     return { ok: true, duplicate: true, ref, first: seen.info, message: "การรับของครั้งนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ (กันของเข้าคลังซ้ำ)" };
   const r = await zortPost(path, body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("po-receive", ref, { kind: "po-receive", id, mode, lines: items.length });
   return { ok: true, received: true, ref, id, mode, warn,
     message: mode === "all" ? `รับของครบทั้งใบซื้อ id ${id} แล้ว` : `รับของ ${items.length} บรรทัดตามใบซื้อ id ${id} แล้ว` };
@@ -915,7 +955,7 @@ export async function zortAddReturnPurchaseOrder(o = {}) {
   if (seen.state === "seen")
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบคืนนี้เคยบันทึกแล้ว — ไม่ได้ส่งซ้ำ" };
   const r = await zortPost("ReturnPurchaseOrder/AddReturnPurchaseOrder", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("po-return", ref, { kind: "po-return", number, lines: list.length, amount });
   return { ok: true, added: true, ref, number, amount, detail: r.detail, warn,
     message: `บันทึกคืนสินค้าให้ผู้ขาย ${number} ยอด ฿${amount} เข้า ZORT แล้ว` };
@@ -1021,7 +1061,7 @@ export async function zortVoidPurchaseOrder(o = {}) {
     return { ok: false, ref, error: `ใบ ${po.number} สถานะ ${po.status} (รับของเข้าคลังแล้ว) — ไม่ยกเลิกจากท่อ ต้องจัดการใน ZORT` };
 
   const r = await zortPost(path, {});
-  if (!r.ok) return { ok: false, ref, id, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref, id });
 
   const after = await zortGetPurchaseOrderById(id);
   const verified = after.ok && after.found && after.purchaseOrder.status === "Voided";
@@ -1119,7 +1159,7 @@ export async function zortAddReturnOrder(o = {}) {
     return { ok: true, duplicate: true, ref, first: seen.info, message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("ReturnOrder/AddReturnOrder", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("returnorder", ref, { kind: "returnorder", who, lines: list.length });
   return { ok: true, added: true, ref, lines: list.length, detail: r.detail, warn,
     message: `สร้างใบรับคืนสินค้า (${list.length} บรรทัด) แล้ว — **ต้องดึงใบกลับมาดูว่าเงินเข้าถูกช่อง**` };
@@ -1197,7 +1237,7 @@ export async function zortAddPurchaseOrder(o = {}) {
       message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("PurchaseOrder/AddPurchaseOrder", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("po", ref, { kind: "po", lines: list.length, vendor: txt(o.vendor, 60) });
   return { ok: true, added: true, ref, lines: list.length, detail: r.detail, warn,
     message: `สร้างใบสั่งซื้อ ${list.length} บรรทัดใน ZORT แล้ว` };
@@ -1287,7 +1327,7 @@ export async function zortAddQuotation(o = {}) {
       message: "ใบนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
 
   const r = await zortPost("Quotation/AddQuotation", body);
-  if (!r.ok) return { ok: false, ref, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { ref });
   const warn = await markSafely("quotation", ref, { kind: "quotation", customer, lines: list.length });
   return { ok: true, added: true, ref, lines: list.length, detail: r.detail, warn,
     message: `สร้างใบเสนอราคาให้ ${customer} (${list.length} บรรทัด) แล้ว` };
@@ -1356,7 +1396,7 @@ export async function zortEditQuotation(o = {}) {
       note: "โหมดซ้อม — ยังไม่ได้แก้ใน ZORT · ส่ง confirm:true เมื่อพร้อมแก้จริง" };
 
   const r = await zortPost("Quotation/EditQuotation", body);
-  if (!r.ok) return { ok: false, id, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { id });
   return { ok: true, edited: true, id, lines: list.length, detail: r.detail,
     message: `แก้ใบเสนอราคา id ${id} (${list.length} บรรทัด) แล้ว — ` +
              `**ต้องดึงใบกลับมาดูก่อนเชื่อว่าเข้าถูกช่อง**` };
@@ -1379,7 +1419,7 @@ export async function zortVoidQuotation(o = {}) {
     return { ok: true, dryRun: true, id, willSend: { id: sendId },
       note: "โหมดซ้อม — ยังไม่ได้ยกเลิก · ยกเลิกแล้วย้อนไม่ได้ ส่ง confirm:true เมื่อแน่ใจ" };
   const r = await zortPost("Quotation/VoidQuotation", { id: sendId });
-  if (!r.ok) return { ok: false, id, unknown: !!r.unknown, error: r.error };
+  if (!r.ok) return zortFail(r, { id });
   return { ok: true, voided: true, id, detail: r.detail,
     message: `ยกเลิกใบเสนอราคา id ${id} แล้ว — ควรดึงรายการมาดูว่าสถานะเปลี่ยนจริง` };
 }
