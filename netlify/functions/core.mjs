@@ -13,6 +13,7 @@
 //   GET /api/core?snapshot=1      สั่งถ่ายสต็อกเดี๋ยวนี้
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
 import { adminGate } from "../lib/admin-gate.mjs";
+import { withPagingHint } from "../lib/paging-hint.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
@@ -268,6 +269,18 @@ async function route(req, context) {
             : {}),
         };
       }
+    }
+    /* 📖 บอกจุดเริ่มของหน้าถัดไปให้เสร็จ — ผู้เรียกไม่ต้องคำนวณเอง
+       🔴 ปิดคลาสบั๊กที่เจอจริง 18 ก.ย. 2569: ฝั่งจอขอ limit=300 แล้วเดินหน้าทีละ 300
+          ทั้งที่เส้นให้ได้ 200 ⇒ ข้ามแถวรอบละ 100 ⇒ อ่านได้ 1,800 จาก 2,673 **แล้วรายงานว่าครบ**
+          ท่อบอกด้วย limitClamped/limitNote อยู่แล้ว แต่ธงที่ต้องให้คนอ่านแล้วคำนวณเองจะถูกข้าม
+       ⇒ เติม nextOffset/nextPage + pagingDone (เพิ่มอย่างเดียว ไม่ทับค่าที่ payload ส่งมาเอง) */
+    {
+      const applied = Number(out?.limitApplied ?? out?.limit ?? out?.applied?.limit);
+      out = withPagingHint(out, applied, {
+        offset: url.searchParams.get("offset"),
+        page: url.searchParams.get("page"),
+      });
     }
     /* ── ติดมาตรวัดไปกับทุกคำตอบ ── (5 ก.ย. 2569)
        เจ้าของร้านสั่ง "ไม่ย้าย แต่หาทางทำให้เร็วสุด ๆ" ⇒ ต้องเลิกเดาว่าเวลาหายไปไหน
