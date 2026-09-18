@@ -243,3 +243,30 @@ test('list=orders: statusesAll ต้องกรองแค่ร้าน ไ
     'catch ของ statusesAll ต้องคืน null ไม่ใช่ [] — ไม่งั้น "ยิงไม่ได้" กับ "ไม่มีแถว" ยุบเป็นอันเดียว');
   assert.match(code, /statusesAllError:/, 'ต้องบอกจอด้วยว่ารอบนี้อ่านไม่ได้ ไม่ใช่เงียบ');
 });
+
+/* ── sku ต้องถูกตัดที่ความยาวเดียวกันทุกตัวที่เขียนลงฐาน (18 ก.ย. 2569) ─────────
+   🔴 ของจริง: สินค้า 1 ตัวมี sku เป็นก้อนรหัสมาร์เก็ตเพลสต่อกัน **ยาว 88 ตัวอักษร**
+      ตัวซิงก์สินค้าตัดที่ 60 · `stock_snapshots` เก็บเต็มไม่ตัด ⇒ **คีย์ไม่ตรง ⇒ JOIN ไม่ติด**
+      ⇒ จอได้ name:'' active:null sellprice:null แต่ qty/price มา (คนละตาราง)
+      ⇒ หน้าตาเหมือน "ข้อมูลเสียฝั่ง ZORT" ทั้งที่ ZORT มีชื่อครบ
+   🔑 และ **จำนวนแถวไม่เพี้ยน** (2,674 = 2,674) ⇒ ตัวนับจับไม่ได้เลย
+      สิ่งเดียวที่ฟ้องคือแถวชื่อว่างโผล่บนสุดของการเรียงตามชื่อ
+   ⚠️ ตัวที่ **อ่าน/ค้นหา** ยังตัด 60 ได้ (ทิศความผิดคนละทาง: หาไม่เจอ ≠ ข้อมูลหาย)
+      ⇒ ด่านนี้จึงตรวจเฉพาะฟังก์ชันที่ **เขียนลงฐาน** [[same-shape-other-direction]] */
+test('sku ที่เขียนลงฐาน ต้องไม่ถูกตัดสั้นกว่าที่ตารางอื่นเก็บ', () => {
+  const src = readFileSync(new URL('../../netlify/lib/core-products.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  /* ฟังก์ชันที่เขียนลงฐาน — หาขอบเขตจาก export ถึง export ถัดไป แล้วดูว่ามี INSERT ไหม */
+  const ตัวเขียน = ['syncProducts', 'syncBundles', 'syncBundleRecipes', 'saveBundleItems'];
+  for (const fn of ตัวเขียน) {
+    const at = code.indexOf(`function ${fn}(`);
+    if (at < 0) continue;                       // ฟังก์ชันถูกเปลี่ยนชื่อ/ย้าย — ไม่ทำให้ด่านแดงเงียบ ๆ
+    const ถัดไป = code.indexOf('\nexport ', at + 10);
+    const body = code.slice(at, ถัดไป > 0 ? ถัดไป : code.length);
+    if (!/INSERT INTO/.test(body)) continue;    // ไม่ได้เขียนลงฐาน ⇒ ไม่อยู่ในขอบเขตด่านนี้
+    const ตัดสั้น = [...body.matchAll(/sku[^\n]*trim\(\)\.slice\(0,\s*(\d+)\)/g)].map((m) => Number(m[1]));
+    for (const n of ตัดสั้น) {
+      assert.ok(n >= 200, `${fn}: ตัด sku ที่ ${n} ตัวอักษร — ตัวซิงก์ที่เขียนลงฐานต้องตัดที่ 200 ขึ้นไป ไม่งั้นคีย์ไม่ตรงกับ stock_snapshots ที่เก็บเต็ม`);
+    }
+  }
+});

@@ -110,7 +110,17 @@ export async function syncProducts() {
   const rows = [];
   const seen = new Set();
   for (const p of all) {
-    const sku = String(p?.sku ?? "").trim().slice(0, 60);
+    /* 🔴 **ห้ามตัด sku ที่ 60** — เจอของจริง 18 ก.ย. 2569 (ฝั่งจอเห็นแถวชื่อว่างบนจอสินค้า)
+       ร้านมีสินค้า 1 ตัวที่ sku เป็น **ก้อนรหัสมาร์เก็ตเพลสต่อกัน ยาว 88 ตัวอักษร**
+       (`400014402:-1#General;191288010:…`) ⇒ ตัดเหลือ 60 ⇒ **คีย์ไม่ตรงกับตารางอื่น**
+       ⇒ `stock_snapshots` เก็บ sku **เต็มไม่ตัด** (มาจากคีย์ของแคช zort-stock)
+       ⇒ JOIN products ไม่ติด ⇒ จอสินค้าได้ `name:'' · active:null · sellprice:null`
+         แต่ qty/price ยังมา (คนละตาราง) ⇒ **หน้าตาเหมือน "ข้อมูลเสียฝั่ง ZORT"** ทั้งที่ ZORT มีชื่อครบ 108 ตัวอักษร
+       🔑 และมันไม่ทำให้จำนวนแถวเพี้ยน (2,674 = 2,674 ทั้งสองตาราง) ⇒ **ตัวนับจับไม่ได้เลย**
+          สิ่งเดียวที่ฟ้องคือแถวชื่อว่างโผล่บนสุดของการเรียงตามชื่อ
+       ⚠️ 200 = เท่าความยาวที่เราตัดชื่อสินค้า · TEXT ใน D1 ไม่มีเพดาน ⇒ ตัดเพื่อกันของเพี้ยนสุดขั้วเท่านั้น
+          ถ้าวันหนึ่งเจอ sku ยาวกว่านี้ **ห้ามแก้ตัวเลขที่นี่ทีเดียว** ต้องไล่ทุกที่ที่ตัด sku ให้เท่ากันหมด */
+    const sku = String(p?.sku ?? "").trim().slice(0, 200);
     if (!sku || seen.has(sku)) continue;
     seen.add(sku);
     rows.push({
@@ -323,7 +333,7 @@ export async function syncBundles() {
   const rows = [];
   const seen = new Set();
   for (const b of all) {
-    const sku = String(b?.sku ?? "").trim().slice(0, 60);
+    const sku = String(b?.sku ?? "").trim().slice(0, 200)  // 🔴 เท่ากับตัวซิงก์สินค้า — ตัด 60 ทำคีย์ไม่ตรงกับตารางอื่น (18 ก.ย. 2569);
     if (!sku || seen.has(sku)) continue;
     seen.add(sku);
     rows.push({
@@ -631,7 +641,7 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH, deadlineMs = REC
       return { ok: false, error: `ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
     }
     for (const b of data.list) {
-      const sku = String(b?.sku ?? "").trim().slice(0, 60);
+      const sku = String(b?.sku ?? "").trim().slice(0, 200)  // 🔴 ตัดที่ 200 ให้เท่ากับตัวซิงก์สินค้า — ตัด 60 ทำคีย์ไม่ตรงกับตารางอื่น (เจอ 18 ก.ย. 2569);
       const id = Number(b?.id);
       if (sku && Number.isInteger(id) && id > 0 && !byId.has(sku)) byId.set(sku, id);
     }
@@ -789,7 +799,7 @@ export async function saveBundleItems(input = {}) {
   const bad = [];
   for (const [i, it] of items.entries()) {
     const bundle = String(it?.bundleSku ?? "").trim().slice(0, 60);
-    const sku = String(it?.sku ?? "").trim().slice(0, 60);
+    const sku = String(it?.sku ?? "").trim().slice(0, 200)  // 🔴 ตัดที่ 200 ให้เท่ากับตัวซิงก์สินค้า — ตัด 60 ทำคีย์ไม่ตรงกับตารางอื่น (เจอ 18 ก.ย. 2569);
     const qty = Number(it?.qty);
     if (!bundle) bad.push({ i, why: "ไม่มี bundleSku" });
     else if (!sku) bad.push({ i, bundle, why: "ไม่มี sku ของสินค้าในชุด" });
