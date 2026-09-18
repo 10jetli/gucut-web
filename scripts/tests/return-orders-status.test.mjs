@@ -7,6 +7,13 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
+/* 🔴 ทางที่ถาม ZORT สดต้องมีรหัส + fetch ⇒ ไม่ตั้ง = หยุดที่ด่านรหัสก่อนถึงโค้ดที่ทดสอบ
+   ("ล้มเพราะไม่ได้แตะ path" หน้าตาเหมือน "ฟังก์ชันพัง" — เจอสองรอบในคืนเดียว) */
+process.env.ZORT_STORENAME = "ทดสอบ";
+process.env.ZORT_APIKEY = "ทดสอบ";
+process.env.ZORT_APISECRET = "ทดสอบ";
+globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ count: 5, list: [] }) });
+
 /* mock ชั้นฐานข้อมูล: จดคำสั่งที่ถูกยิงจริง แล้วตอบแถวปลอม */
 const ยิงแล้ว = [];
 const fake = {
@@ -49,4 +56,25 @@ test("ทางกระจกส่ง mirrorTotals ด้วย (รูปค�
   const r = await listReturnOrders(50, 1, "", "z1", { status: "Success" });
   assert.ok(r.mirrorTotals, "ทางกระจกต้องมี mirrorTotals ไม่ใช่มีแต่ทางสด");
   assert.ok(Array.isArray(r.mirrorTotals.byStatus));
+});
+
+/* ── เกณฑ์รับของที่ฝั่งจอตั้งไว้ 19 ก.ย. 2569 ─────────────────────────────
+   เขาจะเทียบ `q=CN` กับ `q=` เปล่า ๆ: **เลขเท่ากันเป๊ะทั้งที่ total ต่างกัน = byStatus ไม่ได้ถูกกรอง**
+   ⇒ เทสต์สองข้อนี้ยืนยันว่ามีสองตัวเลขแยกกัน และตัวที่กรองใช้เงื่อนไขชุดเดียวกับที่ดึงแถว */
+test("ทางกระจก: byStatus = ทั้งร้าน · byStatusFiltered = ชุดที่กรอง (เงื่อนไขเดียวกับที่ดึงแถว)", async () => {
+  ยิงแล้ว.length = 0;
+  const r = await listReturnOrders(50, 1, "CN", "z1", {});
+  assert.ok(Array.isArray(r.mirrorTotals.byStatus), "byStatus ต้องมี (ทำรายชื่อแท็บ)");
+  assert.ok(Array.isArray(r.mirrorTotals.byStatusFiltered), "byStatusFiltered ต้องมีเมื่อกรอง");
+  /* คำสั่งของ byStatusFiltered ต้องมีเงื่อนไขคำค้น · ของ byStatus ต้องไม่มี */
+  const gb = ยิงแล้ว.filter(([s]) => /GROUP BY 1/.test(s));
+  assert.equal(gb.length, 2, "ต้องมีสองคำสั่ง: ทั้งร้าน + ชุดที่กรอง");
+  const มีคำค้น = gb.filter(([, a]) => a.includes("CN")).length;
+  assert.equal(มีคำค้น, 1, "ตัวที่กรองต้องส่งคำค้นไปด้วย · ตัวทั้งร้านต้องไม่ส่ง");
+});
+
+test("ทางที่ถาม ZORT สด: byStatusFiltered = null พร้อมเหตุผล (ไม่ใช่ 'กรองแล้วไม่มีของ')", async () => {
+  const r = await listReturnOrders(50, 1, "", "z1", {});
+  assert.equal(r.mirrorTotals.byStatusFiltered, null);
+  assert.ok(/ไม่ได้กรอง/.test(r.mirrorTotals.byStatusFilteredNote));
 });

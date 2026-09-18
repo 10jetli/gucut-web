@@ -1439,7 +1439,17 @@ export function returnDateRange({ from, to, days } = {}) {
  *    🔑 คลาส: เส้นเดียวที่แตกเป็นหลายเส้นทางต้องคืน **รูปคำตอบเดียวกัน** ทุกทาง
  *      ไม่งั้นปลายทางต้องเขียนโค้ดหลายชุดโดยไม่มีใครบอกว่าต้องเขียน
  * ⚠️ อ่านกระจกไม่ได้ = คืน null (ไม่ใช่ 0) ⇒ ปลายทางต้องเขียนว่า "ยังไม่รู้" */
-async function ยอดกระจกใบคืน(store) {
+/* @param กรอง  {where, args} ของชุดที่ผู้ใช้กรองอยู่ (ไม่ส่ง = ไม่คิดตัวเลขชุดกรอง)
+ *
+ * 🔴 **สองตัวเลขนี้ตอบคำถามคนละข้อ ห้ามยุบเป็นตัวเดียว** (ฝั่งจอตั้งเกณฑ์รับของไว้ 19 ก.ย. 2569
+ *    ว่าจะเทียบ `q=CN` กับ `q=` เปล่า — เลขเท่ากันเป๊ะทั้งที่ total ต่างกัน = ยังไม่ได้กรอง)
+ *    · `byStatus`         = **ทั้งร้าน** ⇒ ใช้ทำ **รายชื่อแท็บ** ⇒ แท็บไม่หายตอนคนกดกรอง
+ *      (และจอใช้เขียน "ไม่นับใบยกเลิก 152 ใบ" อยู่แล้ว ⇒ **ห้ามเปลี่ยนความหมายเดิม**)
+ *    · `byStatusFiltered` = **ของชุดที่กรองอยู่** ⇒ ใช้ทำ **ตัวนับบนแท็บ**
+ *      ไม่มีตัวนี้ = แท็บบอก 5 แต่กดแล้วได้ 0 แถว ซึ่งหลอกตากว่าไม่มีตัวนับ
+ *  ⚠️ ทางที่ถาม ZORT สด **กรองไม่ได้** ⇒ ส่ง `byStatusFiltered: null` + เหตุผล
+ *     null = "ทางนี้กรองไม่ได้" ไม่ใช่ "กรองแล้วไม่มีของ" [[three-states-not-two]] */
+async function ยอดกระจกใบคืน(store, กรอง = null) {
   try {
     const [t] = await coreQuery(
       `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(amount),0),2) AS s,
@@ -1453,6 +1463,21 @@ async function ยอดกระจกใบคืน(store) {
        FROM return_orders_v2 WHERE source = ? GROUP BY 1 ORDER BY c DESC`,
       [store]
     ).catch(() => null);
+    /* ตัวนับของ "ชุดที่กรองอยู่" — ใช้เงื่อนไขชุดเดียวกับที่ดึงแถว ห้ามสร้างเงื่อนไขใหม่
+       (สร้างใหม่ = วันหนึ่งสองที่ไม่ตรงกัน แล้วตัวนับบนแท็บจะเพี้ยนแบบหาสาเหตุไม่ได้) */
+    let byStatusFiltered = null;
+    let byStatusFilteredNote = "ทางนี้ไม่ได้กรอง (ถาม ZORT สด) ⇒ ใช้ byStatus ทั้งร้านแทน";
+    if (กรอง?.where) {
+      const rows = await coreQuery(
+        `SELECT COALESCE(NULLIF(status,''),'(ว่าง)') AS status, COUNT(*) AS c
+         FROM return_orders_v2 WHERE ${กรอง.where} GROUP BY 1 ORDER BY c DESC`,
+        กรอง.args ?? []
+      ).catch(() => null);
+      byStatusFiltered = Array.isArray(rows) ? rows : null;
+      byStatusFilteredNote = Array.isArray(rows)
+        ? "ตัวนับของ **ชุดที่กรองอยู่** (เงื่อนไขชุดเดียวกับที่ดึงแถว) ⇒ เอาไปใส่บนแท็บได้ตรง"
+        : "อ่านไม่ได้รอบนี้ — ไม่ใช่ 'กรองแล้วไม่มีของ'";
+    }
     const metaKey = store === "z2" ? "sync_returns_z2" : "sync_returns";
     const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [metaKey]).catch(() => []);
     return {
@@ -1463,8 +1488,11 @@ async function ยอดกระจกใบคืน(store) {
       /* null = อ่านกระจกไม่ได้รอบนี้ **ไม่ใช่ "ไม่มีใบยกเลิก"** ⇒ จอต้องเขียนว่ายังไม่รู้ */
       byStatus: Array.isArray(byStatusRows) ? byStatusRows : null,
       byStatusScope:
-        "มาจากกระจก return_orders_v2 ของร้านนี้ทั้งชุด — ไม่ใช่จาก rows/total ในคำตอบนี้ซึ่งอาจมาจาก ZORT สด · " +
-        "เอาไปเทียบกับ total ได้เมื่อ mirrorTotals.count เท่ากับ total · null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
+        "**ทั้งร้าน** (กระจก return_orders_v2 ของร้านนี้ทุกใบ) — ไม่ใช่ชุดที่กรองอยู่ และไม่ใช่จาก rows/total ในคำตอบนี้ · " +
+        "ใช้ทำ **รายชื่อแท็บ** เพื่อให้แท็บไม่หายตอนกรอง · ตัวนับบนแท็บให้ใช้ byStatusFiltered · " +
+        "null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
+      byStatusFiltered,
+      byStatusFilteredNote,
       /* 🕘 freshness อยู่ใต้ mirrorTotals โดยตั้งใจ — ทางสด rows/total มาจาก ZORT สด
          เวลานี้พูดถึงกระจกเท่านั้น (ป้ายขอบเขตต้องอยู่ติดกับตัวเลขที่มันกำกับ) */
       freshness: await freshnessOf(coreQuery, { table: "return_orders_v2", metaKey }),
@@ -1526,7 +1554,9 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
   /* 🔴 ต้องส่ง mirrorTotals เหมือนทางสด — ดูเหตุผลเต็มที่หัวฟังก์ชัน ยอดกระจกใบคืน()
      ⚠️ `syncedAtUtc`/`syncComplete` ระดับบนสุด **คงไว้** ห้ามถอด — จออาจอ่านอยู่
         (ถอดคีย์ที่ปลายทางใช้ = จอพังเงียบ ๆ · เพิ่มอย่างเดียวปลอดภัยเสมอ) */
-  const mirrorTotals = await ยอดกระจกใบคืน(store);
+  /* ส่ง **เงื่อนไขชุดเดียวกับที่ดึงแถว** เข้าไป ⇒ byStatusFiltered ตรงกับสิ่งที่คนเห็นบนจอ
+     (ไม่ส่ง = จอได้ตัวเลขของทั้งร้าน แล้วแท็บจะบอก 5 ทั้งที่กดแล้วได้ 0 แถว) */
+  const mirrorTotals = await ยอดกระจกใบคืน(store, { where, args });
   return {
     total,
     page: p,
