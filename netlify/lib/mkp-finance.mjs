@@ -22,7 +22,11 @@
       ไม่มี grain = วันหนึ่งจะมีคนเอาสามเจ้ามาบวกกันแล้วได้เลขที่ไม่มีความหมาย
 */
 
-const cleanErr = (e) => String(e?.message ?? e).replace(/access_token=[^&\s]+/gi, "access_token=<ซ่อน>").slice(0, 200);
+/** ข้อความ error ที่ปลอดภัยพอจะส่งออกไป — ซ่อนทุกคำที่เป็นความลับ **ไม่ใช่แค่ access_token**
+ *  ⚠️ ฝั่งจอทักไว้ 18 ก.ย. 2569: วันหนึ่ง error อาจมี `app_key` หรือ `sign` ติดมา แล้วเราจะปล่อยหลุด
+ *     (repo นี้ public และคำตอบถูกก๊อปลงรายงานได้) ⇒ กันแบบรายชื่อคำ ไม่ใช่กันเฉพาะตัวที่เคยเจอ */
+const SECRET_KEYS = /(access_token|refresh_token|app_key|app_secret|sign|signature|code|shop_cipher)=[^&\s]+/gi;
+const cleanErr = (e) => String(e?.message ?? e).replace(SECRET_KEYS, (m) => `${m.split("=")[0]}=<ซ่อน>`).slice(0, 200);
 const ymd = (d) => d.toISOString().slice(0, 10);
 
 /** ตัวเลขจากข้อความ — คืน null เมื่ออ่านไม่ได้ (ห้ามคืน 0: "อ่านไม่ได้" ≠ "ศูนย์บาท") */
@@ -53,8 +57,13 @@ export function mapShopee(t) {
     id: t?.transaction_id != null ? String(t.transaction_id) : null,
     day: thaiDay(t?.create_time),
     type: t?.transaction_type ?? null,
-    flow: t?.money_flow ?? null,          // Shopee บอกทิศทางเงินแยกช่อง ⇒ amount เป็นค่าบวกเสมอ
-    amount: money(t?.amount),
+    flow: t?.money_flow ?? null,          // Shopee บอกทิศทางเงินแยกช่อง ⇒ ค่าเป็นบวกเสมอ
+    /* 🔒 **ชื่อช่องเงินต่างกันตาม grain โดยตั้งใจ** (ฝั่งจอเสนอ 18 ก.ย. 2569)
+       เดิมทั้ง Shopee กับ Lazada ใช้ชื่อ `amount` ⇒ ใครเขียน results.flatMap(rows).reduce บวก amount
+       จะได้ตัวเลขผิดทันทีโดยไม่มีอะไรฟ้อง (เงินสองระดับคนละความหมาย)
+       ⇒ ตั้งชื่อให้ต่างกัน ⇒ บวกมั่วแล้วได้ undefined/NaN ซึ่งเห็นทันที
+       🔑 กันด้วยโครงสร้างดีกว่ากันด้วยคำเตือนที่ต้องอ่าน */
+    walletAmount: money(t?.amount),
     balanceAfter: money(t?.current_balance),
     orderRef: t?.order_sn ?? null,
     refundRef: t?.refund_sn ?? null,
@@ -91,7 +100,7 @@ export function mapLazada(r) {
     type: r?.transaction_type ?? null,
     feeName: r?.fee_name ?? null,
     feeType: r?.fee_type ?? null,
-    amount: money(r?.amount),
+    feeLineAmount: money(r?.amount),   // ดู 🔒 ที่ mapShopee — ชื่อต่างกันตาม grain โดยตั้งใจ
     vatIn: money(r?.VAT_in_amount),
     wht: money(r?.WHT_amount),
     orderRef: r?.order_no ?? null,
@@ -123,8 +132,10 @@ export function mapTiktok(s) {
   };
 }
 
-/** ชื่อช่องที่ต้นทางส่งมาจริงทั้งหมด (ไม่รวมค่า) — ให้คนเห็นว่ามีอะไรที่เรายังไม่ได้ใช้
- *  ⚠️ ส่ง **ชื่อ** เท่านั้น ห้ามส่งค่า — ช่องที่เราไม่ได้จับคู่มีทั้งชื่อผู้ซื้อและข้อความอิสระ */
+/** ชื่อช่องที่ต้นทางส่งมา **ในหน้านี้เท่านั้น** (ไม่รวมค่า) — ให้คนเห็นว่ามีอะไรที่เรายังไม่ได้ใช้
+ *  ⚠️ ส่ง **ชื่อ** เท่านั้น ห้ามส่งค่า — ช่องที่เราไม่ได้จับคู่มีทั้งชื่อผู้ซื้อและข้อความอิสระ
+ *  🔴 **ชื่อช่องที่ไม่โผล่ในหน้านี้ ไม่ได้แปลว่าแพลตฟอร์มไม่ส่ง** (ฝั่งจอทัก 18 ก.ย. 2569)
+ *     และชื่อที่โผล่ก็ไม่ได้แปลว่ามีค่า ⇒ จึงตั้งชื่อฟิลด์ว่า `fieldsSeenThisPage` ให้ขอบเขตติดมากับชื่อ */
 const fieldsOf = (rows) => {
   const s = new Set();
   for (const r of rows || []) for (const k of Object.keys(r || {})) s.add(k);
@@ -172,8 +183,13 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
   const now = deps.now ? new Date(deps.now) : new Date();
   /* วันสุดท้ายของช่วง — ส่ง to= มาได้เพื่อเลื่อนหน้าต่างย้อนหลัง · รูปแบบผิด = ใช้วันนี้ (ห้ามพังทั้งคำขอ) */
   const toRaw = String(opts.to ?? "").trim();
-  const end = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) && !Number.isNaN(Date.parse(`${toRaw}T23:59:59Z`))
-    ? new Date(`${toRaw}T23:59:59Z`) : now;
+  const toOk = /^\d{4}-\d{2}-\d{2}$/.test(toRaw) && !Number.isNaN(Date.parse(`${toRaw}T23:59:59Z`));
+  /* 🔴 **ค่าที่ใช้ไม่ได้ต้องประกาศตัว ห้ามเงียบ** (ฝั่งจอทัก 18 ก.ย. 2569)
+     เดิม: ส่ง to= ผิดรูป ⇒ ใช้วันนี้แทนแบบไม่บอกใคร ⇒ คนเชื่อว่าได้ช่วงที่ขอ ทั้งที่ได้ช่วงอื่น
+     (คลาสเดียวกับ [[fallbacks-must-announce]] และ "ตัวกรองที่ดูเหมือนใช้แล้วแต่ไม่ได้กรอง")
+     ⇒ ยังไม่พังคำขอ (ทางถอยยังทำงาน) แต่ติดธง toIgnored ให้จอเขียนบอกคนใช้ได้ */
+  const toIgnored = Boolean(toRaw) && !toOk;
+  const end = toOk ? new Date(`${toRaw}T23:59:59Z`) : now;
   const from = new Date(end.getTime() - days * 864e5);
   /* ⚠️ Shopee: ช่วงต้องน้อยกว่า 15 วัน ⇒ หดให้เหลือ 14 วันนับจากวันสุดท้ายเดียวกัน */
   const SHOPEE_MAX_DAYS = 14;
@@ -195,7 +211,7 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
       return {
         ok: true, grain: "wallet-txn", rows: raw.map(mapShopee), count: raw.length,
         truncated: Boolean(d?.response?.more) || raw.length >= limit,
-        fieldsSeen: fieldsOf(raw),
+        fieldsSeenThisPage: fieldsOf(raw),
         windowDays: shopeeDays,
         windowClamped: shopeeDays < days,
         scope: `รายการเดินบัญชีกระเป๋าเงิน Shopee ${ymd(shopeeFrom)}–${ymd(end)} (≤${limit} แถว)` +
@@ -213,7 +229,7 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
       return {
         ok: true, grain: "fee-line", rows: raw.map(mapLazada), count: raw.length,
         truncated: raw.length >= limit,
-        fieldsSeen: fieldsOf(raw),
+        fieldsSeenThisPage: fieldsOf(raw),
         scope: `รายการค่าธรรมเนียมรายบรรทัด Lazada ${ymd(from)}–${ymd(end)} (≤${limit} แถว)`,
       };
     }),
@@ -236,7 +252,7 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
         /* ⚠️ ต้องส่งโทเคนกลับไป ไม่งั้นคนเรียกเลื่อนหน้าต่อไม่ได้เลย (เลขหน้าใช้กับเจ้านี้ไม่ได้)
            ค่าว่าง ⇒ null = **ไม่มีหน้าถัดไป** (ต่างจาก "" ที่อ่านเหมือนมีโทเคนเปล่า) */
         nextPageToken: d?.data?.next_page_token || null,
-        fieldsSeen: fieldsOf(raw),
+        fieldsSeenThisPage: fieldsOf(raw),
         scope: `ใบสรุปรอบโอนเงิน TikTok ล่าสุด ≤${limit} รอบ — **ไม่ได้กรองตามช่วงวัน** (เส้นนี้ไม่รับช่วงวัน)`,
       };
     }),
@@ -248,6 +264,9 @@ export async function readMarketplaceFinance(opts = {}, deps = {}) {
     /* ช่วงวันที่ใช้จริง — ผู้เรียกต้องเห็นว่าได้ช่วงไหนมา ไม่ใช่เดาจากพารามิเตอร์ที่ส่งไป
        ⚠️ Shopee ได้ช่วงสั้นกว่าเจ้าอื่นเมื่อ days > 14 (ดู windowDays ของเจ้านั้น) */
     range: { from: ymd(from), to: ymd(end) },
+    /* ธงบอกว่าค่า to= ที่ส่งมาใช้ไม่ได้ ⇒ ใช้วันนี้แทน · ไม่ได้ส่ง to= มาเลย = false (ไม่ใช่ปัญหา) */
+    toIgnored,
+    ...(toIgnored ? { toIgnoredValue: toRaw.slice(0, 40) } : {}),
     shopeeMaxDays: 14,
     /* ⚠️ `page` มีผลกับ Shopee/Lazada เท่านั้น — TikTok ใช้โทเคน ⇒ บอกให้ชัดบนคำตอบ
        ไม่บอก = คนเลื่อนหน้าแล้วได้ TikTok ชุดเดิมทุกหน้า โดยไม่มีอะไรฟ้อง */
@@ -278,20 +297,29 @@ export async function readShopeeOrderFees(orderSn, deps = {}) {
   try {
     const d = await shopee("/api/v2/payment/get_escrow_detail", { order_sn: sn });
     const inc = d?.response?.order_income ?? null;
-    if (!inc) return { ok: true, found: false, note: "Shopee ไม่ส่งก้อน order_income มา ⇒ ยังไม่รู้ว่าเพราะสิทธิ์หรือเพราะใบนี้ไม่มี" };
+    if (!inc) return { ok: true, found: false, platform: "shopee", grain: "order-fees", orderRef: sn,
+      note: "Shopee ไม่ส่งก้อน order_income มา ⇒ ยังไม่รู้ว่าเพราะสิทธิ์หรือเพราะใบนี้ไม่มี" };
     return {
       ok: true, found: true, platform: "shopee", grain: "order-fees", orderRef: sn,
       /* ชื่อช่องของ Shopee ↔ คอลัมน์ ZORT (จับคู่จากชื่อ **ยังไม่ยืนยันด้วยค่าจริงเทียบจอ ZORT**) */
       escrowAmount: money(inc.escrow_amount),           // ยอดที่ร้านได้รับสุทธิ
+      /* ⚠️ ช่องที่ "รวมสองช่องต้นทาง" ต้องบอกว่าเลขมาจากช่องไหน (ฝั่งจอทัก 18 ก.ย. 2569)
+         ไม่บอก = ถ้าสองช่องมีค่าไม่เท่ากัน เราหยิบตัวแรกเงียบ ๆ และไม่มีใครรู้ว่าเลขนี้คืออะไร */
       itemsTotal: money(inc.original_price ?? inc.order_original_price),
+      itemsTotalFrom: inc.original_price != null ? "original_price"
+        : inc.order_original_price != null ? "order_original_price" : null,
       commission: money(inc.commission_fee),            // ⇒ "คอมมิชชั่น"
       serviceFee: money(inc.service_fee),               // ⇒ น่าจะเข้ากอง "ค่าใช้จ่ายอื่น"
       paymentFee: money(inc.buyer_transaction_fee ?? inc.credit_card_transaction_fee),
+      paymentFeeFrom: inc.buyer_transaction_fee != null ? "buyer_transaction_fee"
+        : inc.credit_card_transaction_fee != null ? "credit_card_transaction_fee" : null,
       sellerTransactionFee: money(inc.seller_transaction_fee),
       shippingPaidByBuyer: money(inc.buyer_paid_shipping_fee),      // ⇒ "ค่าส่งเก็บจากลูกค้า"
       shippingActual: money(inc.actual_shipping_fee),               // ⇒ "ค่าจัดส่งตามจริง"
       shippingSubsidyByShopee: money(inc.shopee_shipping_rebate),   // ⇒ "ค่าส่งออกโดย Marketplace"
       shippingDiscountSeller: money(inc.shipping_fee_discount_from_3pl ?? inc.seller_shipping_discount),
+      shippingDiscountSellerFrom: inc.shipping_fee_discount_from_3pl != null ? "shipping_fee_discount_from_3pl"
+        : inc.seller_shipping_discount != null ? "seller_shipping_discount" : null,
       /* 📏 **วัดสูตรกับของจริง 8 ใบ (18 ก.ย. 2569) — voucher ของ Shopee ห้ามบวกเข้ายอดสุทธิ**
          items − commission − serviceFee − sellerTransactionFee − paymentFee − shippingActual
            + shippingSubsidyByShopee + shippingPaidByBuyer  ⇒ ต่างจาก escrow ที่เขาบอก **แค่ 1 บาท** ใน 6/8 ใบ
@@ -316,7 +344,7 @@ export async function readShopeeOrderFees(orderSn, deps = {}) {
       cogsOriginal: money(inc.original_cost_of_goods_sold),
       /* ภาษีหัก ณ ที่จ่ายที่ Shopee หักไว้ — ต้องใช้ตอนต่อสะพาน PEAK (ยังไม่ได้เอาไปใช้ที่ไหน) */
       withholdingTax: money(inc.withholding_tax),
-      fieldsSeen: Object.keys(inc).sort(),
+      fieldsSeenThisPage: Object.keys(inc).sort(),
       /* 🔒 ที่ไม่เอา: buyer_user_name · buyer_payment_method · ที่อยู่ · เบอร์ (มีในก้อนอื่นของ escrow) */
     };
   } catch (e) {
@@ -344,12 +372,19 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
       ok: true, platform: "tiktok", grain: "statement-line", statementId: id, count: raw.length,
       truncated: Boolean(d?.data?.next_page_token) || raw.length >= limit,
       /* 📏 ยิงจริง 18 ก.ย. 2569: เส้นนี้ให้ช่องละเอียด **57 ช่อง** ⇒ เติมคอลัมน์ของ ZORT ได้ครบกว่าใบสรุป
-         จับคู่ตามชื่อที่เห็นจริง · ช่องที่ยังไม่แน่ใจความหมายไม่จับคู่ (ดู fieldsSeen) */
+         ⚠️ **จับคู่จากชื่อช่องเท่านั้น ยังไม่ได้ยืนยันด้วยค่าจริงเทียบจอ ZORT** (ป้ายเดียวกับฝั่ง Shopee escrow)
+            ที่ยืนยันกับค่าจริงแล้วคือฝั่ง Shopee (voucher 46 บาท) ⇒ **ห้ามอ่านว่าทั้งสองเจ้ายืนยันแล้ว**
+         ช่องที่ยังไม่แน่ใจความหมายไม่จับคู่ (ดู fieldsSeenThisPage) */
       rows: raw.map((x) => ({
         id: x?.id != null ? String(x.id) : null,
         orderRef: x?.order_id != null ? String(x.order_id) : null,
         type: x?.type ?? null,
+        /* ⚠️ `day` เคยรวมสองความหมาย (วันที่สั่งซื้อ / วันที่ออกใบสรุป) ⇒ จัดกลุ่มรายวันจะปนกอง
+           ⇒ แยกช่องให้ชัด และบอกว่า `day` มาจากช่องไหนในแถวนั้น (ฝั่งจอทัก 18 ก.ย. 2569) */
         day: thaiDay(x?.order_create_time ?? x?.statement_time),
+        dayFrom: x?.order_create_time ? "order_create_time" : x?.statement_time ? "statement_time" : null,
+        orderDay: thaiDay(x?.order_create_time),
+        statementDay: thaiDay(x?.statement_time),
         settlement: money(x?.settlement_amount),
         revenue: money(x?.revenue_amount),
         fee: money(x?.fee_amount),
@@ -370,7 +405,7 @@ export async function readTiktokStatementLines(statementId, opts = {}, deps = {}
         netSales: money(x?.net_sales_amount),
         /* 🔒 ไม่เอา: ช่องที่อาจมีชื่อ/ข้อความอิสระ · ภาษี (pit/iva/sales_tax) ยังไม่ได้ตรวจว่าใช้ยังไง */
       })),
-      fieldsSeen: fieldsOf(raw),
+      fieldsSeenThisPage: fieldsOf(raw),
       /* 🔒 ไม่เอา: ช่องที่อาจมีข้อความอิสระ/ชื่อ (เช่น sku_name, customer) */
     };
   } catch (e) {

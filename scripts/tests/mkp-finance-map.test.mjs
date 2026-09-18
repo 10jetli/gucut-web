@@ -27,7 +27,7 @@ console.log('① ข้อมูลส่วนบุคคลต้องไม
   ok('ไม่มี buyer_name ในผล', !('buyer_name' in row))
   ok('ไม่มีชื่อผู้ซื้อโผล่ในค่าใด ๆ', !s.includes('ชื่อผู้ซื้อจริง'), s)
   ok('ไม่เอา description/reason/remarks มาด้วย', !('description' in row) && !('reason' in row) && !('remarks' in row))
-  ok('เก็บเลขที่จำเป็นไว้ครบ', row.amount === 1234.5 && row.orderRef === '2509ABC' && row.flow === 'MONEY_IN')
+  ok('เก็บเลขที่จำเป็นไว้ครบ', row.walletAmount === 1234.5 && row.orderRef === '2509ABC' && row.flow === 'MONEY_IN')
 
   const lz = mapLazada({
     transaction_number: 'T1', transaction_date: '2026-09-10', amount: '-35.50', fee_name: 'Commission',
@@ -84,7 +84,7 @@ console.log('⑤ ชื่อช่องที่ต้นทางส่งม
     tiktok: async () => ({ data: { statements: [] } }),
   })
   const sp = r.results.find((x) => x.platform === 'shopee')
-  ok('fieldsSeen มีชื่อช่อง buyer_name', sp.fieldsSeen.includes('buyer_name'), JSON.stringify(sp.fieldsSeen))
+  ok('fieldsSeenThisPage มีชื่อช่อง buyer_name', sp.fieldsSeenThisPage.includes('buyer_name'), JSON.stringify(sp.fieldsSeenThisPage))
   ok('แต่ค่าของมันไม่หลุดออกมา', !JSON.stringify(sp).includes('ชื่อผู้ซื้อจริง'))
 }
 
@@ -152,11 +152,27 @@ console.log('⑦ ช่วงวันของ Shopee ต้องถูกห�
     lazada: async (_p, q) => { seen.lazada3 = q; return { data: [] } }, tiktok: async () => ({ data: { statements: [] } }),
   })
   ok('to= เลื่อนช่วงถอยหลังได้', r3.range?.to === '2026-08-31' && seen.lazada3.end_time === '2026-08-31', JSON.stringify(r3.range))
-  ok('to= รูปแบบผิด ⇒ ใช้วันนี้ ไม่พังคำขอ', (await readMarketplaceFinance({ to: 'ไม่ใช่วันที่' }, {
+  // 🔴 ค่าที่ใช้ไม่ได้ต้อง **ประกาศตัว** ไม่ใช่เงียบ — เทสต์เดิมล็อกพฤติกรรมเงียบไว้ (ฝั่งจอจับได้)
+  const bad = await readMarketplaceFinance({ to: 'ไม่ใช่วันที่' }, {
     now: '2026-09-18T00:00:00Z',
     shopee: async () => ({ response: { transaction_list: [] } }),
     lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
-  })).range?.to === '2026-09-18')
+  })
+  ok('to= รูปแบบผิด ⇒ ใช้วันนี้ ไม่พังคำขอ', bad.range?.to === '2026-09-18')
+  ok('to= รูปแบบผิด ⇒ ติดธง toIgnored (ห้ามเงียบ)', bad.toIgnored === true, JSON.stringify(bad.toIgnored))
+  ok('บอกค่าที่ใช้ไม่ได้กลับไปด้วย', bad.toIgnoredValue === 'ไม่ใช่วันที่', String(bad.toIgnoredValue))
+  const good = await readMarketplaceFinance({ to: '2026-08-31' }, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
+  })
+  ok('to= ถูกรูป ⇒ ไม่ติดธง (ธงที่ติดทุกครั้งเท่ากับไม่มีธง)', good.toIgnored === false)
+  const none = await readMarketplaceFinance({}, {
+    now: '2026-09-18T00:00:00Z',
+    shopee: async () => ({ response: { transaction_list: [] } }),
+    lazada: async () => ({ data: [] }), tiktok: async () => ({ data: { statements: [] } }),
+  })
+  ok('ไม่ส่ง to= มาเลย ⇒ ไม่ติดธง', none.toIgnored === false)
 }
 
 console.log('⑧ วันของ Lazada เป็น "01 Sep 2026" ไม่ใช่ ISO — ตัดสตริงเอาไม่ได้')
@@ -191,7 +207,7 @@ console.log('⑨ ค่าธรรมเนียมรายเอกสาร
   ok('ไม่มีชื่อผู้ซื้อในผล', !s.includes('ชื่อผู้ซื้อจริง'), s.slice(0, 200))
   ok('ไม่มีวิธีชำระเงินของผู้ซื้อ', !s.includes('บัตรเครดิต'))
   ok('fieldsSeen บอกชื่อช่องได้ (รวม buyer_user_name) แต่ไม่มีค่า',
-    r.fieldsSeen.includes('buyer_user_name') && !s.includes('ชื่อผู้ซื้อจริง'))
+    r.fieldsSeenThisPage.includes('buyer_user_name') && !s.includes('ชื่อผู้ซื้อจริง'))
   ok('แยกส่วนลดสองฝ่ายออกจากกัน (แพลตฟอร์มออก vs ร้านออก)',
     r.voucherByShopee === 30 && r.voucherBySeller === 15)
   ok('ค่าส่งแยก 3 ช่องตามที่ ZORT ต้องการ',
@@ -214,6 +230,17 @@ console.log('⑨ ค่าธรรมเนียมรายเอกสาร
   })
   ok('TikTok: อ่านบรรทัดได้ + บอกว่ายังมีต่อ', tk.rows[0].settlement === 99.5 && tk.truncated === true)
   ok('TikTok: id ใบสรุปผิดรูป ⇒ ตีกลับ', (await readTiktokStatementLines('!!', {}, { tiktok: async () => { throw new Error('ไม่ควรถูกเรียก') } })).error?.includes('ใบสรุป'))
+}
+
+console.log('⑩ เลขติดลบต้องยังเป็นลบ — ค่าธรรมเนียมที่กลายเป็นบวกคือรายรับปลอม')
+{
+  // 🔴 ฝั่งจอจับได้ว่าเทสต์เดิมสร้างแถว -22319.13 แต่ไม่ได้ assert ค่า
+  //    ⇒ ถ้าใครเผลอใส่ Math.abs() เทสต์จะยังเขียว ทั้งที่ค่าธรรมเนียมกลายเป็นรายรับ
+  const lz = mapLazada({ transaction_number: 'T1', amount: '-22319.13', fee_name: 'Strategic Seller Program Participation Fee' })
+  ok('Lazada: ค่าธรรมเนียมยังติดลบ', lz.feeLineAmount === -22319.13, String(lz.feeLineAmount))
+  ok('money() ไม่กลืนเครื่องหมายลบ', money('-35.50') === -35.5 && money(-1) === -1)
+  const tk = mapTiktok({ id: 1, fee_amount: '-39.9', settlement_amount: '530.1' })
+  ok('TikTok: fee ยังติดลบ · settlement ยังบวก', tk.fee === -39.9 && tk.settlement === 530.1)
 }
 
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')
