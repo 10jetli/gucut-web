@@ -555,6 +555,24 @@ export function pickDocHeader(data) {
   }
   return null;
 }
+/** คำตอบตอนหาหัวใบไม่เจอ — **ต้องพารหัสผลของ ZORT ออกมาด้วย**
+ * 🔴 บทเรียน 18 ก.ย. 2569 (ฝั่งจอจับได้): เดิมคืนแค่ `error` กับรายชื่อชื่อช่อง
+ *    ⇒ ตอนไล่เรื่องคลัง KLD เราแยกไม่ออกว่า "ถูกปฏิเสธสิทธิ์ (resCode 100)"
+ *      หรือ "เส้นนี้ครอบแค่คลังหลัก" ทั้งที่ ZORT ส่ง resCode/resDesc มาให้แล้ว
+ *    🔑 คลาสเดียวกับ error ที่ถูกตัดจนไม่เหลือสาเหตุ — **ตัวที่ตัดสินใจได้ ห้ามถูกกลืน**
+ * ⚠️ `resCode`/`resDesc` เป็น null ได้ = ZORT ไม่ได้ส่งมา ต่างจาก "ส่งมาแต่เป็น 200"
+ */
+export function noDocHeader(data, label = "ใบ") {
+  const d = data ?? {};
+  return {
+    error: `ZORT ตอบมาแต่หาหัวใบไม่เจอ (${label})`,
+    fields: Object.keys(d),
+    resCode: d.resCode ?? d.rescode ?? null,
+    resDesc: d.resDesc ?? d.resdesc ?? null,
+    // 100 = Access Denied ของ ZORT ⇒ จอบอกคนใช้ได้ตรง ๆ ว่าเป็นเรื่องสิทธิ์ ไม่ใช่ใบหาย
+    denied: String(d.resCode ?? d.rescode ?? "") === "100",
+  };
+}
 /** บรรทัดสินค้าในใบ · null = ZORT ไม่ส่งช่องบรรทัดมาเลย (คนละความหมายกับ []) */
 export function docLines(doc) {
   const l = Array.isArray(doc?.list) ? doc.list : Array.isArray(doc?.items) ? doc.items : null;
@@ -605,7 +623,7 @@ export async function getTransferDetail(id) {
       หาไม่เจอ = **บอกว่าหาไม่เจอ** ห้ามคืนใบว่างที่หน้าตาเหมือน "ใบนี้ไม่มีของ" */
   const t = pickDocHeader(data);
   if (!t) {
-    return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+    return noDocHeader(data, "ใบโอน");
   }
   const lines = docLines(t);
   return {
@@ -910,7 +928,7 @@ export async function getQuotationDetail(id, raw = false) {
       ⚠️ ห้าม log และห้ามส่งเข้า Telegram — มีชื่อ/เบอร์ลูกค้าในใบจริง */
   if (raw) return { live: true, raw: data };
   const q = pickDocHeader(data);
-  if (!q) return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  if (!q) return noDocHeader(data, "ใบเสนอราคา");
   const lines = docLines(q);
   return {
     live: true,
@@ -1551,7 +1569,7 @@ export async function getReturnOrderDetail(id) {
   const data = got.data;
 
   const r = pickDocHeader(data);
-  if (!r) return { error: "ZORT ตอบมาแต่หาหัวใบไม่เจอ", fields: Object.keys(data ?? {}) };
+  if (!r) return noDocHeader(data, "ใบคืน");
   const lines = docLines(r);
 
   return {

@@ -23,7 +23,7 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
 } });
 process.env.ZORT_STORENAME = 'shop1'; process.env.ZORT_APIKEY = 'k1'; process.env.ZORT_APISECRET = 's1';
 process.env.ZORT_STORENAME_2 = 'shop2'; process.env.ZORT_APIKEY_2 = 'k2'; process.env.ZORT_APISECRET_2 = 's2';
-const { syncPurchases, listPurchases, getPurchaseDetail, listQuotations } = await import('../../netlify/lib/core-purchases.mjs');
+const { syncPurchases, listPurchases, getPurchaseDetail, listQuotations, noDocHeader } = await import('../../netlify/lib/core-purchases.mjs');
 
 let stores = [];
 globalThis.fetch = async (url, init) => {
@@ -116,4 +116,29 @@ test('รายงานยอดซื้อ (purchaseitems) ไม่นับ
   sqls = [];
   await listPurchases({ store: 'z1' });
   assert.ok(sqls.filter((x) => /FROM purchase_orders_v2 WHERE 1=1/.test(x.s)).every((x) => !/NOT LIKE '%void%'/.test(x.s)), 'รายการซื้อยังโชว์ใบยกเลิก');
+});
+
+/* ── noDocHeader: รหัสผลของ ZORT ต้องไม่ถูกกลืน ────────────────────────────
+   🔴 ที่มา 18 ก.ย. 2569: ไล่เรื่องคลัง KLD แล้วท่อคืนแค่ "หาหัวใบไม่เจอ"
+      ⇒ แยกไม่ออกว่าเป็น Access Denied (สิทธิ์) หรือเส้นครอบแค่คลังหลัก
+      ทั้งที่ ZORT ส่ง resCode/resDesc มาให้แล้ว [[truncated-error-hides-cause]]
+   ⚠️ ด่านนี้ต้อง**แยกแยะได้** ไม่ใช่แค่ผ่าน — จึงมีทั้งเคส 100 · 200 · ไม่ส่งมาเลย */
+test("noDocHeader: resCode 100 ⇒ บอกว่าถูกปฏิเสธสิทธิ์", () => {
+  const r = noDocHeader({ resCode: "100", resDesc: "Access Denied." }, "ใบโอน");
+  assert.equal(r.resCode, "100");
+  assert.equal(r.resDesc, "Access Denied.");
+  assert.equal(r.denied, true);
+  assert.match(r.error, /ใบโอน/);
+});
+test("noDocHeader: resCode 200 แต่ไม่มีหัวใบ ⇒ ไม่ใช่เรื่องสิทธิ์", () => {
+  const r = noDocHeader({ resCode: "200" });
+  assert.equal(r.resCode, "200");
+  assert.equal(r.denied, false);
+});
+test("noDocHeader: ZORT ไม่ส่งรหัสมา ⇒ null ไม่ใช่ 0 หรือค่าว่าง", () => {
+  const r = noDocHeader({ อะไรก็ไม่รู้: 1 });
+  assert.equal(r.resCode, null);
+  assert.equal(r.resDesc, null);
+  assert.equal(r.denied, false);
+  assert.deepEqual(r.fields, ["อะไรก็ไม่รู้"]);
 });
