@@ -1,13 +1,13 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
 // ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
-export const generatedAt = "2026-09-18T21:24:12.825Z";
+export const generatedAt = "2026-09-18T21:30:34.470Z";
 export const source = "netlify/functions/*.mjs (export const config)";
 export const jobs = [
  {
   "id": "backup-run",
   "file": "netlify/functions/backup-run.mjs",
   "cron": "40 */6 * * *",
-  "desc": "สำรองข้อมูลอัตโนมัติทุกคืน — ตี 3 เวลาไทย (20:00 UTC)"
+  "desc": "สำรองข้อมูลอัตโนมัติ — **ทุก 6 ชั่วโมง นาทีที่ 40 (UTC)** = 03:40 · 09:40 · 15:40 · 21:40 เวลาไทย"
  },
  {
   "id": "beam-sweep",
