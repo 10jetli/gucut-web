@@ -450,6 +450,7 @@ async function route(req, context) {
        **อ่านอย่างเดียว ไม่แก้อะไร** — การแก้รหัสบนแพลตฟอร์มกระทบของที่ขายอยู่จริง
        ต้องให้ท่านประธานตัดสินเป็นราย ๆ · เหตุผลเต็มอยู่หัวไฟล์ lib/sku-audit.mjs */
     if (url.searchParams.get("skuaudit")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { marketplaceListings } = await import("../lib/marketplace-listings.mjs");
       const { ourSkuSet } = await import("../lib/sku-match.mjs");
       const { auditSkus } = await import("../lib/sku-audit.mjs");
@@ -538,6 +539,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("endpoints")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       let t = null, readError = null;
       try {
         t = await import("../lib/endpoints.mjs");
@@ -811,6 +813,7 @@ async function route(req, context) {
       return okJson(await shopeeFeesSummary({ days: url.searchParams.get("days") }));
     }
     if (url.searchParams.get("dbinfo")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       return okJson(await d1Info());
     }
     if (url.searchParams.get("init")) {
@@ -1210,6 +1213,7 @@ async function route(req, context) {
        (แผนคิดจากใบขายโดยไม่หักของคืน · ยอดรวมเล็กแต่รายรหัสอาจไม่เล็ก) */
     /* พิสูจน์: เอกสาร 694 ใบสร้างใหม่จากกระจกได้ไหม — เทียบสารบัญกับ D1 รายใบ */
     if (url.searchParams.get("doccoverage")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { zortDocCoverage } = await import("../lib/zort-write.mjs");
       return okJson(await zortDocCoverage());
     }
@@ -2118,6 +2122,7 @@ async function route(req, context) {
     /* ดูบรรทัดสินค้าของใบเดียว — ไว้ไล่ใบที่ยอดผิดปกติ
        ⚠️ ใช้ `number` ไม่ใช่ `id` — กระจกเก็บ id เป็น `<ร้าน>/<เลขที่ใบ>` (เคยเทียบผิดคีย์มาแล้ว) */
     if (url.searchParams.get("orderitems")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       const numArg = String(url.searchParams.get("orderitems")).slice(0, 60);
       const head = await coreQuery(
@@ -2148,6 +2153,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("noitems")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
       const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
@@ -2430,6 +2436,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("recon")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       return json({ ok: true, recon: await reconYesterday() });
     }
     if (url.searchParams.get("shopeesync")) {
@@ -2445,6 +2452,7 @@ async function route(req, context) {
           ห้ามแก้ให้คืนค่าจริง — คำตอบของ TikTok มีชื่อ/ที่อยู่/เบอร์ผู้รับอยู่ในนั้น
           (กติกาเดียวกับ pendingfields ด้านล่าง) */
     if (url.searchParams.get("tiktokshape")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { tiktokProductShape } = await import("../lib/tiktok-stock.mjs");
       const [order, product] = await Promise.all([
         tiktokOrderShape().catch((e) => ({ error: String(e?.message || e).slice(0, 200) })),
@@ -2454,6 +2462,7 @@ async function route(req, context) {
     }
     // เทียบสต็อกที่ลงขายบน TikTok กับภาพถ่ายคลังเรา — อ่านอย่างเดียว ไม่เขียนกลับ TikTok
     if (url.searchParams.get("tiktokstock")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { tiktokStockCompare } = await import("../lib/tiktok-stock.mjs");
       return json({ ok: true, tiktok: await tiktokStockCompare() });
     }
@@ -2486,6 +2495,7 @@ async function route(req, context) {
       return json(await zortStoreDocCounts());
     }
     if (url.searchParams.get("ordercheck")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       /* ⚠️ **รหัส ZORT กับตัวกรอง source ต้องมาจากตัวแปรตัวเดียวกัน**
           เดิมเขียนแยกกัน (env ของร้าน 1 · WHERE source='z1' คนละที่)
           ถ้าวันไหนแก้ที่หนึ่งลืมอีกที่ = ยิงถาม ZORT ร้าน A แล้วเทียบกับกระจกร้าน B
@@ -3253,6 +3263,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("cardguess")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       /* ร้านเดียวต่อคำขอ — all/ค่าแปลก ⇒ 400 ห้ามตกเป็น z1 เงียบ ๆ (ดู parseSingleStore) */
       const storeParsed = (await import("../lib/core-orders.mjs")).parseSingleStore(url.searchParams.get("store"));
@@ -3335,6 +3346,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("blankwhere")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       const blank = `COALESCE(integration_status,'') = ''`;
 
@@ -3406,6 +3418,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("statuscross")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       const rows = await coreQuery(
         `SELECT COALESCE(NULLIF(channel,''),'(ไม่ระบุ)') AS ch,
@@ -3469,6 +3482,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("pendingsplit")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { coreQuery } = await import("../lib/coredb.mjs");
       /* ⚠️ **ต้องแยกตามร้านด้วย** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
           แต่การ์ดหน้าแรก ZORT ที่เอามาเทียบ เป็นของร้านที่ล็อกอินอยู่ร้านเดียว
@@ -3550,6 +3564,7 @@ async function route(req, context) {
           "ZORT ไม่มีค่าให้" กับ "ตัวเขียนข้ามแถวที่ไม่เปลี่ยน" — ทั้งคู่ให้ 'เขียน 0'
        ⇒ ดู JSON ดิบของใบเดียวก็ตัดสินได้ · ไม่คืนข้อมูลลูกค้าเด็ดขาด */
     if (url.searchParams.get("zortone")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const st = {
         storename: process.env.ZORT_STORENAME,
         apikey: process.env.ZORT_APIKEY,
@@ -3651,6 +3666,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("zortfields")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const st = {
         storename: process.env.ZORT_STORENAME,
         apikey: process.env.ZORT_APIKEY,
@@ -3754,6 +3770,7 @@ async function route(req, context) {
     }
 
     if (url.searchParams.get("channelcompare")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { channelCompare } = await import("../lib/channel-compare.mjs");
       return okJson({
         ...(await channelCompare(url.searchParams.get("channelcompare"), {
@@ -3762,6 +3779,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("stockcompare")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       return json({ ok: true, stock: await shopeeStockCompare() });
     }
     /* GET ?shopeeunlisted=1 — สินค้าที่ถอดจากหน้าร้าน Shopee (UNLIST) คลังเรามีของกี่รายการ

@@ -54,7 +54,7 @@ const block = source.slice(begin, end)
   .replace('await import("../lib/coredb.mjs")', '({ coreQuery: mockQuery })')
   .replace('(await import("../lib/core-orders.mjs"))', 'storeLib');
 const route = new (Object.getPrototypeOf(async function(){}).constructor)(
-  'url', 'fetch', 'mockQuery', 'process', 'json', 'helpers', 'storeLib', block);
+  'url', 'fetch', 'mockQuery', 'process', 'json', 'helpers', 'storeLib', 'req', block);
 async function run(pages, mine, query = 'store=z2&from=2026-09-01&to=2026-09-12') {
   const requests = [];
   const result = await route(new URL(`https://local/api/core?ordercheck=1&${query}`),
@@ -71,7 +71,10 @@ async function run(pages, mine, query = 'store=z2&from=2026-09-01&to=2026-09-12'
       return mine;
     },
     { env: { ZORT_STORENAME: 'fixture', ZORT_STORENAME_2: 'fixture' } },
-    (body, status = 200) => ({ body, status }), helpers, storeLib);
+    (body, status = 200) => ({ body, status }), helpers, storeLib,
+    /* 🔒 เส้นนี้บังคับ GET แล้ว (19 ก.ย. 2569) ⇒ เทสต์ต้องป้อน req ให้ด่านทำงานจริง
+       ไม่ป้อน = ReferenceError ซึ่งเป็นสิ่งที่จับได้ทันทีตอนใส่ด่าน — ตาข่ายทำงานถูก */
+    { method: 'GET' });
   return { ...result, requests };
 }
 const order = (number) => ({ number, status: '2', paymentstatus: 'paid', integrationStatus: 'confirmed', ...zort });
