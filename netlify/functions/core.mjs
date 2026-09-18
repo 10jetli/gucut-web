@@ -523,7 +523,7 @@ async function route(req, context) {
     if (url.searchParams.get("mkpfinanceprobe")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { probeMarketplaceFinance } = await import("../lib/mkp-finance-probe.mjs");
-      return json({ ok: true, ...(await probeMarketplaceFinance()) });
+      return okJson({ ...(await probeMarketplaceFinance()) });
     }
     /* GET ?mkpfinance=1[&days=7&limit=20] — รายการเงินจริงของ 3 มาร์เก็ตเพลส ทำให้เป็นรูปเดียวกัน · ใบ t_mu2xtzr2
        🔒 คืนเฉพาะช่องที่จับคู่ไว้ (allowlist) — ชื่อผู้ซื้อ/ข้อความอิสระไม่ออกมาด้วย ดู mkp-finance.mjs
@@ -532,7 +532,7 @@ async function route(req, context) {
     if (url.searchParams.get("mkpfinance")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { readMarketplaceFinance } = await import("../lib/mkp-finance.mjs");
-      return okJson({ ok: true, ...(await readMarketplaceFinance({
+      return okJson({ ...(await readMarketplaceFinance({
         days: url.searchParams.get("days"), limit: url.searchParams.get("limit"),
         page: url.searchParams.get("page"), pageToken: url.searchParams.get("pagetoken"),
         to: url.searchParams.get("to"),
@@ -1198,8 +1198,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "bundleitems") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listBundleItems(url.searchParams.get("sku"), url.searchParams.get("member"))),
       });
     }
@@ -1291,8 +1290,7 @@ async function route(req, context) {
       );
     }
     if (url.searchParams.get("list") === "bundles") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listBundles({
           q: url.searchParams.get("q"),
           only: url.searchParams.get("only"),
@@ -1348,8 +1346,7 @@ async function route(req, context) {
     }
     // บริการส่งสินค้า — อ่านจากกระจกออเดอร์ (ZORT ไม่มี API ขนส่งแยก)
     if (url.searchParams.get("list") === "logistics") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listLogistics({
           q: url.searchParams.get("q"),
           only: url.searchParams.get("only"),
@@ -1390,8 +1387,7 @@ async function route(req, context) {
       const { connectionsStatus } = await import("../lib/connections.mjs");
       /* ?budget=N (50–30000 มิลลิวินาที) มีไว้บังคับให้ทางเดิน timeout ทำงานเพื่อทดสอบ
          ⚠️ ไม่ใส่ = ใช้ค่าตั้งต้น 18 วิ · ทางเดินที่ไม่เคยถูกเรียกใช้ ไม่ต่างจากไม่มี */
-      return json({
-        ok: true,
+      return okJson({
         ...(await connectionsStatus({ budget: url.searchParams.get("budget") })),
       });
     }
@@ -1423,8 +1419,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "contacts") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listContacts({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
@@ -1488,8 +1483,7 @@ async function route(req, context) {
     }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await stockCard({
           sku: url.searchParams.get("sku"),
           kind: url.searchParams.get("kind"),
@@ -1503,8 +1497,7 @@ async function route(req, context) {
     }
     // 🔔 สินค้าที่หายไปจากช่องทางขาย — จับเรื่องแบบเครื่อง 00073 ที่เงียบไป 3 เดือน
     if (url.searchParams.get("list") === "channel-gaps") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await channelGaps({
           quietDays: url.searchParams.get("quietdays"),
           lookbackDays: url.searchParams.get("lookbackdays"),
@@ -1516,8 +1509,7 @@ async function route(req, context) {
     }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
     if (url.searchParams.get("list") === "deadstock") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listDeadStock({
           days: url.searchParams.get("days"),
           limit: url.searchParams.get("limit"),
@@ -1593,8 +1585,7 @@ async function route(req, context) {
       return json({ ok: true, branches: branches() });
     }
     if (url.searchParams.get("poslookup") !== null && url.searchParams.get("poslookup") !== undefined) {
-      return json({
-        ok: true,
+      return okJson({
         ...(await lookup(
           url.searchParams.get("poslookup"),
           url.searchParams.get("limit"),
@@ -1604,8 +1595,7 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "sales") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listSales({ day: url.searchParams.get("day"), limit: url.searchParams.get("limit") })),
       });
     }
@@ -2060,8 +2050,7 @@ async function route(req, context) {
       return json({ error: "peak รับได้เฉพาะ status หรือ dry" }, 400);
     }
     if (url.searchParams.get("list") === "moves") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listMoves({
           sku: url.searchParams.get("sku") ?? "",
           limit: url.searchParams.get("limit"),
@@ -3408,8 +3397,7 @@ async function route(req, context) {
 
     if (url.searchParams.get("channelcompare")) {
       const { channelCompare } = await import("../lib/channel-compare.mjs");
-      return json({
-        ok: true,
+      return okJson({
         ...(await channelCompare(url.searchParams.get("channelcompare"), {
           limit: Math.max(1, Math.min(500, parseInt(url.searchParams.get("limit") ?? "200", 10) || 200)),
         })),
@@ -3467,8 +3455,7 @@ async function route(req, context) {
       if (st.error) return json({ error: st.error }, 400);
     }
     if (p.get("list") === "orderfacets") {
-      return json({
-        ok: true,
+      return okJson({
         ...(await listOrderFacets({
           from: p.get("from"),
           to: p.get("to"),

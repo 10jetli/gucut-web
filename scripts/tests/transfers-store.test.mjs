@@ -145,3 +145,18 @@ test('list=transfers: days/page ต้องอยู่ใน ignored ไม่
   assert.ok(r.supportedFilters.includes('status'), 'ต้องบอกจอว่ารับอะไรได้');
   assert.ok(!r.supportedFilters.includes('days'));
 });
+
+/* ── ด่านกันคลาส "ครอบ ok:true ทับคำตอบ" กลับมา (18 ก.ย. 2569) ─────────────────
+   🔴 กวาดทั้ง core.mjs เจอ 15 จุดเขียน `json({ ok: true, ...(await f()) })` ด้วยมือ
+      ⇒ วันที่ f() คืน { error } จอได้ **HTTP 200 + ok:true + error พร้อมกัน** แล้วอ่านว่าสำเร็จ
+      11 ใน 15 ตัวคืน error/skip ได้จริง ⇒ ไม่ใช่ความเสี่ยงทางทฤษฎี
+   ✅ ทางที่ถูกคือ `okJson()` ซึ่งมีอยู่แล้วในไฟล์: ตัดสิน error ก่อน · เคารพ inconclusive · ไม่เติม ok ทับ
+   ⚠️ ด่านนี้ **ต้องตัดคอมเมนต์ก่อนตรวจ** ไม่งั้นมันร้องใส่คำเตือนที่อธิบายรูปที่ห้ามเอง
+      (เจอมาแล้วในรอบเดียวกัน — ยิ่งเขียนคำเตือนละเอียด ยิ่งแดงลวง) */
+test('core.mjs — ห้ามเขียน json({ ok: true, ...(await f()) }) ด้วยมือ ให้ใช้ okJson', () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const เจอ = [...code.matchAll(/ok:\s*true,\s*\.\.\.\(await\s+([\w$]*)\(/g)].map((m) => m[1]);
+  assert.deepEqual(เจอ, [], `ให้ใช้ okJson() แทน — จุดที่ยังครอบมือ: ${เจอ.join(', ')}`);
+  assert.ok(code.includes('const okJson ='), 'okJson ต้องยังอยู่ — ด่านนี้ไร้ความหมายถ้ามันถูกลบ');
+});
