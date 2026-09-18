@@ -346,12 +346,12 @@ export async function reconYesterday() {
       `ZORT: ${zortOrders} ใบ · ฿${zortAmount.toLocaleString("th-TH")}\n` +
       `Core: ${coreOrders} ใบ · ฿${coreAmount.toLocaleString("th-TH")}\n` +
       (match ? "ตัวเลขตรงกัน" : `❗ ${notes} — ควรเข้าไปดู`);
-    await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text }),
-      signal: AbortSignal.timeout(8000),
-    }).catch(() => null); // เตือนพลาดไม่ควรล้มงานเทียบ — ตัวเลขจดลง recon_log แล้ว
+    /* 🔴 ใช้ `lib/tg.mjs` ไม่ยิง fetch ตรง (18 ก.ย. 2569)
+       ไฟล์นี้ถูก import โดยชุดทดสอบ 3 ใบ ⇒ ยิงตรงเมื่อไหร่ก็สแปมกลุ่มร้านจริงได้
+       (คลาสเดียวกับที่ระเบิดวันนี้ — ดูเหตุผลเต็มหัวไฟล์ tg.mjs)
+       เตือนพลาดไม่ควรล้มงานเทียบ ตัวเลขจดลง recon_log แล้ว · notifyShop ไม่โยน error อยู่แล้ว */
+    const { notifyShop } = await import("./tg.mjs");
+    await notifyShop(text);
   }
   return { day, zortOrders, zortAmount, coreOrders, coreAmount, match };
 }
