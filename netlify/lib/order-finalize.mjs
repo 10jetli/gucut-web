@@ -37,9 +37,17 @@ export async function finalizeOrder({
   const save = () => store.setJSON(`o/${order.id}`, order);
 
   // ส่งเข้า ZORT ให้ตัดสต็อกเอง — พังก็ไม่ล้มออเดอร์ แค่ติดธงให้ร้านกดส่งซ้ำได้
+  /* 🔴 **ติดธง "ทำแล้ว" เฉพาะเมื่อได้เลขเอกสารกลับมา** (แก้ 18 ก.ย. 2569)
+     ของเดิม `order.steps.zort = true` ติดธงทุกกรณี **แม้ส่งไม่สำเร็จ**
+     ⇒ ธงนี้คือเงื่อนไขกันส่งซ้ำ ⇒ ใบที่ล้มเหลว **ไม่มีวันถูกส่งซ้ำเลย**
+     ⇒ ต่อให้มีตัวกวาดมาช่วย มันก็เห็นว่า "ทำแล้ว" แล้วข้ามไป
+     🔑 ท่านประธานสั่ง 18 ก.ย.: "ต้องทำให้มันออโต้ ห้ามมีคนกดอะไร"
+        ⇒ ไม่ติดธง = ตัวกวาดจะมาส่งซ้ำเองทุกครึ่งชั่วโมง
+        ⇒ `skipped` (ยังไม่ได้ตั้งค่า ZORT) ติดธงได้ เพราะส่งซ้ำก็ไม่ช่วย */
   if (!order.steps.zort) {
     order.zort = await zortAddOrder(order);
-    order.steps.zort = true;
+    order.zortTries = (order.zortTries || 0) + 1;
+    if (order.zort?.ok || order.zort?.skipped) order.steps.zort = true;
     await save();
   }
 
@@ -75,8 +83,39 @@ export async function finalizeOrder({
     }
   }
 
-  order.done = true;
+  /* 🔴 **`done` ต้องแปลว่า "ครบจริง" ไม่ใช่ "เดินมาถึงบรรทัดนี้"** (แก้ 18 ก.ย. 2569)
+     ของเดิมตั้ง `done = true` ทุกกรณี ⇒ ใบที่ส่ง ZORT ไม่สำเร็จก็ถูกตราว่าครบ
+     ⇒ `beam-sweep` มีบรรทัด `if (o.done) continue` ⇒ **ไม่มีใครกลับมาส่งซ้ำเลย**
+     ⇒ นี่คือชั้นที่สองของบั๊กเดียวกัน: แก้ธง `steps.zort` อย่างเดียวไม่พอ
+
+     ทีนี้: ยังไม่เข้า ZORT ⇒ ไม่ตั้ง done ⇒ `beam-sweep` (ทุกครึ่ง ชม.) เห็นใบ
+     `paid && !done` แล้วเรียก `markOrderPaid` → `finalizeOrder` ให้เอง = **ส่งซ้ำอัตโนมัติ**
+     (ขั้นอื่นไม่ถูกทำซ้ำ เพราะแต่ละขั้นมีธงของตัวเองอยู่แล้ว — กติกา 14 ก.ย.)
+
+     ⏱️ **ต้องมีเพดาน** — ZORT ปฏิเสธถาวรได้ (เช่นไม่มี SKU นั้นในคลัง)
+        ปล่อยวนจนครบหน้าต่าง 3 วันของตัวกวาด = เผาเครดิตฟรี 144 รอบ
+        ครบเพดานแล้วยอมตั้ง done + ติดธง `zortFailed` ให้คนเห็น (แต่ `steps.zort`
+        ยังเป็น false ⇒ สั่งส่งเดี๋ยวนั้นได้อยู่) */
+  const MAX_ZORT_TRIES = 12;          // ครึ่ง ชม./รอบ ⇒ ลองเองราว 6 ชม.
+  if (!order.steps.zort && (order.zortTries || 0) >= MAX_ZORT_TRIES) {
+    order.zortFailed = true;
+    order.steps.zort = true;       // เลิกวน — แต่ธง zortFailed ประกาศว่าไม่ได้สำเร็จ
+  }
+  if (order.steps.zort) order.done = true;
+
+  /* 🔴 **ชั้นที่สามของบั๊กเดียวกัน: บล็อกแจ้งเตือนไม่มีธงกันซ้ำ** (แก้ 18 ก.ย. 2569)
+     พอใบที่ ZORT ไม่เข้าถูกส่งซ้ำทุกครึ่งชั่วโมง `finalizeOrder` จะเดินถึงท้ายฟังก์ชันใหม่ทุกรอบ
+     ⇒ เด้ง Telegram ร้าน · **LINE หาลูกค้า** · Web Push · ยิงยอดขายเข้าพิกเซล ซ้ำได้ถึง 12 รอบ
+     ⇒ ผิดกฎที่ท่านประธานสั่งเองเรื่องทวงซ้ำ: **โดนบล็อก LINE = เสียช่องทางถาวร**
+        และยอดขายที่ยิงเข้าพิกเซลซ้ำจะทำตัวเลขโฆษณาพองโดยไม่มีใครจับได้
+
+     🔑 ติดธงก่อนส่ง ไม่ใช่หลังส่ง — ทิศของความผิดต่างกัน:
+        แจ้งไม่ถึงรอบเดียว = ร้านยังเห็นใบใน /admin/orders/ อยู่ดี
+        แจ้งซ้ำ 12 รอบ = ลูกค้าบล็อก LINE ร้าน เอาคืนไม่ได้ */
+  const shouldNotify = !order.steps.notified;
+  order.steps.notified = true;
   await save();
+  if (!shouldNotify) return order;   // รอบส่งซ้ำ ZORT — เงียบ ไม่เด้งซ้ำ
 
   const jobs = [];
   const later = (p) => (context?.waitUntil ? context.waitUntil(p) : jobs.push(p));
@@ -95,11 +134,14 @@ export async function finalizeOrder({
     (order.priceAdjusted ? `🏷️ ราคาบางตัวถูกปรับตามคลัง ZORT (ต่างจากที่ตะกร้าส่งมา)\n` : "") +
     `📍 ${c.address} ${c.province} ${c.zip}\n` +
     (c.note ? `📝 ${c.note}\n` : "") +
+    /* 🔑 **ประกาศว่าเข้า ZORT ได้เฉพาะเมื่อมีเลขเอกสาร** — "ok" ไม่ใช่หลักฐาน
+       ของเดิมดู `order.zort?.ok` เฉย ๆ ⇒ ประกาศ "✅ เข้า ZORT แล้ว" ทั้งที่ค้นใน ZORT ไม่เจอใบ
+       และห้ามบอกให้คนกดส่งซ้ำ — ท่านประธานสั่งว่าต้องออโต้ ห้ามมีคนกด */
     (order.zort?.ok
-      ? `✅ เข้า ZORT แล้ว\n`
+      ? `✅ เข้า ZORT แล้ว (เลขที่ ${order.zort.id || order.id})\n`
       : order.zort?.skipped
         ? ""
-        : `⚠️ ส่งเข้า ZORT ไม่สำเร็จ (${order.zort?.message || "?"}) — กดส่งซ้ำได้ในหน้าออเดอร์\n`) +
+        : `⏳ ยังไม่เข้า ZORT (${order.zort?.message || "?"}) — ระบบส่งซ้ำเองทุกครึ่งชั่วโมง\n`) +
     `\nเปิดดู: ${SITE_URL}/admin/orders/`;
 
   const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;

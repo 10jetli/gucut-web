@@ -38,6 +38,7 @@ export async function sweepBeamOrders() {
   let checked = 0;
   const paid = [];
   const recovered = [];
+  const repaired = [];   // ใบเก่าที่ปลดธงย้อนหลังให้ส่งซ้ำ
   for (const b of blobs) {
     const o = await store.get(b.key, { type: "json" }).catch(() => null);
     if (!o || o.status === "cancelled") continue;
@@ -47,7 +48,24 @@ export async function sweepBeamOrders() {
         เดิม `if (o.paid) continue` ⇒ ใบที่ฟังก์ชันตายหลังบันทึก paid ไม่มีชั้นไหนเก็บเลย
         ไม่ต้องถาม Beam ซ้ำ (รู้แล้วว่าจ่าย) · finalizeOrder จำขั้นที่ทำแล้ว ไม่ส่ง ZORT ซ้ำ */
     if (o.paid) {
-      if (o.done) continue;
+      /* 🔴 **ใบที่ ZORT ปฏิเสธ ต้องถูกหยิบมาส่งซ้ำเอง** (18 ก.ย. 2569)
+         ท่านประธานสั่ง: *"ต้องทำให้มันออโต้ ห้ามมีคนกดอะไร"*
+         เดิมโค้ดติดธง `steps.zort = true` **แม้ส่งไม่สำเร็จ** แล้วตั้ง `done = true` ต่อ
+         ⇒ บรรทัด `if (o.done) continue` ข้ามใบนั้นตลอดกาล **ไม่มีใครกลับมาส่งซ้ำ**
+         ⇒ Telegram บอกให้ "กดส่งซ้ำในหน้าออเดอร์" = ต้องมีคนกด ซึ่งผิดคำสั่ง
+
+         🔑 **เกณฑ์คือ `ok === false` ไม่ใช่ `id` ว่างหรือไม่** — วัดของจริงแล้ว 18 ก.ย.:
+            ออเดอร์จ่ายแล้ว 5 ใบเก็บ `id:null` ทั้งหมด **แต่ค้นในกระจก ZORT เจอครบ 5 ใบ
+            สถานะ Success** เพราะ ZORT ใช้เลขออเดอร์เว็บเราเป็นเลขเอกสาร ไม่ได้คืนมาในฟิลด์นั้น
+            ⇒ ถ้าเอา `id` เป็นเกณฑ์ ตัวกวาดจะส่งซ้ำทั้ง 5 ใบ = **เอกสารซ้ำ พนักงานแพ็กสองรอบ**
+         `skipped` (ยังไม่ตั้งค่า ZORT) กับ `zortFailed` (ครบเพดานแล้ว) ไม่ต้องวน */
+      const zortRejected = o.zort && o.zort.ok === false && !o.zort.skipped && !o.zortFailed;
+      if (o.done && !zortRejected) continue;
+      if (o.done && zortRejected) {
+        o.done = false;
+        o.steps = { ...(o.steps || {}), zort: false, notified: true };  // notified:true = ห้ามเด้งแจ้งเตือนซ้ำ
+        repaired.push(o.id);
+      }
       checked++;
       try {
         await markOrderPaid(o, store, null, null);
@@ -71,5 +89,5 @@ export async function sweepBeamOrders() {
     }
   }
   // recovered = ใบที่จ่ายแล้วแต่งานหลังรับเงินค้าง แล้วรอบนี้เดินต่อให้ (ควรเป็นว่างเกือบตลอด — มีเลขเมื่อไหร่ให้ดูว่าอะไรทำฟังก์ชันตาย)
-  return { checked, paid, recovered };
+  return { checked, paid, recovered, repaired };
 }
