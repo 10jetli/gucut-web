@@ -1174,6 +1174,15 @@ async function route(req, context) {
     /* GET ?zortdocfilter=1 ⇒ ZORT ยอมกรองเอกสารด้วยช่วงวัน/คำค้นที่ต้นทางไหม — อ่านอย่างเดียว
        ฝั่งจอต้องโหลดครบทุกหน้า (694 ใบ = 4 คำขอ) ทุกครั้งที่กรอง เพราะท่อรับแค่ page/limit/type
        🔑 ตัวชี้ขาดคือคำตอบที่วัดไว้คนละครั้ง: ปี 2567 ต้องได้ 3 ใบ (ไม่ใช่แค่ดูว่า count ขยับ) */
+    /* GET ?zortmissing=1[&screen=2900] ⇒ ทำไม GetProducts ส่งสินค้าน้อยกว่าที่จอ ZORT บอก — อ่านอย่างเดียว
+       ของจริง 18 ก.ย. 2569: จอบอก 2,900 (ไม่ติ๊กแสดงของที่ถูกลบ) · API ให้ 2,674 · กระจก 2,673
+       ⇒ ขาด 226 รายการ และสินค้าที่สร้างใหม่ก็ตกอยู่ในกองนี้ (ไม่ใช่ความล่าช้า — ยิงซ้ำ 4 รอบใน 26 นาที เท่าเดิม)
+       ⚠️ `screen=` คือเลขที่คนไปอ่านจากจอ ZORT มาให้ ไม่ใช่ค่าที่ท่อวัดเองได้ ⇒ ต้องประกาศว่ามาจากไหน */
+    if (url.searchParams.get("zortmissing")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortMissingProductsProbe } = await import("../lib/zort-missing-products-probe.mjs");
+      return okJson(await zortMissingProductsProbe(url.searchParams.get("screen")));
+    }
     if (url.searchParams.get("zortdocfilter")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortDocFilterProbe } = await import("../lib/zort-docfilter-probe.mjs");
