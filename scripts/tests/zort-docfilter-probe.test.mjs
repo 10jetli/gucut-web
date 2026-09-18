@@ -28,3 +28,27 @@ test("อ่าน count ไม่ได้ ⇒ ตัดสินไม่ไ�
 test("ฐานอ่านไม่ได้ แต่ได้ 3 ⇒ ยังตัดสินว่าใช้ได้", () => {
   assert.match(judgeDateResult(3, null), /^✅/);
 });
+
+import { judgeDoctypeResult } from "../../netlify/lib/zort-docfilter-probe.mjs";
+
+/* 🔴 เกณฑ์ของ doctypetext ต่างจากกลุ่มช่วงวันที่ — เอาไปปนกันแล้วผลที่ถูกจะถูกตีว่าตัดสินไม่ได้
+   (ผมเผลอใส่ไว้กลุ่มเดียวกันรอบแรก แล้วจับได้ก่อน deploy) */
+test("doctypetext ได้ราว 630 ⇒ ใช้ได้ (ไม่ใช่ตัดสินไม่ได้)", () => {
+  assert.match(judgeDoctypeResult(630, 694), /^✅/);
+  assert.match(judgeDoctypeResult(631, 694), /^✅/);
+});
+
+test("doctypetext count เท่าฐาน ⇒ เมินเงียบ ๆ", () => {
+  assert.match(judgeDoctypeResult(694, 694), /เมินเงียบ/);
+});
+
+test("doctypetext ได้เลขห่างจากที่วัดไว้ ⇒ ยังตัดสินไม่ได้ ห้ามนับผ่าน", () => {
+  const r = judgeDoctypeResult(63, 694);
+  assert.match(r, /ยังตัดสินไม่ได้/);
+  assert.ok(!r.startsWith("✅"));
+});
+
+/* เกณฑ์เดียวกันของกลุ่มปี ต้องไม่รับ 630 (พิสูจน์ว่าสองกลุ่มแยกกันจริง) */
+test("เกณฑ์กลุ่มปีต้องไม่รับ 630 (สองกลุ่มแยกกันจริง)", () => {
+  assert.ok(!judgeDateResult(630, 694).startsWith("✅"));
+});

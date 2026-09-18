@@ -31,8 +31,15 @@ const DATE_CANDIDATES = [
   ["documentdateafter/before", `&documentdateafter=${PROBE_YEAR}-01-01&documentdatebefore=${PROBE_YEAR}-12-31`],
   ["documentdatefrom/to", `&documentdatefrom=${PROBE_YEAR}-01-01&documentdateto=${PROBE_YEAR}-12-31`],
   ["datefrom/dateto", `&datefrom=${PROBE_YEAR}-01-01&dateto=${PROBE_YEAR}-12-31`],
-  ["fromdate/todate", `&fromdate=${PROBE_YEAR}-01-01&todate=${PROBE_YEAR}-12-31`],
   ["createdatetimeafter/before", `&createdatetimeafter=${PROBE_YEAR}-01-01&createdatetimebefore=${PROBE_YEAR}-12-31`],
+  /* ⬇️ ชื่อที่ฝั่งจอดักจากคำขอจริงของจอเอกสาร ZORT (18 ก.ย. 2569)
+     เส้นเขาคือ POST ZDocument/doAdvanceSearchDocumentHistory ส่ง fromdate/todate
+     🔑 **และรูปแบบวันของเขาเป็น วัน/เดือน/ปี พ.ศ.** ไม่ใช่ ISO ค.ศ.
+        ⇒ ต้องลองทั้งสองรูป ไม่งั้นชื่อถูกแต่รูปแบบผิด แล้วเราจะสรุปว่า 'ZORT ไม่รองรับ'
+        (โรคเดียวกับ ui-label-is-not-the-param-name แต่คนละชั้น: ชั้นนี้คือ **ค่า** ไม่ใช่ชื่อ) */
+  ["fromdate/todate (ISO ค.ศ.)", `&fromdate=${PROBE_YEAR}-01-01&todate=${PROBE_YEAR}-12-31`],
+  ["fromdate/todate (วัน/เดือน/ปี พ.ศ. — รูปที่จอเขาส่งจริง)",
+    `&fromdate=01/01/${PROBE_YEAR + 543}&todate=31/12/${PROBE_YEAR + 543}`],
   /* 🧪 ตัวควบคุม: ชื่อที่ไม่มีอยู่จริง ต้องได้ count เท่าฐาน */
   ["🧪 ตัวควบคุม: ชื่อช่วงวันที่ที่ไม่มีจริง", `&ช่วงวันที่ไม่มีจริง=${PROBE_YEAR}`],
 ];
@@ -47,6 +54,29 @@ const SEARCH_CANDIDATES = [
   ["documentnumber", "&documentnumber=ใบส่งสินค้า"],
   ["header", "&header=ใบส่งสินค้า"],
 ];
+
+/* 📄 ชนิดเอกสารแบบ "ข้อความ" — ช่องที่จอเขาใช้ชื่อ doctypetext
+   🔑 ทำไมสำคัญกว่าตัวอื่น: documenttype 1–5 ครอบแค่ 63 ใบจาก 694
+      อีก 631 ใบเป็น "ใบส่งสินค้า" ที่ **ไม่มีเลขชนิด** ⇒ ตัวกรองชนิดของเราแตะไม่ถึงเลย
+      ถ้ากรองด้วยข้อความได้ ปัญหาที่ค้างมานานจบ
+   ⚠️ เกณฑ์ของกลุ่มนี้ต่างจากกลุ่มช่วงวันที่ — คำตอบที่รู้ล่วงหน้าคือ **ราว 630 ใบ**
+      (ฝั่งจอค้นคำนี้จากทั้ง 694 ใบที่โหลดครบ ได้ 630) ไม่ใช่ 3 ใบแบบกลุ่มปี
+      เอาไปปนกลุ่มเดียวกันเมื่อไหร่ ผลที่ถูกจะถูกตีว่า "ตัดสินไม่ได้" */
+const DOCTYPE_EXPECTED = 630;
+const DOCTYPE_TOLERANCE = 5;      // เผื่อเอกสารเพิ่มระหว่างวัน · ไม่ใช่เผื่อให้ผลผ่านง่าย
+const DOCTYPE_CANDIDATES = [
+  ["doctypetext (ชื่อที่จอเขาส่งจริง)", "&doctypetext=ใบส่งสินค้า"],
+  ["documenttypetext", "&documenttypetext=ใบส่งสินค้า"],
+  ["doctype", "&doctype=ใบส่งสินค้า"],
+];
+
+export function judgeDoctypeResult(count, baseline) {
+  if (count === null) return "อ่าน count ไม่ได้ ⇒ ตัดสินไม่ได้";
+  if (baseline !== null && count === baseline) return "❌ เมินเงียบ ๆ (count เท่าฐาน)";
+  if (Math.abs(count - DOCTYPE_EXPECTED) <= DOCTYPE_TOLERANCE)
+    return `✅ ใช้ได้ — ได้ ${count} ใกล้ ${DOCTYPE_EXPECTED} ที่ฝั่งจอวัดไว้คนละครั้ง`;
+  return `⚠️ count เปลี่ยนเป็น ${count} แต่ห่างจาก ${DOCTYPE_EXPECTED} ที่วัดไว้ ⇒ ยังตัดสินไม่ได้ ต้องดูของจริง`;
+}
 
 function headers() {
   const { ZORT_STORENAME, ZORT_APIKEY, ZORT_APISECRET } = process.env;
@@ -101,10 +131,20 @@ export async function zortDocFilterProbe() {
     });
   }
 
+  const doctypes = [];
+  for (const [name, extra] of DOCTYPE_CANDIDATES) {
+    const r = await countWith(h, extra);
+    doctypes.push({
+      พารามิเตอร์: name, status: r.status, count: r.count, error: r.error ?? null,
+      ผล: judgeDoctypeResult(r.count, baseline),
+    });
+  }
+
   const ctrl = dates.find((d) => d.พารามิเตอร์.startsWith("🧪"));
   const ctrlStable = ctrl ? ctrl.count === baseline : null;
   const ใช้ได้ = dates.filter((d) => !d.พารามิเตอร์.startsWith("🧪") && d.ผล.startsWith("✅"))
     .map((d) => d.พารามิเตอร์);
+  const ชนิดใช้ได้ = doctypes.filter((d) => d.ผล.startsWith("✅")).map((d) => d.พารามิเตอร์);
 
   return {
     ok: true,
@@ -112,6 +152,7 @@ export async function zortDocFilterProbe() {
     ฐานเปล่า: baseline,
     คำตอบที่รู้ล่วงหน้า: `ปี ${PROBE_YEAR} (พ.ศ. ${PROBE_YEAR + 543}) ต้องได้ ${EXPECTED_IN_YEAR} ใบ — วัดไว้คนละครั้ง คนละวิธี`,
     ช่วงวันที่: dates,
+    ชนิดเอกสารแบบข้อความ: doctypes,
     คำค้น: searches,
     ตัวควบคุมนิ่ง: ctrlStable,
     ...(ctrlStable === false
@@ -120,7 +161,9 @@ export async function zortDocFilterProbe() {
     สรุป: ctrlStable === false
       ? "ใช้ตัดสินไม่ได้ — ดูคำเตือน"
       : ใช้ได้.length
-        ? `กรองช่วงวันที่ได้ด้วย: ${ใช้ได้.join(" · ")} ⇒ ย้ายการกรองไปต้นทางได้ จอเลิกโหลดครบทุกหน้า`
-        : "ยังไม่เจอชื่อที่กรองช่วงวันที่ได้ในชุดนี้ ⇒ **ยังไม่ปิดประตู** อาจใช้ชื่ออื่น (ให้ฝั่งจอดักคำขอจากจอ ZORT มาให้เหมือนที่ทำกับ showarchive)",
+        ? `กรองช่วงวันที่ได้ด้วย: ${ใช้ได้.join(" · ")}${ชนิดใช้ได้.length ? ` · กรองชนิดแบบข้อความได้ด้วย: ${ชนิดใช้ได้.join(" · ")}` : ""} ⇒ ย้ายการกรองไปต้นทางได้ จอเลิกโหลดครบทุกหน้า`
+        : ชนิดใช้ได้.length
+        ? `ช่วงวันที่ยังไม่เจอ แต่ **กรองชนิดแบบข้อความได้**: ${ชนิดใช้ได้.join(" · ")} ⇒ ใบส่งสินค้า 631 ใบที่ไม่มีเลขชนิด กรองได้แล้ว`
+      : "ยังไม่เจอชื่อที่กรองช่วงวันที่ได้ในชุดนี้ ⇒ **ยังไม่ปิดประตู** อาจใช้ชื่ออื่น (ให้ฝั่งจอดักคำขอจากจอ ZORT มาให้เหมือนที่ทำกับ showarchive)",
   };
 }
