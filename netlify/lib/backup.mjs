@@ -205,9 +205,24 @@ export async function runBackup(budgetMs = 18000) {
 export async function backupStatus() {
   if (!coreReady()) return { ready: false, why: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensureBackupTables();
+  /* 📊 `gone` เป็น **ยอดสะสม** ⇒ จอบอกไม่ได้ว่า "พุ่งขึ้นผิดปกติ" หรือเปล่า
+     (ฝั่งจอขอไว้ 18 ก.ย. 2569: จอเขียนเตือนไว้เองว่าถ้าเลขพุ่งแปลว่ามีอะไรกำลังลบข้อมูล
+      แต่ไม่มีโค้ดบังคับ เพราะคำว่า "พุ่ง" ต้องเทียบกับรอบก่อน ซึ่งท่อไม่เคยส่งมา)
+     ⇒ ส่งยอด **24 ชม.ล่าสุด** กับ **24–48 ชม.ก่อนหน้า** มาคู่กัน ให้จอเทียบเอง
+     ⚠️ `gone_at` เขียนด้วย datetime('now') = UTC ⇒ ต้อง +7 ชม. ก่อนตัดวันแบบไทย
+        (กติกาเดิมของโปรเจกต์: เวลาที่มีความหมายทางธุรกิจคิดเป็นวันไทยเสมอ)
+     ⚠️ ท่อ **ไม่ตัดสิน** ว่าเท่าไรคือพุ่ง — ส่งเลขสองก้อน จอเป็นคนตั้งเกณฑ์
+        (ถ้าท่อตัดสินให้ วันที่เกณฑ์ต้องเปลี่ยนจะต้อง deploy ท่อใหม่ ซึ่งแพงกว่าแก้จอ) */
   const rows = await coreQuery(
     `SELECT store, COUNT(*) AS keys, SUM(bytes) AS bytes,
             SUM(CASE WHEN gone_at IS NOT NULL THEN 1 ELSE 0 END) AS gone,
+            SUM(CASE WHEN gone_at IS NOT NULL
+                      AND datetime(gone_at, '+7 hours') >= datetime('now', '+7 hours', '-1 day')
+                     THEN 1 ELSE 0 END) AS gone24h,
+            SUM(CASE WHEN gone_at IS NOT NULL
+                      AND datetime(gone_at, '+7 hours') <  datetime('now', '+7 hours', '-1 day')
+                      AND datetime(gone_at, '+7 hours') >= datetime('now', '+7 hours', '-2 day')
+                     THEN 1 ELSE 0 END) AS gonePrev24h,
             MAX(at) AS last
      FROM backups GROUP BY store ORDER BY store`
   );
@@ -216,6 +231,9 @@ export async function backupStatus() {
     ready: true,
     lastRun: last?.at || null,
     stores: rows,
+    /* ป้ายบอกความหมายของช่องใหม่ ให้จอเอาไปเขียนบนหน้าจอได้ตรง ๆ ไม่ต้องเดา
+       ⚠️ ทั้งสองช่องเป็น "จำนวนคีย์ที่ต้นทางลบ" ไม่ใช่ "จำนวนคีย์ที่เราลบ" — เราไม่ลบแถวทิ้งเลย */
+    goneScope: "gone = สะสมทั้งหมด · gone24h = 24 ชม.ล่าสุด · gonePrev24h = 24–48 ชม.ก่อนหน้า (นับแบบวันไทย)",
     // ⚠️ ต้องส่งรายชื่อถังที่คุ้มครอง**ทั้งหมด**ไปด้วย ไม่ใช่แค่ถังที่มีสำเนาแล้ว
     //    `stores` มาจาก GROUP BY ⇒ ถังที่ยังไม่มีคีย์เลย (gucut-clips) จะหายไปจากตาราง
     //    บนจอจะเห็น 9 ถังทั้งที่คุ้มครอง 10 ⇒ อ่านได้ว่า "ถังนั้นไม่ได้ถูกสำรอง" ซึ่งผิด
