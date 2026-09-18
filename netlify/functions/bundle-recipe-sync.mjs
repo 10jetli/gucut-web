@@ -1,4 +1,5 @@
-// สินค้าเป็นชุด ZORT → คลังเงา — **งานตามเวลาวันละครั้ง 03:00 UTC (10:00 ไทย)**
+// **สูตร**สินค้าเป็นชุด ZORT → คลังเงา — งานตามเวลาวันละครั้ง 03:00 UTC (10:00 ไทย)
+// (สต็อก/ราคาของชุดแยกไปที่ bundle-stock-sync.mjs ชั่วโมงละครั้ง — 19 ก.ย. 2569)
 // 🔴 **เคยเป็นทุกครึ่งชั่วโมง (:27/:57) — เปลี่ยนเมื่อ 18 ก.ย. 2569 (aacde9e) เพื่อลดเครดิต**
 //    บรรทัดนี้เป็นที่มาของช่อง `desc` ใน crontable ⇒ เขียนผิดแล้วสารบัญผิดตามทั้งระบบ
 //    ⚠️ ของจริง 19 ก.ย.: ฝั่งจอตั้งเกณฑ์เตือนจาก "ทุกชั่วโมง" ⇒ **จอจะขึ้นแดงทุกวันทั้งที่งานปกติ**
@@ -16,7 +17,13 @@
 //    งบของไฟล์นี้: สต็อกชุด ~4 วิ (วัดจริง 22:03) + สูตรชุดไม่เกิน 12 วิ ⇒ รวมอยู่ใต้ 26 วิ
 // ⚠️ ไม่มี URL (Netlify ไม่ให้ schedule พร้อม path) · สั่งเดี๋ยวนั้น: ?syncbundles=1 · ?syncbundlerecipes=1
 // ⚠️ ล้มต้องส่งเสียง — ไม่งั้นตัวเลขหยุดอัปเดตเงียบ ๆ แล้วจอยังโชว์เลขเดิมสวยงาม (คือสิ่งที่เพิ่งเกิด)
-import { syncBundles, syncBundleRecipes } from "../lib/core-products.mjs";
+/* 🔴 **ถอด syncBundles ออกแล้ว — ย้ายไป `bundle-stock-sync.mjs` (19 ก.ย. 2569)**
+   เดิมงานนี้ทำสองอย่าง ⇒ ตอนลดรอบเป็นวันละครั้งเพื่อลดเครดิต (เล็งที่งานสูตร)
+   **ตัวเลขสต็อกชุดถูกลากไปเป็นวันละครั้งด้วย ซึ่งไม่ได้ตั้งใจ**
+   ⇒ สต็อกชุดขยับจริง 43/360 ชุดต่อรอบ ⇒ เก่า 24 ชม. = คนขายชุดอาจขายของที่ไม่มี
+   ⇒ แยกแล้ว: สต็อก = ชั่วโมงละครั้ง (4.5 วิ/รอบ ≈ 1.8 นาที/วัน) · สูตร = วันละครั้ง (หนักกว่ามาก)
+   🚫 ห้ามยุบกลับเป็นงานเดียวอีก — ต้นทุนกับความจำเป็นต่างกันคนละระดับ */
+import { syncBundleRecipes } from "../lib/core-products.mjs";
 
 const safe = async (fn) => {
   try {
@@ -27,12 +34,8 @@ const safe = async (fn) => {
 };
 
 export default async function handler() {
-  const stock = await safe(() => syncBundles());
   const recipes = await safe(() => syncBundleRecipes({ deadlineMs: 12000 }));
-  const problems = [
-    stock?.error ? `สต็อกชุด: ${stock.error}` : null,
-    recipes?.error ? `สูตรชุด: ${recipes.error}` : null,
-  ].filter(Boolean);
+  const problems = [recipes?.error ? `สูตรชุด: ${recipes.error}` : null].filter(Boolean);
   if (problems.length) {
     const { TELEGRAM_BOT_TOKEN: bt, TELEGRAM_CHAT_ID: ci } = process.env;
     if (bt && ci) {
@@ -41,13 +44,13 @@ export default async function handler() {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           chat_id: ci,
-          text: `⚠️ ซิงก์สินค้าเป็นชุดจาก ZORT ล้ม — ตัวเลขในคลังเงาไม่อัปเดตรอบนี้\n${problems.join("\n")}\n\nสั่งซ้ำ: /api/core?syncbundles=1 · /api/core?syncbundlerecipes=1`,
+          text: `⚠️ ซิงก์สูตรสินค้าเป็นชุดจาก ZORT ล้ม — สูตรในคลังเงาไม่อัปเดตรอบนี้\n${problems.join("\n")}\n\nสั่งซ้ำ: /api/core?syncbundlerecipes=1 (สต็อกชุดเป็นงานแยก: ?syncbundles=1)`,
         }),
         signal: AbortSignal.timeout(8000),
       }).catch(() => null);
     }
   }
-  return new Response(JSON.stringify({ stock, recipes }), { headers: { "content-type": "application/json" } });
+  return new Response(JSON.stringify({ recipes }), { headers: { "content-type": "application/json" } });
 }
 
 // นาทีที่ 27 และ 57 — ไม่ชน core-sync (:13/:43) และ beam-sweep (:00/:30) ที่ยิง ZORT เหมือนกัน

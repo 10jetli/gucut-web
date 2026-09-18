@@ -1,6 +1,6 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
 // ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
-export const generatedAt = "2026-09-18T21:53:11.938Z";
+export const generatedAt = "2026-09-18T22:00:36.954Z";
 export const source = "netlify/functions/*.mjs (export const config)";
 export const jobs = [
  {
@@ -19,7 +19,13 @@ export const jobs = [
   "id": "bundle-recipe-sync",
   "file": "netlify/functions/bundle-recipe-sync.mjs",
   "cron": "0 3 * * *",
-  "desc": "สินค้าเป็นชุด ZORT → คลังเงา — **งานตามเวลาวันละครั้ง 03:00 UTC (10:00 ไทย)**"
+  "desc": "**สูตร**สินค้าเป็นชุด ZORT → คลังเงา — งานตามเวลาวันละครั้ง 03:00 UTC (10:00 ไทย)"
+ },
+ {
+  "id": "bundle-stock-sync",
+  "file": "netlify/functions/bundle-stock-sync.mjs",
+  "cron": "33 * * * *",
+  "desc": "สต็อก/ราคาของสินค้าเป็นชุด ZORT → คลังเงา — **งานตามเวลาชั่วโมงละครั้ง (นาทีที่ 33)**"
  },
  {
   "id": "contacts-sync",

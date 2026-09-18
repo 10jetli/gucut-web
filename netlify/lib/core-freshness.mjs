@@ -121,7 +121,10 @@ export async function freshnessOf(coreQuery, { table, metaKey = null, where = nu
  *    (กฎนี้อยู่ในคลังทีมแล้ว — ผมเหยียบซ้ำวันนี้ · ท่าที่ปลอดภัย: เขียนเป็นคำ ไม่ใช่รูป cron)
  *    **คืน null ปลอดภัยกว่าเดาผิด** — จอขึ้น "ยังไม่รู้รอบ" ดีกว่าขึ้นแดงผิดทุกวัน
  * ⚠️ `เตือนเมื่อเกินชั่วโมง` = รอบ + เผื่อ 1 ชม. (รอบเลื่อนได้จริงบน Netlify) */
-export async function รอบที่คาดหวัง(id) {
+export async function รอบที่คาดหวัง(id, prefix = "recipe") {
+  /* 🔑 `prefix` เพิ่ม 19 ก.ย. 2569 — หนึ่งคำตอบอาจต้องส่งเกณฑ์ของหลายงาน
+     (จอชุดสินค้าต้องรู้ทั้งรอบสต็อกและรอบสูตร ซึ่งแยกเป็นสองงานแล้ว)
+     ⚠️ ชื่อคีย์ต้องต่างกันชัด ไม่งั้นปลายทางใช้เกณฑ์ของงานหนึ่งไปตัดสินอีกงาน */
   let cron = null;
   try {
     const t = await import("./cron-table.mjs");
@@ -130,7 +133,7 @@ export async function รอบที่คาดหวัง(id) {
        ⇒ ใส่ `jobs` เป็นตัวแรก · ตัวสำรองไว้เผื่อวันหน้าเปลี่ยนชื่อ แต่ห้ามพึ่งมัน */
     cron = (t.jobs ?? t.CRON_TABLE ?? t.cronTable ?? t.default ?? []).find?.((j) => j.id === id)?.cron ?? null;
   } catch { cron = null; }
-  if (!cron) return { recipeExpectedEveryHours: null, recipeExpectedNote: "อ่านตารางงานไม่ได้ ⇒ ยังไม่รู้รอบ (ห้ามเดาเกณฑ์เตือนเอง)" };
+  if (!cron) return { [`${prefix}ExpectedEveryHours`]: null, [`${prefix}ExpectedNote`]: "อ่านตารางงานไม่ได้ ⇒ ยังไม่รู้รอบ (ห้ามเดาเกณฑ์เตือนเอง)" };
   const f = String(cron).trim().split(/\s+/);
   let ชม = null;
   if (f.length === 5 && f[2] === "*" && f[3] === "*" && f[4] === "*") {
@@ -142,14 +145,14 @@ export async function รอบที่คาดหวัง(id) {
       else if (/^[\d,]+$/.test(f[0])) ชม = 1 / f[0].split(",").filter(Boolean).length;
     }
   }
-  if (!ชม) return { recipeExpectedEveryHours: null, recipeExpectedNote: `รูป cron "${cron}" ยังไม่รองรับ ⇒ ยังไม่รู้รอบ (ห้ามเดา)` };
+  if (!ชม) return { [`${prefix}ExpectedEveryHours`]: null, [`${prefix}ExpectedNote`]: `รูป cron "${cron}" ยังไม่รองรับ ⇒ ยังไม่รู้รอบ (ห้ามเดา)` };
   return {
-    recipeExpectedEveryHours: Number(ชม.toFixed(3)),
-    recipeExpectedCron: cron,
-    recipeExpectedNote:
+    [`${prefix}ExpectedEveryHours`]: Number(ชม.toFixed(3)),
+    [`${prefix}ExpectedCron`]: cron,
+    [`${prefix}ExpectedNote`]:
       `คิดจาก cron จริงของงาน ${id} (${cron}) — ไม่ใช่เลขที่พิมพ์มือ · ` +
       `เตือนเมื่ออายุเกิน ${Number((ชม + 1).toFixed(3))} ชม. (รอบ + เผื่อ 1 ชม.ให้รอบเลื่อน) · ` +
       `แก้ตารางเมื่อไหร่ค่านี้เปลี่ยนเอง ⇒ **ปลายทางห้ามฝังเลขเกณฑ์ไว้เอง**`,
-    recipeStaleAfterHours: Number((ชม + 1).toFixed(3)),
+    [`${prefix}StaleAfterHours`]: Number((ชม + 1).toFixed(3)),
   };
 }
