@@ -160,3 +160,33 @@ test('core.mjs — ห้ามเขียน json({ ok: true, ...(await f()) }
   assert.deepEqual(เจอ, [], `ให้ใช้ okJson() แทน — จุดที่ยังครอบมือ: ${เจอ.join(', ')}`);
   assert.ok(code.includes('const okJson ='), 'okJson ต้องยังอยู่ — ด่านนี้ไร้ความหมายถ้ามันถูกลบ');
 });
+
+/* ── ด่านกวาด "ตัวกรองที่ท่อเมินเงียบ" (วิธีของฝั่งจอ 18 ก.ย. 2569) ─────────────
+   🔑 วิธีที่เขาใช้จับ: ยิงทุกเส้นด้วยคำค้นที่ไม่มีทางเจอ (q=ZZQXNOMATCH9) แล้วดูว่า total ลดไหม
+      เจอสามเส้นที่ total ไม่ขยับ: categories · deadstock · quotations
+   ⇒ ด่านนี้ตรึงว่าเส้นที่ **ไม่รับ q** ต้องประกาศ `ignored` ไม่ใช่เงียบ
+   ⚠️ ด่านนี้ตรวจซอร์ส ⇒ ตัดคอมเมนต์ก่อน (ไม่งั้นร้องใส่คำเตือนที่อธิบายเรื่องนี้เอง) */
+test('core.mjs — เส้นที่ไม่รับ q ต้องประกาศ ignored ไม่ใช่เมินเงียบ', () => {
+  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  for (const list of ['categories', 'deadstock']) {
+    const at = code.indexOf(`get("list") === "${list}"`);
+    assert.ok(at > 0, `หา route ${list} ไม่เจอ`);
+    const body = code.slice(at, at + 900);
+    assert.match(body, /ignored:\s*\{\s*q/, `${list}: ต้องประกาศว่าเมิน q — เมินเงียบคือปุ่มหลอกบนจอ`);
+  }
+});
+
+/* ── list=bundles: total ข้าม only โดยตั้งใจ ⇒ ต้องมีตัวนับที่เดินตามตัวกรอง ────
+   🔴 ฝั่งจอยิงของจริง: only=inactive ได้ total 360 แต่แถว **0**
+      ⇒ จอที่ทำแท็บจาก total จะขึ้น "ปิดใช้งาน (360)" แล้วกดได้ 0 แถว */
+test('listBundles: ต้องส่ง rowsMatched ที่เดินตาม only (total ยังข้าม only)', async () => {
+  const src = readFileSync(new URL('../../netlify/lib/core-products.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const at = code.indexOf('export async function listBundles');
+  const body = code.slice(at, code.indexOf('export async function', at + 40));
+  assert.match(body, /rowsMatched:/, 'ต้องมี rowsMatched ให้จอทำเลขหน้า/ตัวนับแท็บ');
+  assert.match(body, /COUNT\(\*\) AS c FROM bundles WHERE 1=1 \$\{filter\} \$\{only\}/,
+    'ตัวนับที่เดินตามตัวกรองต้องรวม ${only} ด้วย ไม่งั้นได้เลขเดียวกับ total');
+  assert.doesNotMatch(body, /\bshown:/, 'ห้ามใช้ชื่อ shown — เป็นของเลิกใช้เพราะความหมายกำกวม');
+});

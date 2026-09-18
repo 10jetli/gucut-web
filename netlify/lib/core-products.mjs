@@ -409,7 +409,14 @@ export async function listBundles(o = {}) {
       สองตัวนี้อ่านตาราง `bundles` เหมือนกันและ **ไม่มีตัวไหนใช้ผลของอีกตัว**
       ของเดิมเขียน await เรียงกัน ⇒ เสียเวลาเดินทางไป-กลับฐานฟรี ๆ หนึ่งรอบ (วัดได้ ~57 มิลลิวินาที)
       ⚠️ ห้ามเอา await กลับมาเรียงกันอีก */
-  const [[sum], rows] = await Promise.all([
+  /* 🔴 **`total` ต้องไม่ใช่คำตอบเดียว** — ฝั่งจอจับได้ 18 ก.ย. 2569
+      `only=inactive` คืน total 360 แต่แถวจริง **0** (ชุดที่ปิดใช้งานไม่มีเลยสักชุด)
+      ⇒ จอที่ทำแท็บจาก total จะขึ้น "ปิดใช้งาน (360)" แล้วกดได้ 0 แถว = แท็บที่สัญญาแล้วไม่มีของ
+      ⇒ เพิ่ม `rowsMatched` = จำนวนแถวที่ตรงตัวกรอง **ทั้งชุด ไม่ใช่แค่หน้านี้**
+        และ `rowsReturned` = จำนวนแถวในหน้านี้ (ใช้ชื่อเดียวกับ list=stock ห้ามคิดคำใหม่)
+      ⚠️ `total` ยังคงความหมายเดิม (ทั้งคลังหลังกรองคำค้น ข้ามตัวกรอง only) เพราะ
+        แท็บต้องเห็นของทุกกอง — ห้าม "แก้" ให้ total เดินตาม only ไม่งั้นแท็บอื่นขึ้น 0 */
+  const [[sum], [ตรงตัวกรอง], rows] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) AS c,
               SUM(CASE WHEN active = 1 THEN 1 ELSE 0 END) AS act,
@@ -417,6 +424,7 @@ export async function listBundles(o = {}) {
               SUM(CASE WHEN COALESCE(onhand,0) < 0 THEN 1 ELSE 0 END) AS negative
        FROM bundles WHERE 1=1 ${filter}`
     ),
+    coreQuery(`SELECT COUNT(*) AS c FROM bundles WHERE 1=1 ${filter} ${only}`),
     coreQuery(
       `SELECT sku, name, sellprice, onhand, available, active, unit
        FROM bundles WHERE 1=1 ${filter} ${only}
@@ -523,6 +531,13 @@ export async function listBundles(o = {}) {
     active: num(sum?.act),
     inactive: num(sum?.inact),
     negative: num(sum?.negative),
+    /* 🔢 จำนวนที่ **ตรงตัวกรองจริง** — จอใช้ทำเลขหน้าและตัวนับของแท็บที่เลือกอยู่
+       ⚠️ ต่างจาก `total` ซึ่งข้าม only โดยตั้งใจ (แท็บต้องเห็นของทุกกอง)
+       ⚠️ ชื่อ rowsMatched/rowsReturned ใช้ตามที่ list=stock ใช้อยู่แล้ว — ห้ามคิดคำใหม่
+          `shown` ในเส้นอื่นเป็นของเลิกใช้เพราะความหมายกำกวม ของใหม่ห้ามใช้ชื่อนั้น */
+    rowsMatched: num(ตรงตัวกรอง?.c),
+    rowsReturned: rows.length,
+    truncated: num(ตรงตัวกรอง?.c) > offset + rows.length,
     limit,
     offset,
     /* 🔎 สะท้อนค่ากรองที่ "ใช้จริง" กลับไป — จอตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปไหม

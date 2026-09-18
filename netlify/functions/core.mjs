@@ -1509,12 +1509,17 @@ async function route(req, context) {
     }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
     if (url.searchParams.get("list") === "deadstock") {
+      /* ⚠️ **ไม่รับ q** — ฝั่งจอยิง q=ZZQXNOMATCH9 แล้วแถวเท่าเดิม 50 ⇒ ตัวกรองไม่มีผล
+         ⇒ ประกาศว่าเมิน ไม่งั้นจอที่ส่ง q ไปจะเชื่อว่ากรองแล้ว (ปุ่มหลอก) */
+      const qd = url.searchParams.get("q");
       return okJson({
         ...(await listDeadStock({
           days: url.searchParams.get("days"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),
+        ...(qd ? { ignored: { q: qd } } : {}),
+        supportedFilters: ["days", "limit", "offset"],
       });
     }
     // รายการโอนสินค้า — ร้านใช้หนักที่สุดในกลุ่มสินค้า (12,196 ใบใน ZORT)
@@ -1575,8 +1580,21 @@ async function route(req, context) {
       return okJson(await listWarehouses());
     }
     // จอหมวดหมู่แบบ ZORT — หมวดจริง 42 หมวดจากทะเบียนสินค้า
+    /* 🔴 **เส้นนี้ไม่รับ q และ `total` ตอบคนละคำถามกับ rows** (ฝั่งจอจับได้ 18 ก.ย. 2569
+       ด้วยการยิง q=ZZQXNOMATCH9 แล้วดูว่า total ลดไหม)
+       · ยิง q มา → แถวเท่าเดิม 43 หมวด ⇒ **q ไม่มีผลเลย** ต้องประกาศว่าเมิน ไม่ใช่เงียบ
+       · `total` = **จำนวนสินค้า 2,674 ตัว** ไม่ใช่จำนวนหมวด (43) ⇒ จอที่เขียน
+         "ทั้งหมด {total} หมวด" จะโกหกทันที ⇒ ใส่ป้ายขอบเขตกำกับไว้ [[numbers-need-scope]] */
     if (url.searchParams.get("list") === "categories") {
-      return okJson(await listCategories());
+      const r = await listCategories();
+      const qc = url.searchParams.get("q");
+      return okJson({
+        ...r,
+        ...(qc ? { ignored: { q: qc } } : {}),
+        "⚠️ ขอบเขต":
+          "total = จำนวน**สินค้า**ทั้งคลัง ไม่ใช่จำนวนหมวด (จำนวนหมวดคือ categories.length) · " +
+          "เส้นนี้ไม่รับตัวกรอง q — ส่งมาจะถูกประกาศใน ignored และไม่มีผลกับผลลัพธ์",
+      });
     }
     if (url.searchParams.get("list") === "poscats") {
       return okJson(await posCats());
