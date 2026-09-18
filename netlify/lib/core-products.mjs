@@ -10,6 +10,7 @@
 //    และวันนั้นต้องมีหน้าจอแก้ชื่อ/ราคาเอง (ยังไม่มี — จดไว้ในแผน)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
+import { markSync, freshnessOf } from "./core-freshness.mjs";
 import { thaiDayFromUtc } from "./thaiday.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
@@ -207,6 +208,10 @@ export async function syncProducts() {
   /* ⚠️ `partial: true` = **รอบนี้กวาดไม่ครบเพราะมีหน้าล้ม** ไม่ใช่ "ZORT มีเท่านี้"
       สินค้าที่ไม่ได้มายังใช้ค่าเก่าอยู่ในกระจก ⇒ สต็อก/ราคาอาจค้าง
       จอ/ผู้เรียกต้องเขียนบอก ห้ามแสดงเป็นรอบซิงก์ปกติ */
+  /* ชีพจร: บันทึกว่า "ไปดู ZORT แล้ว" ทุกรอบ แม้ไม่มีแถวเปลี่ยน — ฝั่งจอใช้แยก
+     "ข้อมูลไม่ขยับ" ออกจาก "ซิงก์ตาย" · ถ้ารอบนี้กวาดไม่ครบให้จดไว้ด้วย ไม่ใช่เขียนว่า ok
+     ⚠️ ต้อง await (Netlify แช่แข็งฟังก์ชันหลังตอบ) · ล้มเหลวไม่ทำให้รอบซิงก์ล้ม */
+  await markSync(coreQuery, "sync_products", partial ? "partial" : "ok");
   return {
     fetched: rows.length,
     written: changed.length,
@@ -384,6 +389,7 @@ export async function syncBundles() {
     `INSERT INTO sync_marks (name, at, note) VALUES ('bundles_stock', datetime('now'), ${esc(`fetched ${rows.length} written ${changed.length}`)})
      ON CONFLICT(name) DO UPDATE SET at=excluded.at, note=excluded.note`
   );
+  await markSync(coreQuery, "sync_bundles", "ok");
   return { ok: true, fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
 }
 
@@ -536,11 +542,15 @@ export async function listBundles(o = {}) {
     }
   }
 
+  /* 🕘 ให้จอแคชตัวนับแท็บได้ — เทียบ changedAtUtc ไม่ใช่นับนาที (ดู core-freshness.mjs)
+     ชีพจร sync_bundles เริ่มเก็บ 19 ก.ย. 2569 ⇒ ก่อนรอบซิงก์แรกจะเป็น null พร้อม note บอกเหตุ */
+  const freshness = await freshnessOf(coreQuery, { table: "bundles", metaKey: "sync_bundles" });
   return {
     total: num(sum?.c),
     active: num(sum?.act),
     inactive: num(sum?.inact),
     negative: num(sum?.negative),
+    freshness,
     /* 🔢 จำนวนที่ **ตรงตัวกรองจริง** — จอใช้ทำเลขหน้าและตัวนับของแท็บที่เลือกอยู่
        ⚠️ ต่างจาก `total` ซึ่งข้าม only โดยตั้งใจ (แท็บต้องเห็นของทุกกอง)
        ⚠️ ชื่อ rowsMatched/rowsReturned ใช้ตามที่ list=stock ใช้อยู่แล้ว — ห้ามคิดคำใหม่

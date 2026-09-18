@@ -13,6 +13,7 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
 import { thaiDayFromUtc } from "./thaiday.mjs";
+import { markSync, freshnessOf } from "./core-freshness.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -286,11 +287,20 @@ export async function listPurchases(o = {}) {
      FROM purchase_orders_v2 WHERE 1=1 ${filter}
      ORDER BY po_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
   );
+  /* 🕘 ฝั่งจอขอ 19 ก.ย. 2569 เพื่อ **แคชตัวนับแท็บได้โดยไม่ต้องเดาเวลาหมดอายุ**
+     เทียบ changedAtUtc กับค่าที่ถืออยู่: เท่าเดิม = ใช้ของในมือต่อ · ต่าง = ยิงใหม่
+     ⚠️ ห้ามใช้ syncedAtUtc ตัดสินว่าต้องยิงใหม่ — มันขยับทุกรอบแม้ข้อมูลไม่เปลี่ยน
+        มันมีไว้แยก "ข้อมูลไม่ขยับ" ออกจาก "ซิงก์ตาย" เท่านั้น (ดู core-freshness.mjs) */
+  const freshness = await freshnessOf(coreQuery, {
+    table: "purchase_orders_v2",
+    metaKey: `sync_purchases_${store}`,
+  });
   return {
     store, total: num(sum?.c), amount: num(sum?.total), limit, offset, byStatus, rows,
     truncated: num(sum?.c) > rows.length + offset,
     dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
     applied: { q: q || null, limit, offset, from, to },
+    freshness,
   };
 }
 
@@ -425,7 +435,14 @@ export async function syncTransfers(days = 90, opt = {}) {
     if (hitOld || list.length < 200) break;
     nextPage = page + 1;
   }
-  if (!rows.length) return { store, fetched: 0, written: 0, collisions: 0, since, startPage, nextPage: null };
+  if (!rows.length) {
+    /* 🔑 **นี่คือรอบที่ชีพจรสำคัญที่สุด** — ไปดู ZORT สำเร็จ แต่ไม่มีของใหม่
+       ไม่เขียนชีพจรที่นี่ = คืนที่ไม่มีใบโอนเลย จอจะเห็นเวลาเก่าค้างแล้วเตือนว่าซิงก์ตาย (แดงลวง)
+       ⚠️ ต่างจากทางที่ `skip`/`error` ด้านบน: ทางนั้น **ห้าม**เขียน เพราะยังไม่ได้ไปดู
+          หรือไปดูแล้วล้มเหลว — เขียนเมื่อนั้น = เวลาสดทั้งที่ข้อมูลไม่ได้ถูกอัปเดต (เขียวลวง) */
+    await markSync(coreQuery, `sync_transfers_${store}`, "ok");
+    return { store, fetched: 0, written: 0, collisions: 0, since, startPage, nextPage: null };
+  }
 
   const prev = new Map(
     (
@@ -478,6 +495,10 @@ export async function syncTransfers(days = 90, opt = {}) {
        WHERE transfers.source = excluded.source`
     );
   }
+  /* ชีพจรรายร้าน — ห้ามใช้คีย์เดียวร่วมสองร้าน ไม่งั้นร้านที่ซิงก์ทีหลังกลบเวลาของร้านแรก
+     แล้วจอของร้านที่ค้างจะดูสดตลอดกาล · `nextPage` ไม่ null = **ยังกวาดไม่หมด** จดตามจริง
+     ⚠️ ต้อง await · ล้มเหลวไม่ทำให้รอบซิงก์ล้ม */
+  await markSync(coreQuery, `sync_transfers_${store}`, nextPage ? "partial" : "ok");
   return {
     store,
     fetched: rows.length,
@@ -725,10 +746,16 @@ export async function listTransfers(o = {}) {
     ),
   ]);
   const sum = sumRows[0];
+  /* 🕘 ให้จอแคชตัวนับแท็บได้ — เทียบ changedAtUtc ไม่ใช่นับนาที (ดู core-freshness.mjs) */
+  const freshness = await freshnessOf(coreQuery, {
+    table: "transfers",
+    metaKey: `sync_transfers_${store}`,
+  });
   return {
     store,
     total: num(sum?.c),
     oldest: sum?.oldest || null,
+    freshness,
     limit,
     offset,
     /* 🤝 สัญญากับจอ: บอกว่า **ใช้ค่าอะไรไปจริง** ไม่ใช่แค่รับมา
@@ -1528,6 +1555,15 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
       byStatusScope:
         "มาจากกระจก return_orders_v2 ของร้านนี้ทั้งชุด — ไม่ใช่จาก rows/total ในคำตอบนี้ซึ่งมาจาก ZORT สด · " +
         "เอาไปเทียบกับ total ได้เมื่อ mirrorTotals.count เท่ากับ total · null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบยกเลิก",
+      /* 🕘 **freshness อยู่ใต้ mirrorTotals โดยตั้งใจ ห้ามย้ายขึ้นระดับบนสุด**
+         เส้นนี้ต่างจากเส้นอื่นทั้งหมด: `rows`/`total` มาจาก **ZORT สด** ทุกคำขอ
+         ส่วน `byStatus` มาจากกระจก ⇒ เวลานี้พูดถึงกระจกเท่านั้น
+         วางไว้บนสุด = จอจะอ่านว่า "ทั้งคำตอบเก่าเท่านี้" แล้วเอาไปแคช rows ที่สดอยู่แล้ว
+         (ป้ายขอบเขตต้องอยู่ติดกับตัวเลขที่มันกำกับ [[scope-label-before-number]]) */
+      freshness: await freshnessOf(coreQuery, {
+        table: "return_orders_v2",
+        metaKey: store === "z2" ? "sync_returns_z2" : "sync_returns",
+      }),
     };
   } catch (e) {
     mirrorTotals = null;

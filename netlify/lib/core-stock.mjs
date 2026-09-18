@@ -33,6 +33,7 @@
    ⚠️ `shown` ถือเป็นของเลิกใช้ **ของใหม่ห้ามอ่าน** ให้ใช้ matched/returned เท่านั้น */
 
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { freshnessOf } from "./core-freshness.mjs";
 import { contains } from "./sql-contains.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -508,9 +509,14 @@ export async function listStock(o = {}) {
     pageRows = tagged.slice(offset, offset + limit);
   }
 
+  /* 🕘 ให้จอแคชตัวนับแท็บได้ — **เส้นนี้ต่างจากเส้นอื่น**: stock_snapshots ไม่มี updated_at
+     เก็บเป็น "ภาพถ่ายรายวัน" (คอลัมน์ day) ⇒ ได้ `changedDay` เป็นวัน ไม่ใช่เวลา ห้ามบวก 7
+     และไม่มีใครเก็บชีพจรของตารางนี้ ⇒ syncedAtKnown:false = ปกติ **ห้ามขึ้นเตือน** */
+  const freshness = await freshnessOf(coreQuery, { table: "stock_snapshots", dayCol: "day" });
   return {
     day,
     soldDays,
+    freshness,
     limit,
     offset,
     /* 🔎 ค่าเรียงที่ **ใช้จริง** + รายชื่อที่รองรับ ⇒ จอทำปุ่มเรียงได้ครบโดยไม่กลายเป็นปุ่มหลอก
