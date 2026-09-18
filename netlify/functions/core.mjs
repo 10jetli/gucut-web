@@ -1673,6 +1673,13 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),
+        /* 🔴 **ชื่อใน `applied` เป็น camelCase แต่ท่อรับตัวพิมพ์เล็ก** (เพิ่ม 19 ก.ย. 2569)
+            เจอด้วยด่าน `check-filters-work.mjs`: ส่ง `quietDays=9999` แล้วยอดไม่ขยับ (91)
+            ⇒ ด่านอ่านว่าปุ่มหลอก 3 ช่อง ทั้งที่ตัวกรองทำงาน — **ชื่อไม่ตรงเท่านั้น**
+            🔑 คลาสนี้พบ 5 จุดในท่อ (includeCancelled←cancelled · source←store · 3 ตัวนี้)
+              ⇒ ใครอ่าน `applied` แล้วเดาชื่อพารามิเตอร์ จะส่งผิดและท่อเมินเงียบ
+              [[ui-label-is-not-the-param-name]] */
+        appliedParamNames: { quietDays: "quietdays", lookbackDays: "lookbackdays", minSold: "minsold" },
       });
     }
     // สินค้าจม — จอ "รายงาน → สินค้า" ของ ZORT
