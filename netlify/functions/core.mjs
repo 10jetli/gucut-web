@@ -761,6 +761,15 @@ async function route(req, context) {
        POST ?productimage=1 body {ref, id, sku, image (base64|data URL ≤4MB), confirm?} ⇒ ZORT Product/UpdateProductImage?id=
        ⚠️ งานกระดาน t_mu0m98gq · รูป: โหมดซ้อมเป็นค่าเริ่มต้น · ยังไม่เคยยิงจริง · ผิด method = 405
        ⚠️ ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) แยกจาก 400 (ข้อมูลที่ส่งมาผิด) */
+    /* GET ?zortproductfields=<sku> ⇒ {found, fieldCount, fields:{ชื่อช่อง: ชนิด}}
+       🔎 ตอบคำถาม "ZORT ส่งช่องอะไรมากับสินค้า" (properties? รูปหลายรูป?) — ใบ t_mu7aduin
+       ⚠️ **คืนแค่ชื่อช่อง+ชนิด ไม่คืนค่า** · ต่างจาก ?zortproduct= ซึ่งคัดช่องเหลือ 10 ช่องก่อนคืน
+          ⇒ เส้นนั้นใช้ตอบว่า "ต้นทางมีอะไร" ไม่ได้ (เกือบสรุปผิดมาแล้ววันเดียวกัน)
+       ⚠️ GET อ่านอย่างเดียวเท่านั้น ห้ามทำเป็น POST */
+    if (url.searchParams.has("zortproductfields")) {
+      const { zortProductFields } = await import("../lib/zort-write.mjs");
+      return okJson(await zortProductFields(url.searchParams.get("zortproductfields")));
+    }
     if (url.searchParams.has("zortproduct")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortFindProduct } = await import("../lib/zort-write.mjs");

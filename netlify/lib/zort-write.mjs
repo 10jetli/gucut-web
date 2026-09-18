@@ -232,7 +232,10 @@ export async function zortAddProduct(o = {}) {
          ⇒ ส่งตามเอกสาร ไม่พึ่งว่า ZORT จะยอมเดาชนิดให้
       🔴 **ไม่ส่ง `stock` (สต็อกตั้งต้น) โดยตั้งใจ** — สต็อกที่เกิดตอนสร้างสินค้าไม่มีเอกสารรองรับ (ไม่มีใบซื้อ/ใบปรับยอด)
          กระจกคลังเงาจะเห็นยอดโผล่ขึ้นมาเฉย ๆ ⇒ รับของเข้าต้องผ่าน ?poreceive หรือปรับยอดใน ZORT
-      ⚠️ ไม่ส่ง producttype/properties — เอกสารไม่บอกค่าที่รับ ห้ามเดา */
+      ⚠️ `properties` **ยังไม่ส่ง** — เอกสารไม่บอกรูปแบบ และเส้นอ่านที่เรามี (`?zortproduct=`)
+         คัดช่องเหลือ 10 ช่องก่อนคืน ⇒ **ยังไม่เคยเห็นคำตอบดิบว่า ZORT ส่ง properties มาหรือไม่**
+         ⇒ เพิ่มเส้น `?zortproductfields=<sku>` (คืนแค่ **ชื่อช่อง** ไม่คืนค่า) ไว้ตอบข้อนี้หลัง deploy
+      ✅ `producttype` ส่งแล้ว — ค่ามาจากของจริงที่ ZORT ส่งกลับ ไม่ใช่เดา (ดูจุดที่ใส่ด้านล่าง) */
   const body = { sku, name };
   for (const [key, field] of [["price", "sellprice"], ["cost", "purchaseprice"],
     ["weight", "weight"], ["width", "width"], ["length", "length"], ["height", "height"]]) {
@@ -247,6 +250,23 @@ export async function zortAddProduct(o = {}) {
     if (!Number.isInteger(v) || v < 0 || v > max)
       return { ok: false, error: `${key} ต้องเป็นเลขจำนวนเต็ม 0-${max} (${field} ตามเอกสาร)` };
     body[field] = v;
+  }
+  /* 🔖 **ประเภทสินค้า `producttype` — เพิ่ม 19 ก.ย. 2569 (ใบ t_mu7aduin ท่านประธานสั่ง)**
+      ฝั่งจอรายงานว่าฟอร์มเพิ่มสินค้าไม่มีช่องนี้เพราะ **ท่อไม่รับ** ไม่ใช่จอไม่ได้ทำ
+      🔑 **ค่าที่รับได้พิสูจน์จากของจริง ไม่ใช่เดาจากเอกสาร**: `syncProducts` อ่าน `p.producttype`
+         จาก ZORT มาหลายพันตัวแล้ว และคอมเมนต์ที่นั่นจดไว้จากการตรวจทั้งคลัง (3 ก.ย. 2569):
+         **0 = สินค้า · 1 = บริการ** (ค่าส่ง · ค่าซ่อม — ของพวกนี้ไม่มีสต็อกจริง มี 6 ตัวในคลัง)
+      ⇒ ต่างจากเดิมที่คอมเมนต์เขียนว่า "เอกสารไม่บอกค่าที่รับ ห้ามเดา" — ตอนนี้**ไม่ใช่การเดาแล้ว**
+        เพราะค่ามาจากข้อมูลที่ ZORT ส่งกลับมาเองผ่านเส้นอ่าน
+      ⚠️ รับแค่ 0/1 · ค่าอื่นตีกลับ ไม่ใช่เมินเงียบ (กติกาเดียวกับ only=/kind= ของ list=stock:
+         ค่าที่แปลไม่ออกต้องตอบ error ไม่ใช่ตกเงียบเป็น "ไม่ระบุ" แล้วได้ผลผิดแบบดูเหมือนสำเร็จ)
+      ⚠️ ไม่ส่ง = ZORT ใช้ค่าปริยายของตัวเอง ⇒ **ไม่ยัด 0 ให้เอง** เพราะ 0 เป็นค่าที่มีความหมาย
+         ("สินค้า") ไม่ใช่ "ไม่ระบุ" — ยัดให้ = ตัดสินใจแทนคนกรอกโดยไม่มีใครขอ */
+  if (o.productType !== undefined && o.productType !== "") {
+    const t = Number(o.productType);
+    if (t !== 0 && t !== 1)
+      return { ok: false, error: "productType รับแค่ 0 (สินค้า) หรือ 1 (บริการ) — ค่าอื่นไม่ส่งเข้า ZORT" };
+    body.producttype = t;
   }
   if (txt(o.unit)) body.unittext = txt(o.unit, 40);
   if (txt(o.barcode)) body.barcode = txt(o.barcode, 60);
@@ -638,6 +658,47 @@ export async function zortFindProduct(skuIn) {
     sellprice: numOrNull(p.sellprice), purchaseprice: numOrNull(p.purchaseprice),
     stock: numOrNull(p.stock), availablestock: numOrNull(p.availablestock),
     unittext: txt(p.unittext, 40) || null, imagepath: txt(p.imagepath, 400) || null } };
+}
+
+/** 🔎 **ชื่อช่องดิบที่ ZORT ส่งมากับสินค้าหนึ่งตัว — คืนแค่ชื่อช่องกับชนิด ไม่คืนค่า**
+ *
+ * 🔴 ที่มา 19 ก.ย. 2569 (ใบ t_mu7aduin): ต้องรู้ว่า ZORT ส่ง `properties` / รูปหลายรูป มาไหม
+ *    ยิง `?zortproduct=` แล้วได้ 10 ช่อง **แต่นั่นเป็นเพราะ `zortFindProduct` คัดช่องเองก่อนคืน**
+ *    ⇒ เกือบสรุปว่า "ZORT ไม่ส่ง producttype/properties" ทั้งที่ `syncProducts`
+ *      อ่าน `p.producttype` · `p.category` · `p.weight` จากเส้นเดียวกันได้มาหลายพันตัว
+ *    🔑 **ตัวตรวจที่คัดข้อมูลก่อนคืน ใช้ตอบคำถามว่า "ต้นทางมีอะไร" ไม่ได้** [[probe-shares-the-bug]]
+ *
+ * ⚠️ **คืนแค่ชื่อช่อง + ชนิด ไม่คืนค่า** — ตอบคำถามที่ถามพอดี และไม่พาข้อมูลสินค้า/ลูกค้าออกมา
+ *    (ชื่อช่องไม่ใช่ข้อมูลความลับ · ค่าในช่องอาจเป็นอะไรก็ได้)
+ * ⚠️ **GET อ่านอย่างเดียว** — ห้ามทำเป็น POST แม้ในอนาคต · ZORT ตอบ 200 ให้แทบทุกอย่าง
+ *    ⇒ POST ไปเส้นที่ไม่รู้จะแยกไม่ออกว่าถูกปฏิเสธหรือสร้างเอกสารจริงไปแล้ว
+ * ⚠️ ไม่พบสินค้า = `found:false` **ไม่ใช่** "ZORT ไม่มีช่องพวกนี้" (สองเรื่องคนละเรื่อง)
+ */
+export async function zortProductFields(skuIn) {
+  const sku = txt(skuIn, 60);
+  if (!sku) return { ok: false, error: "ต้องระบุ sku" };
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Product/GetProducts?searchsku=${encodeURIComponent(sku)}&limit=5`,
+      { headers, signal: AbortSignal.timeout(15000) });
+  } catch (e) {
+    /* ถามไม่สำเร็จ = unknown ห้ามแปลว่า "ไม่มีช่อง" */
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  if (!r.ok) return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
+  let j = null;
+  try { j = await r.json(); } catch { return { ok: false, unknown: true, error: "ZORT ตอบไม่ใช่ JSON" }; }
+  const list = Array.isArray(j?.list) ? j.list : [];
+  const hit = list.find((x) => String(x?.sku ?? "").trim() === sku) || null;
+  if (!hit) return { ok: true, found: false, sku, listLength: list.length,
+    note: "ไม่พบ sku นี้ — **ไม่ได้แปลว่า ZORT ไม่มีช่องเหล่านั้น** ลองรหัสอื่น" };
+  const ชนิด = (v) =>
+    v === null ? "null" : Array.isArray(v) ? `array(${v.length})` : typeof v === "object" ? "object" : typeof v;
+  const fields = Object.fromEntries(Object.keys(hit).sort().map((k) => [k, ชนิด(hit[k])]));
+  return { ok: true, found: true, sku, fieldCount: Object.keys(fields).length, fields,
+    note: "ชื่อช่อง+ชนิดที่ ZORT ส่งมาจริง (ไม่คืนค่า) · ช่องที่ไม่โผล่อาจเป็นเพราะสินค้าตัวนี้ไม่ได้กรอก ไม่ใช่ ZORT ไม่มีช่อง" };
 }
 
 /* ทีละ 10 ขนาน × 2 รอบ × เพดาน 8 วิ = ไม่เกิน ~16 วิ (เพดานฟังก์ชัน 26 วิ) ⇒ ขอได้ครั้งละ 20 รหัส */
