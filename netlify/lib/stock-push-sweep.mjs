@@ -481,6 +481,76 @@ export async function กวาดดันสต็อก({ platform = "lazada"
 
 /** สรุปให้จอสถานะ — **อ่านอย่างเดียว เร็ว ไม่ยิงแพลตฟอร์ม**
  *  จอเรียกตัวนี้ตอนเปิดหน้าได้ (ต่างจาก ?stockpush=1 ที่ยิงสดและช้า ~10 วิ) */
+/** รายรหัสที่ถูกข้าม/มี error — **ฝั่งจอขอ 18 ก.ย. 2569 เพราะของเดิมอ่านไม่ได้**
+ *
+ *  🔴 ปัญหาเดิม: `สถานะดันสต็อก()` ส่ง `stuck` มาแค่ 20 แถว กรองด้วย `skip_reason`
+ *     และทุกแถวที่ส่งมา `last_error` เป็น null ⇒ ฝั่งจอต้องไปอนุมานเหตุจาก `stockpushlog`
+ *     ซึ่งเป็นสมุดรอบกวาด **คนละแหล่งกับคอลัมน์ในตาราง** ⇒ สรุปข้ามแหล่งแล้วอาจผิดโดยไม่มีใครรู้
+ *  ⇒ เส้นนี้อ่าน `push_state` ตรง ๆ คืนทั้ง skip_reason และ last_error รายรหัส กรองได้ แบ่งหน้าได้
+ *
+ *  ⚠️ **ยังมีช่องว่างที่เส้นนี้ปิดไม่ได้ และต้องรู้ก่อนใช้**: รหัสที่ไม่ถูกส่งเพราะ **ทิศลง**
+ *     (ต้องสั่งแยกด้วย allowClose) **ไม่ถูกบันทึกลง push_state เลย** — มีแต่ในสมุดรอบกวาด
+ *     ทั้งที่คอมเมนต์ในไฟล์นี้เขียนเองว่า "กองที่ตั้งใจข้าม ต้องบันทึกด้วย ห้ามปล่อยหาย"
+ *     ⇒ ตัวนับ "กำลังถูกข้าม" จึงไม่รวมทิศลง · การแก้ต้องไปแตะตัวคิดแผน จึงแยกเป็นใบของตัวเอง
+ *  ⚠️ `skip_reason` ที่ตารางนี้เก็บจริงมีแค่ 3 ค่า: negative · unknown · conflict
+ *     ⇒ ไม่มีค่าไหนแปลว่า "นโยบายห้ามส่ง" ⇒ **ห้ามอ่านตัวนับนี้ว่า "จำนวนบั๊ก"**
+ */
+export async function รายรหัสที่ค้าง({ channel, reason, limit, offset } = {}) {
+  if (!coreReady()) return { inconclusive: true, why: "ต่อฐานคลังเงาไม่ได้" };
+  const n = Math.max(1, Math.min(200, Number.parseInt(String(limit ?? "50"), 10) || 50));
+  const off = Math.max(0, Number.parseInt(String(offset ?? "0"), 10) || 0);
+  const ch = String(channel ?? "").trim().toLowerCase();
+  if (ch && !["lazada", "shopee", "tiktok"].includes(ch))
+    return { error: `channel ต้องเป็น lazada · shopee · tiktok (ได้ "${ch.slice(0, 20)}")` };
+  const rs = String(reason ?? "").trim().toLowerCase();
+  const REASONS = ["negative", "unknown", "conflict", "error", "any"];
+  if (rs && !REASONS.includes(rs))
+    return { error: `reason ต้องเป็น ${REASONS.join(" · ")} (ได้ "${rs.slice(0, 20)}")` };
+
+  const where = ["(skip_reason IS NOT NULL OR last_error IS NOT NULL)"];
+  const args = [];
+  if (ch) { where.push("channel = ?"); args.push(ch); }
+  if (rs === "error") where.push("last_error IS NOT NULL");
+  else if (rs && rs !== "any") { where.push("skip_reason = ?"); args.push(rs); }
+  const w = where.join(" AND ");
+
+  const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM push_state WHERE ${w}`, args);
+  const rows = await coreQuery(
+    `SELECT sku, channel, skip_reason, skip_streak, skip_first_at, skip_last_at,
+            last_error, last_error_at, planned_qty, pushed_qty, verified_qty
+     FROM push_state WHERE ${w}
+     ORDER BY skip_streak DESC, sku ASC LIMIT ${n} OFFSET ${off}`,
+    args
+  );
+  /* แยกกองให้คนอ่านไม่ต้องตีความเอง — และเขียนกำกับว่าตารางนี้ไม่มีกอง "นโยบาย" */
+  const กอง = {};
+  for (const r of Array.isArray(rows) ? rows : []) {
+    const k = r.last_error ? "มี error จากแพลตฟอร์ม" : `ถูกข้าม: ${r.skip_reason ?? "ไม่ระบุ"}`;
+    กอง[k] = (กอง[k] ?? 0) + 1;
+  }
+  return {
+    ok: true,
+    ทั้งหมดที่ตรงเงื่อนไข: Number(cnt?.c ?? 0),
+    applied: { channel: ch || null, reason: rs || null, limit: n, offset: off },
+    supportedFilters: ["channel", "reason", "limit", "offset"],
+    กองในหน้านี้: กอง,
+    "⚠️ ขอบเขต": "อ่านจาก push_state เท่านั้น — **ไม่รวมรหัสที่ไม่ถูกส่งเพราะทิศลง** ซึ่งอยู่ในสมุดรอบกวาด (?stockpushlog=1) ไม่ได้ถูกบันทึกลงตารางนี้",
+    rows: (Array.isArray(rows) ? rows : []).map((r) => ({
+      sku: String(r.sku ?? ""),
+      channel: r.channel ?? null,
+      skip_reason: r.skip_reason ?? null,
+      skip_streak: r.skip_streak === null || r.skip_streak === undefined ? null : Number(r.skip_streak),
+      skip_first_at: r.skip_first_at ?? null,
+      skip_last_at: r.skip_last_at ?? null,
+      last_error: r.last_error ?? null,
+      last_error_at: r.last_error_at ?? null,
+      planned_qty: r.planned_qty === null || r.planned_qty === undefined ? null : Number(r.planned_qty),
+      pushed_qty: r.pushed_qty === null || r.pushed_qty === undefined ? null : Number(r.pushed_qty),
+      verified_qty: r.verified_qty === null || r.verified_qty === undefined ? null : Number(r.verified_qty),
+    })),
+  };
+}
+
 export async function สถานะดันสต็อก() {
   if (!coreReady()) return { inconclusive: true, why: "ต่อฐานคลังเงาไม่ได้" };
   await สร้างตาราง();

@@ -422,6 +422,21 @@ async function route(req, context) {
       const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
       return okJson(await สถานะดันสต็อก());
     }
+    /* GET ?pushstuck=1[&channel=&reason=&limit=&offset=] ⇒ รายรหัสที่ถูกข้าม/มี error ตรงจาก push_state
+       ฝั่งจอขอ 18 ก.ย. 2569 เพราะ ?pushstate=1 ส่ง stuck มาแค่ 20 แถวและ last_error เป็น null ทุกแถว
+       ⇒ เขาต้องอนุมานเหตุจาก ?stockpushlog=1 ซึ่งเป็นคนละแหล่ง (สมุดรอบกวาด ไม่ใช่คอลัมน์ในตาราง)
+       ⚠️ คำตอบมี "⚠️ ขอบเขต" กำกับว่าไม่รวมรหัสที่ไม่ถูกส่งเพราะทิศลง (ยังไม่ถูกบันทึกลงตาราง) */
+    if (url.searchParams.get("pushstuck")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { รายรหัสที่ค้าง } = await import("../lib/stock-push-sweep.mjs");
+      const r = await รายรหัสที่ค้าง({
+        channel: url.searchParams.get("channel"),
+        reason: url.searchParams.get("reason"),
+        limit: url.searchParams.get("limit"),
+        offset: url.searchParams.get("offset"),
+      });
+      return okJson(r, r?.error ? 400 : 200);
+    }
     if (url.searchParams.get("stockpushlog")) {
       const { getStore } = await import("@netlify/blobs");
       const log = await getStore({ name: "gucut-coupon", consistency: "strong" })
