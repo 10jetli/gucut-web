@@ -218,11 +218,28 @@ test('รายชื่อเส้น list: ไม่พิมพ์มือ�
 test('list=orders: statusesAll ต้องกรองแค่ร้าน ไม่กรองคำค้น/วัน', () => {
   const src = readFileSync(new URL('../../netlify/lib/core-orders.mjs', import.meta.url), 'utf8');
   const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
-  assert.match(code, /const wStore = buildWhere\(\{ includeCancelled: true, source \}\)/,
-    'ต้องมีตัวกรองร้านล้วน — ไม่มี from/to/q/channel');
+  /* 🔴 แก้ด่านนี้ 18 ก.ย. 2569 — เดิมตรึงว่า "ห้ามส่ง from/to" ซึ่ง **ผิด**
+     `buildWhere` ใส่เงื่อนไขวันเสมอ ⇒ ไม่ส่ง = NULL = ศูนย์แถวทุกคำขอ (ฝั่งจอจับได้)
+     ⇒ ที่ถูกคือ **ต้องส่งช่วงกว้างสุด** ไม่ใช่ปล่อยว่าง
+     🔑 ด่านเดิมของผมตรึง "รูปที่ผมคิดว่าถูก" ไม่ใช่ "พฤติกรรมที่ต้องได้"
+        ⇒ มันเลยเขียวตอนที่โค้ดคืนศูนย์แถว = ด่านรับรองบั๊ก */
+  assert.match(code, /const wStore = buildWhere\(\{ from: "0001-01-01", to: "9999-12-31", includeCancelled: true, source \}\)/,
+    'ต้องส่งช่วงวันกว้างสุด — buildWhere ใส่เงื่อนไขวันเสมอ ไม่ส่ง = NULL = ศูนย์แถว');
+  assert.doesNotMatch(code, /const wStore = buildWhere\(\{ includeCancelled: true, source \}\)/,
+    'ห้ามปล่อย from/to ว่าง — จะได้ศูนย์แถวเงียบ ๆ แล้วอ่านเหมือนยังไม่ deploy');
   assert.match(code, /SELECT DISTINCT status FROM orders WHERE \$\{wStore\.sql\}/,
     'สารบัญสถานะต้องใช้ wStore ไม่ใช่ wAll (wAll ยังกรอง q/วัน)');
   assert.match(code, /statusesAll:/, 'ต้องส่ง statusesAll ออกไปให้จอ');
-  /* null เมื่ออ่านไม่ได้ — ห้ามส่ง [] เพราะ [] อ่านได้ว่า "ระบบไม่มีสถานะเลย" */
-  assert.match(code, /statusesAll:[\s\S]{0,140}: null/, 'อ่านไม่ได้ต้องเป็น null ไม่ใช่ []');
+  /* สามสถานะ: [] = ตารางว่างจริง · null = ยิงไม่ได้ · มีรายชื่อ = รู้
+     ⚠️ .catch ต้องคืน **null** ไม่ใช่ [] ไม่งั้น "ยิงไม่ได้" กับ "ไม่มีแถว" ถูกยุบเป็นอันเดียว */
+  /* 🔴 **ต้องผูกกับบล็อกของ statusesAll เท่านั้น** — เดิมผมเขียน /\.catch\(\(\) => null\)/ ลอย ๆ
+     ⇒ มันเจอ catch null ตัวอื่นในไฟล์ (มีหลายที่) ⇒ **ด่านเขียวทั้งที่ statusesAll คืน []**
+     พิสูจน์ด้วยการปลูกบั๊ก: เปลี่ยน catch ของ statusesAll เป็น [] แล้วด่านไม่ร้อง
+     🔑 regex ที่ไม่ผูกขอบเขต จะรับรองสิ่งที่มันไม่ได้ตรวจ — คลาสเดียวกับ substring/ขอบบล็อกของวันนี้ */
+  const at = code.indexOf('SELECT DISTINCT status FROM orders');
+  assert.ok(at > 0, 'หาคำสั่ง statusesAll ไม่เจอ');
+  const บล็อก = code.slice(at, at + 260);
+  assert.match(บล็อก, /\.catch\(\(\) => null\)/,
+    'catch ของ statusesAll ต้องคืน null ไม่ใช่ [] — ไม่งั้น "ยิงไม่ได้" กับ "ไม่มีแถว" ยุบเป็นอันเดียว');
+  assert.match(code, /statusesAllError:/, 'ต้องบอกจอด้วยว่ารอบนี้อ่านไม่ได้ ไม่ใช่เงียบ');
 });

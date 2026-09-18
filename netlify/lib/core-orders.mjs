@@ -381,7 +381,17 @@ export async function listOrders(o = {}) {
      ใช้ตอบคำถามเดียว: "ระบบนี้มีสถานะอะไรอยู่บ้าง" ⇒ จอทำแท็บครบได้โดยไม่ต้อง hardcode ชื่อ
      ⚠️ ห้ามเอา wAll มาใช้แทน — wAll ยังกรอง q/วัน ⇒ สถานะที่ไม่เจอในผลค้นจะหายไปทั้งปุ่ม
         (นั่นคือบั๊กที่ฝั่งจอเจอ 18 ก.ย. 2569 ตอนใช้จอขายเป็นทางสำรองจริง) */
-  const wStore = buildWhere({ includeCancelled: true, source });
+  /* 🔴 **ต้องส่งช่วงวันกว้างสุดเข้าไป ห้ามปล่อยว่าง** (แก้ 18 ก.ย. 2569 · ฝั่งจอจับได้)
+     `buildWhere` ใส่ `order_date >= ? AND order_date <= ?` **เสมอ ไม่มีเงื่อนไข**
+     ⇒ ไม่ส่ง from/to ⇒ params เป็น undefined ⇒ D1 เห็นเป็น NULL ⇒ `order_date >= NULL` = NULL
+     ⇒ **ได้ศูนย์แถวทุกคำขอ** แล้วปลายทางส่ง null ⇒ **อ่านเหมือน "ยังไม่ deploy" เป๊ะ**
+     (ผมเองสรุปผิดแบบนั้นไปรอบหนึ่ง · ฝั่งจอแก้ให้ด้วยหลักฐานที่แน่นกว่า:
+      ใช้หัว `x-d1-count` นับจำนวนคำสั่งที่ยิงจริง = 15 ตรงกับซอร์สรุ่นใหม่ ⇒ พิสูจน์ว่า deploy ขึ้นแล้ว
+      และคำสั่งนี้ถูกยิงแล้ว แค่ไม่ได้แถวกลับมา)
+     ⚠️ **ห้ามแก้ที่ buildWhere** ให้ข้ามเงื่อนไขวันเมื่อไม่ส่ง — ทุกเส้นที่พึ่งช่วงวันปริยายจะเปลี่ยนความหมายพร้อมกัน
+     🔑 และคอมเมนต์ที่ผมเขียนไว้เองว่า "ไม่มีวัน ไม่มีคำค้น" เป็น **เจตนา** ส่วนโค้ดใส่วันให้เองโดยไม่มีใครสั่ง
+        ⇒ คอมเมนต์ประกาศเจตนา ไม่ใช่หลักฐานว่าโค้ดทำตามนั้น (กฎเดียวกับที่เจอใน byStatus วันเดียวกัน) */
+  const wStore = buildWhere({ from: "0001-01-01", to: "9999-12-31", includeCancelled: true, source });
   const [
     sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, byStatus, statusesAllRows,
     beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
@@ -458,7 +468,10 @@ export async function listOrders(o = {}) {
       `SELECT DISTINCT status FROM orders WHERE ${wStore.sql} AND COALESCE(status,'') <> ''
        ORDER BY status`,
       wStore.params
-    ).catch(() => []),
+    /* ⚠️ **null ไม่ใช่ []** — "ยิงไม่ได้" กับ "ไม่มีแถว" ต้องแยกกัน
+        ถ้าคืน [] ปลายทางจะส่ง null เหมือนกันทั้งสองกรณี ⇒ ยุบสามสถานะเป็นสอง
+        (ฝั่งจอขอข้อนี้มา และถูก — คอมเมนต์ข้างล่างเขียนสามสถานะไว้เอง แต่โค้ดทำได้แค่สอง) */
+    ).catch(() => null),
     /* ── อายุของข้อมูล ── ตารางชีพจรอาจยังไม่ถูกสร้าง (ต้องยิง ?init=1)
         ⇒ .catch คืนอาร์เรย์ว่าง **ห้ามให้ล้มลากทั้งคำขอ** */
     coreQuery(`SELECT at FROM core_meta WHERE k = 'sync_orders'`).catch(() => []),
@@ -586,9 +599,10 @@ export async function listOrders(o = {}) {
        🔑 **แท็บคือสารบัญของข้อมูลทั้งหมด ไม่ใช่ผลของตัวกรองที่เลือกอยู่**
        ⚠️ **null = อ่านไม่ได้ ไม่ใช่ "ไม่มีสถานะ"** ⇒ จอต้องไม่แสดงวงเล็บจำนวน แทนการโชว์ 0
           (สามสถานะ: มีชื่อ+เจอในผล = โชว์จำนวน · มีชื่อ+ไม่เจอ = โชว์ 0 · ไม่มีรายชื่อ = ไม่รู้) */
-    statusesAll: Array.isArray(statusesAllRows) && statusesAllRows.length
-      ? statusesAllRows.map((r) => String(r.status))
-      : null,
+    statusesAll: Array.isArray(statusesAllRows)
+      ? statusesAllRows.map((r) => String(r.status))   // [] = ระบบไม่มีสถานะจริง ๆ (ตารางว่าง)
+      : null,                                          // null = ยิงไม่ได้ ⇒ จอต้องอ่านว่า "ไม่รู้"
+    statusesAllError: statusesAllRows === null ? "อ่านรายชื่อสถานะจากคลังเงาไม่ได้รอบนี้" : null,
     /* ── ขอบเขต "ร้าน" ── จอใช้เขียนป้ายเองได้โดยไม่ต้องฮาร์ดโค้ดจำนวนร้าน
         store  = ร้านที่ถูกกรองอยู่ (null = ไม่ได้กรอง คือรวมทุกร้านที่มีในช่วงนี้)
         stores = ร้านที่มีบิลจริงในช่วงนี้ พร้อมยอดของแต่ละร้าน */
