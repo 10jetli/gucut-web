@@ -1,6 +1,6 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
 // ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
-export const generatedAt = "2026-09-18T21:45:39.061Z";
+export const generatedAt = "2026-09-18T21:53:11.938Z";
 export const source = "netlify/functions/*.mjs (export const config)";
 export const jobs = [
  {
@@ -31,7 +31,7 @@ export const jobs = [
   "id": "core-sync",
   "file": "netlify/functions/core-sync.mjs",
   "cron": "13 * * * *",
-  "desc": "คลังเงา GUCUT Core — งานตามเวลา รันเองทุกครึ่งชั่วโมง (เหลื่อมจาก beam-sweep 13 นาที)"
+  "desc": "คลังเงา GUCUT Core — งานตามเวลา **รันเองชั่วโมงละครั้ง (นาทีที่ 13)**"
  },
  {
   "id": "live-sweep",
