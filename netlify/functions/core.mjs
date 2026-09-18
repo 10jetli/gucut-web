@@ -1617,8 +1617,11 @@ async function route(req, context) {
           from: url.searchParams.get("from") ?? undefined,
           to: url.searchParams.get("to") ?? undefined,
           days: url.searchParams.get("days") ?? undefined,
+          /* 🔖 สถานะ — เพิ่ม 19 ก.ย. 2569 · กรองได้เฉพาะทางกระจก (ZORT รับ status ไหมยังไม่รู้)
+             ⇒ ส่ง status มาก็บังคับไปทางกระจกเหมือน q/from/to (ดู listReturnOrders) */
+          status: url.searchParams.get("status") ?? undefined,
         })),
-        supportedFilters: ["q", "store", "from", "to", "days", "limit", "page"],
+        supportedFilters: ["q", "store", "from", "to", "days", "status", "limit", "page"],
         store: st.source,
         storeDefaulted: st.defaulted,
         storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,

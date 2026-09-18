@@ -1475,7 +1475,16 @@ async function ยอดกระจกใบคืน(store) {
 }
 
 async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range = {}) {
-  const applied = { q: needle || null, from: range.from ?? null, to: range.to ?? null, days: range.days ?? null, source: "mirror" };
+  /* 🔖 **สถานะ — เพิ่ม 19 ก.ย. 2569** ฝั่งจอถามว่าควรทำแท็บในจอใบคืนไหม
+     ผมยิงตรวจก่อนตอบแล้วพบว่า `status=` **ไม่มีผลเลย** (693 ทุกค่า)
+     ⇒ ถ้าตอบว่า "ทำแท็บเลย" จอจะได้ปุ่มที่กดแล้วไม่มีอะไรเกิด = ปุ่มหลอก
+     ⇒ ต้องมีตัวกรองจริงก่อน แล้วค่อยให้จอทำแท็บ (ลำดับนี้กลับกันไม่ได้)
+     ⚠️ กรองได้เฉพาะ**ทางกระจก** — ZORT `GetReturnOrders` รับ status ไหมยังไม่รู้ **ห้ามเดา**
+        ⇒ ส่ง status มา = บังคับไปทางกระจก (ท่าเดียวกับ q/from/to ที่ทำอยู่แล้ว)
+     ⚠️ เทียบแบบ **ตรงตัวไม่สนตัวพิมพ์** ไม่ใช่ LIKE — ค่าสถานะมาจาก ZORT เป็นคำจำกัด
+        ใช้ LIKE จะทำให้ "Success" จับ "Unsuccess" ด้วย [[no-substring-classification]] */
+  const status = String(range.status ?? "").trim().slice(0, 40) || null;
+  const applied = { q: needle || null, from: range.from ?? null, to: range.to ?? null, days: range.days ?? null, status, source: "mirror" };
   if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   const p = Math.max(1, Math.min(50, num(page) || 1));
@@ -1492,6 +1501,7 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
   }
   if (range.from) { parts.push("return_date >= ?"); args.push(range.from); }
   if (range.to) { parts.push("return_date <= ?"); args.push(range.to); }
+  if (status) { parts.push("lower(COALESCE(status,'')) = lower(?)"); args.push(status); }
   const where = parts.join(" AND ");
   let total;
   let rows;
@@ -1525,6 +1535,11 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
     source: "mirror",
     store,
     applied,
+    /* 🤝 สัญญากับจอ: บอกตัวกรองที่ **ใช้ได้จริง** และค่าที่เลือกได้
+       ค่าสถานะที่มีให้เลือกอยู่ใน `mirrorTotals.byStatus` (มาจากกระจกทั้งชุด ไม่ใช่พิมพ์มือ)
+       ⇒ จอทำแท็บจากตัวนั้นได้เลย และจำนวนจะตรงกับที่กรองได้จริง */
+    supportedFilters: ["q", "from", "to", "days", "status", "limit", "page", "store"],
+    statusValuesFrom: "mirrorTotals.byStatus (รายการปลายเปิด — จำนวนโตได้เมื่อ ZORT เพิ่มสถานะ)",
     mirrorTotals,
     syncedAtUtc: meta?.at ?? null,
     syncComplete: meta ? meta.v === "complete" : null,
@@ -1551,8 +1566,19 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
          และต้องบอกผู้เรียกว่าเลขชุดนี้มาจากกระจก (source: "mirror") ไม่ใช่ ZORT สด
          กระจกอาจซิงก์ไม่ทัน ⇒ ส่ง syncedAtUtc/syncComplete ไปให้ตัดสินเองด้วย */
   const range = returnDateRange(opts);
-  if (range.error) return { error: range.error, supportedFilters: ["q", "store", "from", "to", "days", "limit", "page"] };
-  if (needle || range.from || range.to) return searchReturnOrdersMirror(limit, page, needle, store, range);
+  if (range.error) return { error: range.error, supportedFilters: ["q", "store", "from", "to", "days", "status", "limit", "page"] };
+  /* 🔴 **`returnDateRange()` สร้าง object ใหม่ที่มีแต่เรื่องวัน** — status ที่ผู้เรียกส่งมาจะหายที่นี่
+     เจอกับตัวเองทันทีที่เขียนตัวทดสอบ (19 ก.ย. 2569): `range.status` เป็น undefined เสมอ
+     ⇒ เงื่อนไขแยกทางไม่เคยเป็นจริงเพราะ status ⇒ **ตัวกรองที่เพิ่งเพิ่มไม่มีผลอะไรเลย**
+       และจากข้างนอกดูเหมือนสำเร็จทุกประการ (200 + ตัวเลขสมเหตุสมผล) = ที่เพิ่งจะแก้เป๊ะ
+     ⚠️ **ไม่แก้ที่ `returnDateRange`** — ฟังก์ชันนั้นมีหน้าที่เรื่องวันอย่างเดียว
+        ยัด status เข้าไปจะทำให้ชื่อกับหน้าที่ไม่ตรงกัน และผู้เรียกอื่นได้ของที่ไม่ได้ขอ */
+  if (opts.status !== undefined) range.status = opts.status;
+  /* ⚠️ **ส่ง status มาต้องนับเข้าเงื่อนไขนี้ด้วย** (เพิ่ม 19 ก.ย. 2569)
+     ลืมตรงนี้ = จอส่ง status ไปแล้วท่อเดินทางสด ⇒ ZORT ไม่รู้จักค่านั้น ⇒ คืนทั้ง 693 ใบ
+     **แบบดูเหมือนสำเร็จ** (200 + ตัวเลขสมเหตุสมผล) = ปุ่มกรองหลอกพอดี
+     ซึ่งเป็นอาการเดียวกับที่ยิงวัดเจอก่อนแก้ [[filter-looks-applied-but-is-not]] */
+  if (needle || range.from || range.to || range.status) return searchReturnOrdersMirror(limit, page, needle, store, range);
   const h = store === "z2" ? storeCreds("z2") : headers();
   if (!h) return { error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   const n = Math.max(1, Math.min(200, num(limit) || 50));

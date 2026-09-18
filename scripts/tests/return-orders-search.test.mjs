@@ -49,7 +49,14 @@ test('มีคำค้น ⇒ กรองที่กระจก ไม่�
     const r = await listReturnOrders(50, 1, '  CN-1 ');
     assert.equal(urls.length, 0, 'มีคำค้นต้องไม่ยิง ZORT — ZORT ไม่มีช่องค้น');
     // 18 ก.ย. 2569: สัญญาเพิ่มช่องช่วงวัน (from/to/days) — ไม่ส่งมา ⇒ ต้องเป็น null ไม่ใช่หายไป
-    assert.deepEqual(r.applied, { q: 'CN-1', from: null, to: null, days: null, source: 'mirror' });
+    /* 🔄 เดิมเช็ค `applied` ทั้งก้อนด้วย deepEqual ⇒ **เพิ่มช่องใหม่เข้า applied ไม่ได้เลย**
+       ต้องมาแก้เทสต์ทุกครั้งทั้งที่ของเดิมไม่ได้พัง (ตกจริงตอนเพิ่ม `status` 19 ก.ย. 2569)
+       ⇒ เช็คทีละคีย์ที่เทสต์นี้สนใจ + ยืนยันว่าคีย์ที่ต้องมี ยังมี
+       ⚠️ ยังต้องยืนยันว่า `q` ถูกสะท้อนกลับ และ source บอกว่ามาจากกระจก — นั่นคือใจความของเทสต์นี้ */
+    assert.equal(r.applied.q, 'CN-1');
+    assert.equal(r.applied.source, 'mirror');
+    for (const k of ['from', 'to', 'days']) assert.equal(r.applied[k], null, `applied.${k} ต้องเป็น null`);
+    assert.ok('status' in r.applied, 'applied ต้องมีคีย์ status (null = ไม่ได้กรองด้วยสถานะ)');
     assert.equal(r.source, 'mirror');
     assert.equal(r.live, false);
     assert.equal(r.total, 3);
@@ -94,7 +101,11 @@ test('ฐานล้ม ⇒ error และไม่มี rows/total (ไม�
   assert.ok(r.error);
   assert.equal(r.rows, undefined);
   assert.equal(r.total, undefined);
-  assert.deepEqual(r.applied, { q: 'CN-1', from: null, to: null, days: null, source: 'mirror' });
+  /* เช็คทีละคีย์ ไม่ใช่ deepEqual ทั้งก้อน — ดูเหตุผลที่เทสต์แรกของไฟล์นี้
+     ใจความของเทสต์นี้คือ **ตอนฐานล้ม ยังต้องบอกได้ว่ากรองด้วยอะไรไป** (ไม่ใช่เงียบ) */
+  assert.equal(r.applied.q, 'CN-1');
+  assert.equal(r.applied.source, 'mirror');
+  assert.ok('status' in r.applied);
 });
 
 test('ชีพจรอ่านไม่ได้ ⇒ syncComplete null (ไม่รู้) ไม่ใช่ true · ผลค้นยังได้', async () => {
