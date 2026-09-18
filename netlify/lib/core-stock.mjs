@@ -239,12 +239,32 @@ export async function listStock(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const sort = {
+  /* 🔴 **ค่า sort ที่ไม่รู้จัก เคยกลายเป็น "เรียงตาม qty" เงียบ ๆ** (ฝั่งจอจับได้ 18 ก.ย. 2569
+      ยิงเทียบทีละค่า: name · price · buy · available และค่ามั่ว ให้ลำดับเหมือน qty เป๊ะทุกตัว
+      และเส้นนี้ไม่สะท้อน applied กลับมาเลย ⇒ **ปุ่มเรียงหลอก**)
+     ⚠️ จอ ZORT ให้กดเรียงจากหัวคอลัมน์ได้ 6 ช่อง ⇒ ถ้าเราทำปุ่มครบ 6 โดยท่อรองรับ 3
+        จะได้ปุ่มที่กดแล้วลำดับไม่ขยับและไม่มีอะไรบอก ซึ่งผิดโจทย์ "ห้ามมีปุ่มหลอก"
+     ⇒ เติมให้ครบตามคอลัมน์ที่ SELECT มีจริง แล้ว **สะท้อน applied.sort กลับไป** ให้จอตรวจเองได้
+     ⚠️ ชื่อคอลัมน์ในนี้ต้องตรงกับ alias ใน SELECT ข้างล่าง (name · price · buy · avail · sold30)
+        ไม่ตรง = D1 ตอบ error ทั้งคำขอ ไม่ใช่เรียงผิดเงียบ ๆ (ตรวจแล้วด้วยการยิงจริงทุกค่า)
+     ⚠️ ค่าที่ไม่รู้จัก **ยังคงไม่ตีกลับเป็น error** เพราะจอเก่าอาจส่งค่าที่เลิกใช้มา
+        แต่ต้องรายงานผ่าน `sortIgnored` ⇒ จอเขียนบอกได้ว่าปุ่มนั้นยังไม่รองรับ */
+  const SORTS = {
     qty: "cur.qty ASC",
     qtydesc: "cur.qty DESC",
     sold: "sold30 DESC",
     sku: "cur.sku ASC",
-  }[o.sort] || "cur.qty ASC";
+    name: "name ASC",
+    price: "cur.price DESC",
+    pricelow: "cur.price ASC",
+    buy: "buy DESC",
+    available: "avail DESC",
+    availablelow: "avail ASC",
+  };
+  const sortRaw = String(o.sort ?? "").trim().slice(0, 20);
+  const sort = SORTS[sortRaw] || "cur.qty ASC";
+  const sortApplied = SORTS[sortRaw] ? sortRaw : "qty";
+  const sortIgnored = sortRaw && !SORTS[sortRaw] ? sortRaw : null;
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
   // ⚠️ เดิมฝั่งจอกรองจาก 50 แถวที่โหลดมา ⇒ ตัวเลขในวงเล็บกับแถวที่เห็นมาจากคนละชุด
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
@@ -491,6 +511,12 @@ export async function listStock(o = {}) {
     soldDays,
     limit,
     offset,
+    /* 🔎 ค่าเรียงที่ **ใช้จริง** + รายชื่อที่รองรับ ⇒ จอทำปุ่มเรียงได้ครบโดยไม่กลายเป็นปุ่มหลอก
+       (ฝั่งจอขอไว้ 18 ก.ย. 2569 หลังยิงพบว่าค่าที่ไม่รองรับกลายเป็น qty เงียบ ๆ)
+       ⚠️ `sortIgnored` ไม่ใช่ null = จอส่งค่าที่ท่อยังไม่รองรับ ⇒ จอต้องบอกคนใช้ ห้ามทำเหมือนเรียงได้ */
+    sortApplied,
+    sortIgnored,
+    sortsSupported: Object.keys(SORTS),
     /* สะท้อนค่าที่ **ใช้จริง** — จอเช็คได้ว่าท่อรับตัวกรองนี้แล้วหรือยัง
        (ท่อรุ่นเก่าไม่มีคีย์นี้ ⇒ จอรู้ทันทีว่าเลขที่ได้เป็นของทั้งคลัง ไม่ใช่ของช่องทางนั้น) */
     ...(channel ? { channel } : {}),
