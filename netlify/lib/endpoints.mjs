@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-09-18T16:25:25.340Z";
+export const generatedAt = "2026-09-18T16:28:08.374Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -137,3 +137,178 @@ export const paramRoutes = [
  "zortwarehouse",
  "zortwebhook"
 ];
+// ⚠️ ช่องที่ตัวเขียนของ ZORT รับเข้า — **หยาบ** (regex เก็บ o.xxx) ใช้ดูด้วยตา ห้ามถือเป็นสัญญา API
+export const writeFields = {
+ "zortAddProduct": [
+  "barcode",
+  "category",
+  "confirm",
+  "description",
+  "name",
+  "ref",
+  "sku",
+  "stock",
+  "tags",
+  "unit"
+ ],
+ "zortAddSale": [
+  "address",
+  "channel",
+  "cod",
+  "confirm",
+  "customer",
+  "day",
+  "discount",
+  "items",
+  "note",
+  "number",
+  "paid",
+  "paymentMethod",
+  "phone",
+  "ref",
+  "shipping",
+  "status",
+  "warehouse"
+ ],
+ "zortAddBundle": [
+  "confirm",
+  "items",
+  "name",
+  "price",
+  "ref",
+  "sku",
+  "vat"
+ ],
+ "zortAddWarehouse": [
+  "address",
+  "code",
+  "confirm",
+  "name",
+  "ref"
+ ],
+ "zortAddContact": [
+  "code",
+  "confirm",
+  "email",
+  "idnumber",
+  "name",
+  "ref",
+  "taxId"
+ ],
+ "zortUpdateProduct": [
+  "confirm",
+  "id",
+  "ref",
+  "sku",
+  "vat"
+ ],
+ "zortDeleteProduct": [
+  "confirm",
+  "id",
+  "ref",
+  "sku"
+ ],
+ "zortUpdateProductImage": [
+  "confirm",
+  "id",
+  "image",
+  "ref",
+  "sku"
+ ],
+ "zortAddQuotations": [
+  "confirm",
+  "rows"
+ ],
+ "zortBatch": [
+  "confirm",
+  "rows"
+ ],
+ "zortOrderShipping": [
+  "confirm",
+  "id",
+  "ref",
+  "shippingChannel",
+  "shippingDate",
+  "shippingchannel",
+  "shippingdate",
+  "trackingNo",
+  "trackingno"
+ ],
+ "zortOrderShippingBatch": [
+  "confirm",
+  "rows"
+ ],
+ "zortReceivePurchaseOrder": [
+  "confirm",
+  "date",
+  "id",
+  "items",
+  "ref",
+  "warehouse"
+ ],
+ "zortAddReturnPurchaseOrder": [
+  "confirm",
+  "day",
+  "discount",
+  "items",
+  "note",
+  "number",
+  "paid",
+  "paymentMethod",
+  "poId",
+  "ref",
+  "shipping",
+  "status",
+  "vendor",
+  "vendorCode",
+  "warehouse"
+ ],
+ "zortVoidPurchaseOrder": [
+  "confirm",
+  "id",
+  "number",
+  "ref"
+ ],
+ "zortAddReturnOrder": [
+  "confirm",
+  "customer",
+  "items",
+  "note",
+  "ref",
+  "reference",
+  "vendor"
+ ],
+ "zortAddPurchaseOrder": [
+  "confirm",
+  "items",
+  "note",
+  "paid",
+  "paymentMethod",
+  "ref",
+  "status",
+  "vendor"
+ ],
+ "zortAddQuotation": [
+  "confirm",
+  "customer",
+  "items",
+  "note",
+  "phone",
+  "ref",
+  "reference"
+ ],
+ "zortEditQuotation": [
+  "confirm",
+  "customer",
+  "id",
+  "items"
+ ],
+ "zortVoidQuotation": [
+  "confirm",
+  "id"
+ ],
+ "zortDocCoverage": [
+  "id",
+  "number"
+ ]
+};

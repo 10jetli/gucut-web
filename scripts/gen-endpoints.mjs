@@ -51,6 +51,34 @@ for (const m of code.matchAll(/if \(url\.searchParams\.get\("([a-zA-Z][a-zA-Z0-9
   if (!ตัวกรองที่ไม่ใช่เส้น.has(m[1])) เส้นพารามิเตอร์.add(m[1]);
 }
 
+/* 🔖 **ช่องที่แต่ละตัวเขียน "รับเข้า"** — ฝั่งจอขอ 18 ก.ย. 2569 คืนเดียวกับที่เจอสามใบติด:
+     ท่อรับ weight/size/tag ได้ แต่จอเขียนว่า "ท่อยังไม่มีช่องนี้" · ท่อรับ number/day/cod ได้ แต่ฟอร์มไม่มีช่อง
+     ท่อส่ง countExcludingVoided มาแล้ว แต่จอไม่รู้จึงไปขอของใหม่
+   🔑 ทั้งสามคือ **ของที่ซื้อมาแล้วไม่ได้แกะกล่อง** — ไม่มีอะไรพัง ไม่มีอะไรฟ้อง
+      และ **หาไม่เจอด้วยการอ่านโค้ดฝั่งตัวเอง** ต้องเอาสองฝั่งมาวางเทียบกัน
+   ⚠️ **กองนี้หยาบ** — regex เก็บ `o.xxx` ในตัวฟังก์ชัน ซึ่งปนกับตัวช่วยที่ถูกฉีดเข้ามาทดสอบ
+      (เช่น o.coreQuery · o.archiveSlips) ⇒ ตัดชื่อที่รู้ว่าเป็นตัวช่วยออก แต่ไม่รับประกันว่าสะอาด
+      ⇒ ใช้เป็น "รายการที่ต้องดูด้วยตา" ห้ามนับเป็นสัญญาของ API */
+const ตัวช่วยที่ฉีดเข้ามา = new Set(["coreQuery", "archiveSlips", "now", "fetch", "store", "log", "signal"]);
+const writeFields = {};
+try {
+  const w = readFileSync(join(ราก, "netlify", "lib", "zort-write.mjs"), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
+  const หัว = [...w.matchAll(/export async function (zort[A-Za-z]+)\s*\(/g)];
+  for (let i = 0; i < หัว.length; i++) {
+    const เริ่ม = หัว[i].index;
+    const จบ = i + 1 < หัว.length ? หัว[i + 1].index : w.length;
+    const body = w.slice(เริ่ม, จบ);
+    const f = [...new Set([...body.matchAll(/\bo\.([A-Za-z_][\w]*)/g)].map((m) => m[1]))]
+      .filter((x) => !ตัวช่วยที่ฉีดเข้ามา.has(x))
+      .sort();
+    if (f.length) writeFields[หัว[i][1]] = f;
+  }
+} catch {
+  /* อ่านไม่ได้ ⇒ ปล่อยว่าง แล้วให้ปลายทางส่ง null — ไม่ทำให้ build ตก
+     เพราะกองนี้เป็นของเสริม ต่างจาก `lists` ที่เป็นสารบัญหลัก */
+}
+
 if (!ชื่อ.size) {
   throw new Error(
     "gen-endpoints: อ่าน core.mjs ไม่เจอเส้น list สักเส้น — รูปโค้ดเปลี่ยนไปแล้วหรือ path ผิด\n" +
@@ -69,6 +97,8 @@ writeFileSync(
   `export const lists = ${JSON.stringify(เรียง, null, 1)};\n` +
   "// ⚠️ กองนี้ **หยาบกว่า** lists — มาจาก `if (url.searchParams.get(\"xxx\"))` ซึ่งปนกับตัวกรองได้\n" +
   "//    ใช้เป็น 'รายการที่ต้องดูด้วยตา' ห้ามนับเป็นจำนวนเส้นที่แน่นอน\n" +
-  `export const paramRoutes = ${JSON.stringify([...เส้นพารามิเตอร์].sort(), null, 1)};\n`
+  `export const paramRoutes = ${JSON.stringify([...เส้นพารามิเตอร์].sort(), null, 1)};\n` +
+  "// ⚠️ ช่องที่ตัวเขียนของ ZORT รับเข้า — **หยาบ** (regex เก็บ o.xxx) ใช้ดูด้วยตา ห้ามถือเป็นสัญญา API\n" +
+  `export const writeFields = ${JSON.stringify(writeFields, null, 1)};\n`
 );
 console.log(`gen-endpoints: list ${เรียง.length} เส้น · เส้นพารามิเตอร์ (หยาบ) ${เส้นพารามิเตอร์.size} ชื่อ → netlify/lib/endpoints.mjs`);
