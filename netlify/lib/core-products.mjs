@@ -394,7 +394,16 @@ export async function listBundles(o = {}) {
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
   const filter = q ? `AND (${containsLit("sku", esc(q))} OR ${containsLit("name", esc(q))})` : "";
-  const only = { active: "AND active = 1", inactive: "AND active = 0" }[o.only] || "";
+  /* 🔴 **ค่ากรองที่ไม่รู้จัก ต้องตีกลับ ห้ามกลายเป็น "ไม่กรอง"** (ฝั่งจอจับได้ 18 ก.ย. 2569
+      ด้วยการยิงค่ามั่วแล้วนับแถว: ใส่ only มั่ว ⇒ ได้แถวเท่าเดิมทุกแถว = ปุ่มกรองหลอก)
+      ⚠️ ท่อเคยเจ็บเรื่องนี้แล้วที่เส้นออเดอร์ (`only=cod` หายไป แล้วจอโชว์ชุดเดียวกับแท็บทั้งหมด)
+         ⇒ กฎมีแล้วแต่ยังไม่ครบทุกเส้น — เส้นนี้คือเส้นที่ตกหล่น [[filter-looks-applied-but-is-not]]
+      ⇒ ค่าที่ไม่รู้จัก = **error** (ไม่ใช่เงียบ) · และสะท้อน `applied` กลับไปให้จอตรวจเองได้ */
+  const ONLY = { active: "AND active = 1", inactive: "AND active = 0" };
+  const onlyRaw = String(o.only ?? "").trim();
+  if (onlyRaw && !(onlyRaw in ONLY))
+    return { error: `only ต้องเป็น active หรือ inactive (ได้ "${onlyRaw.slice(0, 20)}") — ค่าที่ไม่รู้จักถูกตีกลับ ไม่ใช่แปลว่าไม่กรอง` };
+  const only = ONLY[onlyRaw] || "";
 
   /* ⚡ **ยิงพร้อมกัน ห้ามเรียงกัน** (6 ก.ย. 2569 — เจ้าของร้านสั่ง "สินค้ากับสินค้าชุด ห้ามโหลดช้า")
       สองตัวนี้อ่านตาราง `bundles` เหมือนกันและ **ไม่มีตัวไหนใช้ผลของอีกตัว**
@@ -516,6 +525,12 @@ export async function listBundles(o = {}) {
     negative: num(sum?.negative),
     limit,
     offset,
+    /* 🔎 สะท้อนค่ากรองที่ "ใช้จริง" กลับไป — จอตรวจเองได้ว่าเซิร์ฟเวอร์อ่านที่ส่งไปไหม
+       (ฝั่งจอขอไว้ 18 ก.ย. 2569 · ท่าเดียวกับ `applied` ของเส้นอื่นในไฟล์นี้)
+       ⚠️ `total`/`active`/`inactive` เป็นยอด **ทั้งกอง ไม่ถูกกรองด้วย only** โดยตั้งใจ
+          (จอต้องโชว์ได้ว่า "กรองแล้วเหลือกี่แถว จากทั้งหมดเท่าไร") ⇒ เขียนกำกับไว้ไม่ให้เข้าใจผิด */
+    applied: { only: onlyRaw || null, q: q || null },
+    appliedScope: "only กรองเฉพาะรายการที่ส่งกลับ (rows) — total/active/inactive เป็นยอดทั้งกอง ไม่ถูกกรอง",
     recipeAt,
     recipeCheckedAt: await recipeCheckedAt(),
     // ⚠️ คงเหลือ/พร้อมขายของชุดเป็นค่าที่ซิงก์มา ไม่ใช่ค่าสด — จอต้องโชว์อายุ (เก่าเกิน ~1 ชม. = ซิงก์หยุด)
