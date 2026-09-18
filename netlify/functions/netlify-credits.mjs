@@ -67,10 +67,26 @@ export default async function handler(req, context) {
     }
     parts.sort((a, b) => b[1] - a[1]);
 
-    const plan = Number(acc?.plan_credits) || 5000;
+    /* 🔴 **ค่าตั้งต้นที่ผิด อันตรายกว่าไม่มีค่าตั้งต้น** (ฝั่งจอทัก 18 ก.ย. 2569)
+        เดิม `|| 5000` ⇒ ถ้า Netlify ไม่ส่ง `plan_credits` มา จอจะคิด % จากตัวหารที่ผิด **3 เท่า**
+        (ใช้จริง 4,000 จาก 15,000 = 27% แต่จอคิดเป็น 80% แล้วขึ้นเตือน) และไม่มีอะไรบอกว่าตัวหารมาจากไหน
+        ⇒ แยกสามสถานะ: ค่าที่ Netlify ยืนยัน · ค่าที่เคยอ่านได้ (แคช) · ค่าที่เราเติมให้
+        ⇒ `planConfirmed` เป็นธงให้จอรู้ว่าจะโชว์ % ได้เต็มปากหรือต้องติดดอกจัน
+        📏 เพดานจริงที่วัดจากหน้า Billing 18 ก.ย. 2569: **Pro = 15,000 เครดิต/เดือน** (มีผล 31 ส.ค.)
+        ⚠️ ค่านี้เป็น "ค่าที่เคยเห็น" ไม่ใช่สัญญา — วันที่ร้านเปลี่ยนแพ็กเกจ มันจะผิดทันทีและเงียบ
+           ⇒ ใช้ได้เฉพาะเป็นทางถอยสุดท้าย และต้องประกาศตัวว่าเป็นทางถอย [[fallbacks-must-announce]] */
+    const PLAN_FALLBACK = 15000;
+    const planFromNetlify = Number(acc?.plan_credits) || 0;
+    const planFromCache = Number(cached?.planConfirmed ? cached.plan : 0) || 0;
+    const plan = planFromNetlify || planFromCache || PLAN_FALLBACK;
+    const planSource = planFromNetlify ? "netlify" : planFromCache ? "cache" : "fallback";
     const out = {
       at: Date.now(),
       plan,
+      /* จอใช้ธงนี้ตัดสินว่าจะโชว์ % เต็มปากไหม — false ⇒ ติดเครื่องหมายข้างตัวเลข (ไม่ใช่แค่ใน tooltip) */
+      planConfirmed: planSource !== "fallback",
+      planSource,
+      planFallback: PLAN_FALLBACK,
       used: Math.round(used * 10) / 10,
       left: Math.round((plan - used) * 10) / 10,
       periodEnd: acc?.next_usage_period_start || null,
