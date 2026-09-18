@@ -489,6 +489,25 @@ async function route(req, context) {
       if (plat === "tiktok") return okJson(await m.readTiktokStatementLines(id, { limit: url.searchParams.get("limit") }));
       return json({ error: "platform ต้องเป็น shopee หรือ tiktok (Lazada ใช้ ?mkpfinance=1 ซึ่งเป็นรายบรรทัดอยู่แล้ว)" }, 400);
     }
+    /* POST ?mkpfeesync=1[&days=14&limit=20&refresh=1] ⇒ เติมกระจกค่าธรรมเนียม Shopee ทีละรอบ
+       GET  ?mkpfeesum=1[&days=30]                   ⇒ สรุปจากกระจก (ไม่ยิง Shopee เลย)
+       🔴 **Shopee เท่านั้น** — เป็นเจ้าเดียวที่สูตรถูกวัดกับของจริงแล้ว (ต่าง 1 บาทใน 6/8 ใบ)
+          Lazada/TikTok ห้ามลอกไปใช้โดยไม่วัดใหม่ · เขียนเหตุผลเต็มไว้ในหัว mkp-finance-mirror.mjs
+       ⚠️ เป็น POST เพราะมัน **เขียนฐาน** — ผิด method ต้องได้ 405 ไม่ใช่ทำงานเงียบ ๆ */
+    if (url.searchParams.get("mkpfeesync")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST (เส้นนี้เขียนฐาน)" }, 405);
+      const { mirrorShopeeFees } = await import("../lib/mkp-finance-mirror.mjs");
+      return okJson(await mirrorShopeeFees({
+        days: url.searchParams.get("days"),
+        limit: url.searchParams.get("limit"),
+        refresh: url.searchParams.get("refresh") === "1",
+      }));
+    }
+    if (url.searchParams.get("mkpfeesum")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { shopeeFeesSummary } = await import("../lib/mkp-finance-mirror.mjs");
+      return okJson(await shopeeFeesSummary({ days: url.searchParams.get("days") }));
+    }
     if (url.searchParams.get("dbinfo")) {
       return okJson(await d1Info());
     }
