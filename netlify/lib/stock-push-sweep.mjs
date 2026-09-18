@@ -577,6 +577,48 @@ export async function กวาดดันสต็อก({ platform = "lazada"
  *  ⚠️ `skip_reason` ที่ตารางนี้เก็บจริงมีแค่ 3 ค่า: negative · unknown · conflict
  *     ⇒ ไม่มีค่าไหนแปลว่า "นโยบายห้ามส่ง" ⇒ **ห้ามอ่านตัวนับนี้ว่า "จำนวนบั๊ก"**
  */
+/** 🧹 กวาดคำเท็จเก่าใน last_error ครั้งเดียว — **แถวที่หลุดจากแผนไม่มีอะไรมาเขียนทับ**
+ *
+ *  🔴 ที่มา 18 ก.ย. 2569: แก้ที่ต้นทางแล้ว (`notSentKind`) แต่ของเก่ายังค้าง 27 แถว
+ *     ฝั่งจอเป็นคนชี้หลักฐานที่ตัดสินเรื่องนี้: `last_error_at` ของแถวพวกนั้น **ค้างที่เมื่อวาน**
+ *     ⇒ รหัสพวกนี้ไม่ได้อยู่ในแผนของรอบกวาดปัจจุบันแล้ว ⇒ UPSERT ไม่มีโอกาสเขียนทับ
+ *     ⇒ ข้อความ "ทิศลง … ต้องสั่งแยก" จะค้างเป็น **คำเท็จถาวร** (ทิศลงถูกเปิดไปแล้ว)
+ *     🔑 บทเรียน: "แก้ที่ต้นทางแล้วของเก่าหายเอง" จริงเฉพาะแถวที่ยัง **ถูกเขียนซ้ำ**
+ *        แถวนิ่งต้องกวาดย้อนหลังต่างหากเสมอ [[new-columns-need-backfill]]
+ *
+ *  ⚠️ **ตัวนี้ตัดสินจากข้อความ ซึ่งปกติห้ามทำ** — ยอมได้เฉพาะที่นี่เพราะข้อมูลเก่า
+ *     **ไม่มี `notSentKind` เก็บไว้เลย** ข้อความเป็นหลักฐานเดียวที่มี
+ *     ⇒ จำกัดขอบเขตให้แคบที่สุด (ต้องมีทั้งคำว่า "ทิศลง" และ "allowClose")
+ *     ⇒ และ **ห้ามย้ายตรรกะนี้ไปอยู่ในเส้นทางที่เดินทุกรอบ** ของใหม่ต้องใช้ `notSentKind` เท่านั้น
+ *  ⚠️ ล้างเฉพาะ `last_error`/`last_error_at` **ไม่แตะ skip_reason หรือเลขสต็อกใด ๆ**
+ *     เราไม่รู้สถานะจริงของรหัสพวกนี้ ⇒ ลบคำเท็จ ไม่ใช่เขียนคำจริงที่เดาขึ้น [[fixes-can-destroy-truth]]
+ *  ⚠️ รันซ้ำได้ (idempotent) — รอบสองจะได้ 0 เพราะไม่มีแถวตรงเงื่อนไขแล้ว
+ */
+export async function ล้างคำเท็จในlast_error() {
+  if (!coreReady()) return { inconclusive: true, why: "ต่อฐานคลังเงาไม่ได้" };
+  const เงื่อนไข = `last_error LIKE '%ทิศลง%' AND last_error LIKE '%allowClose%'`;
+  const ก่อน = await coreQuery(
+    `SELECT sku, channel, last_error, last_error_at FROM push_state WHERE ${เงื่อนไข} LIMIT 200`
+  ).catch(() => null);
+  if (!Array.isArray(ก่อน)) return { inconclusive: true, why: "อ่านตารางไม่ได้ — ไม่ได้ล้างอะไร" };
+  if (!ก่อน.length) return { ok: true, ล้างไป: 0, note: "ไม่มีแถวที่เข้าเงื่อนไข (เคยกวาดแล้ว หรือไม่มีของค้าง)" };
+  await coreQuery(
+    `UPDATE push_state SET last_error = NULL, last_error_at = NULL WHERE ${เงื่อนไข}`
+  );
+  const เหลือ = await coreQuery(
+    `SELECT COUNT(*) AS n FROM push_state WHERE ${เงื่อนไข}`
+  ).catch(() => null);
+  return {
+    ok: true,
+    ล้างไป: ก่อน.length,
+    เหลือ: Array.isArray(เหลือ) ? (เหลือ[0]?.n ?? null) : null,
+    ตัวอย่างที่ล้าง: ก่อน.slice(0, 3).map((r) => ({ sku: r.sku, channel: r.channel, เดิม: String(r.last_error).slice(0, 70), เมื่อ: r.last_error_at })),
+    "⚠️ ขอบเขต":
+      "ล้างเฉพาะ last_error/last_error_at ของแถวที่ข้อความเป็นนโยบายของเราเอง (ทิศลง+allowClose) · " +
+      "ไม่แตะ skip_reason และไม่แตะเลขสต็อกใด ๆ · รันซ้ำได้ · ครั้งละไม่เกิน 200 แถว",
+  };
+}
+
 export async function รายรหัสที่ค้าง({ channel, reason, limit, offset } = {}) {
   if (!coreReady()) return { inconclusive: true, why: "ต่อฐานคลังเงาไม่ได้" };
   const n = Math.max(1, Math.min(200, Number.parseInt(String(limit ?? "50"), 10) || 50));

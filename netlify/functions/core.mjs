@@ -980,6 +980,16 @@ async function route(req, context) {
       return json(await zortDocumentsRead(url.searchParams.get("limit")));
     }
 
+    /* 🧹 POST ?clearpolicyerrors=1 — กวาดคำเท็จเก่าใน last_error ครั้งเดียว
+       ทำไมเป็น POST: **เขียนข้อมูล** · เป็น GET ไม่ได้ ตัวกวาดลิงก์/บอตจะเรียกเองโดยไม่มีใครสั่ง
+       ทำไมต้องมี: แก้ที่ต้นทางแล้ว (notSentKind) แต่แถวที่ **หลุดจากแผน** ไม่มีอะไรเขียนทับ
+       ⇒ ข้อความ "ทิศลง … ต้องสั่งแยก" ค้างเป็นคำเท็จถาวร (ทิศลงถูกเปิดไปแล้ว)
+       รันซ้ำได้ · รอบสองได้ 0 · เหตุผลเต็มอยู่หัวฟังก์ชันใน stock-push-sweep.mjs */
+    if (url.searchParams.get("clearpolicyerrors")) {
+      const { ล้างคำเท็จในlast_error } = await import("../lib/stock-push-sweep.mjs");
+      const r = await ล้างคำเท็จในlast_error();
+      return okJson(r, r?.inconclusive ? 503 : 200);
+    }
     if (url.searchParams.get("move")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

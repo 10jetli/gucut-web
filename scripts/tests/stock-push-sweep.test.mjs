@@ -136,3 +136,24 @@ test('not_sent: policy_down/stale_plan ห้ามลง last_error · platform
     ผลยิงที่จะคืน = null;   // ⚠️ ต้องคืนค่าใน finally ไม่งั้นเทสต์ถัดไปแดงด้วยเหตุปลอม
   }
 });
+
+/* ── ตัวกวาดคำเท็จเก่า: ต้องแคบพอที่จะไม่ล้าง error จริง ────────────────────────
+   🔴 18 ก.ย. 2569: แถวที่หลุดจากแผนไม่มีอะไรเขียนทับ ⇒ ต้องกวาดย้อนหลังครั้งเดียว
+   ⚠️ ตัวแก้ที่กว้างเกินไปจะลบของจริงแล้วไม่มีตัวตรวจไหนจับได้อีก [[fixes-can-destroy-truth]]
+      ⇒ ด่านนี้ดูสองอย่าง: เงื่อนไขต้องมีทั้ง "ทิศลง" และ "allowClose"
+        และคำสั่ง UPDATE ต้องแตะแค่ last_error/last_error_at */
+test('ล้างคำเท็จ: เงื่อนไขต้องแคบ และห้ามแตะคอลัมน์อื่น', async () => {
+  const { ล้างคำเท็จในlast_error } = await import('../../netlify/lib/stock-push-sweep.mjs');
+  คำสั่ง.length = 0;
+  await ล้างคำเท็จในlast_error();
+  const up = คำสั่ง.find((c) => /UPDATE push_state/.test(c.sql));
+  /* mock coreQuery คืน [] ⇒ ไม่มีแถวเข้าเงื่อนไข ⇒ ต้อง **ไม่ยิง UPDATE เลย**
+     (ถ้ายิง แปลว่ามันเขียนโดยไม่ได้อ่านก่อน = เขียนทับโดยไม่รู้ว่าทับอะไร) */
+  assert.equal(up, undefined, 'ไม่มีแถวเข้าเงื่อนไข ⇒ ห้ามยิง UPDATE');
+  const sel = คำสั่ง.find((c) => /SELECT sku, channel, last_error/.test(c.sql));
+  assert.ok(sel, 'ต้องอ่านก่อนเขียนเสมอ');
+  assert.match(sel.sql, /ทิศลง/, 'เงื่อนไขต้องระบุคำว่าทิศลง');
+  assert.match(sel.sql, /allowClose/, 'เงื่อนไขต้องระบุ allowClose ด้วย — คำเดียวกว้างเกินไป');
+  assert.doesNotMatch(sel.sql, /skip_reason\s*=/, 'ห้ามแตะ skip_reason');
+  assert.doesNotMatch(sel.sql, /pushed_qty\s*=|planned_qty\s*=/, 'ห้ามแตะเลขสต็อก');
+});
