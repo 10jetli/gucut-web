@@ -4,6 +4,13 @@
    · จอผู้ติดต่อ: ถูกลบ 3,170 ราย (ปกติ 28,344 · ติ๊กแล้ว 31,514)
    · ZORT ใช้ช่องติ๊กชื่อเดียวกันทั้งสองจอ: `checkshowarchive` (ฝั่งจออ่าน id มาจาก DOM)
 
+   🔑 **ชื่อช่องติ๊กบนหน้าเว็บ ≠ ชื่อพารามิเตอร์ที่มันส่ง** (ฝั่งจอดักคำขอจริงมาให้ 18 ก.ย. 10:02)
+      ช่องติ๊กชื่อ `checkshowarchive` แต่คำขอที่ยิงออกไปใช้ชื่อ **`showarchive=1`**
+      ⇒ ยิงด้วยชื่อช่องติ๊กจะไม่ติด แล้วเราจะสรุปผิดว่า "ZORT ไม่รองรับ"
+      ⇒ จึงลองทั้งสองชื่อ และเอาชื่อที่ดักได้จริงขึ้นก่อน
+   ⚠️ ชื่อที่ดักมาได้เป็นของ **หน้าเว็บเขา** (`Product/doAdvanceSearchProduct` แบบ POST)
+      ไม่ใช่ open-api v4 ที่เรายิง — คำเดียวกันอาจไม่ถูกรับที่นี่ ต้องดูเลข count ตัดสิน
+
    🔑 **ตัวชี้ขาดคือ "count เปลี่ยนไหม" ไม่ใช่ "ตอบ 200 ไหม"**
       ZORT เมินพารามิเตอร์ที่ไม่รู้จักแล้วตอบ 200 พร้อมข้อมูลชุดเดิม — เจอมาแล้วหลายรอบ
       ⇒ ต้องเทียบกับ **ฐานเปล่า** และต้องมี **ตัวควบคุมชื่อมั่ว** ด้วย
@@ -23,9 +30,11 @@ function headers() {
    ⚠️ ตัวควบคุมต้องอยู่ในชุดเดียวกันและยิงด้วยวิธีเดียวกัน ไม่ใช่ยิงแยกทีหลัง */
 const CANDIDATES = [
   ["ฐานเปล่า (ตัวเทียบ)", ""],
-  ["checkshowarchive=true", "&checkshowarchive=true"],
-  ["checkshowarchive=1", "&checkshowarchive=1"],
+  /* ⬇️ สองตัวนี้คือชื่อที่ดักได้จากคำขอจริงของหน้าเว็บ ZORT — ลองก่อนเพื่อน */
+  ["showarchive=1 ⭐ (ดักจากคำขอจริง)", "&showarchive=1"],
   ["showarchive=true", "&showarchive=true"],
+  ["checkshowarchive=true (ชื่อช่องติ๊ก)", "&checkshowarchive=true"],
+  ["checkshowarchive=1 (ชื่อช่องติ๊ก)", "&checkshowarchive=1"],
   ["showarchived=true", "&showarchived=true"],
   ["includearchive=true", "&includearchive=true"],
   ["includedeleted=true", "&includedeleted=true"],
