@@ -88,28 +88,77 @@ export async function pushToAdmins(payload) {
 // ⚠️ เครื่องที่ถอนสิทธิ์แล้วต้องลบทิ้งอัตโนมัติ ไม่งั้นยิงหาเครื่องที่ตายแล้วทุกวัน
 // ---------------------------------------------------------------------------
 
+/* 🔴 **B07 — หนึ่งเครื่อง = หนึ่งคีย์ ไม่ใช่หนึ่งเบอร์ = หนึ่งคีย์** (แก้ 18 ก.ย. 2569)
+   ของเดิมกันไว้แค่ชั้นเดียว: ลูกค้าคนละคนไม่เขียนทับกัน (`u/<เบอร์>`) ✅
+   แต่ **ภายในเบอร์เดียวกัน หลายเครื่องยังเก็บรวมเป็นอาร์เรย์ก้อนเดียว**
+   แล้ว addUserSub ทำท่า อ่าน → แก้ → เขียนกลับ
+   ⇒ ลูกค้าคนเดียวกดรับแจ้งเตือนจากมือถือกับคอมไล่กัน = **เครื่องที่เขียนช้ากว่าทับเครื่องแรก**
+   ⇒ อาการที่เห็น: เครื่องอื่นหลุดจากรายชื่อ · `hasUserSub` ตอบ false ทั้งที่กดรับแล้ว
+   ⇒ ไม่มี error ไม่มีอะไรฟ้อง ลูกค้าแค่ไม่ได้รับแจ้งเตือนเฉย ๆ
+
+   🔑 ท่าที่ถูกคือท่าเดียวกับตัวนับคนเข้าเว็บ/ระบบลงเวลา: **เขียนคีย์ของตัวเอง แล้วนับคีย์**
+      ไม่มีการอ่านของคนอื่นมาเขียนทับ ⇒ เขียนพร้อมกันกี่เครื่องก็ไม่ชนกัน
+
+   ⚠️ **ของเก่าต้องอ่านได้ต่อ** — คนที่เคยกดรับไว้แล้วอยู่ในอาร์เรย์ `u/<เบอร์>`
+      ถ้าอ่านเฉพาะคีย์ใหม่ = ลูกค้าเดิมเงียบไปทั้งหมดโดยไม่มีใครรู้
+      ตัวอ่านจึงรวมสองแหล่งเสมอ และตัดซ้ำด้วย endpoint */
+const deviceKey = (phone, endpoint) => {
+  // ย่อ endpoint เป็นรหัสสั้นคงที่ — endpoint ยาวและมีอักขระที่ใช้เป็นชื่อคีย์ไม่ได้
+  let h = 0n;
+  for (const ch of String(endpoint)) h = (h * 131n + BigInt(ch.codePointAt(0))) % (1n << 64n);
+  return `${userKey(phone)}/${h.toString(36)}`;
+};
+
+/** อ่านเครื่องทั้งหมดของเบอร์นี้ — รวมของเก่า (อาร์เรย์) กับของใหม่ (คีย์ละเครื่อง)
+ *  คืน { subs, legacy } · legacy = อาร์เรย์เดิมที่ยังค้างอยู่ (ใช้ตอนต้องลบเครื่องตาย) */
+async function readUserSubs(phone) {
+  const s = store();
+  const legacy = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
+  let ใหม่ = [];
+  try {
+    const { blobs } = await s.list({ prefix: `${userKey(phone)}/` });
+    ใหม่ = (await Promise.all(
+      (blobs || []).map((b) => s.get(b.key, { type: "json" }).catch(() => null)),
+    )).filter((x) => x && x.endpoint);
+  } catch {
+    /* ⚠️ อ่านรายการคีย์ไม่ได้ = **ไม่ใช่ว่าไม่มีเครื่อง** ⇒ ยังต้องส่งให้ของเก่าตามปกติ
+       ทิศของความผิดต้องไปทาง "ส่งเท่าที่รู้" ไม่ใช่ "ถือว่าไม่มีใคร" */
+  }
+  const เห็นแล้ว = new Set();
+  const subs = [];
+  for (const x of [...ใหม่, ...(Array.isArray(legacy) ? legacy : [])]) {
+    if (!x?.endpoint || เห็นแล้ว.has(x.endpoint)) continue;
+    เห็นแล้ว.add(x.endpoint);
+    subs.push(x);
+  }
+  return { subs, legacy: Array.isArray(legacy) ? legacy : [] };
+}
+
 /** เก็บ subscription ของลูกค้าหนึ่งคน (มีได้หลายเครื่อง) */
 export async function addUserSub(phone, sub) {
   if (!phone || !sub?.endpoint) return 0;
-  const s = store();
-  const all = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
-  if (all.some((x) => x.endpoint === sub.endpoint)) return all.length;
-  all.push(sub);
-  await s.setJSON(userKey(phone), all.slice(-5));   // เผื่อมือถือ+คอม
-  return all.length;
+  // 🔑 เขียนคีย์ของเครื่องตัวเอง ไม่แตะของเครื่องอื่น ⇒ สมัครพร้อมกันกี่เครื่องก็ไม่ชนกัน
+  //    คีย์เดิมซ้ำ = เขียนทับด้วยเนื้อเดียวกัน (กดซ้ำไม่ทำให้บวม)
+  await store().setJSON(deviceKey(phone, sub.endpoint), sub);
+  const { subs } = await readUserSubs(phone);
+  return subs.length;
 }
 
 export async function removeUserSub(phone, endpoint) {
   if (!phone) return;
   const s = store();
-  const all = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
-  await s.setJSON(userKey(phone), all.filter((x) => x.endpoint !== endpoint));
+  // ลบทั้งสองที่: คีย์รายเครื่อง (ของใหม่) และในอาร์เรย์เดิม (ของเก่าที่ยังค้าง)
+  await s.delete(deviceKey(phone, endpoint)).catch(() => {});
+  const legacy = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
+  if (Array.isArray(legacy) && legacy.some((x) => x.endpoint === endpoint)) {
+    await s.setJSON(userKey(phone), legacy.filter((x) => x.endpoint !== endpoint));
+  }
 }
 
 export async function hasUserSub(phone) {
   if (!phone) return false;
-  const all = await store().get(userKey(phone), { type: "json" }).catch(() => null);
-  return Array.isArray(all) && all.length > 0;
+  const { subs } = await readUserSubs(phone);
+  return subs.length > 0;
 }
 
 /** ส่งแจ้งเตือนหาลูกค้าหนึ่งคน — คืนจำนวนเครื่องที่ส่งสำเร็จ */
@@ -117,7 +166,7 @@ export async function pushToUser(phone, payload) {
   if (!phone) return 0;
   await vapid();
   const s = store();
-  const all = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
+  const { subs: all, legacy } = await readUserSubs(phone);
   if (!all.length) return 0;
   const dead = [];
   let ok = 0;
@@ -132,7 +181,11 @@ export async function pushToUser(phone, payload) {
     ),
   );
   if (dead.length) {
-    await s.setJSON(userKey(phone), all.filter((x) => !dead.includes(x.endpoint)));
+    // เก็บกวาดทั้งสองที่ — คีย์รายเครื่องลบทิ้ง · อาร์เรย์เดิมกรองออก
+    await Promise.all(dead.map((ep) => s.delete(deviceKey(phone, ep)).catch(() => {})));
+    if (legacy.some((x) => dead.includes(x.endpoint))) {
+      await s.setJSON(userKey(phone), legacy.filter((x) => !dead.includes(x.endpoint)));
+    }
   }
   return ok;
 }
