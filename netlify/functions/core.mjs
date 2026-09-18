@@ -1810,6 +1810,13 @@ async function route(req, context) {
          🔴 จอเคยทำไฟล์ "ยอดขายตามสินค้า" จากรายการที่ขอมาแสดง limit=10 ⇒ ไฟล์มีแค่ 10 ตัวแต่ชื่อบอกว่าทั้งหมด
          ⇒ ส่ง totalSkus (จำนวนรหัสทั้งหมดในเงื่อนไขเดียวกัน) ให้จอเช็คว่าได้ครบก่อนเขียนไฟล์ (display-limits-cant-decide) */
       const limit = Math.min(5000, Math.max(1, parseInt(url.searchParams.get("limit") ?? "15", 10) || 15));
+      /* 🔴 **offset — เพิ่ม 19 ก.ย. 2569 · เส้นนี้ไม่รับมาก่อนแต่บอกทางไปหน้าถัดไป**
+          เจอด้วยด่านใหม่ `check-paging-complete.mjs`: ไล่หน้าตาม `nextOffset` ที่ท่อบอกเอง
+          ⇒ ได้ **แถวเดิมซ้ำ 15 จาก 20 แถว** เพราะคำสั่งมีแต่ LIMIT ไม่มี OFFSET
+          ⇒ `paging-hint` เติม `nextOffset` ให้ทุกเส้นที่มีแถว **โดยไม่รู้ว่าเส้นนั้นรับ offset ไหม**
+            ⇒ ท่อ **ชวนให้ไล่หน้าที่ไล่ไม่ได้** · ใครทำตามจะนับยอดเกินโดยไม่มีอะไรฟ้อง
+          ⇒ แก้ที่ต้นเหตุ: ให้เส้นนี้รับ offset จริง (ดีกว่าถอด nextOffset ทิ้ง เพราะจอต้องไล่หน้าได้) */
+      const offset = Math.max(0, parseInt(url.searchParams.get("offset") ?? "0", 10) || 0);
       /* ⚠️ **sku= ถามยอดขายของสินค้าตัวเดียว** — ฝั่งจอต้องใช้ในหน้ารายละเอียดสินค้า
           ก่อนหน้านี้ผมบอกฝั่งจอว่า "ใช้ sku= ได้" ทั้งที่ยังไม่ได้ทำ
           ⇒ ท่อเมินพารามิเตอร์ที่ไม่รู้จักเงียบ ๆ แล้วคืนสินค้าขายดีทั้งร้าน
@@ -1887,7 +1894,7 @@ async function route(req, context) {
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
                ${filter}
-             GROUP BY 1 ORDER BY amount DESC LIMIT ${limit}`,
+             GROUP BY 1 ORDER BY amount DESC LIMIT ${limit} OFFSET ${offset}`,
             params
           )
         : await coreQuery(
@@ -1899,7 +1906,7 @@ async function route(req, context) {
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
                ${filter}
-             GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit}`,
+             GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit} OFFSET ${offset}`,
             params
           );
       // จำนวนรหัสทั้งหมดในเงื่อนไขเดียวกับรายสินค้า — มีเฉพาะโหมดรายสินค้า (รายเดือน/หมวดไม่ใช่รายรหัส)
@@ -1919,7 +1926,7 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, by: byRaw || null, warehouse: warehouse || null, store },
+        applied: { sku: sku || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store },
         storeScope: store ? `เฉพาะร้าน ${store}` : "ทุกร้านรวมกัน",
         ...(totalSkus === null ? {} : { totalSkus, complete: items.length >= totalSkus }),
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569
