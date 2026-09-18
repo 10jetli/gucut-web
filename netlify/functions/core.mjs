@@ -2599,9 +2599,17 @@ async function route(req, context) {
         return json({ error: `store ต้องเป็น z1 · z2 · all (ได้มา "${raw}")` }, 400);
       const { zortOrderCountForMonth, zortOrderCountForMonthAll } =
         await import("../lib/core-sync.mjs");
+      /* &detail=1 ⇒ ไล่รายใบแล้วแยก "ไม่รวมใบยกเลิก" ออกจาก "เฉพาะใบยกเลิก"
+         🔴 มีเพราะฝั่งจอวัดได้ว่าจำนวนใบต่างจากกระจก 3.5% แต่ยอดเงินต่าง 19% ⇒ ไม่ได้สัดส่วน
+            และตอบด้วยเลขหัวคำตอบไม่ได้ เพราะ ZORT ให้ count/totalAmount **รวมใบยกเลิก** เท่านั้น
+         ⚠️ store=all ยังไม่รองรับ detail (ต้องไล่รายใบสองร้าน = เสี่ยงชนเพดานเวลา 26 วิ)
+            ⇒ ตอบ 400 ตรง ๆ **ห้ามเมินพารามิเตอร์เงียบ ๆ แล้วคืนผลที่ไม่มี detail** */
+      const detail = url.searchParams.get("detail") === "1";
+      if (detail && raw === "all")
+        return json({ error: "detail=1 ใช้กับร้านเดียวเท่านั้น (store=z1 หรือ z2) — ยิงสองรอบแล้วบวกเอง" }, 400);
       return okJson(raw === "all"
         ? await zortOrderCountForMonthAll(ym)
-        : await zortOrderCountForMonth(ym, raw));
+        : await zortOrderCountForMonth(ym, raw, { detail }));
     }
 
     if (url.searchParams.get("pending")) {

@@ -398,7 +398,7 @@ export async function snapshotStock() {
  * @param {string} ym  "YYYY-MM" (ปี ค.ศ.)
  * @param {"z1"|"z2"} tag
  */
-export async function zortOrderCountForMonth(ym, tag = "z1") {
+export async function zortOrderCountForMonth(ym, tag = "z1", opts = {}) {
   const m = String(ym ?? "").match(/^(\d{4})-(\d{2})$/);
   if (!m) return { error: "ym ต้องเป็น YYYY-MM (ปี ค.ศ.)" };
   const st = stores().find((x) => x.tag === tag);
@@ -434,6 +434,58 @@ function numOrNull(v) {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
 }
+
+  /* 🔍 **โหมดแยกใบยกเลิก** (18 ก.ย. 2569 · ฝั่งจอถามมา)
+      ฝั่งจอวัดได้ว่า จำนวนใบต่างจากกระจก 3.5% แต่ยอดเงินต่าง 19% ⇒ ไม่ได้สัดส่วนกัน
+      ถ้าส่วนต่างเป็นใบยกเลิกทั้งหมด ใบยกเลิกต้องเฉลี่ยใบละ ~5,457 บาท ขณะที่ใบปกติเฉลี่ย ~861
+      เป็นไปได้ทั้งสองทาง: ใบใหญ่ถูกยกเลิกบ่อยจริง **หรือ** กระจกเราขาดยอดบางส่วน
+      ⇒ ตอบไม่ได้ด้วยเลขหัวคำตอบ เพราะ ZORT ให้ count/totalAmount **รวมใบยกเลิก** เท่านั้น
+      ⇒ โหมดนี้ไล่รายใบแล้วแยกสองกอง ให้เทียบกับกระจก (ซึ่งหักใบยกเลิกแล้ว) ได้ตรงขอบเขตกัน
+      ⚠️ ชนเพดานหน้า ⇒ ติดธง `truncated` **ห้ามคืนผลบางส่วนที่หน้าตาเหมือนครบ**
+      ⚠️ ไม่ทำโดยปริยาย — กินคำขอหลายหน้า ⇒ ต้องส่ง detail มาเท่านั้น */
+  if (opts.detail) {
+    const headers = { storename: st.storename, apikey: st.apikey, apisecret: st.apisecret };
+    let live = 0, liveAmt = 0, cancelled = 0, cancelledAmt = 0, seenRows = 0;
+    let truncated = false;
+    const seen = new Set();
+    for (let page = 1; page <= 10; page++) {
+      const rp = await fetch(
+        `${BASE}/Order/GetOrders?orderdateafter=${after}&orderdatebefore=${before}&limit=${PAGE}&page=${page}`,
+        { headers, signal: AbortSignal.timeout(15000) }
+      ).catch(() => null);
+      /* 🔴 หน้าที่ยิงไม่สำเร็จ ห้ามตีความว่า "หมดแล้ว" — ต้องโยนออกไปให้คนเห็นว่าเทียบไม่ได้ */
+      if (!rp?.ok) return { error: `ZORT ตอบ ${rp ? rp.status : "ต่อไม่ติด"} ที่หน้า ${page} — เทียบไม่ได้ ห้ามใช้ผลรอบนี้`, ym, store: tag };
+      const dp = await rp.json().catch(() => null);
+      const rows = Array.isArray(dp?.list) ? dp.list : [];
+      for (const o of rows) {
+        /* กันนับซ้ำข้ามหน้า (ข้อมูลขยับระหว่างไล่ได้) — ท่าเดียวกับ syncOrders */
+        const key = String(o?.number ?? "");
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        seenRows += 1;
+        const amt = num(o.amount);
+        if (CANCELLED.test(String(o.status ?? ""))) { cancelled += 1; cancelledAmt += amt; }
+        else { live += 1; liveAmt += amt; }
+      }
+      if (rows.length < PAGE) break;
+      if (page === 10) truncated = true;
+    }
+    const r2 = (v) => Math.round(v * 100) / 100;
+    return {
+      ok: true, ym, store: tag, from: after, to: before,
+      zortCount: d.count,
+      zortAmount: numOrNull(d.totalAmount),
+      countsCancelled: true,
+      ไล่รายใบแล้ว: seenRows,
+      truncated,
+      ...(truncated ? { "⚠️ ไม่ครบ": "ชนเพดาน 10 หน้า ⇒ ตัวเลขแยกกองยังไม่ครบ ห้ามเอาไปเทียบ" } : {}),
+      ไม่รวมใบยกเลิก: { ใบ: live, ยอด: r2(liveAmt) },
+      เฉพาะใบยกเลิก: { ใบ: cancelled, ยอด: r2(cancelledAmt) },
+      เฉลี่ยต่อใบ: { ใบปกติ: live ? r2(liveAmt / live) : null, ใบยกเลิก: cancelled ? r2(cancelledAmt / cancelled) : null },
+      "วิธีเทียบกับกระจก": "กระจกเราหักใบยกเลิกแล้ว ⇒ เทียบกับ 'ไม่รวมใบยกเลิก' เท่านั้น · ห้ามเทียบกับ zortAmount (รวมยกเลิก)",
+      source: "ZORT สด ไล่รายใบ (ไม่ผ่านกระจก)",
+    };
+  }
 
   return {
     ok: true,
