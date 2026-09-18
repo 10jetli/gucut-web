@@ -10,6 +10,7 @@
 //    และวันนั้นต้องมีหน้าจอแก้ชื่อ/ราคาเอง (ยังไม่มี — จดไว้ในแผน)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
+import { thaiDayFromUtc } from "./thaiday.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -858,6 +859,10 @@ export async function listBundleItems(bundleSku = "", memberSku = "") {
     bundlesWithItems: num(sum?.bundles),
     lines: num(sum?.lines),
     collectedAt: sum?.last || null,
+    /* 📅 วันไทยของ collectedAt — จอสินค้ารายตัวรอช่องนี้อยู่ (ฝั่งจอชี้เป้าให้ 18 ก.ย. 2569)
+       ท่อรู้ว่าค่าตัวเองเป็น UTC ⇒ ท่อแปลงให้ · จอเลือกค่าท่อก่อนอยู่แล้ว ⇒ ได้ช่องนี้แล้วจอเลิกแปลงเอง */
+    collectedDayTH: thaiDayFromUtc(sum?.last),
+    recipeCheckedDayTH: thaiDayFromUtc(rs?.last),
     recipeCheckedAt: rs?.last || null,
     recipeChecked: num(rs?.checked),
     recipeCheckedOk: num(rs?.ok),

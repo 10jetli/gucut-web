@@ -11,19 +11,10 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { recipeCheckedAt } from "./core-products.mjs";
 import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
+/* ตัวแปลงวันไทยอยู่ที่ lib/thaiday.mjs ที่เดียว — เดิมไฟล์นี้มีสำเนาของตัวเอง (รวมแล้ว 18 ก.ย. 2569)
+   เหตุผล: สูตรเดียวกันอยู่หลายที่ = วันที่ใครแก้ข้างเดียว สองที่จะให้คำตอบต่างกันเงียบ ๆ */
+import { thaiDayFromUtc } from "./thaiday.mjs";
 
-/** วันไทย (YYYY-MM-DD) จากเวลาที่ SQLite เขียนไว้ด้วย datetime('now') ซึ่งเป็น **UTC**
- *  🔴 ที่มา 18 ก.ย. 2569: ฝั่งจอเอา `recipeAt` (UTC) ไปตัด 10 ตัวแรกเป็นวัน แล้วเทียบกับวันไทย
- *     ⇒ ค่าที่ถูกเขียนช่วง 17:00–24:00 UTC ให้อายุ **แก่เกินจริง 1 วัน** (จอวัดเองแล้วเจอ 2 เคส)
- *  🔑 ท่อเป็นฝ่ายรู้เขตเวลาของค่าตัวเอง ⇒ **ท่อต้องเป็นฝ่ายบอก** ไม่ใช่ให้จอเดา
- *     และชื่อฟิลด์ต้องมี TH ติดไว้ เพื่อให้คนอ่านรู้เขตเวลาโดยไม่ต้องถาม
- *  ⚠️ อ่านไม่ออก = null (ห้ามคืนวันนี้แทน — จอจะคิดว่าข้อมูลสดทั้งที่ไม่รู้) */
-const thaiDayOf = (utcish) => {
-  const s = String(utcish ?? "").trim();
-  if (!s) return null;
-  const ms = Date.parse(s.includes("T") ? s : `${s.replace(" ", "T")}Z`);
-  return Number.isFinite(ms) ? new Date(ms + 7 * 3600e3).toISOString().slice(0, 10) : null;
-};
 
 /* ⚠️ **แก้ตรรกะที่เขียนลงแคชเมื่อไหร่ ต้องเปลี่ยนชื่อคีย์ด้วยทุกครั้ง**
     ของเสียที่ถูกจำไว้แล้วจะไม่ถูกถามใหม่ ⇒ แก้โค้ดแล้วผลยังผิดเหมือนเดิม
@@ -237,8 +228,8 @@ export async function shopeeUnlistedStock() {
        `stockDay` เดิมยังส่งไว้เพื่อไม่ให้จอรุ่นเก่าพัง (ค่าเท่ากับ stockDayTH อยู่แล้ว) */
     stockDay: day,
     stockDayTH: day,              // ภาพถ่ายสต็อกล่าสุด — เขียนด้วย thaiDayOffset(0) ⇒ วันไทยอยู่แล้ว
-    recipeDayTH: thaiDayOf(recipeAt),          // สูตรสินค้าชุดเปลี่ยนล่าสุด (แปลงจาก UTC แล้ว)
-    recipeCheckedDayTH: thaiDayOf(checkedAt),  // ตรวจสูตรกับ ZORT ล่าสุด (แปลงจาก UTC แล้ว)
+    recipeDayTH: thaiDayFromUtc(recipeAt),          // สูตรสินค้าชุดเปลี่ยนล่าสุด (แปลงจาก UTC แล้ว)
+    recipeCheckedDayTH: thaiDayFromUtc(checkedAt),  // ตรวจสูตรกับ ZORT ล่าสุด (แปลงจาก UTC แล้ว)
     recipeAt,
     recipeCheckedAt: checkedAt, // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด (UTC)
     declaredByShopee: cov.declared ?? null,

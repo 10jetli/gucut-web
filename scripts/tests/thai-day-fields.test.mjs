@@ -13,11 +13,10 @@ const ok = (name, cond, extra = '') => {
   else { fail++; console.log(`  ❌ ${name} ${extra}`) }
 }
 
-// ดึงตัวแปลงออกมาจากไฟล์จริง (ไฟล์นั้นต้องต่อ D1/ZORT ⇒ import ทั้งไฟล์ไม่ได้ในเทสต์)
+/* ตัวแปลงย้ายมาอยู่ที่ lib/thaiday.mjs ที่เดียวแล้ว (18 ก.ย. 2569) ⇒ import ตัวจริงมาทดสอบได้ตรง ๆ
+   ดีกว่าเดิมที่ต้องแกะออกจากไฟล์ด้วย regex แล้ว eval — ท่านั้นทดสอบ "สำเนาของโค้ด" ไม่ใช่โค้ดที่รันจริง */
+import { thaiDayFromUtc as thaiDayOf } from '../../netlify/lib/thaiday.mjs'
 const src = readFileSync('netlify/lib/shopee-stock.mjs', 'utf8')
-const m = src.match(/const thaiDayOf = \([\s\S]*?\n\};/)
-ok('หาตัวแปลง thaiDayOf ในไฟล์ท่อได้', Boolean(m))
-const thaiDayOf = eval(`(${m[0].replace(/^const thaiDayOf = /, '').replace(/;$/, '')})`)
 
 console.log('① ช่วงเวลาที่เคยทำให้อายุเพี้ยน (17:00–24:00 UTC) ต้องได้วันไทยของ "วันรุ่งขึ้น"')
 ok('2026-09-17 20:30:00 UTC ⇒ 2026-09-18', thaiDayOf('2026-09-17 20:30:00') === '2026-09-18', String(thaiDayOf('2026-09-17 20:30:00')))
@@ -36,7 +35,20 @@ ok('รูป ISO ที่มี Z อยู่แล้วก็อ่าน�
 
 console.log('④ ท่อต้องส่งช่องที่มี TH กำกับออกไปจริง (ไม่ใช่แค่มีตัวแปลง)')
 for (const f of ['stockDayTH', 'recipeDayTH', 'recipeCheckedDayTH']) {
-  ok(`ส่งช่อง ${f}`, src.includes(`${f}:`), 'ไม่พบในไฟล์')
+  ok(`shopee-stock ส่งช่อง ${f}`, src.includes(`${f}:`), 'ไม่พบในไฟล์')
+}
+// เส้นอื่นที่ต้องส่งวันไทยด้วย (ฝั่งจอชี้เป้ามาทีละจุด ⇒ เฝ้าไว้ทุกจุดที่ตกลงกันแล้ว)
+const prod = readFileSync('netlify/lib/core-products.mjs', 'utf8')
+ok('core-products (เส้น bundleitems) ส่ง collectedDayTH', prod.includes('collectedDayTH:'))
+const purch = readFileSync('netlify/lib/core-purchases.mjs', 'utf8')
+ok('core-purchases (จอสาขา) ส่ง collectedDayTH', purch.includes('collectedDayTH:'))
+/* 🔒 สูตร **แปลงค่าที่เก็บไว้ (UTC) เป็นวันไทย** ต้องมีแหล่งเดียว — ห้ามมีสำเนาโผล่กลับมา
+   ⚠️ รอบแรกผมเขียนด่านนี้กว้างเกินไป (จับ `7 * 3600e3` ทั้งไฟล์) แล้วมันฟ้องของที่ไม่ได้ผิด:
+      `Date.now() + 7 * 3600e3` = "วันนี้แบบไทย" ซึ่งเป็นคนละเรื่องกับการแปลงค่าที่เก็บไว้
+      ⇒ **แดงลวงจากตัวด่านเอง** ต้องแก้ที่ด่าน ไม่ใช่แก้โค้ดที่ถูกอยู่แล้ว [[probe-fails-toward-alarm]]
+   ⇒ จับให้ตรงตัว: การแปลงจากค่าที่ Date.parse มา (`ms + 7 * 3600e3`) */
+for (const [name, body] of [['shopee-stock', src], ['core-products', prod], ['core-purchases', purch]]) {
+  ok(`${name} ไม่มีสำเนาตัวแปลงค่า UTC ของตัวเอง`, !/ms\s*\+\s*7\s*\*\s*3600e3/.test(body), 'เจอสำเนา')
 }
 ok('ยังส่ง stockDay เดิมไว้ (จอรุ่นเก่าไม่พัง)', /\n\s*stockDay: day,/.test(src))
 
