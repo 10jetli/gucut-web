@@ -15,6 +15,7 @@
 import { adminGate } from "../lib/admin-gate.mjs";
 import { withPagingHint } from "../lib/paging-hint.mjs";
 import { ขอบเขตของค่าที่ส่งไป } from "../lib/value-scope.mjs";
+import { ความปลอดภัยของเส้น } from "../lib/route-safety.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
@@ -564,6 +565,19 @@ async function route(req, context) {
         ทั้งหมด: lists ? lists.length : null,
         paramRoutes,
         paramRoutesนับได้: paramRoutes ? paramRoutes.length : null,
+        /* 🏷️ **ป้าย อ่าน/เขียน ต่อเส้น** — ฝั่งจอขอ 19 ก.ย. 2569 หลังเกือบยิง `saledel` (ลบใบขายจริง)
+           เพราะเขาแยกกองเองด้วย **คำนำหน้าชื่อ** แต่ `saledel` วางคำบ่งไว้ท้ายชื่อ
+           🔑 ตัวจัดกลุ่มความปลอดภัยที่ผูกกับรูปของชื่อ จะพลาดที่ชื่อที่วางคำไว้คนละที่
+              และพลาดไปทาง "ปลอดภัย" เสมอ เพราะกองที่ไม่แมตช์คือกองที่ถูกเรียกว่าปลอดภัย
+           ⇒ ให้ท่อประกาศเองจาก **ด่าน `req.method` ในซอร์สจริง** ไม่ใช่จากชื่อ
+           🚫 **`unknown` ไม่ใช่ `readonly`** — แปลว่า "เส้นนั้นไม่มีด่าน method" เท่านั้น
+              ห้ามยิงสำรวจเส้น unknown โดยไม่อ่านซอร์สก่อน */
+        routeMethod: t?.routeMethod ?? null,
+        routeSafety: (() => {
+          /* รายชื่อเส้นที่ **ตรวจด้วยตาแล้วว่าเขียนของจริง** ทั้งที่ป้ายอัตโนมัติบอก unknown
+             อ่านไม่ได้ ⇒ null ไม่ใช่ [] ( [] อ่านได้ว่า "ตรวจแล้วไม่มีเส้นอันตราย" ซึ่งคนละเรื่อง) */
+          try { return ความปลอดภัยของเส้น(); } catch { return null; }
+        })(),
         /* 🔖 **ช่องที่ตัวเขียนของ ZORT รับเข้า** — ฝั่งจอขอ 18 ก.ย. 2569
            เพราะคืนเดียวเจอ 3 ใบที่ **ท่อรับได้แต่จอไม่รู้** (weight/size/tag · number/day/cod ·
            countExcludingVoided) ⇒ "ของที่ซื้อมาแล้วไม่ได้แกะกล่อง" — ไม่มีอะไรพัง ไม่มีอะไรฟ้อง
@@ -661,11 +675,31 @@ async function route(req, context) {
       });
       return okJson(r, r?.error ? 400 : 200);
     }
+    /* 🧾 ประวัติ **การยิงจริง** เท่านั้น — ไม่ใช่ประวัติรอบกวาด
+       🔴 ของจริง 19 ก.ย. 2569: ฝั่งจออ่านเส้นนี้เพื่อตอบคำถาม "Shopee/TikTok กวาดอยู่ไหม"
+          แล้วเห็นแต่ lazada ⇒ สรุปว่า **ไม่มีรอบ shopee/tiktok เลยใน ~15 ชม.**
+          ของจริง: ทั้งสองเจ้ากวาดทุก 15 นาที และรอบล่าสุดห่างไม่ถึง 5 นาที (planned 62/50)
+          แต่รอบ **โหมดซ้อม** ไม่ได้ยิงอะไรออกไป ⇒ ไม่มีอะไรลงประวัติการยิง = ถูกต้องตามนิยาม
+       🔑 คลาส: **ฟิลด์/เส้นที่ตอบคนละคำถามกับที่คนเอาไปถาม** — คำตอบถูกทุกแถว
+          แต่ข้อสรุปผิด และ **ไม่มีอะไรฟ้อง** เพราะไม่มีใครผิดสัญญาข้อไหน
+       ⇒ ประกาศขอบเขตติดไปกับคำตอบ + ชี้แหล่งที่ตอบคำถามอีกแบบ (ธงที่ต้องไปอ่านที่อื่นจะถูกข้าม)
+       ⚠️ สองแหล่งนี้อยู่คนละที่โดยตั้งใจ: ประวัติการยิงอยู่ Blobs (ตัวยิงเขียน) ·
+          รอบกวาดอยู่ D1 `push_sweep_log` (ตัวกวาดเขียนทุกรอบ รวมรอบซ้อมและรอบข้ามเร็ว) */
     if (url.searchParams.get("stockpushlog")) {
       const { getStore } = await import("@netlify/blobs");
       const log = await getStore({ name: "gucut-coupon", consistency: "strong" })
         .get("stockpush/log", { type: "json" }).catch(() => null);
-      return json({ ok: true, log: Array.isArray(log) ? log : [] });
+      return json({
+        ok: true,
+        log: Array.isArray(log) ? log : [],
+        "🔴 ขอบเขต — ตอบคำถามไหนได้บ้าง":
+          "นี่คือประวัติ **การยิงจริงขึ้นแพลตฟอร์ม** เท่านั้น · " +
+          "🚫 **ห้ามใช้ตอบว่า 'เจ้านั้นกวาดอยู่ไหม'** — รอบโหมดซ้อมไม่ยิงอะไรออกไป จึงไม่มีแถวที่นี่ " +
+          "ทั้งที่ตัวกวาดวิ่งครบทุกรอบ ⇒ ไม่มีแถว = 'ไม่เคยยิงจริง' ไม่ใช่ 'ไม่เคยกวาด'",
+        "👉 อยากรู้ว่ากวาดอยู่ไหม ให้ดูที่":
+          "GET ?pushstate=1 → byChannel.<เจ้า>.lastSweep (มาจาก D1 push_sweep_log ซึ่งจดทุกรอบ " +
+          "รวมรอบซ้อม `mode:dry` และรอบข้ามเร็ว `mode:fast-skip`) · ที่นั่นมี `autoOn` ต่อเจ้าด้วย",
+      });
     }
     /* 🔐 ตรวจสิทธิ์เขียนสต็อก Shopee/TikTok ด้วยรหัสปลอม — GET · ไม่เปลี่ยนสต็อก (ดูหัวไฟล์ stock-write-probe.mjs) */
     /* 🧱 ด่านใบค้างส่ง (⑧) — GET อ่านอย่างเดียว · คืนแค่จำนวน + ตัวอย่างรหัส ไว้ตรวจกับของจริงก่อนต่อตัวยิง */
