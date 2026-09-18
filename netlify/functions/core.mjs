@@ -576,6 +576,23 @@ async function route(req, context) {
              และ **ไม่มีด่านไหนจับได้** เพราะโค้ดไม่ผิดสักบรรทัด
            ⇒ ส่งออกที่นี่ให้จอเปิดดูได้ที่เดียวว่าค้างอะไรอยู่ */
         awaitingApproval: (await import("../lib/awaiting-approval.mjs")).awaitingSummary(),
+        /* 🔖 **เทียบเลขเรากับ ZORT ได้ที่ไหน — แผนที่ที่เดียว** (เพิ่ม 19 ก.ย. 2569)
+           ที่มา: ใบ t_mu2pekwt ข้อ "ตัวเลขเทียบ ZORT ในคำขอเดียว" · ผมยิงสำรวจแล้วพบว่า
+           **เส้น `list=*` ส่วนใหญ่ไม่มีเลขฝั่ง ZORT — และนั่นถูกต้อง** (ตั้งใจ)
+           เพราะถ้าทุกคำขอยิง ZORT ด้วย จะช้าและกินโควตาเอกสารของร้าน
+           ⇒ ของที่ขาดจริงคือ **จอไม่รู้ว่ามีเส้นเทียบอยู่แล้ว** = "ของที่ซื้อมาแล้วไม่ได้แกะกล่อง"
+           🔑 และเหตุที่ต้องเทียบ **ในคำขอเดียว**: ยิงสองรอบคร่อมรอบซิงก์ ⇒ เลขไม่ตรงกัน
+             โดยไม่มีใครผิด แล้วคนจะไล่หาบั๊กที่ไม่มีอยู่ [[compare-within-one-response]] */
+        compareWithZort: {
+          orders: "?recon=1 — คืน zortOrders/zortAmount คู่กับ coreOrders/coreAmount + match ในคำตอบเดียว",
+          stock: "list=stock มี zortTotal · noSkuInZort · zortCountedAt ในตัวแล้ว (ไม่ต้องยิงเพิ่ม)",
+          returnorders: "list=returnorders มี mirrorTotals (กระจก) คู่กับ total (ZORT สด) ในคำตอบเดียว",
+          "purchases · transfers · contacts · bundles":
+            "ยังไม่มีเลขฝั่ง ZORT ในคำตอบ — เทียบได้ด้วย ?zortstoredoccounts (นับเอกสารฝั่ง ZORT) แต่เป็นคำขอแยก",
+          "⚠️ ขอบเขต":
+            "แผนที่นี้เขียนด้วยมือ ⇒ เพิ่มเส้นเทียบใหม่แล้วต้องมาเติมที่นี่ · " +
+            "ยิงสองคำขอแล้วเทียบเองได้ **แต่ต้องรู้ว่าเลขอาจคร่อมรอบซิงก์** ⇒ ใช้เส้นที่เทียบในคำขอเดียวก่อนเสมอ",
+        },
         returnedFields: rf,
         returnedFieldsReadError: rfErr,
         readError,
