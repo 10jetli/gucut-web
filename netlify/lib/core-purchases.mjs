@@ -1569,7 +1569,8 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
        ค่าสถานะที่มีให้เลือกอยู่ใน `mirrorTotals.byStatus` (มาจากกระจกทั้งชุด ไม่ใช่พิมพ์มือ)
        ⇒ จอทำแท็บจากตัวนั้นได้เลย และจำนวนจะตรงกับที่กรองได้จริง */
     supportedFilters: ["q", "from", "to", "days", "status", "limit", "page", "store"],
-    statusValuesFrom: "mirrorTotals.byStatus (รายการปลายเปิด — จำนวนโตได้เมื่อ ZORT เพิ่มสถานะ)",
+    /* `statusValuesFrom` ย้ายไปอยู่ที่ระดับเส้นใน core.mjs แล้ว — ที่นี่ไม่ต้องส่ง
+       (ส่งสองที่ = สองแหล่งความจริง วันหนึ่งข้อความสองอันจะไม่ตรงกัน) */
     mirrorTotals,
     syncedAtUtc: meta?.at ?? null,
     syncComplete: meta ? meta.v === "complete" : null,

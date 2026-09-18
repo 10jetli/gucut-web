@@ -1622,6 +1622,12 @@ async function route(req, context) {
           status: url.searchParams.get("status") ?? undefined,
         })),
         supportedFilters: ["q", "store", "from", "to", "days", "status", "limit", "page"],
+        /* 🔴 **ด่านของผมเองจับผมได้ในคอมมิตถัดจากที่สร้างมันเสร็จ** (19 ก.ย. 2569)
+           ผมใส่ `statusValuesFrom` ไว้แค่ในทางค้นในกระจก ⇒ เส้นเดียวส่งคีย์ไม่เหมือนกันสองทาง
+           = **คลาสเดิมที่ผมเพิ่งแก้ไปเมื่อชั่วโมงก่อน** และผมสร้างขึ้นมาใหม่ด้วยมือตัวเอง
+           ⇒ ใส่ที่ระดับเส้นเลย (ไม่ใช่ในฟังก์ชันย่อย) เพื่อให้ **ทุกทางได้เหมือนกันโดยไม่ต้องจำ**
+           🔑 นี่คือเหตุผลที่ต้องมีด่าน ไม่ใช่มีกฎ — ผมรู้กฎ ผมเขียนด่านเอง แล้วยังพลาด */
+        statusValuesFrom: "mirrorTotals.byStatus (รายการปลายเปิด — จำนวนโตได้เมื่อ ZORT เพิ่มสถานะ) · ตัวนับของชุดที่กรองอยู่ใช้ mirrorTotals.byStatusFiltered",
         store: st.source,
         storeDefaulted: st.defaulted,
         storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
