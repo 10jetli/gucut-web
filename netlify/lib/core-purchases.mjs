@@ -675,13 +675,40 @@ export async function listTransfers(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
-  const filter = `AND source = ${esc(store)}` + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("reference", esc(q))})` : "");
+  /* 🔎 ตัวกรองสถานะ + ช่วงวัน — ฝั่งจอขอ 18 ก.ย. 2569 พร้อมหลักฐานว่าของเดิม **เมินเงียบ**
+     (ยิง from/to/days/page/status แล้ว total เท่าเดิม 12,005 ทุกครั้ง · applied เป็น null)
+     🔴 เหตุผลที่ status มาก่อน from/to: `byStatus` บอกว่ามีใบยกเลิก 28 ใบ
+        แต่จอไม่มีทางหาเจอ เพราะกระจายอยู่ใน 241 หน้า ⇒ ตัวเลขที่เห็นแต่แตะไม่ได้
+     ⚠️ **ค่าที่รับคือค่าที่อยู่ในตารางจริง** (Success · Voided · Pending) ไม่ใช่คำไทยบนจอ ZORT
+        ⇒ ประกาศไว้ใน `supportedFilters.status` ให้จอไม่ต้องเดา
+        ค่าที่ไม่รู้จัก **ตีกลับ 400 ห้ามเมินเงียบ** — เมินแล้วจอจะโชว์ทั้ง 12,005 ใบ
+        ทั้งที่คนกดหวังผลกรอง ซึ่งอ่านได้ว่า "ไม่มีใบไหนถูกกรองออก" (ปุ่มหลอก)
+     ⚠️ เทียบวันด้วย `transfer_date` ซึ่งเป็น **วันที่เอกสาร** ไม่ใช่วันเคลื่อนสต็อก
+        (จอ ZORT มี fromstockdate/tostockdate แยกอีกคู่ — กระจกเราไม่มีช่องนั้น ห้ามอ้างว่ารองรับ) */
+  const สถานะที่มีจริง = ["Success", "Voided", "Pending"];
+  const status = String(o.status ?? "").trim();
+  if (status && !สถานะที่มีจริง.includes(status)) {
+    return { error: `ไม่รู้จักสถานะ "${status}"`, supportedStatus: สถานะที่มีจริง };
+  }
+  const วัน = (v) => { const t = String(v ?? "").trim(); return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null; };
+  const from = วัน(o.from), to = วัน(o.to);
+  if ((o.from && !from) || (o.to && !to)) {
+    return { error: "from/to ต้องเป็นรูปแบบ yyyy-MM-dd", got: { from: o.from ?? null, to: o.to ?? null } };
+  }
+  const filter = `AND source = ${esc(store)}`
+    + (q ? ` AND (${containsLit("number", esc(q))} OR ${containsLit("reference", esc(q))})` : "")
+    + (from ? ` AND date(transfer_date) >= date(${esc(from)})` : "")
+    + (to ? ` AND date(transfer_date) <= date(${esc(to)})` : "");
+  /* ⚠️ `filter` ใช้กับ **ทั้งตัวนับแท็บและแถว** ⇒ ตัวกรองสถานะต้องแยกออกมา
+      ไม่งั้นแท็บจะนับแต่สถานะที่เลือกอยู่ แล้วแท็บอื่นขึ้น 0 ทั้งที่มีของ
+      (กติกาเดียวกับทุกจอ: ตัวนับแท็บต้องนับข้ามตัวกรองสถานะเสมอ) */
+  const filterแถว = filter + (status ? ` AND status = ${esc(status)}` : "");
   /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569) — สามตัวนี้ไม่มีตัวไหนต้องรอกัน
       ⚠️ CREATE TABLE ข้างบนยังต้องอยู่ก่อนและ await จริง ๆ — ห้ามย้ายลงมาในนี้
          สามตัวนี้อ่านตารางนั้น ถ้ายังไม่ถูกสร้างจะล้มทั้งชุด */
   const [sumRows, byStatus, byKind, rows] = await Promise.all([
     coreQuery(
-      `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filter}`
+      `SELECT COUNT(*) AS c, MIN(transfer_date) AS oldest FROM transfers WHERE 1=1 ${filterแถว}`
     ),
     // แท็บสถานะ — นับข้ามตัวกรองสถานะเสมอ (กติกาเดียวกับทุกจอ)
     coreQuery(
@@ -693,7 +720,7 @@ export async function listTransfers(o = {}) {
     ),
     coreQuery(
       `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
-       FROM transfers WHERE 1=1 ${filter}
+       FROM transfers WHERE 1=1 ${filterแถว}
        ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
     ),
   ]);
@@ -704,6 +731,17 @@ export async function listTransfers(o = {}) {
     oldest: sum?.oldest || null,
     limit,
     offset,
+    /* 🤝 สัญญากับจอ: บอกว่า **ใช้ค่าอะไรไปจริง** ไม่ใช่แค่รับมา
+        ⚠️ ของเดิมไม่มีคีย์นี้เลย ⇒ จอส่งตัวกรองไปแล้วท่อเมิน โดยไม่มีอะไรฟ้อง
+           ฝั่งจอเป็นคนจับได้ด้วยการยิงเทียบ total (เท่าเดิมทุกครั้ง) */
+    applied: { q: q || null, store, status: status || null, from, to },
+    ignored: { days: o.days ?? null, page: o.page ?? null },
+    supportedFilters: ["q", "store", "status", "from", "to", "limit", "offset"],
+    supportedStatus: สถานะที่มีจริง,
+    "⚠️ ขอบเขตตัวกรอง":
+      "status/from/to กรองที่กระจก ไม่ได้ยิง ZORT ใหม่ · from/to เทียบกับ transfer_date (วันที่เอกสาร) " +
+      "ไม่ใช่วันเคลื่อนสต็อก — จอ ZORT มี fromstockdate/tostockdate แยกอีกคู่ ซึ่งกระจกนี้ไม่มีข้อมูลนั้น · " +
+      "byStatus/byKind นับข้ามตัวกรองสถานะเสมอ (แท็บต้องเห็นของทุกกอง) แต่นับตาม q/from/to ที่ใช้อยู่",
     byStatus,
     byKind,
     /* ⚠️ จอต้องบอกว่ากระจก = สิ่งที่ API ส่งออกมา ไม่ใช่ทั้งหมดที่จอ ZORT นับ
@@ -713,7 +751,14 @@ export async function listTransfers(o = {}) {
             Initial 6,851 · Adjust 5,124 · Transfer 28 · Assembly/Disassembly/Reserve 0
           · GetTransferDetail?id= ได้บรรทัดสินค้าทุกชนิด (รวม Adjust)
        ❌ สมมติฐานเดิมที่ตกไป: "ใบปรับดึงด้วย API ไม่ได้" · "ส่วนต่างมาจากขอบช่วงวัน" · "ส่วนต่างเป็นชนิดที่กระจกไม่เห็น"
-       ✅ **18 ก.ย. 2569 รู้สาเหตุแล้ว — ไม่ใช่ "API ไม่ส่ง" แต่เป็น "เราไม่มีสิทธิ์เห็น"**
+       ✅ **18 ก.ย. 2569 รู้แล้วว่าใบไหนหาย — แต่ "ทำไม" ยังไม่ยืนยัน (แก้ถ้อยคำเย็นวันเดียวกัน)**
+          เดิมบรรทัดนี้เขียนว่า "เราไม่มีสิทธิ์เห็น" ซึ่ง **แข็งเกินหลักฐาน** และข้อความนั้นไปโผล่บนจอ
+          ยิงของจริงแล้วพบว่า: ใบ KLD ที่รู้ว่ามีจริง → resCode 100 + **"Invalid ID."**
+          ส่วน `GetProducts&warehousecode=KLD` → resCode 100 + "Access Denied." (คนละข้อความ)
+          และ **id ที่ไม่มีอยู่จริงเลยก็ได้ "Invalid ID." เหมือนกันเป๊ะ** ⇒ ข้อความแยกสาเหตุไม่ออก
+          ตรวจฝั่งตั้งค่า ZORT แล้ว: บทบาท Admin ตั้งคลังเป็น "ทั้งหมด" · คีย์ API อยู่ระดับร้าน
+          ⇒ ฝั่งหน้าเว็บเปิดให้มากกว่านี้ไม่ได้ ⇒ เหลือทางเดียวคือถาม ZORT ว่าเส้น API ครอบคลังสาขาไหม
+          🔑 บทเรียน: **เขียนได้แค่ "เข้าถึงไม่ได้" ห้ามเขียน "ไม่มีสิทธิ์"** — อย่างแรกวัดได้ อย่างหลังเป็นการเดาสาเหตุ
           อ่านจอ `/Warehouse/Transferlist` วันเดียวกับที่ยิง API แล้วกรองทีละแกน (อ่านอย่างเดียว):
             · ทั้งหมด 12,199 · กระจก 12,005 ⇒ ต่าง 194
             · แยกสถานะ: รอโอน 2 = 2 · ยกเลิก 28 = 28 · **สำเร็จ 12,169 vs 11,975** ⇒ ส่วนต่างอยู่ในกองสำเร็จล้วน
@@ -722,9 +767,13 @@ export async function listTransfers(o = {}) {
               (155+67 ซ้อนกัน 28 ใบ เพราะใบโอนมีทั้งคลังต้นทาง/ปลายทาง)
           ⇒ **กระจก = ใบโอนของคลัง "โกดัง" ล้วน ๆ** · 194 ใบที่หาย = ใบที่แตะ **KLD/ANJ**
              ซึ่งเป็นสองคลังที่ผู้ใช้ API ของเราถูกกั้นสิทธิ์อยู่ (resCode 100 "Access Denied" — เรื่องเดียวกับจำนวนสินค้ารายคลัง)
-          ⇒ **แก้ได้ด้วยการให้สิทธิ์ผู้ใช้ API เข้าคลัง KLD/ANJ ในตั้งค่า ZORT** (รอท่านประธาน) ไม่ใช่แก้ที่ตัวซิงก์ */
+          🚫 **ห้ามเขียนว่า "แก้ได้ด้วยการให้สิทธิ์"** — ท่านประธานเปิดสิทธิ์คลังให้แล้ว 18 ก.ย. 2569
+             แล้ว **ยิงยืนยันว่าไม่มีผล** (12,005 เท่าเดิมทุกหลัก) ⇒ คำแนะนำนั้นถูกพิสูจน์แล้วว่าไม่ใช่ทางแก้
+             และไม่ใช่เรื่องที่แก้ที่ตัวซิงก์ได้ด้วย */
     note: "กระจก = ใบโอนของคลัง 'โกดัง' เท่านั้น — วัด 18 ก.ย. 2569: จอ ZORT กรองคลังโกดังได้ 12,005 ตรงกับกระจกเป๊ะ · " +
-      "ส่วนที่จอนับมากกว่า (194 ใบ) คือใบที่แตะคลัง KLD/ANJ ซึ่งผู้ใช้ API ของเราถูกกั้นสิทธิ์ ⇒ ไม่ใช่ 'API ไม่ส่ง' และแก้ได้ด้วยการให้สิทธิ์",
+      "ส่วนที่จอนับมากกว่า (194 ใบ) คือใบที่แตะคลัง KLD/ANJ ซึ่ง **API ของเราเข้าถึงไม่ได้** ⇒ ไม่ใช่ 'API ไม่ส่ง' และไม่ใช่ข้อมูลหายจากฝั่งเรา · " +
+      "⚠️ **สาเหตุยังไม่ยืนยัน** — ยิงใบ KLD ที่รู้ว่ามีจริง (TF-202608070) ได้ resCode 100 แต่ข้อความคือ 'Invalid ID.' ไม่ใช่ 'Access Denied.' " +
+      "และ id ที่ไม่มีอยู่จริงก็ได้ข้อความเดียวกันเป๊ะ ⇒ แยกไม่ออกว่าเป็นเรื่องสิทธิ์หรือเส้น API ครอบแค่คลังหลัก",
     rows,
   };
 }

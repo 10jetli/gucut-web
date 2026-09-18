@@ -1551,15 +1551,29 @@ async function route(req, context) {
       const { parseSingleStore } = await import("../lib/core-orders.mjs");
       const st = parseSingleStore(url.searchParams.get("store"));
       if (st.error) return json({ error: st.error }, 400);
-      return json({
-        ok: true,
-        ...(await listTransfers({
+      /* 🔴 **ห้ามครอบ ok:true ทับคำตอบ** (แก้ 18 ก.ย. 2569 ตอนเพิ่มตัวกรอง)
+         ของเดิมเขียน `{ ok: true, ...(await listTransfers(...)) }` ⇒ วันที่ listTransfers
+         เริ่มคืน `{ error }` (ค่าตัวกรองผิด) จอจะได้ **HTTP 200 + ok:true + error** พร้อมกัน
+         ⇒ จอที่เช็ค ok ก่อนจะอ่านว่าสำเร็จ แล้วโชว์ตารางว่างเปล่าเหมือน "ไม่มีข้อมูล"
+         🔑 คลาสเดียวกับที่ไล่กันทั้งวัน: **ความพังต้องถูกตัดสินก่อนการอนุมาน** */
+      const ผล = await listTransfers({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
+          /* 🔎 ฝั่งจอขอ 18 ก.ย. 2569 — ของเดิมส่งมาแล้วถูกเมินเงียบ
+             ค่าที่รับคือค่าในตาราง (Success/Voided/Pending) ไม่ใช่คำไทยบนจอ ZORT
+             ⚠️ `days` กับ `page` ยัง**ไม่รองรับ** และจะถูกประกาศใน `ignored` ไม่ใช่หายเงียบ */
+          status: url.searchParams.get("status"),
+          from: url.searchParams.get("from"),
+          to: url.searchParams.get("to"),
+          days: url.searchParams.get("days"),
+          page: url.searchParams.get("page"),
           store: st.source,
-        })),
-        store: st.source,
+      });
+      if (typeof ผล?.error === "string" && ผล.error) return json({ ok: false, ...ผล }, 400);
+      return json({
+        ok: true,
+        ...ผล,
         storeDefaulted: st.defaulted,
         storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
       });
