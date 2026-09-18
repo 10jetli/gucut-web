@@ -418,6 +418,34 @@ async function route(req, context) {
       });
       return okJson(r, r?.error ? 400 : 200);
     }
+    /* ---------- ?skuaudit=1 · รหัสตรงกันทุกแพลตฟอร์มไหม (ท่านประธานสั่ง 18 ก.ย. 2569) ----------
+       **อ่านอย่างเดียว ไม่แก้อะไร** — การแก้รหัสบนแพลตฟอร์มกระทบของที่ขายอยู่จริง
+       ต้องให้ท่านประธานตัดสินเป็นราย ๆ · เหตุผลเต็มอยู่หัวไฟล์ lib/sku-audit.mjs */
+    if (url.searchParams.get("skuaudit")) {
+      const { marketplaceListings } = await import("../lib/marketplace-listings.mjs");
+      const { ourSkuSet } = await import("../lib/sku-match.mjs");
+      const { auditSkus } = await import("../lib/sku-audit.mjs");
+      const ml = await marketplaceListings({ fresh: url.searchParams.get("fresh") === "1" });
+      /* ⚠️ ดึงรายชื่อจากแพลตฟอร์มไม่ได้เลย = **ห้ามตอบเป็นรายงานที่ดูสมบูรณ์**
+         ต้องตอบว่าแปลผลไม่ได้ ไม่ใช่ตอบว่า "ไม่มีรหัสไหนผิด" (กฎ three-states-not-two) */
+      if (!ml?.listings || !Object.keys(ml.listings).length) {
+        return okJson({
+          ok: false, inconclusive: true,
+          why: "ดึงรายชื่อที่ลงขายจากแพลตฟอร์มไม่ได้รอบนี้ — ยังสรุปเรื่องรหัสไม่ได้",
+          checked: ml?.checked ?? [], notConnected: ml?.notConnected ?? [],
+        });
+      }
+      const r = auditSkus({
+        listings: ml.listings,
+        ourSkus: await ourSkuSet(coreQuery),
+        checked: ml.checked || [],
+      });
+      return okJson({
+        ...r,
+        ดึงรายชื่อเมื่อ: ml.at ? new Date(ml.at).toISOString() : null,
+        ช่องทางที่ยังไม่ได้ต่อ: ml.notConnected || [],
+      });
+    }
     if (url.searchParams.get("pushstate")) {
       const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
       return okJson(await สถานะดันสต็อก());
