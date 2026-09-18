@@ -706,7 +706,14 @@ export async function listTransfers(o = {}) {
 /** ใบเสนอราคา — จอ "รายการขาย → ใบเสนอราคา" ของ ZORT
  *  ⚠️ ร้านมีแค่ 3 ใบ (ไม่ค่อยได้ใช้) — ดึงสดทุกครั้ง ไม่ต้องทำกระจก
  *     ทำกระจกให้ของที่มี 3 แถวคือเพิ่มที่ให้ข้อมูลไม่ตรงกันได้เปล่า ๆ */
-export async function listQuotations(limit = 50, page = 1, store = "z1") {
+/** @param opts.type ตัวกรองที่ **เส้นนี้ไม่รองรับ** — รับไว้เพื่อ "สะท้อนกลับว่าเมิน" ไม่ใช่เพื่อกรอง
+ *  🔴 ฝั่งจอจับได้ 18 ก.ย. 2569 ด้วยการยิงค่ามั่ว: ส่ง `type` ไปแล้วได้แถวชุดเดิมทั้งชุด
+ *     และเส้นนี้ **ไม่เคยอ่าน `type` เลยตั้งแต่ต้น** ⇒ ตัวกรองหลอกแบบเงียบสนิท
+ *  ⚠️ ไม่ตีกลับเป็น error เพราะจอส่งมาอยู่แล้ว (ตีกลับ = จอพังทันที)
+ *     ⇒ ใช้ท่า `ignored` แบบเดียวกับเส้นขนส่ง: ทำงานต่อได้ แต่ **ประกาศตัวว่าเมินค่านั้น**
+ *  ⚠️ ZORT ส่งมาแค่ status (Voided/Approved/...) ไม่มีช่อง "ชนิดใบ" ⇒ จอควรกรองด้วย status แทน
+ *     จะทำตัวกรองจริงต้องรู้ก่อนว่า "ชนิด" ที่จอต้องการหมายถึงอะไรในข้อมูลของ ZORT */
+export async function listQuotations(limit = 50, page = 1, store = "z1", opts = {}) {
   // ใบเสนอราคาไม่มีกระจก — แยกร้านด้วยรหัส ZORT ของร้านนั้น (15 ก.ย. 2569 · ใบ t_mu2pfve9)
   const h = store === "z2" ? storeCreds("z2") : headers();
   if (!h) return { error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
@@ -722,10 +729,18 @@ export async function listQuotations(limit = 50, page = 1, store = "z1") {
   const data = res?.ok ? await res.json().catch(() => null) : null;
   const list = Array.isArray(data?.list) ? data.list : null;
   if (!list) return { error: "ดึงใบเสนอราคาจาก ZORT ไม่ได้" };
+  const typeRaw = String(opts.type ?? "").trim().slice(0, 20);
   return {
     store,
     total: num(data?.count),
     live: true, // ดึงสดจาก ZORT ไม่ใช่กระจก — จอเขียนบอกได้ว่าเป็นข้อมูลสด
+    /* 🔎 ตัวกรองที่เส้นนี้อ่านจริงมีแค่นี้ — ส่งไปให้จอตรวจเองได้ว่าที่ส่งไปถูกใช้ไหม */
+    supportedFilters: ["limit", "page", "store"],
+    ...(typeRaw ? {
+      ignored: { type: typeRaw },
+      ignoredNote: `เส้นนี้ไม่รองรับตัวกรอง type (ได้ "${typeRaw}") — แถวที่ได้คือทั้งชุด ไม่ได้ถูกกรอง · ` +
+        "ZORT ส่งมาแค่ status ⇒ ถ้าจอต้องการแยกชนิด ให้กรองด้วย status ที่จอ หรือบอกว่า 'ชนิด' หมายถึงอะไรก่อน",
+    } : {}),
     rows: list.map((q) => ({
       /* ⚠️ **เลขที่ใบ (`number`) กับ id ในระบบ ZORT เป็นคนละตัว**
           เส้นดึงรายละเอียดรายใบรับ **id เท่านั้น** ส่งเลขที่ใบไปได้ค่าว่างเงียบ ๆ

@@ -35,5 +35,21 @@ test('เส้น list=quotations ใน core.mjs ส่ง page ต่อใ�
   assert.ok(start > 0, 'หาเส้น quotations ไม่เจอ');
   const next = src.indexOf('url.searchParams.get("list") ===', start + 10);
   const block = src.slice(start, next > 0 ? next : start + 800);
-  assert.match(block, /listQuotations\(url\.searchParams\.get\("limit"\),\s*url\.searchParams\.get\("page"\),\s*listStore\.store\)/);
+  /* ⚠️ ตรวจ "เจตนา" ไม่ใช่ตัวอักษรเป๊ะ ๆ — ของเดิมผูกกับรูปการเรียกทั้งบรรทัด
+     ⇒ วันที่เพิ่มพารามิเตอร์ตัวที่สี่ (opts.type เพื่อสะท้อน ignored) เทสต์ตกทั้งที่ page ยังส่งถูก
+     นั่นคือ **แดงลวงจากเทสต์ที่แน่นเกินไป** [[probe-fails-toward-alarm]] */
+  assert.match(block, /listQuotations\(/, 'ต้องเรียก listQuotations');
+  /* ⚠️ ตัดวงเล็บต้อง **นับคู่** — ตัดที่ ')' ตัวแรกจะได้แค่ `listQuotations(url.searchParams.get("limit")`
+     แล้วเทสต์จะฟ้องว่าไม่ส่ง page ทั้งที่ส่งอยู่ (ผมเพิ่งเหยียบเองรอบนี้ · บทเรียนเดียวกับฝั่งจอเรื่อง regex หาปีกกาปิด) */
+  const call = block.slice(block.indexOf('listQuotations('));
+  let depth = 0, end = -1;
+  for (let i = call.indexOf('('); i < call.length; i++) {
+    if (call[i] === '(') depth++;
+    else if (call[i] === ')' && --depth === 0) { end = i; break; }
+  }
+  assert.ok(end > 0, 'อ่านวงเล็บของการเรียกไม่จบ');
+  const args = call.slice(0, end + 1);
+  assert.match(args, /get\("limit"\)/, 'ต้องส่ง limit');
+  assert.match(args, /get\("page"\)/, '🔴 ต้องส่ง page ต่อให้ ZORT — ไม่ส่ง = ได้ก้อนเดิมทุกหน้า');
+  assert.ok(args.indexOf('get("limit")') < args.indexOf('get("page")'), 'ลำดับต้องเป็น (limit, page, ...)');
 });

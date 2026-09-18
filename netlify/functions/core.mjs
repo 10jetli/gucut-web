@@ -1294,7 +1294,9 @@ async function route(req, context) {
     }
     // ใบเสนอราคา — ดึงสดจาก ZORT (ร้านมีแค่ 3 ใบ ไม่ต้องทำกระจก)
     if (url.searchParams.get("list") === "quotations") {
-      return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"), listStore.store)), ...listStore });
+      /* ⚠️ ส่ง type ต่อไปด้วย **ไม่ใช่เพื่อกรอง** แต่เพื่อให้ท่อสะท้อนกลับว่าเมินค่านั้น (ดูคอมเมนต์ที่ listQuotations) */
+      return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"), listStore.store,
+        { type: url.searchParams.get("type") })), ...listStore });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
