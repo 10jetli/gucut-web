@@ -17,6 +17,7 @@ import { addPoints } from "./points.mjs";
 import { pushToAdmins, pushToUser } from "./push.mjs";
 import { sendPurchase } from "./marketing.mjs";
 import { SITE_URL } from "./site.mjs";
+import { notifyShop } from "./tg.mjs";
 
 /**
  * @param zortAddOrder ฟังก์ชันส่งเข้า ZORT (อยู่ใน orders.mjs ส่งเข้ามาเพื่อไม่ให้ import วน)
@@ -144,16 +145,11 @@ export async function finalizeOrder({
         : `⏳ ยังไม่เข้า ZORT (${order.zort?.message || "?"}) — ระบบส่งซ้ำเองทุกครึ่งชั่วโมง\n`) +
     `\nเปิดดู: ${SITE_URL}/admin/orders/`;
 
-  const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
-  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-    later(
-      fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: TELEGRAM_CHAT_ID, text, disable_web_page_preview: true }),
-      }).catch(() => {}),
-    );
-  }
+  /* 🔴 ย้ายไป `lib/tg.mjs` (18 ก.ย. 2569) — เดิมยิง fetch ตรงนี้ **จึง mock ไม่ได้**
+     ⇒ ชุดทดสอบที่เรียก finalizeOrder ยิง Telegram จริงเข้ากลุ่มร้านทุกครั้ง
+     ⇒ พอ `npm test` เข้าไปอยู่ใน prebuild = **ทุกครั้งที่ build เว็บ ท่านประธานได้ 3 ข้อความปลอม**
+     ท่านประธานเจอเองแล้วส่งรูปมาถาม เหตุผลเต็มอยู่หัวไฟล์ tg.mjs */
+  later(notifyShop(text).catch(() => {}));
 
   // แจ้ง LINE หาลูกค้า (ถ้าล็อกอินด้วย LINE + เพิ่มเพื่อน @gucut1) — 27 ส.ค. 2569
   later(

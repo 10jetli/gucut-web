@@ -8,6 +8,7 @@ mock.module('../../netlify/lib/coupons.mjs', { namedExports: { markUsed: async (
 mock.module('../../netlify/lib/points.mjs', { namedExports: { addPoints: async (_s, phone, n) => { seen.points.push([phone, n]); } } });
 mock.module('../../netlify/lib/push.mjs', { namedExports: { pushToAdmins: async () => {}, pushToUser: async () => {} } });
 mock.module('../../netlify/lib/marketing.mjs', { namedExports: { sendPurchase: async () => {} } });
+mock.module('../../netlify/lib/tg.mjs', { namedExports: { notifyShop: async () => ({ sent: false, why: 'ทดสอบ' }) } });
 mock.module('../../netlify/lib/site.mjs', { namedExports: { SITE_URL: 'https://gucut.com' } });
 mock.module('../../netlify/lib/notify-customer.mjs', { namedExports: { lineToCustomer: async () => {} } });
 const { finalizeOrder } = await import('../../netlify/lib/order-finalize.mjs');
