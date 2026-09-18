@@ -8,6 +8,7 @@
 //    ต้องพิสูจน์ก่อนว่าเลขที่เราจะดันตรงกับที่ ZORT ดันอยู่ทุกวัน แล้วค่อยเปิดการเขียน
 //    ตัวเขียนจริงจะอยู่คนละไฟล์ และต้องมีสวิตช์ env แยก — ห้ามใส่รวมในนี้
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { recipeCheckedAt } from "./core-products.mjs";
 import { getStore } from "@netlify/blobs";
 import { validToken, shopCall } from "./shopee.mjs";
@@ -232,6 +233,12 @@ export async function shopeeUnlistedStock() {
     recipeCheckedDayTH: thaiDayFromUtc(checkedAt),  // ตรวจสูตรกับ ZORT ล่าสุด (แปลงจาก UTC แล้ว)
     recipeAt,
     recipeCheckedAt: checkedAt, // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด (UTC)
+    /* 🔑 **รอบที่คาดหวังต้องมาคู่กับเวลาที่ส่งไปเสมอ** (เพิ่ม 19 ก.ย. 2569)
+        เส้นนี้ส่ง `recipeCheckedAt` เหมือน `list=bundles` **แต่เดิมไม่ส่งรอบที่คาดหวัง**
+        ⇒ จอที่อ่านเส้นนี้ต้องเดาเกณฑ์เอง ⇒ คลาสเดิมที่ทำให้เกณฑ์ 6 ชม.ไปโผล่ในโค้ดจอ
+        (ฝั่งจอเตือนเรื่องนี้เองว่า "เพิ่มสถานะใหม่แล้วเกือบลืมจอรายตัว" ⇒ ผมไปตรวจตามแล้วเจอ)
+        🔑 **ส่งเวลาไปที่ไหน ต้องส่งรอบที่คาดหวังไปที่นั้น** ไม่งั้นปลายทางไม่มีทางรู้ว่าเก่าแค่ไหนถึงผิดปกติ */
+    ...(await รอบที่คาดหวัง("bundle-recipe-sync")),
     declaredByShopee: cov.declared ?? null,
     sawAll: cov.sawAll ?? null,
     ...summarizeUnlisted(rows, snap, recipe),
