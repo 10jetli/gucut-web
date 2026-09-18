@@ -1288,24 +1288,57 @@ export async function syncReturnOrders(opt = {}) {
     ⚠️ ผลค้นมาจากกระจก ไม่ใช่ ZORT สด ⇒ ส่ง source + ชีพจรซิงก์ (syncedAtUtc/syncComplete) ให้จอเขียนบอก
     🔒 อ่านกระจกไม่ได้ ⇒ error ห้ามคืน rows:[] (ไม่งั้นเหมือน "ค้นแล้วไม่เจอ")
     🔒 จอใช้ `applied.q` ตัดสินว่าไฟล์กรองแล้วจริงไหม — ห้ามเชื่อแค่ว่าตัวเองส่ง q ไป */
-async function searchReturnOrdersMirror(limit, page, needle, store = "z1") {
-  const applied = { q: needle, source: "mirror" };
+/* ช่วงวันของใบคืน — คิดเป็น **วันไทย** เพราะ `return_date` ในกระจกเก็บเป็น YYYY-MM-DD ตามที่ ZORT รายงาน
+   (ZORT รายงานวันแบบไทยอยู่แล้ว ⇒ ห้ามแปลงเขตเวลาอีกชั้น จะเลื่อนไปหนึ่งวัน)
+   ⚠️ `days` กับ `from/to` ใช้พร้อมกันไม่ได้ — ต้องตีกลับ ไม่ใช่เลือกอันหนึ่งเงียบ ๆ
+      (ฟิลด์ที่ตอบคำถามเดียวกันสองทาง ถ้าเมินอันหนึ่ง ผู้เรียกจะเชื่อว่าใช้ค่าที่ตัวเองส่ง) */
+export function returnDateRange({ from, to, days } = {}) {
+  const ymd = (v) => {
+    const t = String(v ?? "").trim();
+    return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+  };
+  const f = ymd(from), t = ymd(to);
+  if ((from && !f) || (to && !t)) return { error: "from/to ต้องเป็น YYYY-MM-DD" };
+  const d = days === undefined || days === null || days === "" ? null : Number.parseInt(String(days), 10);
+  if (days !== undefined && days !== null && days !== "" && (!Number.isFinite(d) || d < 1 || d > 400))
+    return { error: "days ต้องเป็นจำนวนเต็ม 1-400" };
+  if (d !== null && (f || t)) return { error: "ใช้ days หรือ from/to อย่างใดอย่างหนึ่ง ไม่ใช่ทั้งคู่" };
+  if (d !== null) {
+    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+    const start = new Date(Date.now() + 7 * 3600e3 - (d - 1) * 864e5).toISOString().slice(0, 10);
+    return { from: start, to: today, days: d };
+  }
+  return { from: f, to: t, days: null };
+}
+
+async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range = {}) {
+  const applied = { q: needle || null, from: range.from ?? null, to: range.to ?? null, days: range.days ?? null, source: "mirror" };
   if (!coreReady()) return { error: "ค้นใบคืนต้องใช้กระจก แต่ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN", applied };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
   const p = Math.max(1, Math.min(50, num(page) || 1));
   /* 🔴 ห้าม LIKE '%คำค้น%' — D1 จำกัดรูปแบบ LIKE 50 ไบต์ ⇒ ชื่อไทย ≥17 ตัวทำคำขอล้ม
       (รุ่นแรก 8d4b031 ใช้ LIKE+ESCAPE · gucut2 ยิงจับได้ 15 ก.ย. 2569) ⇒ ดู sql-contains.mjs */
   // วงเล็บต้องครอบ OR ก่อนต่อ AND source ไม่งั้นร้านกรองแค่ช่องสุดท้าย
-  const where = `(${contains("number")} OR ${contains("reference")} OR ${contains("customer")}) AND source = ?`;
+  /* ค้นคำ **ไม่บังคับแล้ว** — เรียกด้วยช่วงวันเปล่า ๆ ก็ได้ (จอใบคืนขอช่วงวัน 18 ก.ย. 2569)
+     ไม่มีคำค้น ⇒ ข้ามท่อน OR ทั้งก้อน ไม่ใช่ค้นด้วยสตริงว่างซึ่งจับทุกแถวโดยบังเอิญ */
+  const parts = ["source = ?"];
+  const args = [store];
+  if (needle) {
+    parts.unshift(`(${contains("number")} OR ${contains("reference")} OR ${contains("customer")})`);
+    args.unshift(needle, needle, needle);
+  }
+  if (range.from) { parts.push("return_date >= ?"); args.push(range.from); }
+  if (range.to) { parts.push("return_date <= ?"); args.push(range.to); }
+  const where = parts.join(" AND ");
   let total;
   let rows;
   try {
-    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, [needle, needle, needle, store]);
+    const [cnt] = await coreQuery(`SELECT COUNT(*) AS c FROM return_orders_v2 WHERE ${where}`, args);
     total = num(cnt?.c);
     rows = await coreQuery(
       `SELECT id, number, reference, customer, amount, status, warehouse, return_date, paid FROM return_orders_v2
        WHERE ${where} ORDER BY return_date DESC, id DESC LIMIT ${n} OFFSET ${(p - 1) * n}`,
-      [needle, needle, needle, store]
+      args
     );
   } catch {
     return { error: "ค้นใบคืนในกระจกไม่ได้", applied };
@@ -1341,9 +1374,17 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1") {
   };
 }
 
-export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1") {
+export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1", opts = {}) {
   const needle = String(q ?? "").trim().slice(0, 60);
-  if (needle) return searchReturnOrdersMirror(limit, page, needle, store);
+  /* 🔴 **เดิมเมินช่วงวันเงียบ ๆ** (ฝั่งจอจับได้ 18 ก.ย. 2569): ส่ง from/to/days ไปแล้ว total ไม่ขยับ
+      และ applied มีแค่ q กับ source ⇒ ใครทำช่องวันที่บนจอจะได้ปุ่มหลอกที่ไม่มีอะไรฟ้อง
+      ⇒ ตอนนี้กรองจริงจากกระจก (คอลัมน์ return_date + ดัชนี idx_ret2_date มีอยู่แล้ว)
+      ⚠️ ZORT GetReturnOrders **ไม่รับช่วงวัน** ⇒ ขอช่วงวันเมื่อไหร่ต้องสลับมาอ่านกระจก
+         และต้องบอกผู้เรียกว่าเลขชุดนี้มาจากกระจก (source: "mirror") ไม่ใช่ ZORT สด
+         กระจกอาจซิงก์ไม่ทัน ⇒ ส่ง syncedAtUtc/syncComplete ไปให้ตัดสินเองด้วย */
+  const range = returnDateRange(opts);
+  if (range.error) return { error: range.error, supportedFilters: ["q", "store", "from", "to", "days", "limit", "page"] };
+  if (needle || range.from || range.to) return searchReturnOrdersMirror(limit, page, needle, store, range);
   const h = store === "z2" ? storeCreds("z2") : headers();
   if (!h) return { error: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   const n = Math.max(1, Math.min(200, num(limit) || 50));
@@ -1359,7 +1400,7 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
   const list = Array.isArray(data?.list) ? data.list : null;
   /* ⚠️ แยก "ดึงไม่สำเร็จ" ออกจาก "ไม่มีใบสักใบ" — จอต้องเขียนคนละคำ
       (สอง 0 ที่หน้าตาเหมือนกันแต่คนละความหมาย) */
-  if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้", applied: { q: null, source: "zort" } };
+  if (!list) return { error: "ดึงใบคืนของจาก ZORT ไม่ได้", applied: { q: null, from: null, to: null, days: null, source: "zort" } };
   /* 💰 ยอดรวมทั้งหมดจาก**กระจก** (17 ก.ย. 2569 · B3 ในใบสำรวจ t_mu5bhh84)
      หัวจอ ZORT เขียน "มูลค่าทั้งหมด X บาท" แต่ API ส่งแค่จำนวนใบ ⇒ ไล่ทุกหน้าจาก ZORT สด = ช้า/เปลืองโควตา
      ⇒ รวมจากกระจก return_orders_v2 ของร้านนั้น แล้ว **ส่งจำนวนใบของกระจกคู่ไปด้วย**

@@ -3,7 +3,7 @@
 // 🔴 สิ่งที่เฝ้า: มีคำค้นต้องกรองจริงที่ฐาน (ไม่ยิง ZORT) · % _ ในคำค้นเป็นตัวอักษรธรรมดา
 //    ฐานล้มต้องเป็น error ไม่ใช่ 0 แถว · applied.q สะท้อนค่าที่ใช้จริง · ไม่มีคำค้น = ดึงสดเหมือนเดิม
 import assert from 'node:assert/strict';
-import { mock, test } from 'node:test';
+import { beforeEach, mock, test } from 'node:test';
 
 let sqls = [];
 let failD1 = false;
@@ -26,6 +26,11 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
 } });
 process.env.ZORT_STORENAME = 's'; process.env.ZORT_APIKEY = 'k'; process.env.ZORT_APISECRET = 'x';
 
+/* 🔴 ล้างสถานะ **ก่อน** ทุกเทส ไม่ใช่ท้ายเทส
+   ถ้า assert ล้มกลางเทส บรรทัด reset ท้ายเทสจะไม่ถูกเรียก ⇒ ค่าค้างไปเทสถัดไป
+   ⇒ เทสถัดไปแดงด้วยเหตุผลปลอม แล้วคนไล่บั๊กจะไปดูผิดจุด (เจอจริง 18 ก.ย. 2569) */
+beforeEach(() => { failD1 = false; failMeta = false; sqls = []; });
+
 const { listReturnOrders } = await import('../../netlify/lib/core-purchases.mjs');
 
 const withFetch = async (fn) => {
@@ -43,7 +48,8 @@ test('มีคำค้น ⇒ กรองที่กระจก ไม่�
   await withFetch(async (urls) => {
     const r = await listReturnOrders(50, 1, '  CN-1 ');
     assert.equal(urls.length, 0, 'มีคำค้นต้องไม่ยิง ZORT — ZORT ไม่มีช่องค้น');
-    assert.deepEqual(r.applied, { q: 'CN-1', source: 'mirror' });
+    // 18 ก.ย. 2569: สัญญาเพิ่มช่องช่วงวัน (from/to/days) — ไม่ส่งมา ⇒ ต้องเป็น null ไม่ใช่หายไป
+    assert.deepEqual(r.applied, { q: 'CN-1', from: null, to: null, days: null, source: 'mirror' });
     assert.equal(r.source, 'mirror');
     assert.equal(r.live, false);
     assert.equal(r.total, 3);
@@ -88,8 +94,7 @@ test('ฐานล้ม ⇒ error และไม่มี rows/total (ไม�
   assert.ok(r.error);
   assert.equal(r.rows, undefined);
   assert.equal(r.total, undefined);
-  assert.deepEqual(r.applied, { q: 'CN-1', source: 'mirror' });
-  failD1 = false;
+  assert.deepEqual(r.applied, { q: 'CN-1', from: null, to: null, days: null, source: 'mirror' });
 });
 
 test('ชีพจรอ่านไม่ได้ ⇒ syncComplete null (ไม่รู้) ไม่ใช่ true · ผลค้นยังได้', async () => {

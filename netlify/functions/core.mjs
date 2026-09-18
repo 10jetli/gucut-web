@@ -1385,7 +1385,14 @@ async function route(req, context) {
       const st = parseSingleStore(url.searchParams.get("store"));
       if (st.error) return json({ error: st.error }, 400);
       return okJson({
-        ...(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q"), st.source)),
+        /* ช่วงวัน (18 ก.ย. 2569) — from/to แบบ YYYY-MM-DD หรือ days=N (ใช้ร่วมกันไม่ได้ ⇒ 400)
+           ⚠️ ZORT ไม่รับช่วงวัน ⇒ ขอช่วงวันเมื่อไหร่ ท่อสลับไปอ่านกระจกและบอกผ่าน applied.source */
+        ...(await listReturnOrders(url.searchParams.get("limit"), url.searchParams.get("page"), url.searchParams.get("q"), st.source, {
+          from: url.searchParams.get("from") ?? undefined,
+          to: url.searchParams.get("to") ?? undefined,
+          days: url.searchParams.get("days") ?? undefined,
+        })),
+        supportedFilters: ["q", "store", "from", "to", "days", "limit", "page"],
         store: st.source,
         storeDefaulted: st.defaulted,
         storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
