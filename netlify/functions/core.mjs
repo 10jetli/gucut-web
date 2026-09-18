@@ -38,6 +38,20 @@ import {
   syncPurchases, listPurchases, listWarehouses, syncTransfers, listTransfers, resetTransfers, listQuotations, listPurchaseItems,
 } from "../lib/core-purchases.mjs";
 
+/* ธง 1/0/true/false — **ค่าอื่นโยน error เพื่อให้ตอบ 400** ห้ามตกเป็น false เงียบ
+   (ใช้กับ ?cancelled= · ถ้ามีธงอื่นต้องใช้ ให้ย้ายไป param-guard.mjs พร้อมเทสต์) */
+function ธงจากค่า(v) {
+  if (v === null || v === undefined || v === "") return false;
+  const t = String(v).trim().toLowerCase();
+  if (["1", "true", "yes"].includes(t)) return true;
+  if (["0", "false", "no"].includes(t)) return false;
+  /* 🔴 **ห้าม throw** — ตัวจับ error ชั้นนอกของไฟล์นี้ตอบ **500** ทุกกรณี
+     ⇒ ค่าที่ผู้ใช้ส่งผิดจะกลายเป็น "เซิร์ฟเวอร์พัง" ⇒ จอขึ้นว่าท่อล่ม แทนที่จะบอกว่าค่าผิด
+     (และคนจะไปหาสาเหตุที่เซิร์ฟเวอร์ ทั้งที่ต้องแก้ค่าที่ส่ง)
+     ⇒ คืน null แล้วให้ผู้เรียกตอบ 400 เอง · **ผิดที่ผู้ใช้ = 4xx · ผิดที่เรา = 5xx** */
+  return null;
+}
+
 /* ⚠️ **ตัวจัดการจริงต้องถูกครอบด้วย withD1Meter เสมอ** ไม่งั้น d1Stats() คืน null
     แล้วหัวข้อมูล x-d1-* จะหายไปเงียบ ๆ โดยที่ทุกอย่างยังทำงานปกติ — ไม่มีอะไรฟ้อง
     (ถ้าวันหนึ่งเปิด DevTools แล้วไม่เห็น x-d1-count ให้มาดูบรรทัดนี้ก่อน) */
@@ -3684,6 +3698,10 @@ async function route(req, context) {
       const st = parseStore(p.get("store"));
       if (st.error) return json({ error: st.error }, 400);
     }
+    /* ตรวจธง cancelled ก่อนใช้ — ผิดที่ผู้ใช้ต้องได้ 400 ไม่ใช่ 500 (ดู ธงจากค่า) */
+    const ธงยกเลิก = ธงจากค่า(p.get("cancelled"));
+    if (ธงยกเลิก === null)
+      return json({ error: `cancelled รับแค่ 1/0/true/false (ได้มา "${String(p.get("cancelled")).slice(0, 20)}")` }, 400);
     if (p.get("list") === "orderfacets") {
       return okJson({
         ...(await listOrderFacets({
@@ -3707,7 +3725,13 @@ async function route(req, context) {
           tag: p.get("tag"),
           createUser: p.get("createuser"),
           warehouse: p.get("warehouse"),
-          includeCancelled: p.get("cancelled") === "1",
+          /* 🔴 **ค่าที่แปลไม่ออกต้องตีกลับ ไม่ใช่ตกเป็น false เงียบ ๆ** (แก้ 19 ก.ย. 2569)
+             เดิม `=== "1"` ⇒ ส่ง `cancelled=maybe` ได้ `includeCancelled:false`
+             ⇒ คนที่ตั้งใจรวมใบยกเลิกได้ยอดที่ไม่รวม **โดยไม่มีอะไรฟ้อง**
+             (คลาสเดียวกับ only=negative ที่เคยคืนทั้งคลัง 2,672 แถว)
+             ⚠️ **แก้ทั้งสองจุดพร้อมกัน** (list=orders กับ list=orderfacets)
+                แก้จุดเดียว = สองเส้นตอบคนละแบบ ซึ่งเป็นคลาสที่ไล่กันมาทั้งวัน */
+          includeCancelled: ธงยกเลิก,
           warehouses: p.get("warehouses"),
         })),
       });
@@ -3742,7 +3766,13 @@ async function route(req, context) {
           warehouse: p.get("warehouse"),
           limit: p.get("limit"),
           offset: p.get("offset"),
-          includeCancelled: p.get("cancelled") === "1",
+          /* 🔴 **ค่าที่แปลไม่ออกต้องตีกลับ ไม่ใช่ตกเป็น false เงียบ ๆ** (แก้ 19 ก.ย. 2569)
+             เดิม `=== "1"` ⇒ ส่ง `cancelled=maybe` ได้ `includeCancelled:false`
+             ⇒ คนที่ตั้งใจรวมใบยกเลิกได้ยอดที่ไม่รวม **โดยไม่มีอะไรฟ้อง**
+             (คลาสเดียวกับ only=negative ที่เคยคืนทั้งคลัง 2,672 แถว)
+             ⚠️ **แก้ทั้งสองจุดพร้อมกัน** (list=orders กับ list=orderfacets)
+                แก้จุดเดียว = สองเส้นตอบคนละแบบ ซึ่งเป็นคลาสที่ไล่กันมาทั้งวัน */
+          includeCancelled: ธงยกเลิก,
         }),
         // รายชื่อช่องทางต้องมาจากขอบเขตเดียวกับผลลัพธ์ ไม่งั้นเลือกได้แต่ได้ 0 ใบ
         listChannels(p.get("store")),

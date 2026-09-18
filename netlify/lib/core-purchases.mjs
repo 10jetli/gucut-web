@@ -1408,12 +1408,19 @@ export async function syncReturnOrders(opt = {}) {
    ⚠️ `days` กับ `from/to` ใช้พร้อมกันไม่ได้ — ต้องตีกลับ ไม่ใช่เลือกอันหนึ่งเงียบ ๆ
       (ฟิลด์ที่ตอบคำถามเดียวกันสองทาง ถ้าเมินอันหนึ่ง ผู้เรียกจะเชื่อว่าใช้ค่าที่ตัวเองส่ง) */
 export function returnDateRange({ from, to, days } = {}) {
+  /* 🔴 **เดิมเช็คแค่รูปแบบตัวเลข ⇒ `2026-99-99` ผ่านด่าน** (แก้ 19 ก.ย. 2569)
+      เจอด้วยด่าน `check-filters-work.mjs` รอบ "ค่าผิดรูปต้องตีกลับ":
+      ส่ง `to=2026-99-99` ⇒ **ไม่ error และไม่กรองอะไรเลย** (693 เท่าเดิม)
+      แต่ `applied.to` สะท้อนค่านั้นกลับไป ⇒ **จอเชื่อว่ากรองช่วงวันแล้ว**
+      ⇒ คนได้ผลของ "ไม่กรอง" โดยเชื่อว่ากรองแล้ว — ปุ่มกรองหลอกที่เกิดจากการตรวจค่าไม่พอ
+      ⇒ ใช้ `isRealDay()` ที่มีอยู่แล้วในโปรเจกต์ (ตรวจว่าเป็นวันที่จริง ไม่ใช่แค่รูปตัวเลข)
+      🔑 **"ถูกรูป" ไม่เท่ากับ "มีอยู่จริง"** — regex ตรวจได้แค่รูป */
   const ymd = (v) => {
     const t = String(v ?? "").trim();
-    return /^\d{4}-\d{2}-\d{2}$/.test(t) ? t : null;
+    return isRealDay(t) ? t : null;
   };
   const f = ymd(from), t = ymd(to);
-  if ((from && !f) || (to && !t)) return { error: "from/to ต้องเป็น YYYY-MM-DD" };
+  if ((from && !f) || (to && !t)) return { error: "from/to ต้องเป็นวันที่จริงรูป YYYY-MM-DD (เช่น 2026-09-19)" };
   const d = days === undefined || days === null || days === "" ? null : Number.parseInt(String(days), 10);
   if (days !== undefined && days !== null && days !== "" && (!Number.isFinite(d) || d < 1 || d > 400))
     return { error: "days ต้องเป็นจำนวนเต็ม 1-400" };
