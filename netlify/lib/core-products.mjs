@@ -514,8 +514,9 @@ export async function listBundles(o = {}) {
          (ไม่ส่ง = ทำแบบเดิมคือรอกวาดจริง ซึ่งวัดได้ 16.5 วิ) */
       const ml = await marketplaceListings({ fresh: Boolean(o.fresh), waitUntil: o.waitUntil });
       // ⚠️ ตรรกะจับคู่อยู่ที่ sku-match.mjs ที่เดียว — ห้ามก๊อปมาวางซ้ำ (เคยมี 3 ชุดที่ไม่ตรงกัน)
-      const { buildSkuIndex, ourSkuSet } = await import("./sku-match.mjs");
-      const idx = buildSkuIndex(ml.listings, { ownSkus: await ourSkuSet(coreQuery) });
+      const { buildSkuIndex, ourSkus } = await import("./sku-match.mjs");
+      const เรามี = await ourSkus(coreQuery);
+      const idx = buildSkuIndex(ml.listings, { ownSkus: เรามี.all, bundleSkus: เรามี.bundles });
       for (const r of rows) {
         const sku = String(r.sku);
         r.marketplaces = idx.tagsOf(sku);

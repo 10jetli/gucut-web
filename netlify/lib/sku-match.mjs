@@ -43,8 +43,10 @@ export function expandSku(code) {
 /**
  * สร้างตารางค้นจากรายการที่ลงขายบนแพลตฟอร์ม
  * @param {Record<string,string[]>} listings รหัสเต็มบนแพลตฟอร์ม → รายชื่อช่องทาง
- * @param {{ownSkus?: Iterable<string>}} [opts]
- *   ownSkus = รหัสที่ **คลังเรามีจริง** (สินค้า + ชุด)
+ * @param {{ownSkus?: Iterable<string>, bundleSkus?: Iterable<string>}} [opts]
+ *   ownSkus    = รหัสที่ **คลังเรามีจริง** (สินค้า + ชุด)
+ *   bundleSkus = เฉพาะ **รหัสชุด** — ต้องแยกออกมา เพราะชุดไม่มีแถวของตัวเองในจอสินค้า
+ *                ⇒ ถ้าไม่บอก แถวรหัสฐานจะกลายเป็น "ไม่ได้ขายที่ไหนเลย" ซึ่งโกหก
  *   ⚠️ ไม่ส่งมา = ทำงานแบบเดิมทุกประการ (ของเก่าไม่พัง) แต่จะเดาเกินจริง
  *      ⇒ คนเรียกควรส่งเสมอ · ที่ไม่บังคับเพราะบางจอยังไม่มีรายชื่อชุดในมือ
  * @returns {{ tagsOf(sku):string[], methodOf(sku):Record<string,"exact"|"base">,
@@ -52,8 +54,10 @@ export function expandSku(code) {
  */
 export function buildSkuIndex(listings = {}, opts = {}) {
   const มีบ้านอยู่แล้ว = new Set(opts.ownSkus || []);
-  const exact = new Map(); // sku → Set(tag)
-  const base = new Map(); // sku → Map(tag → [รหัสเต็มที่ตัดมา])
+  const เป็นรหัสชุด = new Set(opts.bundleSkus || []);
+  const exact = new Map();  // sku → Set(tag)
+  const base = new Map();   // sku → Map(tag → [รหัสเต็มที่ตัดมา]) — **การเดา**
+  const bundle = new Map(); // sku → Map(tag → [รหัสชุดของเราเอง]) — **ไม่ใช่การเดา**
 
   for (const [code, tags] of Object.entries(listings)) {
     const e = exact.get(code) || new Set();
@@ -61,8 +65,29 @@ export function buildSkuIndex(listings = {}, opts = {}) {
     exact.set(code, e);
   }
   for (const [code, tags] of Object.entries(listings)) {
-    /* 🔑 รหัสนี้ตรงกับรหัสของเราเองอยู่แล้ว (สินค้าหรือชุด) ⇒ มันมีบ้านของมัน
-       ห้ามเอาไปแปะเป็น "การเดา" ให้รหัสฐาน — จะกลายเป็นเตือนเรื่องที่ไม่มีปัญหา */
+    /* 🔴 **สามทาง ไม่ใช่สองทาง** (แก้ 19 ก.ย. 2569 — เห็นจากจอจริงของท่านประธาน)
+       รอบแรกผมแค่ `continue` ข้ามรหัสที่เรามีอยู่แล้ว ⇒ จุดส้มหายจริง
+       **แต่แถวรหัสฐานกลายเป็นขีด "ไม่ได้ขายที่ไหนเลย"** ทั้งที่ขายอยู่บน Shopee/TikTok
+       ⇒ เอาคำเตือนที่ผิดออก แล้วได้ความเงียบที่ผิดแทน ซึ่งแย่กว่า
+          (หัวไฟล์ marketplace-listings เตือนเรื่องนี้ไว้แล้วตั้งแต่ 4 ก.ย. — ผมเดินเข้าไปเอง)
+
+       ① รหัสชุดของเราเอง  → ผูกกับรหัสฐานแบบ "bundle" = ขายจริง ไม่ใช่การเดา
+       ② รหัสสินค้าของเราเอง → ข้าม มันมีแถวของตัวเองในจอ
+       ③ รหัสที่เราไม่มี     → "base" = เดา ต้องเตือน */
+    if (เป็นรหัสชุด.has(code)) {
+      for (const k of expandSku(code)) {
+        if (k === code || !มีบ้านอยู่แล้ว.has(k)) continue;
+        const m = bundle.get(k) || new Map();
+        for (const t of tags) {
+          const arr = m.get(t) || [];
+          if (!arr.includes(code)) arr.push(code);
+          m.set(t, arr);
+        }
+        bundle.set(k, m);
+        break;   // ผูกกับรหัสฐานที่ใกล้ที่สุดตัวเดียวพอ
+      }
+      continue;
+    }
     if (มีบ้านอยู่แล้ว.has(code)) continue;
     for (const k of expandSku(code)) {
       if (k === code) continue;
@@ -81,14 +106,26 @@ export function buildSkuIndex(listings = {}, opts = {}) {
   return {
     tagsOf(sku) {
       const s = new Set(exact.get(sku) || []);
+      for (const t of (bundle.get(sku) || new Map()).keys()) s.add(t);
       for (const t of (base.get(sku) || new Map()).keys()) s.add(t);
       return [...s];
     },
-    /** ช่องทาง → จับคู่ได้ยังไง ("exact" = ชื่อตรงตัว · "base" = เดาจากการตัดท้าย) */
+    /** ช่องทาง → จับคู่ได้ยังไง
+     *  "exact"  = รหัสตรงตัว
+     *  "bundle" = ขายผ่าน **รหัสชุดของเราเอง** — แน่นอนพอ ๆ กับตรงตัว ⚠️ ห้ามแสดงเป็นคำเตือน
+     *  "base"   = เดาจากการตัดท้าย — อันนี้เท่านั้นที่ควรขึ้นจุดส้ม
+     *  ⚠️ ลำดับสำคัญ: ตรงตัว > ชุด > เดา (ของที่แน่นอนกว่าชนะเสมอ) */
     methodOf(sku) {
       const out = {};
       for (const t of exact.get(sku) || []) out[t] = "exact";
+      for (const t of (bundle.get(sku) || new Map()).keys()) if (!out[t]) out[t] = "bundle";
       for (const t of (base.get(sku) || new Map()).keys()) if (!out[t]) out[t] = "base";
+      return out;
+    },
+    /** ช่องทาง → รหัสชุดของเราที่ขายอยู่บนช่องทางนั้น (ไว้โชว์ในทูลทิปแบบไม่ใช่คำเตือน) */
+    bundlesOf(sku, cap = 50) {
+      const out = {};
+      for (const [t, arr] of bundle.get(sku) || new Map()) out[t] = arr.slice(0, cap);
       return out;
     },
     /** ช่องทาง → รหัสเต็มบนแพลตฟอร์มที่ถูกตัดมาเป็นรหัสนี้ (เฉพาะที่เดา) */
@@ -123,13 +160,23 @@ export function buildSkuIndex(listings = {}, opts = {}) {
  *    **ห้ามโยน error** — จอสินค้าทั้งจอต้องไม่ล้มเพราะเรื่องป้ายกำกับ
  */
 export async function ourSkuSet(coreQuery) {
-  const out = new Set();
-  for (const sql of ["SELECT sku FROM products", "SELECT sku FROM bundles"]) {
+  const { all } = await ourSkus(coreQuery);
+  return all;
+}
+
+/** แยกให้ชัดว่าอันไหนเป็นสินค้า อันไหนเป็นชุด
+ *  🔑 ต้องแยก เพราะ **ชุดไม่มีแถวของตัวเองในจอสินค้า**
+ *     รหัสชุดที่ขายบนแพลตฟอร์มจึงต้องไปเกาะแถวรหัสฐาน ไม่งั้นแถวนั้นจะดูเหมือนไม่ได้ขายเลย */
+export async function ourSkus(coreQuery) {
+  const products = new Set();
+  const bundles = new Set();
+  for (const [sql, set] of [["SELECT sku FROM products", products],
+                            ["SELECT sku FROM bundles", bundles]]) {
     try {
-      for (const r of (await coreQuery(sql)) || []) if (r?.sku) out.add(String(r.sku));
+      for (const r of (await coreQuery(sql)) || []) if (r?.sku) set.add(String(r.sku));
     } catch {
       /* ตารางยังไม่มี/อ่านไม่ได้ = ข้ามตารางนั้น ไม่ล้มทั้งงาน */
     }
   }
-  return out;
+  return { products, bundles, all: new Set([...products, ...bundles]) };
 }

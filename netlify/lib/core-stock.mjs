@@ -454,10 +454,11 @@ export async function listStock(o = {}) {
       /* ⚠️ **ตรรกะจับคู่อยู่ที่ `sku-match.mjs` ที่เดียว ห้ามเขียนซ้ำที่นี่**
           เดิมไฟล์นี้กับ channel-compare มีตรรกะคนละชุด แล้วชุดหนึ่งมีเพดานความยาว
           อีกชุดไม่มี ⇒ สองจอตอบเรื่องเดียวกันไม่ตรงกันได้โดยไม่มีอะไรฟ้อง */
-      const { buildSkuIndex, ourSkuSet } = await import("./sku-match.mjs");
+      const { buildSkuIndex, ourSkus } = await import("./sku-match.mjs");
+      const เรามี = await ourSkus(coreQuery);
       /* 🔑 ส่งรหัสที่คลังเรามีจริง (สินค้า + ชุด) เข้าไปด้วย
          ไม่ส่ง = ตัวจับคู่จะเดาทั้งที่ไม่ต้องเดา แล้วจอขึ้นจุดส้มให้แถวที่ไม่มีปัญหา */
-      mkKey = buildSkuIndex(ml.listings, { ownSkus: await ourSkuSet(coreQuery) });
+      mkKey = buildSkuIndex(ml.listings, { ownSkus: เรามี.all, bundleSkus: เรามี.bundles });
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
