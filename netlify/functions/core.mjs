@@ -1135,6 +1135,15 @@ async function route(req, context) {
       const { zortArchivedProbe } = await import("../lib/zort-archived-probe.mjs");
       return okJson(await zortArchivedProbe());
     }
+    /* GET ?zortcostfields=1[&sku=XXX] ⇒ ZORT ส่งช่องต้นทุน (ถัวเฉลี่ย/มูลค่าสต็อก) มาไหม — อ่านอย่างเดียว
+       ฝั่งจอถามมา 18 ก.ย. 2569: ZORT คิดกำไรจากต้นทุนถัวเฉลี่ยเคลื่อนที่ แต่กระจกเรามีแค่ราคาซื้อในทะเบียน
+       ⚠️ ต้องดู **ก้อนดิบ** — ตัวอ่านของเรา (zortFindProduct) คัดเหลือ 10 ช่อง
+          ยิงตัวนั้นแล้วไม่เห็นช่องต้นทุน ไม่ได้แปลว่า ZORT ไม่ส่ง (กฎ probe-shares-the-bug) */
+    if (url.searchParams.get("zortcostfields")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { zortProductFieldsProbe } = await import("../lib/zort-product-fields-probe.mjs");
+      return okJson(await zortProductFieldsProbe(url.searchParams.get("sku")));
+    }
     if (url.searchParams.get("zortwarehouse")) {
       return okJson(await zortWarehouseProbe({ sku: url.searchParams.get("sku") }));
     }
