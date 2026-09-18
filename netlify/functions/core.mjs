@@ -820,6 +820,18 @@ async function route(req, context) {
        POST ?productimage=1 body {ref, id, sku, image (base64|data URL ≤4MB), confirm?} ⇒ ZORT Product/UpdateProductImage?id=
        ⚠️ งานกระดาน t_mu0m98gq · รูป: โหมดซ้อมเป็นค่าเริ่มต้น · ยังไม่เคยยิงจริง · ผิด method = 405
        ⚠️ ถาม ZORT ไม่สำเร็จ = 502 (ไม่รู้) แยกจาก 400 (ข้อมูลที่ส่งมาผิด) */
+    /* GET ?envcheck=1 ⇒ env ตัวไหนยังไม่ได้ตั้ง (ชื่อ + true/false เท่านั้น)
+       🔎 ทำไมมีเส้นนี้ (19 ก.ย. 2569): ข้อความ "ยังไม่ได้ตั้งค่า …" ในท่อมีราว 100 จุด
+          แต่มันโผล่ก็ต่อเมื่อ env นั้นหายจริง ⇒ **จะเห็นด้วยตาต้องทำระบบพังก่อน**
+          ⇒ ไม่มีใครตรวจข้อความกลุ่มนี้ได้เลยตลอดอายุของมัน (ฝั่งจอเป็นคนชี้)
+          เส้นนี้ตอบว่า "จุดไหนเห็นได้จริงตอนนี้" โดยไม่ต้องถอด env ตัวไหนออก
+       🚫 **ไม่คืนค่า ไม่คืนตัวขึ้นต้น ไม่คืนความยาว** — repo เป็น PUBLIC (ด่านทดสอบบังคับไว้)
+       ⚠️ อ่านขอบเขตในคำตอบก่อนสรุปว่าเรื่องนี้ปิดแล้ว — มันยังไม่ปิด */
+    if (url.searchParams.has("envcheck")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const { envReport } = await import("../lib/env-report.mjs");
+      return okJson(envReport());
+    }
     /* GET ?zortproductfields=<sku> ⇒ {found, fieldCount, fields:{ชื่อช่อง: ชนิด}}
        🔎 ตอบคำถาม "ZORT ส่งช่องอะไรมากับสินค้า" (properties? รูปหลายรูป?) — ใบ t_mu7aduin
        ⚠️ **คืนแค่ชื่อช่อง+ชนิด ไม่คืนค่า** · ต่างจาก ?zortproduct= ซึ่งคัดช่องเหลือ 10 ช่องก่อนคืน

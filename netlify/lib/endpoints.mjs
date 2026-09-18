@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-09-18T23:03:29.199Z";
+export const generatedAt = "2026-09-18T23:18:33.648Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -32,6 +32,7 @@ export const lists = [
 // ⚠️ กองนี้ **หยาบกว่า** lists — มาจาก `if (url.searchParams.get("xxx"))` ซึ่งปนกับตัวกรองได้
 //    ใช้เป็น 'รายการที่ต้องดูด้วยตา' ห้ามนับเป็นจำนวนเส้นที่แน่นอน
 export const paramRoutes = [
+ "addbundle",
  "addcontact",
  "addpo",
  "addproduct",
@@ -39,8 +40,10 @@ export const paramRoutes = [
  "addreturn",
  "addsale",
  "arch",
+ "archiveslips",
  "backup",
  "backupstatus",
+ "batch",
  "blankwhere",
  "blocked",
  "bundleitems",
@@ -50,12 +53,15 @@ export const paramRoutes = [
  "clearpolicyerrors",
  "connections",
  "crontable",
+ "customer",
  "d1move",
  "daily",
  "dbinfo",
+ "deleteproduct",
  "doccoverage",
  "dupsku",
  "endpoints",
+ "envcheck",
  "imgmirror",
  "init",
  "links",
@@ -73,13 +79,16 @@ export const paramRoutes = [
  "peak",
  "pending",
  "pendingsplit",
+ "poslookup",
  "productimage",
+ "productlabels",
  "purchase",
  "pushledgerbackfill",
  "pushstate",
  "pushstuck",
  "pushsweep",
  "quotation",
+ "quotedit",
  "recon",
  "reorder",
  "resettransfers",
@@ -95,6 +104,10 @@ export const paramRoutes = [
  "shopeeunlisted",
  "shopinfo",
  "skuaudit",
+ "slip",
+ "slips",
+ "slipsarchive",
+ "slipscan",
  "snapshot",
  "statuscross",
  "stock",
@@ -125,15 +138,24 @@ export const paramRoutes = [
  "usage",
  "warehousevalues",
  "zortarchived",
+ "zortbundle",
  "zortclaims",
  "zortcostfields",
+ "zortdoccounts",
  "zortdocfilter",
+ "zortdocrows",
  "zortdocs",
  "zortfields",
+ "zortfiles",
+ "zortlist",
  "zortmissing",
  "zortmonthly",
  "zortnoapi",
  "zortone",
+ "zortpo",
+ "zortpoid",
+ "zortproduct",
+ "zortproductfields",
  "zortwarehouse",
  "zortwebhook"
 ];
