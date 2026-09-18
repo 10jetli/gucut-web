@@ -1793,8 +1793,31 @@ async function route(req, context) {
       });
     }
     // SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก (พร้อมเดารหัสฐานให้) — ให้จอเตือนเอาไปโชว์
+    /* GET ?list=missing-sku[&limit=&offset=]
+       🔴 **limit/offset เป็น opt-in เท่านั้น — ไม่ส่ง = ได้ทั้งชุด** (เพิ่ม 19 ก.ย. 2569)
+          ฝั่งจอยืนยันว่าเขา **รับทั้งชุดไปคัดในเบราว์เซอร์**: นับเลขบนแท็บ 3 แท็บจากทั้งชุด ·
+          ค้นหาในเครื่อง · แสดง 300 แถวแรกพร้อมเขียนกำกับ · และเทียบ `rows.length === total`
+          ⇒ **ถ้าใส่ limit เป็นค่าตั้งต้น จอจะนับแท็บผิดและค้นไม่เจอทันที**
+          ⇒ รับได้เฉพาะตอนคนส่งมา · ตัดที่ท่อหลังเรียงแล้ว (ลำดับคงที่ ⇒ ไล่หน้าได้จริง)
+       ⚠️ ตัดแล้วต้องบอกว่าตัด — ส่ง `sliced` + `total` ของทั้งชุดไปด้วย
+          ไม่งั้นปลายทางเทียบ `rows.length === total` ไม่ผ่านแล้วขึ้นกล่องเตือนผิด ๆ */
     if (url.searchParams.get("list") === "missing-sku") {
-      return okJson(await shopeeMissingSkus());
+      const r = await shopeeMissingSkus();
+      const limRaw = url.searchParams.get("limit");
+      const offRaw = url.searchParams.get("offset");
+      if (!Array.isArray(r?.rows) || (limRaw === null && offRaw === null)) return okJson(r);
+      const limit = limRaw === null ? r.rows.length : Math.max(1, Math.min(5000, parseInt(limRaw, 10) || 0));
+      const offset = Math.max(0, parseInt(offRaw ?? "0", 10) || 0);
+      const หน้า = r.rows.slice(offset, offset + limit);
+      return okJson({
+        ...r,
+        rows: หน้า,
+        sliced: { limit, offset, returned: หน้า.length, totalRows: r.rows.length },
+        slicedNote:
+          "ส่ง limit/offset มา ⇒ ท่อตัดให้เฉพาะรอบนี้ · `total` ยังเป็นของทั้งชุด ⇒ " +
+          "ห้ามเทียบ rows.length กับ total ตอนตัด (ใช้ sliced.totalRows แทน) · " +
+          "ตัวนับแท็บ/การค้นหาที่คิดจากทั้งชุดจะผิดถ้าใช้ชุดที่ตัดแล้ว",
+      });
     }
     // สินค้าขายดีรวมยอดฝั่งเซิร์ฟเวอร์ — จอ /sales ใช้เติมช่อง "ยอดเงิน" (ขอโดยฝั่งจอ 2 ก.ย.)
     //   GET /api/core?list=topproducts&from=YYYY-MM-DD&to=YYYY-MM-DD&limit=15
