@@ -625,10 +625,26 @@ async function route(req, context) {
       const { ตรวจสิทธิ์เขียนสต็อก } = await import("../lib/stock-write-probe.mjs");
       return okJson(await ตรวจสิทธิ์เขียนสต็อก({ ขนาด: url.searchParams.get("size") }));
     }
+    /* GET ?stockpushverify=<sku,sku,...>  **หรือ**  ?stockpushverify=1&skus=<sku,...>
+       🔴 เดิมอ่านรหัสจากค่าของ `stockpushverify` เท่านั้น ⇒ ใครส่ง `?stockpushverify=1&skus=…`
+          (ซึ่งเป็นรูปที่เดาได้ง่ายที่สุด) จะถูก **เมินเงียบ** แล้วค่า "1" ถูกอ่านเป็นรหัสสินค้า
+          ⇒ ได้คำตอบ `landed: ["1"]` = ตอบว่าดันสต็อกสำเร็จให้รหัสที่ไม่มีอยู่จริง
+          (เจอของจริงตอนรันชุดตรวจหลัง deploy 19 ก.ย. 2569)
+       ⇒ รับทั้งสองรูป และถ้าส่ง `skus=` มาก็ใช้ค่านั้น (ไม่เมิน)
+       ⚠️ ค่า `1`/`true` เพียว ๆ ไม่ใช่รหัสสินค้า — ถ้าไม่มี `skus=` มาด้วยให้ตีกลับ
+          **ห้ามเดาว่าเป็นรหัส** ไม่งั้นได้คำตอบที่ดูเหมือนสำเร็จจากคำขอที่ไม่มีความหมาย */
     if (url.searchParams.get("stockpushverify")) {
-      const skus = String(url.searchParams.get("stockpushverify")).split(",").filter(Boolean);
+      const arg = String(url.searchParams.get("stockpushverify"));
+      const fromSkus = String(url.searchParams.get("skus") ?? "");
+      const raw = fromSkus || (/^(1|true|yes)$/i.test(arg.trim()) ? "" : arg);
+      const skus = raw.split(",").map((x) => x.trim()).filter(Boolean);
+      if (!skus.length)
+        return json({
+          error: "ต้องระบุรหัสสินค้า — ใช้ ?stockpushverify=<sku,sku> หรือ ?stockpushverify=1&skus=<sku,sku>",
+          hint: "ค่า 1/true เพียว ๆ ไม่ใช่รหัสสินค้า ⇒ ตีกลับ ไม่เดาให้",
+        }, 400);
       const { lazadaReadBack } = await import("../lib/stock-push-live.mjs");
-      return okJson(await lazadaReadBack(skus));
+      return okJson({ ...(await lazadaReadBack(skus)), askedSkus: skus });
     }
     /* GET ?stockpush=1[&platform=shopee|lazada|tiktok][&full=1]
        full=1 ต้องระบุเจ้าเดียว (สัญญากับฝั่งจอ 14 ก.ย. 2569) · ทุกคำตอบมี pushScope/pushShown/pushCapped/pushComplete */

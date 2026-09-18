@@ -12,6 +12,11 @@
 import { lazadaReadBack } from '../../netlify/lib/stock-push-live.mjs'
 import { planFrom } from '../../netlify/lib/stock-push.mjs'
 
+/* ทะเบียนสินค้า: เทสต์ไฟล์นี้ตรวจเรื่อง "กองไหน" ไม่ใช่ "มีรหัสในคลังไหม"
+   ⇒ ฉีดตัวที่รู้จักทุกรหัส เพื่อไม่ให้ด่านทะเบียน (เพิ่ม 19 ก.ย. 2569) กลบเหตุผลที่ไฟล์นี้เฝ้า
+   (ด่านทะเบียนมีเทสต์ของตัวเองที่ lazada-readback-unknown-sku.test.mjs) */
+const รู้จักทุกรหัส = async (skus) => new Set(skus.map(String))
+
 let fail = 0
 const ok = (name, cond, extra = '') => {
   if (cond) console.log(`  ✅ ${name}`)
@@ -33,11 +38,11 @@ console.log('① เกณฑ์หลักของงาน: รหัสท�
   ok('มีรหัสที่อยู่นอกตัวอย่าง', beyond.length === 15)
 
   /* (ก) ท่อส่งรายการเต็มมา ⇒ ต้องตอบ notLanded ถูกต้อง */
-  const good = await lazadaReadBack(beyond.slice(0, 3), { dryRun: dryRunOf(rows, true) })
+  const good = await lazadaReadBack(beyond.slice(0, 3), { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, true) })
   ok('ขอ full แล้วตอบ notLanded ให้รหัสที่ยังต้องดัน', good.notLanded.length === 3 && !good.landed.length, JSON.stringify(good).slice(0, 120))
 
   /* (ข) ท่อไม่ส่งรายการเต็ม (สภาพเดิมของบั๊ก) ⇒ **ต้องไม่ตอบ landed** */
-  const noFull = await lazadaReadBack(beyond.slice(0, 3), { dryRun: dryRunOf(rows, false) })
+  const noFull = await lazadaReadBack(beyond.slice(0, 3), { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, false) })
   ok('🔴 ไม่มีรายการเต็ม ⇒ unknown ทั้งหมด', (noFull.unknown || []).length === 3 && !noFull.landed.length, JSON.stringify(noFull).slice(0, 140))
   ok('🔴 ห้ามมีรหัสไหนถูกตอบว่า landed เลย', (noFull.landed || []).length === 0)
   ok('บอกเหตุผลว่าทำไมตรวจไม่ได้', /รายการเต็ม/.test(noFull.unknown?.[0]?.why || ''), noFull.unknown?.[0]?.why)
@@ -49,16 +54,16 @@ console.log('① เกณฑ์หลักของงาน: รหัสท�
 console.log('② ของที่ตรงกันแล้วจริง ⇒ ยัง landed เหมือนเดิม')
 {
   const rows = [row('A', 5, 5), row('B', 1, 9)]   // A ตรงกัน · B ต่าง
-  const r = await lazadaReadBack(['A'], { dryRun: dryRunOf(rows, true) })
+  const r = await lazadaReadBack(['A'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, true) })
   ok('A ได้ landed', r.landed.includes('A') && !r.notLanded.length, JSON.stringify(r).slice(0, 120))
-  const r2 = await lazadaReadBack(['B'], { dryRun: dryRunOf(rows, true) })
+  const r2 = await lazadaReadBack(['B'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, true) })
   ok('B ได้ notLanded', r2.notLanded[0]?.sku === 'B')
 }
 
 console.log('③ 🔴 "ไม่อยู่ในแผน" ไม่ได้แปลว่า landed — ของที่ถูกข้ามต้องเป็น unknown')
 {
   const rows = [row('NEG', 3, -5), row('UNK', 2, null, false), row('OK', 7, 7)]
-  const r = await lazadaReadBack(['NEG', 'UNK', 'OK'], { dryRun: dryRunOf(rows, true) })
+  const r = await lazadaReadBack(['NEG', 'UNK', 'OK'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, true) })
   const why = Object.fromEntries((r.unknown || []).map((u) => [u.sku, u.why]))
   ok('รหัสที่ข้ามเพราะคลังติดลบ ⇒ unknown', /ติดลบ/.test(why.NEG || ''), JSON.stringify(r).slice(0, 160))
   ok('รหัสที่คลังไม่รู้จัก ⇒ unknown', /ไม่รู้จัก/.test(why.UNK || ''))
@@ -76,7 +81,7 @@ console.log('④ แผนไม่ครบ (มีคนตัดรายก�
   const rows = Array.from({ length: 30 }, (_, i) => row(`T${i}`, i + 1, 900 + i))
   const p = planFrom(rows, true)
   const cut = { lazada: { ...p, push: p.push.slice(0, 10) } }   // wouldPush 30 แต่ถือไว้ 10
-  const r = await lazadaReadBack(['T0', 'T29'], { dryRun: async () => cut })
+  const r = await lazadaReadBack(['T0', 'T29'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: async () => cut })
   ok('ตอบ unknown ทั้งหมด', (r.unknown || []).length === 2 && !r.landed.length)
   ok('เหตุผลบอกว่าแผนไม่ครบพร้อมตัวเลข', /แผนสดไม่ครบ: ถือไว้ 10 แถว จากที่ควรมี 30/.test(r.unknown[0].why), r.unknown[0].why)
 }
@@ -88,18 +93,18 @@ console.log('⑤ 🔴 รายการกองที่ถูกข้าม�
   const rows = [row('OK', 7, 7), row('U1', 2, null, false)]
   const p = planFrom(rows, true)
   const short = { lazada: { ...p, skipUnknown: 25, skipUnknownFull: p.skipUnknownFull.slice(0, 1) } }
-  const r = await lazadaReadBack(['OK'], { dryRun: async () => short })
+  const r = await lazadaReadBack(['OK'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: async () => short })
   ok('รหัสที่ไม่อยู่ในรายการใด ๆ ⇒ unknown (ไม่ใช่ landed)', (r.unknown || []).length === 1 && !r.landed.length, JSON.stringify(r).slice(0, 170))
   ok('เหตุผลบอกตัวเลขรายการ/ตัวนับให้เห็น', /ไม่รู้จัก 1\/25/.test(r.unknown?.[0]?.why || ''), r.unknown?.[0]?.why)
   ok('รหัสเหตุผลเป็น skip_lists_incomplete (แยกจากสองแบบข้างบน)',
      r.unknown?.[0]?.reason === 'skip_lists_incomplete', r.unknown?.[0]?.reason)
-  const r2 = await lazadaReadBack(['U1'], { dryRun: async () => short })
+  const r2 = await lazadaReadBack(['U1'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: async () => short })
   ok('รหัสที่เจอในรายการ ยังตอบเหตุผลเฉพาะได้ปกติ', /ไม่รู้จักรหัสนี้/.test((r2.unknown || [])[0]?.why || ''), JSON.stringify(r2).slice(0, 140))
 }
 
 console.log('⑥ ตัวเทียบหยุด (skip) ⇒ error ไม่ใช่ landed')
 {
-  const r = await lazadaReadBack(['X'], { dryRun: async () => ({ lazada: { skip: 'ยังไม่ได้เชื่อมร้าน' } }) })
+  const r = await lazadaReadBack(['X'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: async () => ({ lazada: { skip: 'ยังไม่ได้เชื่อมร้าน' } }) })
   ok('ได้ error', !!r.error && !r.landed, JSON.stringify(r).slice(0, 120))
 }
 
@@ -110,12 +115,12 @@ console.log('⑦ ตอบไม่ได้ทั้งกระดาน ⇒ �
      ซึ่งมีกติกานี้อยู่แล้ว (บรรทัด 242) แต่ฝั่งเราไม่เคยติดธงให้มันเห็น */
   /* ท่อส่งแผนแบบไม่มีรายการเต็ม (เหมือนของจริงตอนแผนสดกลับมาไม่ครบ) */
   const rows = [row('A', 1, 9)]
-  const noFull = await lazadaReadBack(['A'], { dryRun: dryRunOf(rows, false) })
+  const noFull = await lazadaReadBack(['A'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, false) })
   ok('ท่อไม่ส่งรายการเต็ม ⇒ inconclusive = true', noFull.inconclusive === true, JSON.stringify(noFull).slice(0, 140))
   ok('และต้องไม่มีคีย์ ok ติดมาเองจากฝั่งเรา', !('ok' in noFull))
 
   /* กองผสม: รหัสหนึ่งอยู่ในแผน (ตัดสินได้ = notLanded) อีกรหัสไม่มีในแผนเลย */
-  const mixed = await lazadaReadBack(['A', 'ไม่มีในแผน'], { dryRun: dryRunOf(rows, true) })
+  const mixed = await lazadaReadBack(['A', 'ไม่มีในแผน'], { skusInWarehouse: รู้จักทุกรหัส, dryRun: dryRunOf(rows, true) })
   const conclusive = (mixed.landed?.length ?? 0) + (mixed.notLanded?.length ?? 0)
   ok('มีบางรหัสที่ตัดสินได้ ⇒ **ห้าม** ติดธง inconclusive (ผลบางส่วนยังใช้ได้)',
      conclusive > 0 && !('inconclusive' in mixed),

@@ -61,6 +61,10 @@
 //    Shopee ติดแอปยังไม่ Go-Live · TikTok ต้องแปลง product_id/sku_id ก่อน — เฟสถัดไป
 //    เจ้าที่ยังไม่ทำ ตอบ `skip` ตรง ๆ (สามสถานะ ไม่แกล้งเงียบ)
 import { getStore } from "@netlify/blobs";
+/* 🔴 ลืม import แล้ว `node --check` ผ่านฉลุย — .mjs ไม่มีตาข่ายชนิดข้อมูล
+   (คลาสเดิมกัดผมสองครั้งในวันเดียว: `zortHeaders` ที่ไม่มีอยู่ · `coreQuery` ที่ไม่ได้ import)
+   ⇒ ท่าที่จับได้จริงคือเขียนเทสต์ที่ **เรียกฟังก์ชันจริง** ไม่ใช่ตรวจด้วย regex */
+import { coreQuery } from "./coredb.mjs";
 
 const API = "https://api.lazada.co.th/rest";
 
@@ -227,10 +231,40 @@ export async function lazadaReadBack(skus, deps = {}) {
   const skipListsComplete =
     p.skipNegativeFull.length >= (p.skipNegative ?? 0) && p.skipUnknownFull.length >= (p.skipUnknown ?? 0) &&
     p.skipConflictFull.length >= (p.skipConflict ?? 0);
+  /* 🔴 **รหัสที่ไม่มีอยู่ในคลังเราเลย ต้องไม่ได้คำตอบ landed** (แก้ 19 ก.ย. 2569)
+     เจอของจริงตอนรันชุดตรวจหลัง deploy: ยิงด้วยรหัส `"1"` (ไม่มีอยู่จริง) ⇒ ได้ `landed: ["1"]`
+     เพราะเงื่อนไขเดิมคือ "ไม่อยู่ในกองไหนเลย + รายการกองครบ ⇒ landed"
+     ⇒ **รหัสมั่ว/พิมพ์ผิด ผ่านทุกกองโดยอัตโนมัติ** แล้วได้คำตอบว่า "ดันสต็อกตรงกันแล้ว"
+     ⇒ คนอ่านจะเชื่อว่าสินค้านั้นซิงก์เรียบร้อย ทั้งที่ระบบไม่เคยรู้จักรหัสนั้น
+     🔑 คลาส: **ไม่มีข้อมูลนำเข้า ต้องตีกลับ ห้ามให้ปลายทางเดาให้** [[blank-input-invents-output]]
+     ⚠️ ถามฐานครั้งเดียวด้วย IN(...) ไม่ยิงต่อรหัส · อ่านไม่ได้ = ไม่รู้ ห้ามถือว่ามีหรือไม่มี */
+  /* 🔑 **ทะเบียนสินค้าเป็น "ขอบ" เหมือนแผนสด ⇒ ต้องฉีดได้** (`deps.skusInWarehouse`)
+     ไฟล์ทดสอบของเส้นนี้ใช้หลัก "แทนที่แค่ขอบ ตัวตัดสินเป็นของจริง" อยู่แล้ว
+     ไม่เปิดช่องให้ฉีด = เทสต์ต้องยิงฐานจริง ⇒ ตกทุกครั้งที่ไม่มีรหัส D1 (เจอทันที 19 ก.ย. 2569) */
+  let inWarehouse = null;
+  try {
+    if (deps.skusInWarehouse) {
+      const got = await deps.skusInWarehouse(asked);
+      inWarehouse = got instanceof Set ? got : new Set((got ?? []).map(String));
+    } else {
+      const rows = await coreQuery(
+        `SELECT sku FROM products WHERE sku IN (${asked.map(() => "?").join(",")})`,
+        asked
+      );
+      inWarehouse = new Set((Array.isArray(rows) ? rows : []).map((r) => String(r.sku)));
+    }
+  } catch {
+    /* 🔴 **อ่านไม่ได้ ⇒ ต้องไม่ตอบ landed เลย** (แก้ทิศ 19 ก.ย. 2569 — เทสต์จับผมได้)
+       รอบแรกผมเขียนคอมเมนต์ว่า "ไม่ตัดสินเรื่องนี้" แล้วปล่อยให้ไหลไป landed ตามเดิม
+       ⇒ ผลคือ **ตัดสินว่าผ่าน** ในวินาทีที่ตรวจไม่ได้ ซึ่งกลับทิศกับที่ตั้งใจ
+       🔑 "ตรวจไม่ได้" ≠ "ผ่าน" — กฎของทีมเราเอง และผมเพิ่งเขียนผิดทิศในบรรทัดที่ตั้งใจจะทำตามกฎ */
+    inWarehouse = null;
+  }
   const landed = [];
   const notLanded = [];
   const unknown = [];
   for (const sku of asked) {
+
     const r = still.get(sku);
     if (r) { notLanded.push({ sku, ยังต้องดัน: `${r.from}→${r.to}` }); continue; }
     if (skippedNeg.has(sku)) { unknown.push({ sku, reason: "skipped_negative", why: "ถูกข้ามเพราะคลังเราติดลบ ⇒ ไม่เคยถูกเทียบ" }); continue; }
@@ -244,6 +278,20 @@ export async function lazadaReadBack(skus, deps = {}) {
           `รายการกองที่ถูกข้ามไม่ครบ (ข้ามติดลบ ${p.skipNegativeFull.length}/${p.skipNegative ?? 0} · ` +
           `ไม่รู้จัก ${p.skipUnknownFull.length}/${p.skipUnknown ?? 0} · ขัดแย้ง ${p.skipConflictFull.length}/${p.skipConflict ?? 0}) ⇒ แยก "ตรงกันแล้ว" จาก "ถูกข้าม" ไม่ได้`,
       });
+      continue;
+    }
+    /* 🔴 **ด่านนี้ต้องอยู่ "ก่อนตัดสิน landed" ไม่ใช่ต้นลูป** (ย้าย 19 ก.ย. 2569)
+       รอบแรกผมวางไว้ต้นลูป ⇒ มันกลบเหตุผลเฉพาะของด่านที่มีอยู่แล้วทั้งหมด
+       (รหัสที่ถูกข้ามเพราะติดลบ ได้ `warehouse_check_failed` แทน `skipped_negative`)
+       ⇒ เทสต์เดิม 12 ข้อตก และถ้าไม่มีเทสต์ ฝั่งจอจะเห็นเหตุผลผิดชนิดโดยไม่มีอะไรฟ้อง
+       🔑 รหัสที่อยู่ในกองใดกองหนึ่งแล้ว = เรารู้แน่ว่าระบบรู้จักมัน ⇒ ไม่ต้องถามทะเบียนซ้ำ
+         ที่ต้องถามคือ **รหัสที่ไม่อยู่กองไหนเลย** ซึ่งเดิมไหลไป landed อัตโนมัติ */
+    if (inWarehouse === null) {
+      unknown.push({ sku, reason: "warehouse_check_failed", why: "อ่านทะเบียนสินค้าไม่ได้รอบนี้ ⇒ ยืนยันไม่ได้ว่ารหัสนี้มีในคลัง จึงตอบ landed ไม่ได้ (ตรวจไม่ได้ ≠ ผ่าน)" });
+      continue;
+    }
+    if (!inWarehouse.has(sku)) {
+      unknown.push({ sku, reason: "not_in_warehouse", why: "คลังเราไม่มีรหัสนี้เลย ⇒ ไม่เคยอยู่ในแผนดันสต็อก จึงตอบ landed ไม่ได้" });
       continue;
     }
     landed.push(sku);
