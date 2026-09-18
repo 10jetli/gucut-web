@@ -67,7 +67,7 @@ export default async function handler() {
   return new Response(JSON.stringify({ ...r, z2: rz2 }), { headers: { "content-type": "application/json" } });
 }
 
-/* นาทีที่ 7 — ไม่ชน core-sync (:13/:43) · beam-sweep (:00/:30) · bundle-recipe-sync (:27/:57) · backup (:40)
+/* นาทีที่ 7 — ไม่ชน core-sync (:13/:43) · beam-sweep (:00/:30) · bundle-recipe-sync (วันละครั้ง 03:00 UTC — เดิม :27/:57 เปลี่ยน 18 ก.ย. 2569) · backup (:40)
    ⏱️ **ลดจากทุกชั่วโมงเป็นทุก 3 ชั่วโมง** (18 ก.ย. 2569) — ฝั่งจอจับเวลาจริงตัวละ 3 รอบ
       วัดได้ ~15.7 วิ/รอบ · 24 รอบ/วัน ≈ 6 นาที/วัน และ **ทุกรอบ fetched 693 written 0**
       คือดึงมาทั้งกองแล้วไม่มีอะไรเปลี่ยน เพราะใบคืนไม่ได้เกิดทุกชั่วโมง

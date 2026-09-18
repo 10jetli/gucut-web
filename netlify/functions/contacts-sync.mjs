@@ -33,5 +33,5 @@ export default async function handler() {
   return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
 }
 
-// นาทีที่ 19 — ไม่ชน beam-sweep (:00/:30) · returns-sync (:07) · core-sync (:13/:43) · bundle-recipe-sync (:27/:57) · backup (:40)
+// นาทีที่ 19 — ไม่ชน beam-sweep (:00/:30) · returns-sync (:07) · core-sync (:13/:43) · bundle-recipe-sync (วันละครั้ง 03:00 UTC — เดิม :27/:57 เปลี่ยน 18 ก.ย. 2569) · backup (:40)
 export const config = { schedule: "19 * * * *" };
