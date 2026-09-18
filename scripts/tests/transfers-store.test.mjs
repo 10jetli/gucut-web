@@ -208,3 +208,21 @@ test('รายชื่อเส้น list: ไม่พิมพ์มือ�
   assert.deepEqual(ขาด, [], `ไฟล์ที่ generate ขาดเส้นที่ซอร์สรับจริง: ${ขาด.join(', ')} — รัน gen-endpoints ใหม่`);
   assert.ok(lists.includes('returns-inbox'), 'returns-inbox คือเส้นที่รายชื่อพิมพ์มือเคยขาด — ต้องมีเสมอ');
 });
+
+/* ── statusesAll: สารบัญแท็บต้องไม่หายเพราะคำค้น (18 ก.ย. 2569) ─────────────────
+   🔴 ฝั่งจอเจอตอนใช้จอขายเป็นทางสำรองจริง (ZORT /Sell/list พัง 500):
+      ค้นคำหนึ่งแล้ว 5 แท็บเหลือ 3 — "ยกเลิก" กับ "รอส่ง" หายไปทั้งปุ่ม
+      เพราะ byStatus กรอง q/วันด้วย ⇒ สถานะที่ผลค้นไม่มี ก็ไม่มีแถว
+   ⇒ ท่อต้องส่งรายชื่อสถานะ "ทั้งระบบ" ที่กรองแค่ร้าน เพื่อจอไม่ต้อง hardcode ชื่อ
+   ⚠️ ด่านนี้ตรวจรูป SQL เพราะเรียกฟังก์ชันจริงต้องต่อ D1 ⇒ ตัดคอมเมนต์ก่อนตรวจ */
+test('list=orders: statusesAll ต้องกรองแค่ร้าน ไม่กรองคำค้น/วัน', () => {
+  const src = readFileSync(new URL('../../netlify/lib/core-orders.mjs', import.meta.url), 'utf8');
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.match(code, /const wStore = buildWhere\(\{ includeCancelled: true, source \}\)/,
+    'ต้องมีตัวกรองร้านล้วน — ไม่มี from/to/q/channel');
+  assert.match(code, /SELECT DISTINCT status FROM orders WHERE \$\{wStore\.sql\}/,
+    'สารบัญสถานะต้องใช้ wStore ไม่ใช่ wAll (wAll ยังกรอง q/วัน)');
+  assert.match(code, /statusesAll:/, 'ต้องส่ง statusesAll ออกไปให้จอ');
+  /* null เมื่ออ่านไม่ได้ — ห้ามส่ง [] เพราะ [] อ่านได้ว่า "ระบบไม่มีสถานะเลย" */
+  assert.match(code, /statusesAll:[\s\S]{0,140}: null/, 'อ่านไม่ได้ต้องเป็น null ไม่ใช่ []');
+});
