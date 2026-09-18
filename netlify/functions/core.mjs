@@ -1784,9 +1784,21 @@ async function route(req, context) {
     if (url.searchParams.get("list") === "categories") {
       const r = await listCategories();
       const qc = url.searchParams.get("q");
+      /* 🔖 **ประกาศว่าคืนทั้งชุด — ปิดกับดักในอนาคต** (เพิ่ม 19 ก.ย. 2569)
+         ฝั่งจอชี้ว่าเส้นนี้ **เมินทั้ง `offset` และ `page`** ⇒ วันไหนมีคนเติมปุ่มเลขหน้า
+         ให้จอหมวดหมู่ มันจะเงียบ ๆ ไม่ทำงาน · วันนี้ยังไม่เป็นปัญหาเพราะไม่มีป้ายบอกทาง
+         ⇒ ประกาศไว้ตรง ๆ ว่าคืนทั้งชุด **ไม่ใช่รอให้คนเดา**
+         🔑 ของที่ยังไม่พังวันนี้ ต้องเขียนไว้ว่าทำไมมันไม่พัง ไม่งั้นรอบหน้าจะพังเงียบ */
+      const หน้าที่ขอ = { offset: url.searchParams.get("offset"), page: url.searchParams.get("page") };
+      const ignoredPaging = Object.fromEntries(
+        Object.entries(หน้าที่ขอ).filter(([, v]) => v !== null && v !== "")
+          .map(([k, v]) => [k, `เส้นนี้คืนทั้งชุด ไม่แบ่งหน้า — ส่ง ${k}=${String(v).slice(0, 10)} มาไม่มีผล`])
+      );
       return okJson({
         ...r,
-        ...(qc ? { ignored: { q: qc } } : {}),
+        returnsAll: true,
+        returnsAllNote: "เส้นนี้คืนหมวดทั้งชุดในคำขอเดียว ไม่แบ่งหน้า ⇒ ไม่มี nextOffset/nextPage ให้ไล่ · ปลายทางกรอง/ค้นในเครื่องได้เลย",
+        ...(qc || Object.keys(ignoredPaging).length ? { ignored: { ...(qc ? { q: qc } : {}), ...ignoredPaging } } : {}),
         "⚠️ ขอบเขต":
           "total = จำนวน**สินค้า**ทั้งคลัง ไม่ใช่จำนวนหมวด (จำนวนหมวดคือ categories.length) · " +
           "เส้นนี้ไม่รับตัวกรอง q — ส่งมาจะถูกประกาศใน ignored และไม่มีผลกับผลลัพธ์",
