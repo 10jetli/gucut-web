@@ -97,6 +97,59 @@ export const SELLER = {
   email: shopField("email"),
 };
 
+/** บัญชีทะเบียนกรมป่าไม้ — เป็น **object** ไม่ใช่ array (source · checkedAt · entries[])
+ *  ⚠️ ใช้ท่าเดียวกับ parseArray: **นับวงเล็บ** ไม่ใช้ regex หาปีกกาปิด
+ *     (ฝั่งจอเจอของจริง 18 ก.ย. 2569: regex หาปีกกาปิดวิ่งเลยไปกินโค้ดบรรทัดถัดไป ได้ของปลอมมา 5 รายการ)
+ *  ⚠️ ว่าง = โยน error ห้ามคืนกองเปล่า — ตารางบนจอจะหายไปทั้งดุ้นโดยไม่มีใครรู้ */
+function parseRegistry() {
+  const at = SRC.indexOf("export const REGISTRY");
+  if (at < 0) throw new Error("legal.mjs: หา REGISTRY ใน src/lib/licenses.ts ไม่เจอ");
+  const eq = SRC.indexOf("=", at);
+  const open = SRC.indexOf("{", eq);
+  let depth = 0, end = -1;
+  for (let i = open; i < SRC.length; i++) {
+    if (SRC[i] === "{") depth++;
+    else if (SRC[i] === "}" && --depth === 0) { end = i; break; }
+  }
+  if (end < 0) throw new Error("legal.mjs: อ่าน REGISTRY ไม่จบ");
+  const body = SRC.slice(open, end + 1);
+  const pick = (key) => {
+    const m = new RegExp(`${key}:\\s*"((?:[^"\\\\]|\\\\.)*)"`).exec(body);
+    return m ? JSON.parse(`"${m[1]}"`) : "";
+  };
+  /* entries[] อยู่ข้างใน ⇒ ตัดช่วงของมันออกมาแล้วใช้ตัวแยกอ็อบเจกต์ชุดเดียวกับ parseArray */
+  const eAt = body.indexOf("entries");
+  const eOpen = body.indexOf("[", eAt);
+  let d2 = 0, eEnd = -1;
+  for (let i = eOpen; i < body.length; i++) {
+    if (body[i] === "[") d2++;
+    else if (body[i] === "]" && --d2 === 0) { eEnd = i; break; }
+  }
+  if (eEnd < 0) throw new Error("legal.mjs: อ่าน REGISTRY.entries ไม่จบ");
+  const inner = body.slice(eOpen + 1, eEnd);
+  const chunks = [];
+  let obj = null, d = 0;
+  for (let i = 0; i < inner.length; i++) {
+    if (inner[i] === "{") { if (d++ === 0) obj = i; }
+    else if (inner[i] === "}" && --d === 0) chunks.push(inner.slice(obj + 1, i));
+  }
+  const entries = chunks.map((chunk) => {
+    const o = {};
+    const re = /(\w+):\s*("(?:[^"\\]|\\.)*"|null|\d+|[A-Za-z_$][\w$]*)/g;
+    let m;
+    while ((m = re.exec(chunk))) {
+      o[m[1]] = m[2] === "null" ? null
+        : m[2].startsWith('"') ? JSON.parse(m[2])
+        : /^\d+$/.test(m[2]) ? Number(m[2])
+        : constValue(m[2]);
+    }
+    return o;
+  });
+  if (!entries.length) throw new Error("legal.mjs: REGISTRY.entries ว่างเปล่า — รูปแบบไฟล์เปลี่ยนแล้ว");
+  return { source: pick("source"), checkedAt: pick("checkedAt"), entries };
+}
+
+export const REGISTRY = parseRegistry();
 export const LICENSES = need("LICENSES", parseArray("LICENSES"));
 export const TRADEMARKS = need("TRADEMARKS", parseArray("TRADEMARKS"));
 export const DISTRIBUTORSHIPS = need("DISTRIBUTORSHIPS", parseArray("DISTRIBUTORSHIPS"));

@@ -17,7 +17,7 @@
 //    ปล่อยผ่านแล้วเขียนไฟล์ว่าง = จอโชว์ "ไม่มีใบอนุญาต" ซึ่งเป็นคำยืนยันที่ผิดและอันตรายกว่า build ตก
 import fs from "node:fs";
 import path from "node:path";
-import { LICENSEE, SELLER, LICENSES, TRADEMARKS, DISTRIBUTORSHIPS } from "./lib/legal.mjs";
+import { LICENSEE, SELLER, LICENSES, TRADEMARKS, DISTRIBUTORSHIPS, REGISTRY } from "./lib/legal.mjs";
 
 /* ⚠️ **ตัดที่อยู่ออกจากทั้งสองนิติบุคคล ไม่ใช่เฉพาะผู้ผลิต** (แก้ 6 ก.ย. 2569)
     เดิมตัดเฉพาะ `licensee` ส่วน `seller` ส่งผ่านดิบ ๆ ⇒ **ตาข่ายครอบแค่ครึ่งเดียว**
@@ -46,6 +46,11 @@ const data = {
   licenses: LICENSES,
   trademarks: TRADEMARKS,
   distributorships: DISTRIBUTORSHIPS,
+  /* 📒 บัญชีรายชื่อผู้ได้รับอนุญาตของกรมป่าไม้ — จอข้อมูลบริษัทมีตารางรอไว้แล้วแต่ไม่เคยได้ข้อมูล
+     (ฝั่งจอจับได้ 18 ก.ย. 2569 ด้วยด่านเทียบชื่อช่องจอกับซอร์สท่อ ⇒ "ตารางที่ไม่เคยขึ้นจอสักครั้ง")
+     ⚠️ ข้อมูลชุดนี้เป็นของสาธารณะอยู่แล้ว (โผล่ที่ /policy/license/ ของหน้าร้าน) ⇒ ส่งเข้าหลังร้านได้
+     ⚠️ `checkedAt` ต้องติดไปด้วย — เป็นเลขที่คัดมาด้วยมือ ต้องบอกอายุตัวเองได้ */
+  registry: REGISTRY,
 };
 
 /* ⚠️ **ตาข่ายชั้นสอง — สแกนผลจริงก่อนเขียน ห้ามพึ่งการตัดคีย์อย่างเดียว**

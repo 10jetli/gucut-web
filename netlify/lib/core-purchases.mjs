@@ -328,6 +328,15 @@ export async function listWarehouses() {
       stockValue: values?.get(String(w?.code ?? ""))?.value ?? null,
       movedAt: values?.get(String(w?.code ?? ""))?.lastMovementAt ?? null,
       valueCollectedAt: values?.get(String(w?.code ?? ""))?.collectedAtUtc ?? null,
+      /* 📅 วันไทยของเวลาที่เก็บมูลค่าสต็อก — จอสาขารอช่องนี้อยู่ (ฝั่งจอเตรียมชื่อ `collectedDayTH` ไว้ล่วงหน้า)
+         🔑 ท่อรู้ว่าค่าตัวเองเป็น UTC ⇒ ท่อแปลงให้ · จอไม่ต้องเดาเขตเวลา (กติกาเดียวกับ stockDayTH/recipeDayTH)
+         ⚠️ อ่านไม่ออก = null ห้ามคืนวันนี้แทน (จอจะคิดว่าข้อมูลสดทั้งที่ไม่รู้) */
+      collectedDayTH: (() => {
+        const s = String(values?.get(String(w?.code ?? ""))?.collectedAtUtc ?? "").trim();
+        if (!s) return null;
+        const ms = Date.parse(s.includes("T") ? s : `${s.replace(" ", "T")}Z`);
+        return Number.isFinite(ms) ? new Date(ms + 7 * 3600e3).toISOString().slice(0, 10) : null;
+      })(),
       // ⚠️ ที่อยู่คลังไม่ส่งออกไปหน้าจอลูกค้า — หน้านี้เป็นหลังร้านล้วน แต่จำกัดไว้เท่าที่ใช้
       isPos: ["KLD", "ANJ"].includes(String(w?.code ?? "").toUpperCase()),
     })),
