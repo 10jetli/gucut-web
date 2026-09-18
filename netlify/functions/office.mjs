@@ -243,8 +243,22 @@ export default async function handler(req, context) {
       return json({ ok: true, ...(row && !body.taskDrop ? { task: row } : {}) });
     }
 
+    /* ⬇️ ตกมาถึงนี่ = body ไม่มีคำสั่งงานที่รู้จักเลย ⇒ ถือว่าเป็น "ชีพจร agent" ซึ่งต้องมี agent
+       🔴 **ข้อความเดิม "unknown agent" ชี้ไปผิดทาง** (คุณส้มเจอจริง 18 ก.ย. 2569)
+          เขาส่ง taskAdd ที่คีย์สะกดไม่ตรง ⇒ ตกมาถึงบรรทัดนี้ ⇒ ได้ "unknown agent"
+          แล้วสรุปว่า "กระดานไม่ให้สร้างใบที่เจ้าของเป็นประธาน" ซึ่งไม่จริงเลย (OWNERS มี "ประธาน" อยู่)
+          ⇒ เสียเวลาไปคนละทาง · error ที่บอกสาเหตุผิดแพงกว่า error ที่บอกว่าไม่รู้สาเหตุ
+       ⇒ แยกสองกรณีให้ชัด: ไม่มีคีย์ agent เลย = น่าจะพิมพ์ชื่อคำสั่งผิด · มี agent แต่ไม่รู้จัก = ชื่อผิด */
     const agent = text(body?.agent, 20);
-    if (!agent || !KNOWN.has(agent)) return json({ error: "unknown agent" }, 400);
+    if (!agent)
+      return json({
+        error: "ไม่พบคำสั่งที่รู้จักใน body",
+        คำสั่งที่รับ: ["taskAdd", "taskReady", "taskDone", "taskUndo", "taskDrop", "taskBlock"],
+        หมายเหตุ: "ถ้าตั้งใจส่งชีพจร agent ต้องมีคีย์ agent · ชื่อคำสั่งเป็นตัวพิมพ์เล็กใหญ่ตามนี้เป๊ะ",
+        ownerที่รับ: [...OWNERS],
+      }, 400);
+    if (!KNOWN.has(agent))
+      return json({ error: `agent ไม่รู้จัก: ต้องเป็นหนึ่งใน ${[...KNOWN].join(" / ")}` }, 400);
 
     // เวลาบันทึกใช้นาฬิกาเซิร์ฟเวอร์เสมอ ห้ามเชื่อเวลาที่เครื่องผู้ส่งบอกมา
     // (กติกาเดียวกับลงเวลาพนักงาน — ปรับนาฬิกาเครื่องตัวเองก็ปลอมได้)
