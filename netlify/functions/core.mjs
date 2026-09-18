@@ -14,6 +14,7 @@
 //   GET /api/core?stock=1&days=N  เทียบสต็อกที่เราคำนวณเองกับ ZORT (ไม่จด · ดูเฉย ๆ)
 import { adminGate } from "../lib/admin-gate.mjs";
 import { withPagingHint } from "../lib/paging-hint.mjs";
+import { ขอบเขตของค่าที่ส่งไป } from "../lib/value-scope.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
@@ -295,6 +296,18 @@ async function route(req, context) {
         offset: url.searchParams.get("offset"),
         page: url.searchParams.get("page"),
       });
+    }
+    /* 📏 บอกให้ชัดว่า "ค่าไหนเป็นของคำขอนี้ · ค่าไหนเป็นของทั้งชุด" (19 ก.ย. 2569)
+       🔴 ของจริงที่ฝั่งจอเจอ: หัวการ์ดยิง `limit=1` ⇒ `truncated` **จริงเสมอ** (ขอ 1 จาก 91)
+          ถ้าเอาค่านั้นไปขึ้นคำเตือน "รายการถูกตัด" จอจะเตือน**ตลอดกาลทั้งที่ไม่เคยถูกตัด**
+          ⇒ แล้วคนจะเลิกเชื่อคำเตือนอื่นในจอเดียวกัน (เขาเกือบสรุปว่าโค้ดตัวเองพัง)
+       🔑 ชื่อคีย์ไม่ได้บอกขอบเขตของตัวเอง และ **ไม่มีอะไรฟ้อง** เพราะค่าถูกต้องทุกครั้ง
+          ที่ผิดคือ *คำถามที่ปลายทางเอาไปตอบ* ⇒ ด่านที่เทียบค่าจะเขียวตลอด
+       ⇒ ติดไปกับคำตอบ **ไม่ใช่เขียนไว้ในเอกสาร** เพราะธงที่ต้องไปเปิดอ่านที่อื่นจะถูกข้าม
+       ⚠️ เพิ่มอย่างเดียว · คืน null เมื่อคำตอบไม่มีคีย์ในตระกูลนี้ ⇒ ไม่ยัดคีย์ให้เส้นที่ไม่เกี่ยว */
+    if (out && typeof out === "object" && !Array.isArray(out) && !("ขอบเขตของค่า" in out)) {
+      const ขอบเขต = ขอบเขตของค่าที่ส่งไป(out);
+      if (ขอบเขต) out = { ...out, ขอบเขตของค่า: ขอบเขต };
     }
     /* ── ติดมาตรวัดไปกับทุกคำตอบ ── (5 ก.ย. 2569)
        เจ้าของร้านสั่ง "ไม่ย้าย แต่หาทางทำให้เร็วสุด ๆ" ⇒ ต้องเลิกเดาว่าเวลาหายไปไหน
