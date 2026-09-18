@@ -985,6 +985,24 @@ async function route(req, context) {
        ทำไมต้องมี: แก้ที่ต้นทางแล้ว (notSentKind) แต่แถวที่ **หลุดจากแผน** ไม่มีอะไรเขียนทับ
        ⇒ ข้อความ "ทิศลง … ต้องสั่งแยก" ค้างเป็นคำเท็จถาวร (ทิศลงถูกเปิดไปแล้ว)
        รันซ้ำได้ · รอบสองได้ 0 · เหตุผลเต็มอยู่หัวฟังก์ชันใน stock-push-sweep.mjs */
+    /* 🔁 POST ?sweepnow=1&platform=lazada[&full=1] — สั่งรอบกวาดเดี๋ยวนี้หนึ่งครั้ง
+       🔴 ที่มา 18 ก.ย. 2569: ฝั่งจอขอให้ "สั่งรอบเต็มเดี๋ยวนี้" แล้วพบว่า **ไม่มีเส้นให้สั่งเลย**
+          ทางเดียวคือรอ cron ⇒ เวลาต้องยืนยันอะไรสักอย่าง ต้องรอ 15 นาที
+          และถ้า lazada เข้าโหมด fast-skip ต้องรอถึงรอบบังคับคิดเต็ม (~2 ชม.)
+       ⚠️ `full=1` ส่ง force ⇒ **ข้ามทางออกเร็ว บังคับคิดแผนใหม่** (กินเวลาจริง ~12 วิ)
+          ไม่ส่ง = เดินกติกาปกติ ซึ่งอาจตกลง fast-skip แล้วไม่เขียน push_state
+       ⚠️ POST เท่านั้น — เป็นการสั่งงานที่ยิงออกนอกระบบได้จริงเมื่อสวิตช์ยิงเปิดอยู่
+       ⚠️ **ไม่ได้เปิดสวิตช์ยิงให้** ช่องทางที่ปิดอยู่ยังเดินโหมดซ้อม (dry) เหมือนเดิม */
+    if (url.searchParams.get("sweepnow")) {
+      const { กวาดดันสต็อก, ช่องทางทั้งหมด } = await import("../lib/stock-push-sweep.mjs");
+      const ch = String(url.searchParams.get("platform") || "lazada").toLowerCase();
+      if (!ช่องทางทั้งหมด.includes(ch)) {
+        return okJson({ ok: false, error: `ไม่รู้จักช่องทาง "${ch}"`, ช่องทางที่รับ: ช่องทางทั้งหมด }, 400);
+      }
+      const full = url.searchParams.get("full") === "1";
+      const r = await กวาดดันสต็อก({ platform: ch, force: full });
+      return okJson({ ...r, สั่งด้วยมือ: true, บังคับคิดเต็ม: full });
+    }
     if (url.searchParams.get("clearpolicyerrors")) {
       const { ล้างคำเท็จในlast_error } = await import("../lib/stock-push-sweep.mjs");
       const r = await ล้างคำเท็จในlast_error();
