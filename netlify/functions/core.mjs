@@ -16,6 +16,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { withPagingHint } from "../lib/paging-hint.mjs";
 import { ขอบเขตของค่าที่ส่งไป } from "../lib/value-scope.mjs";
 import { ความปลอดภัยของเส้น } from "../lib/route-safety.mjs";
+import { สัญญาของเส้น } from "../lib/list-contracts.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
@@ -309,6 +310,19 @@ async function route(req, context) {
     if (out && typeof out === "object" && !Array.isArray(out) && !("ขอบเขตของค่า" in out)) {
       const ขอบเขต = ขอบเขตของค่าที่ส่งไป(out);
       if (ขอบเขต) out = { ...out, ขอบเขตของค่า: ขอบเขต };
+    }
+    /* 📜 แนบ "สัญญาของเส้น list=" ไปกับคำตอบ (19 ก.ย. 2569)
+       🔴 ฝั่งจอเกือบรายงานว่าท่อพัง 4 ครั้งในวันเดียว และ **3 ใน 4 เพราะท่อไม่ได้บอกว่ารับอะไร**
+          (ไล่หน้าด้วย `page` กับเส้นที่ใช้ `offset` ⇒ ได้แถวชุดเดิม ⇒ ตัวเลขที่รายงานต่ำกว่าจริง)
+       🔑 คำของเขา: **"ของที่ต้องพึ่งความระวังของคน จะพังอีกแน่ ๆ วันที่คนเปลี่ยน"**
+       ⇒ ประกาศติดไปกับคำตอบ ไม่ใช่เขียนไว้ในเอกสารให้ไปเปิดอ่าน
+       ⚠️ ไม่ทับของเดิม — เส้นที่ประกาศ `supportedFilters` เองอยู่แล้วยังใช้ของตัวเอง */
+    {
+      const ชื่อlist = url.searchParams.get("list");
+      if (ชื่อlist && out && typeof out === "object" && !Array.isArray(out) && !("สัญญาของเส้นนี้" in out)) {
+        const c = สัญญาของเส้น(ชื่อlist);
+        if (c) out = { ...out, สัญญาของเส้นนี้: c };
+      }
     }
     /* ── ติดมาตรวัดไปกับทุกคำตอบ ── (5 ก.ย. 2569)
        เจ้าของร้านสั่ง "ไม่ย้าย แต่หาทางทำให้เร็วสุด ๆ" ⇒ ต้องเลิกเดาว่าเวลาหายไปไหน
