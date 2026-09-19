@@ -25,8 +25,15 @@ export default async function handler() {
         const r = x?.recent;
         const w = x?.sweep;
         if (!r && !w) return null;
+        /* 🔴 **ส่ง "ตัวตนของความล้ม" ต่อเข้าสมุดด้วย ไม่ใช่แค่ตัวเลข** (แก้ 19 ก.ย. ค่ำ)
+           `errors[]` มี `{stage, error}` อยู่แล้ว และถูกส่งเข้า Telegram — **แต่สมุดได้แค่ fetched/written**
+           ⇒ ของจริงวันนี้: `backup-run` จด `failed 1` แล้วไม่มีใครรู้ว่าถังไหน ⇒ ชี้ตัวไม่ได้เลย
+           🔑 คลาสที่ฝั่งจอตั้งชื่อ: **"วัดได้แล้วทิ้งระหว่างทาง"** — แพงกว่า "วัดไม่ได้"
+              เพราะมันดูเหมือนข้อจำกัด ทั้งที่เป็น **ท่อขาดระหว่างที่จับค่ามาได้แล้ว** */
+        const errs = Array.isArray(x?.errors) ? x.errors : [];
         return `recent fetched ${r?.fetched ?? "?"} written ${r?.written ?? "?"}` +
-          ` · sweep fetched ${w?.fetched ?? "?"} written ${w?.written ?? "?"}${w?.skipped ? ` (${w.skipped})` : ""}`;
+          ` · sweep fetched ${w?.fetched ?? "?"} written ${w?.written ?? "?"}${w?.skipped ? ` (${w.skipped})` : ""}` +
+          (errs.length ? ` · ล้ม ${errs.length} จุด ⇒ ${errs.map((e) => `${e.stage}: ${e.error}`).join(" | ").slice(0, 200)}` : "");
       },
     });
     r = t.ผลลัพธ์;
