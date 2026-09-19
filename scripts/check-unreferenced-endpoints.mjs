@@ -45,7 +45,9 @@ import { join } from "node:path";
 const ไม่เอาคอมเมนต์ = (s, ไฟล์ = "") => {
   let out = s
     .replace(/^\s*\/\/.*$/gm, "")
-    .replace(/(?<!:)\/\/[^\n]*$/gm, "")
+    .replace(/(?<![:/])\/\/[^\n]*$/gm, "")  /* 🔴 กัน `:` **และ `/`** ข้างหน้า — `file:///x` มี **สามสแลช**
+       ⇒ ตัวกันแบบ `(?<!:)` เดิมยังตัดที่สแลชคู่ที่ 2-3 ⇒ กิน URL ทิ้งเหมือนเดิม (เจอ 19 ก.ย. 2569
+       ตอนปลูก `new URL("file:///tmp/x").pathname` แล้วด่านไม่ฟ้อง) */
     .replace(/\/\*[\s\S]*?\*\//g, "");
   if (/\.(html?|xml|svg|md)$/i.test(ไฟล์)) out = out.replace(/<!--[\s\S]*?-->/g, "");
   if (/\.(py|sh|bash|zsh|toml|ya?ml|env|conf)$/i.test(ไฟล์)) out = out.replace(/(^|\s)#[^\n]*/g, "$1");
