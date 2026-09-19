@@ -16,9 +16,17 @@ import tf from "@tensorflow/tfjs-node";
 import sharp from "sharp";
 import { readFileSync, writeFileSync, existsSync } from "node:fs";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
-const MODEL = "file://" + join(root, "public/model/mobilenet/model.json");
+/* 🔴 **ห้ามต่อสตริง `"file://" + พาธ` เอง** (แก้ 19 ก.ย. 2569 — ทิศกลับของคลาสเดียวกัน)
+   ฝั่งจอเจอว่า URL→พาธ เข้ารหัส %xx · ทิศนี้คือ พาธ→URL ซึ่งต้อง **เข้ารหัสให้** แต่การต่อสตริงไม่เข้ารหัส
+   ⇒ พาธที่มีช่องว่าง/อักษรไทยจะได้ URL ที่ผิดรูป (มีช่องว่างดิบใน URL) ⇒ tfjs โหลดโมเดลไม่ได้
+   📏 พิสูจน์: ต่อสตริง ⇒ `file:///home/jetli/มี ช่องว่าง/...` (ช่องว่างดิบ)
+      · `pathToFileURL` ⇒ `file:///home/jetli/%E0%B8%A1%E0%B8%B5%20.../...` (ถูกต้อง)
+   🔑 และ **"ช่องว่างในพาธ" ไม่ใช่เรื่องแปลก** ไม่ต้องรอถึงชื่อไทย (ข้อของฝั่งจอ)
+   ⚠️ วันนี้รอดเพราะ cwd เป็น ASCII ล้วน ⇒ ยังไม่เคยพัง แต่พังวันที่มีคนย้ายโฟลเดอร์ */
+const MODEL = pathToFileURL(join(root, "public/model/mobilenet/model.json")).href;
 const EMBED_LAYER = "global_average_pooling2d_1";   // [null,512] — ชั้นก่อนหัวจำแนก 1000 ชนิด
 const SIZE = 224;
 const BATCH = 32;
