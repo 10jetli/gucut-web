@@ -24,6 +24,51 @@ const json = (data, status = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
+/** 📉 **อัตราการเผาเครดิต + วันที่จะหมด — คิดจากประวัติหลายจุด ไม่ใช่สองจุดติดกัน**
+ *
+ * 🔴 ที่มา 19 ก.ย. 2569 (บทเรียนของวันนั้นเอง): ตัวเฝ้าบน g1 คิดอัตราจาก **สองจุดวัดล่าสุด ≈ 1 ชม.**
+ *    ⇒ ชั่วโมงที่ทีม deploy 12 ครั้ง ให้ "เหลือ 4.8 วัน" · พอหยุด deploy กลับเป็น "~24–45 วัน"
+ *    ⇒ **ข้อมูลชุดเดียวกัน ต่างกันหลายเท่า แค่เปลี่ยนหน้าต่าง**
+ * 🔑 ⇒ อัตราต้องคิดจากหน้าต่างที่ยาวพอ **และต้องบอกหน้าต่างที่ใช้ไปด้วยเสมอ**
+ *    (ฝั่งจอขอข้อนี้เป็นเงื่อนไข และเขาถูก: เลข "4.8 วัน" ที่ไม่มีหน้าต่างกำกับ
+ *     ทำให้ตัดสินใจผิดแรงกว่าไม่มีเลขเลย)
+ *
+ * ⚠️ **คิดไม่ได้ ⇒ คืน `null` ทั้งสามช่อง ห้ามคืน 0 และห้ามใส่ค่าตั้งต้น**
+ *    `daysLeft: 0` จะถูกอ่านว่า "หมดวันนี้" · `daysLeft: 999` จะเขียวตลอดกาล
+ *    ⇒ `null` = "ยังไม่รู้" ซึ่งเป็นคำตอบที่ถูกเมื่อยังไม่มีข้อมูลพอ [[three-states-not-two]]
+ * ⚠️ ยอดใช้ **ลดลง** ได้เมื่อขึ้นรอบบิลใหม่ ⇒ ถือว่า "เริ่มรอบใหม่" ไม่ใช่ "เผาติดลบ"
+ *    ⇒ ตัดจุดที่เก่ากว่าการรีเซ็ตออก ไม่งั้นได้อัตราติดลบแล้วคำนวณวันเหลือเป็นค่าเพี้ยน
+ */
+const ประวัติKEY = "netlify-credits-history";
+const เก็บกี่จุด = 60;          // ~1 จุด/10 นาที ⇒ ครอบราว 10 ชม.
+const หน้าต่างน้อยสุดชม = 1;    // สั้นกว่านี้ไม่คิด — สั้นเกินไปให้เลขที่หลอกตา
+
+export function คิดอัตราเผา(ประวัติ, ล่าสุด) {
+  const ว่าง = { burnPerDay: null, daysLeft: null, burnWindowHours: null };
+  if (!Array.isArray(ประวัติ) || !ล่าสุด || !Number.isFinite(Number(ล่าสุด.used))) return ว่าง;
+  const now = Number(ล่าสุด.at) || Date.now();
+  const usedNow = Number(ล่าสุด.used);
+  /* เอาเฉพาะจุดที่ยอดใช้ **ไม่มากกว่าตอนนี้** — จุดที่มากกว่าแปลว่าคร่อมการรีเซ็ตรอบบิล */
+  const ใช้ได้ = ประวัติ
+    .filter((x) => Number.isFinite(Number(x?.used)) && Number.isFinite(Number(x?.at)))
+    .filter((x) => Number(x.used) <= usedNow)
+    .sort((a, b) => Number(a.at) - Number(b.at));
+  /* เลือกจุดที่เก่าที่สุดที่ยังอยู่ในประวัติ ⇒ หน้าต่างยาวที่สุดที่มี */
+  const เก่าสุด = ใช้ได้[0];
+  if (!เก่าสุด) return ว่าง;
+  const ชม = (now - Number(เก่าสุด.at)) / 3600_000;
+  if (!(ชม >= หน้าต่างน้อยสุดชม)) return { ...ว่าง, burnWindowHours: Number(ชม.toFixed(2)) };
+  const เผา = usedNow - Number(เก่าสุด.used);
+  if (!(เผา > 0)) return { burnPerDay: 0, daysLeft: null, burnWindowHours: Number(ชม.toFixed(2)) };
+  const ต่อวัน = (เผา / ชม) * 24;
+  const เหลือ = Number(ล่าสุด.left);
+  return {
+    burnPerDay: Math.round(ต่อวัน),
+    daysLeft: Number.isFinite(เหลือ) && ต่อวัน > 0 ? Number((เหลือ / ต่อวัน).toFixed(1)) : null,
+    burnWindowHours: Number(ชม.toFixed(2)),
+  };
+}
+
 export default async function handler(req, context) {
   const gate = await adminGate(req, context);
   if (gate.deny) return gate.deny;
@@ -92,6 +137,22 @@ export default async function handler(req, context) {
       periodEnd: acc?.next_usage_period_start || null,
       top: parts.slice(0, 4),
     };
+    /* 📉 ต่อประวัติ แล้วคิดอัตราเผา — ฝั่งจอขอสามช่องนี้ (55a5fa7 · เตรียมฝั่งรับไว้แล้ว)
+       ⚠️ เก็บจุดใหม่ก่อนคิด ⇒ จุดล่าสุดคือของรอบนี้เอง · เลือกหน้าต่างยาวสุดที่มีในประวัติ */
+    let ประวัติ = await s.get(ประวัติKEY, { type: "json" }).catch(() => null);
+    if (!Array.isArray(ประวัติ)) ประวัติ = [];
+    ประวัติ.push({ at: out.at, used: out.used });
+    if (ประวัติ.length > เก็บกี่จุด) ประวัติ = ประวัติ.slice(-เก็บกี่จุด);
+    const อัตรา = คิดอัตราเผา(ประวัติ.slice(0, -1), out);
+    Object.assign(out, อัตรา, {
+      "📉 อ่านอัตราเผายังไง":
+        "`burnPerDay`/`daysLeft` คิดจากประวัติยอดใช้จริงหลายจุด · " +
+        "🔑 **ต้องอ่านคู่กับ `burnWindowHours` เสมอ** — อัตราจากหน้าต่างสั้นให้เลขที่หลอกตา " +
+        "(19 ก.ย. 2569: หน้าต่าง 1 ชม. ที่ทีม deploy 12 ครั้ง ให้ \"เหลือ 4.8 วัน\" " +
+        "พอหยุด deploy กลับเป็น ~24 วัน — ข้อมูลชุดเดียวกัน) · " +
+        "🚫 `null` = **ยังไม่รู้** (ประวัติไม่พอ) ไม่ใช่ \"เผาช้า\" — ห้ามอ่านเป็นเขียว",
+    });
+    await s.setJSON(ประวัติKEY, ประวัติ);
     await s.setJSON("netlify-credits", out);
     return json(out);
   } catch (e) {
