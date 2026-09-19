@@ -108,7 +108,11 @@ export default async function handler(req, context) {
   // ⚠️ เจ้าไหนพังต้องไม่ลากอีกเจ้าและยอดขายของเราพังไปด้วย — ห่อ error ไว้ทีละเจ้า
   const guard = (p) =>
     p.then(
-      (rows) => ({ ok: true, rows }),
+      /* 🔴 **ต้องยก `fieldWarning` ขึ้นมาเป็นคีย์ของออบเจกต์** — มันถูกแปะไว้เป็น property
+         ของอาร์เรย์ และ `JSON.stringify` **ทิ้ง property ของอาร์เรย์ทั้งหมด**
+         ⇒ ถ้าไม่ยกขึ้น คำเตือนจะหายระหว่างทางแบบเงียบสนิท = คำเตือนที่ไม่มีใครเห็น
+         (กติกาเดียวกับ `rows.coverage` ของ shopee-stock ที่ต้องยกขึ้นเองเหมือนกัน) */
+      (rows) => ({ ok: true, rows, ...(rows?.fieldWarning ? { fieldWarning: rows.fieldWarning } : {}) }),
       (e) => ({ ok: false, error: String(e?.message || e), rows: [] }),
     );
 
