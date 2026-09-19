@@ -529,10 +529,15 @@ export async function listBundles(o = {}) {
       mk = {
         checkedMarketplaces: ml.checked,
         marketplacesAt: new Date(ml.at).toISOString(),
-        marketplacesNotConnected: ml.notConnected,
+        /* 🔑 **ส่งเสมอแม้ว่าง** (ฝั่งจอขอ 19 ก.ย. 2569) — `?? {}` ไม่ใช่ปล่อยให้เป็น undefined
+           เพราะ `JSON.stringify` **ทิ้งคีย์ที่เป็น undefined** ⇒ จอแยกไม่ออกระหว่าง
+           "ไม่มีช่องทางไหนล้ม" กับ "ท่อเลิกส่งช่องนี้แล้ว"
+           ⇒ และคำเตือนบนแท็บ "ยังไม่ได้ลงที่ไหนเลย" คือ **สิ่งเดียวที่กันการอ่านตัวเลขผิด**
+             หายเมื่อไหร่ **ตัวเลขกลับไปดูน่าเชื่อถือทันที** ⇒ ของหายโดยจอไม่เปลี่ยนสี */
+        marketplacesNotConnected: ml.notConnected ?? {},
         // ⚠️ ช่องทางที่ตอบมาแล้วแต่เลขยังผิด — จอต้องขึ้นเตือนคร่อมโลโก้ ห้ามปล่อยให้ดูปกติ
-        marketplacesUnreliable: ml.unreliable,
-        marketplacesFailed: ml.failed,
+        marketplacesUnreliable: ml.unreliable ?? {},
+        marketplacesFailed: ml.failed ?? {},
         /* ธง "ของเก่าระหว่างรีเฟรช" — โผล่เฉพาะตอนแคชหมดอายุแล้วคืนของเก่าไปก่อน
            🔴 เกือบพลาด (7 ก.ย. 2569): ใส่ธงไว้ใน marketplaceListings แล้ว **แต่ก้อน mk
               นี้คัดฟิลด์เอง ธงเลยถูกทิ้งกลางทาง จอไม่มีวันเห็น** — ฝั่งจอถามหาชื่อฟิลด์

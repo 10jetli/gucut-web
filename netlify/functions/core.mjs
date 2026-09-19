@@ -275,6 +275,14 @@ async function route(req, context) {
     let out = obj;
     if (askedLimit && obj && typeof obj === "object" && !Array.isArray(obj)) {
       const applied = Number(obj.limit ?? obj.applied?.limit);
+      /* 🔑 **`limitClamped` ต้องมีคีย์เสมอ** (ฝั่งจอขอ 19 ก.ย. 2569)
+         ของเดิมทั้งก้อนนี้โผล่เฉพาะตอนรู้เพดานจริง ⇒ เส้นที่ยังไม่รู้เพดาน **ไม่มีคีย์เลย**
+         ⇒ จอเอกสารบัญชีแยกไม่ออกระหว่าง "ไล่ครบแล้ว" กับ "ท่อไม่ได้บอกว่าถูกบีบ"
+         ⇒ คำเตือน "ไล่ไม่ครบ" หายเงียบ **แล้วตัวเลขกลับไปดูน่าเชื่อถือ**
+         ⇒ ไม่รู้เพดาน ⇒ ส่ง `limitClamped: null` = **ยังไม่รู้** (สามสถานะ ห้ามยุบเป็นสอง) */
+      if (!(Number.isFinite(applied) && applied > 0)) {
+        out = { ...obj, limitRequested: Number.isFinite(askedLimit) ? askedLimit : null, limitApplied: null, limitClamped: null };
+      }
       if (Number.isFinite(applied) && applied > 0) {
         out = {
           ...obj,

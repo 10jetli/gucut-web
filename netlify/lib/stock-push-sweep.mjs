@@ -274,10 +274,10 @@ export async function เติมสมุดจากประวัติ({ p
     ออกจริง: x.rows.filter((r) => r?.result === "pushed" || r?.result === "rejected").length,
     รหัส: x.rows.filter((r) => r?.result === "pushed" || r?.result === "rejected").map((r) => r.sku),
   }));
-  if (!apply) return { ok: true, mode: "ดูอย่างเดียว — ส่ง apply:true เพื่อเขียนจริง", รอบ: สรุป, รวม: สรุป.reduce((a, x) => a + x.ออกจริง, 0) };
+  if (!apply) return { ok: true, inconclusive: false, mode: "ดูอย่างเดียว — ส่ง apply:true เพื่อเขียนจริง", รอบ: สรุป, รวม: สรุป.reduce((a, x) => a + x.ออกจริง, 0) };
   let เขียนแล้ว = 0;
   for (const x of รอบ) เขียนแล้ว += (await จดยิงมือลงสมุด(String(x.platform), x.rows, x.at)).เขียนแล้ว;
-  return { ok: true, mode: "เขียนจริง", รอบ: สรุป, เขียนแล้ว };
+  return { ok: true, inconclusive: false, mode: "เขียนจริง", รอบ: สรุป, เขียนแล้ว };
 }
 
 /** กวาดหนึ่งรอบสำหรับหนึ่งช่องทาง
@@ -322,7 +322,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
            VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(at) DO NOTHING`,
           [now, platform, "fast-skip", 0, 0, 0, 0, 0, ms0,
            `ข้ามติดกัน ${กี่รอบข้าม + 1} — คลังไม่ขยับหลังรอบก่อน · บังคับคิดเต็มทุก ${บังคับเต็มทุก} รอบ`]);
-        return { ok: true, platform, at: now, mode: "ข้ามเร็ว — คลังไม่ขยับ ไม่ต้องคิดแผนใหม่",
+        return { ok: true, inconclusive: false, platform, at: now, mode: "ข้ามเร็ว — คลังไม่ขยับ ไม่ต้องคิดแผนใหม่",
                  fastSkip: true, skipStreak: กี่รอบข้าม + 1, forceFullEvery: บังคับเต็มทุก, ms: ms0 };
       }
     } catch {
@@ -607,7 +607,7 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   );
 
   return {
-    ok: true,
+    ok: true, inconclusive: false,
     platform,
     at: now,
     mode: ยิงจริง ? "ยิงจริง" : "ซ้อม — ยังไม่เขียนอะไรกลับแพลตฟอร์ม",
@@ -676,6 +676,14 @@ export async function กวาดดันสต็อก({ platform = "lazada"
  *     เราไม่รู้สถานะจริงของรหัสพวกนี้ ⇒ ลบคำเท็จ ไม่ใช่เขียนคำจริงที่เดาขึ้น [[fixes-can-destroy-truth]]
  *  ⚠️ รันซ้ำได้ (idempotent) — รอบสองจะได้ 0 เพราะไม่มีแถวตรงเงื่อนไขแล้ว
  */
+/* 🔑 **ฟังก์ชันในกลุ่มนี้ต้องส่ง `inconclusive` เสมอ ทั้ง true และ false** (ฝั่งจอขอ 19 ก.ย. 2569)
+   🔴 เหตุ: จอดันสต็อกใช้ `inconclusive` เป็นตัวกันการอ่านผลผิด
+      ⇒ ของเดิมส่งเฉพาะตอน `true` ⇒ **หายเมื่อไหร่ ติ๊กเขียวกลับมาทันที**
+      ⇒ "ผลแปลไม่ได้" กลายเป็น "ผ่าน" โดยจอไม่เปลี่ยนสีเลย (ฝั่งจอเพิ่งแก้บั๊กรูปนี้เมื่อเช้า)
+   ⚠️ **ขอบเขต: เฉพาะฟังก์ชันที่ใช้ธงนี้จริงเท่านั้น** ไม่หว่านใส่ทุกเส้นในท่อ
+      เส้นที่ไม่เคยประเมินเรื่องนี้ ถ้าส่ง `inconclusive: false` ไปด้วย จะอ่านได้ว่า
+      "เส้นนี้ยืนยันว่าผลแปลได้" ทั้งที่มันไม่เคยตรวจ ⇒ **คำยืนยันที่ไม่มีใครตรวจ**
+   ⚠️ และยังเคารพสัญญาเดิม: `inconclusive: true` **ห้ามมีคีย์ `ok`** — ที่เติมคือทางสำเร็จเท่านั้น */
 export async function ล้างคำเท็จในlast_error() {
   if (!coreReady()) return { inconclusive: true, why: "ต่อฐานคลังเงาไม่ได้" };
   const เงื่อนไข = `last_error LIKE '%ทิศลง%' AND last_error LIKE '%allowClose%'`;
@@ -683,7 +691,7 @@ export async function ล้างคำเท็จในlast_error() {
     `SELECT sku, channel, last_error, last_error_at FROM push_state WHERE ${เงื่อนไข} LIMIT 200`
   ).catch(() => null);
   if (!Array.isArray(ก่อน)) return { inconclusive: true, why: "อ่านตารางไม่ได้ — ไม่ได้ล้างอะไร" };
-  if (!ก่อน.length) return { ok: true, ล้างไป: 0, note: "ไม่มีแถวที่เข้าเงื่อนไข (เคยกวาดแล้ว หรือไม่มีของค้าง)" };
+  if (!ก่อน.length) return { ok: true, inconclusive: false, ล้างไป: 0, note: "ไม่มีแถวที่เข้าเงื่อนไข (เคยกวาดแล้ว หรือไม่มีของค้าง)" };
   await coreQuery(
     `UPDATE push_state SET last_error = NULL, last_error_at = NULL WHERE ${เงื่อนไข}`
   );
@@ -691,7 +699,7 @@ export async function ล้างคำเท็จในlast_error() {
     `SELECT COUNT(*) AS n FROM push_state WHERE ${เงื่อนไข}`
   ).catch(() => null);
   return {
-    ok: true,
+    ok: true, inconclusive: false,
     ล้างไป: ก่อน.length,
     เหลือ: Array.isArray(เหลือ) ? (เหลือ[0]?.n ?? null) : null,
     ตัวอย่างที่ล้าง: ก่อน.slice(0, 3).map((r) => ({ sku: r.sku, channel: r.channel, เดิม: String(r.last_error).slice(0, 70), เมื่อ: r.last_error_at })),
@@ -743,7 +751,7 @@ export async function รายรหัสที่ค้าง({ channel, reas
     กอง[k] = (กอง[k] ?? 0) + 1;
   }
   return {
-    ok: true,
+    ok: true, inconclusive: false,
     ทั้งหมดที่ตรงเงื่อนไข: Number(cnt?.c ?? 0),
     applied: { channel: ch || null, reason: rs || null, limit: n, offset: off },
     supportedFilters: ["channel", "reason", "limit", "offset"],
@@ -870,7 +878,7 @@ export async function สถานะดันสต็อก() {
   );
 
   return {
-    ok: true,
+    ok: true, inconclusive: false,
     autoOn: ยิงจริงอยู่ไหม(),
     /* ⚠️ `autoOn` บอกแค่ว่า **สวิตช์เปิดไหม** 🚫 ห้ามเอาไปทำแถบ "อัปเดตออโต้"
        แถบนั้นต้องวัดจาก `ยืนยันล่าสุด` เท่านั้น — สวิตช์เปิดค้างไว้แล้วระบบตายไปสามวัน
