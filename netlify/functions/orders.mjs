@@ -28,6 +28,7 @@ import { shippingFor } from "../lib/shipping.mjs";
 import { sendPurchase } from "../lib/marketing.mjs";
 import { finalizeOrder } from "../lib/order-finalize.mjs";
 import { beamReady, chargePaid, createQrCharge, getCharge } from "../lib/beam.mjs";
+import { thaiDayFromUtc } from "../lib/thaiday.mjs";
 
 // สถานะที่ยอมรับ — ตามขั้นตอนงานจริงของร้าน
 // ⚠️ "ยกเลิก" กับ "คืนของ" ต้องแยกกัน ห้ามยุบเป็นอันเดียว
@@ -511,7 +512,15 @@ async function zortAddOrder(order) {
   const cod = order.payment === "cod";
   const body = {
     number: order.id,                                   // เลขเดียวกับบนเว็บ ตามกันเจอ
-    orderdate: new Date(order.at).toISOString().slice(0, 10),
+    /* 🔴 **20 ก.ย. 2569 — ของเดิมตัดวันจาก UTC ทั้งที่บรรทัดล่างใช้เวลาไทยแล้ว**
+       ⇒ เอกสาร ZORT ใบเดียว มี `orderdate` คิดแบบ UTC แต่ `paymentdate` คิดแบบไทย
+       ⇒ ออเดอร์ที่ลูกค้าสั่งช่วง **00:00–06:59 เวลาไทย** จะได้ **วันที่ย้อนหลังไปหนึ่งวัน**
+         บนเอกสารบัญชี (และไม่ตรงกับเวลาชำระในใบเดียวกัน)
+       📏 วัดของจริงวันนี้: ออเดอร์เว็บ 27 ใบที่เส้น `/api/orders` คืนมา ⇒ **ตกช่วงเสี่ยง 0 ใบ**
+          ⇒ **ยังไม่มีเอกสารไหนเพี้ยน** — เป็นบั๊กที่รอใบแรกที่ลูกค้าสั่งตอนดึก
+       🔑 หลักฐานว่าเป็นความพลาด ไม่ใช่การเลือก: **ไฟล์นี้รู้เรื่องเวลาไทยอยู่แล้ว**
+          (`thaiDateTime` ถูกเขียนไว้เพื่อ `paymentdate` โดยเฉพาะ) ⇒ ตกหล่นเฉพาะช่องนี้ */
+    orderdate: thaiDayFromUtc(order.at),
     customername: order.customer.name,
     customerphone: order.customer.phone,
     customeraddress:
