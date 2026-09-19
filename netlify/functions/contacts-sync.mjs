@@ -18,7 +18,16 @@ export default async function handler() {
     const t = await วัดเวลางาน("contacts-sync", syncContactsScheduled, {
       // ข้าม = ทำงานปกติ (ยังไม่ถึงรอบ) · มี errors = ล้ม · นอกนั้นถือว่าจบดี
       ตัดสินผล: (x) => (Array.isArray(x?.errors) && x.errors.length && !x?.skip ? "failed" : "ok"),
-      อธิบาย: (x) => (x?.skip ? `skip: ${x.skip}` : x?.written != null ? `written ${x.written}` : null),
+      /* 🔴 เดิมอ่าน `x.written` ที่ระดับบนสุด ซึ่ง **ไม่มี** (ของจริงอยู่ใน recent/sweep) ⇒ note = null ทุกแถว
+         ⇒ ฝั่งจอชี้ว่าเหลือแต่ `outcome: ok` ที่ผู้เรียกบอกเอง ⇒ **ไม่ใช่หลักฐานว่าแตะงาน** */
+      อธิบาย: (x) => {
+        if (x?.skip) return `skip: ${x.skip}`;
+        const r = x?.recent;
+        const w = x?.sweep;
+        if (!r && !w) return null;
+        return `recent fetched ${r?.fetched ?? "?"} written ${r?.written ?? "?"}` +
+          ` · sweep fetched ${w?.fetched ?? "?"} written ${w?.written ?? "?"}${w?.skipped ? ` (${w.skipped})` : ""}`;
+      },
     });
     r = t.ผลลัพธ์;
     จดเวลา = t.จดเวลา;

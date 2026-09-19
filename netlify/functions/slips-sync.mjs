@@ -13,7 +13,15 @@ export default async function handler() {
     const t = await วัดเวลางาน("slips-sync", slipScanStep, {
       // ตัวงานบอก ok มาตรง ๆ · ไม่มีคีย์ ok = ไม่ได้ตัดสิน (ห้ามเดาว่าสำเร็จ)
       ตัดสินผล: (x) => (x?.ok === false ? "failed" : x?.ok === true ? "ok" : null),
-      อธิบาย: (x) => (x?.skip ? `skip: ${x.skip}` : x?.saved != null ? `saved ${x.saved}` : null),
+      /* 🔴 **note ต้องเป็นหลักฐานว่าแตะงานจริง ไม่ใช่ null** (แก้ 19 ก.ย. เย็น · ฝั่งจอชี้)
+         เดิมผมอ่านช่อง `saved` ซึ่ง **ไม่มีอยู่ในคำตอบของ slipScanStep เลย** ⇒ note เป็น null ทุกแถว
+         ⇒ เหลือแต่ `outcome: ok` ซึ่ง **ผู้เรียกเป็นคนบอก** ⇒ ไม่ใช่หลักฐานว่างานเกิดขึ้นจริง
+         🔑 ตัววัดต้องพิสูจน์ว่าแตะงานจริง — ช่องจริงคือ scanned/stored/errors */
+      อธิบาย: (x) =>
+        x?.skip ? `skip: ${x.skip}`
+          : x && (x.scanned != null || x.stored != null)
+            ? `scanned ${x.scanned ?? "?"} · stored ${x.stored ?? "?"} · errors ${x.errors ?? "?"}${x.wrapped ? " · วนครบรอบ" : ""}`
+            : null,
     });
     r = t.ผลลัพธ์;
     จดเวลา = t.จดเวลา;
