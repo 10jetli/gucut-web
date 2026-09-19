@@ -15,37 +15,21 @@
  *
  * ⚠️ ทุกเคสในไฟล์นี้ **ไม่ยิง PEAK ของจริงเลย** — แทน `fetch` และคืน env เดิมทุกครั้ง
  */
-import { test, mock } from "node:test";
+import { test } from "node:test";
 import assert from "node:assert/strict";
 
-/* 🔴 **เจอของจริงตอนเขียนเทสนี้ — และมันคือคลาสที่ฝั่งจอเจอเป๊ะ**
-   `peakCall` เรียก `clientToken()` ซึ่งอ่าน **Netlify Blobs** ⇒ ในเครื่องมันล้มทันที
-   (`The environment has not been configured to use Netlify Blobs`)
-   ⇒ **กิ่งทางปกติของ `peakCall` เดินในเครื่องไม่ได้เลยสักครั้ง** ⇒ จึงไม่เคยมีเทส
-   🔑 นี่คือเหตุผลเชิงโครงสร้างว่าทำไม `line 40%` ของไฟล์นี้ไม่ใช่ความขี้เกียจ:
-      **ทางที่ต้องผ่าน Blobs ถูกกันไว้ตั้งแต่ประตู** (ฝั่งจอเจอแบบเดียวกันกับ `askedToday`)
-   ⇒ ทางแก้: mock ที่ **ชั้น Blobs** ไม่ใช่แก้โค้ดจริงให้ทดสอบง่าย */
-let mockแล้ว = false;
-const mockBlobs = () => {
-  /* ⚠️ `mock.module` โยนถ้า mock ซ้ำ ("The module is already mocked")
-     ⇒ mock ครั้งเดียวต่อกระบวนการ · store ปลอมใช้ร่วมได้เพราะเทสไม่พึ่งค่าที่เก็บไว้ */
-  if (mockแล้ว) return;
-  mockแล้ว = true;
-  const เก็บ = new Map();
-  mock.module("@netlify/blobs", {
-    namedExports: {
-      getStore: () => ({
-        get: async (k, o) => (o?.type === "json" ? เก็บ.get(k) ?? null : เก็บ.get(k) ?? null),
-        setJSON: async (k, v) => { เก็บ.set(k, v); },
-        set: async (k, v) => { เก็บ.set(k, v); },
-        delete: async (k) => { เก็บ.delete(k); },
-        list: async () => ({ blobs: [] }),
-      }),
-    },
-  });
-};
-
-const โหลด = async () => { mockBlobs(); return import(`../../netlify/lib/peak.mjs?t=${Date.now()}`); };
+/* 🔴🔴 **และ mock ที่ผมใส่ไว้รอบแรก "กวนเทสไฟล์อื่น" — พิสูจน์แล้วด้วยการรันคู่**
+ * รอบแรกผม `mock.module("@netlify/blobs", …)` เพื่อให้ `peakCall` เดินได้
+ * 📏 ทดสอบที่ตัดสินได้: รัน `peak-send-summary.test.mjs` **เดี่ยว** ⇒ บรรทัด 177-204 ถูกครอบ ·
+ *    รัน **คู่กับไฟล์นี้** ⇒ **177-204 หายจาก coverage** · และ **เทสทั้งคู่ยังผ่าน**
+ * 🔑 ⇒ อาการที่หลอกที่สุด: **เทสผ่านแต่โค้ดไม่ถูกเดิน** ⇒ ไฟล์เทสของผมทำให้ไฟล์เทสอื่น
+ *    วัดผลไม่ได้ **โดยไม่มีอะไรฟ้อง**
+ * ✅ ทางแก้ที่ถูกและไม่แตะโค้ดจริง: **ถอด mock ออกทั้งหมด** — สองเคสที่เหลือในไฟล์นี้
+ *    ทดสอบ `peakReady` / `peakLive` ซึ่ง **อ่าน env อย่างเดียว ไม่แตะ Blobs เลย**
+ *    ⇒ ตรงกับกติกาที่ฝั่งจอสรุปไว้: **ฉีดของที่ต้องปลอม ชนะ mock โมดูล ทั้งสองแกน**
+ *      (ทดสอบได้ · และไม่กวนตัววัด/ไฟล์อื่น)
+ */
+const โหลด = () => import("../../netlify/lib/peak.mjs");
 
 function ด้วยEnv(ค่า, ทำ) {
   const คีย์ = ["PEAK_CONNECT_ID", "PEAK_CONNECT_KEY", "PEAK_USER_TOKEN", "PEAK_LIVE"];
