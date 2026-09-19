@@ -224,6 +224,14 @@ async function line() {
 
 export async function connectionsStatus(opts = {}) {
   const budget = budgetFrom(opts.budget);
+  /* 🔴 รอบของตัวต่ออายุ token คิดจาก cron จริงของ `token-refresh` — ห้ามพิมพ์เลขไว้ในข้อความ
+     (19 ก.ย. 2569: เจอคำบอกรอบที่ฝังไว้แล้วกลายเป็นเท็จ 4 ครั้งในวันเดียว)
+     ⚠️ อ่านไม่ได้ ⇒ null แล้วตัดประโยคทิ้ง · ห้ามให้เรื่องนี้ทำให้จอสถานะล้ม */
+  let รอบต่ออายุ = null;
+  try {
+    const { รอบเป็นคำพูด } = await import("./core-freshness.mjs");
+    รอบต่ออายุ = await รอบเป็นคำพูด("token-refresh");
+  } catch { รอบต่ออายุ = null; }
   const [z1, z2, sp, tt, lz, ln] = await Promise.all([
     timed(() => zort("z1", "ZORT_STORENAME", "ZORT_APIKEY", "ZORT_APISECRET"), "ZORT z1", budget),
     timed(() => zort("z2", "ZORT_STORENAME_2", "ZORT_APIKEY_2", "ZORT_APISECRET_2"), "ZORT z2", budget),
@@ -341,7 +349,9 @@ export async function connectionsStatus(opts = {}) {
             return v;
           })(),
           note:
-            "เวลาเป็น UTC · ตัวต่ออายุวิ่งวันละครั้ง 03:30 น. เวลาไทย · " +
+            /* 🔴 ห้ามพิมพ์รอบเวลา — คิดจาก cron จริงของ `token-refresh` (แก้ 19 ก.ย. 2569)
+               อ่านไม่ออก ⇒ ไม่พูดถึงรอบเลย ดีกว่าพูดผิด */
+            `เวลาเป็น UTC${รอบต่ออายุ ? ` · ตัวต่ออายุวิ่ง${รอบต่ออายุ}` : ""} · ` +
             "ก้อนนี้คือบันทึกของรอบนั้น ไม่ใช่สถานะสด — hoursLeft/expired คิดใหม่ตอนอ่านแล้ว " +
             "แต่ connectedAtRun เป็นความจริงของตอนรันเท่านั้น อยากรู้ว่าตอนนี้เชื่อมอยู่ไหมให้ดู groups",
         }

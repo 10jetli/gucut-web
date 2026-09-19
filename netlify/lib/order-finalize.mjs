@@ -125,6 +125,15 @@ export async function finalizeOrder({
   const lines = order.items
     .map((i) => `· ${i.title}${i.variant && i.variant !== "-" ? ` (${i.variant})` : ""} ×${i.qty} = ฿${(i.price * i.qty).toLocaleString("th-TH")}`)
     .join("\n");
+  /* 🔴 รอบส่งซ้ำเข้า ZORT คิดจาก cron จริงของ `beam-sweep` (ตัวกวาดพ่วงงานส่งซ้ำอยู่กับมัน)
+     ⇒ ห้ามพิมพ์ "ทุกครึ่งชั่วโมง" ไว้ในข้อความ — วันที่ใครแก้ตาราง ข้อความจะโกหกทันที
+     ⚠️ อ่านไม่ได้/อ่านรอบไม่ออก ⇒ `null` แล้ว **ตัดประโยคนั้นทิ้ง** (ไม่เดาคำ)
+     ⚠️ ต้องไม่ทำให้การแจ้งเตือนล้ม — แจ้งเตือนช้า/ไม่มีประโยคนี้ ดีกว่าไม่มีแจ้งเตือนเลย */
+  let รอบส่งซ้ำ = null;
+  try {
+    const { รอบเป็นคำพูด } = await import("./core-freshness.mjs");
+    รอบส่งซ้ำ = await รอบเป็นคำพูด("beam-sweep");
+  } catch { รอบส่งซ้ำ = null; }
   const text =
     `🛒 ออเดอร์ใหม่ #${order.id}\n` +
     `${c.name} · ${c.phone}\n\n${lines}\n` +
@@ -142,7 +151,10 @@ export async function finalizeOrder({
       ? `✅ เข้า ZORT แล้ว (เลขที่ ${order.zort.id || order.id})\n`
       : order.zort?.skipped
         ? ""
-        : `⏳ ยังไม่เข้า ZORT (${order.zort?.message || "?"}) — ระบบส่งซ้ำเองทุกครึ่งชั่วโมง\n`) +
+        /* 🔴 **ห้ามพิมพ์รอบเวลาไว้ในข้อความ** (แก้ 19 ก.ย. 2569)
+           ข้อความนี้ออกไปถึงกลุ่มร้าน ⇒ วันที่ใครแก้ cron ของ beam-sweep มันจะโกหกทันที
+           ⇒ คิดจาก cron จริง · อ่านรอบไม่ออก ⇒ **ตัดประโยคนั้นทิ้ง ไม่ใช่เดาคำ** */
+        : `⏳ ยังไม่เข้า ZORT (${order.zort?.message || "?"})${รอบส่งซ้ำ ? ` — ระบบส่งซ้ำเอง${รอบส่งซ้ำ}` : ""}\n`) +
     `\nเปิดดู: ${SITE_URL}/admin/orders/`;
 
   /* 🔴 ย้ายไป `lib/tg.mjs` (18 ก.ย. 2569) — เดิมยิง fetch ตรงนี้ **จึง mock ไม่ได้**
