@@ -465,7 +465,15 @@ const STOREFRONT = [
           else if (/\.(mjs|ts|tsx|js)$/.test(ชื่อ)) ไฟล์.push(p2);
         }
       };
-      for (const d of ["scripts", "netlify", "src"]) { try { เดิน(d); } catch { /* ไม่มีโฟลเดอร์ = ข้าม */ } }
+      /* 🔴 เดิมกลืนเหตุ ⇒ ถ้าอ่านโฟลเดอร์ไม่ได้ (สิทธิ์ · ลิงก์เสีย) หมุดในนั้นจะหายจากการนับ
+         ⇒ จำนวนหมุดต่ำลงเงียบ ๆ ⇒ **คำกล่าวอ้างไม่ถูกตรวจ แต่ผลอ่านว่าผ่าน** (20 ก.ย. 2569) */
+      const รากที่อ่านไม่ได้ = [];
+      for (const d of ["scripts", "netlify", "src"]) {
+        try { เดิน(d); } catch (e) { รากที่อ่านไม่ได้.push(`${d}: ${String(e?.message || e).slice(0, 60)}`); }
+      }
+      if (รากที่อ่านไม่ได้.length) {
+        return { state: "ไม่ผ่าน", why: `อ่านรากไม่ได้ ${รากที่อ่านไม่ได้.length} ที่ ⇒ นับหมุดไม่ครบ: ${รากที่อ่านไม่ได้.join(" · ")}` };
+      }
       const หมุด = [];
       for (const f of ไฟล์) {
         for (const m of readFileSync(f, "utf8").matchAll(/📏วัดได้ยิงจริง\(([^)]+)\)=(\d+)/g)) {
