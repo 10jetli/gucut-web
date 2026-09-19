@@ -2108,7 +2108,13 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "sales") {
-      const ผล = await listSales({ day: url.searchParams.get("day"), limit: url.searchParams.get("limit") });
+      const ผล = await listSales({
+        day: url.searchParams.get("day"),
+        limit: url.searchParams.get("limit"),
+        channel: url.searchParams.get("channel"),
+        status: url.searchParams.get("status"),
+        q: url.searchParams.get("q"),
+      });
       /* 🔎 **ประกาศตัวที่ส่งมาแล้วไม่ได้ใช้ — คิดจากคำขอจริง ไม่ใช่รายชื่อที่พิมพ์ทิ้งไว้**
          ตัวไหนที่ผู้เรียกส่งมาแต่ไม่อยู่ใน `applied` ⇒ เข้า `ignored` ทันที
          🔑 ทำแบบนี้แล้ว **พารามิเตอร์ชื่อใหม่ที่จอคิดขึ้นเอง ก็ถูกฟ้องเองโดยไม่ต้องมีใครมาเติมรายชื่อ**
@@ -2126,7 +2132,7 @@ async function route(req, context) {
         ...(Object.keys(เมิน).length ? {
           ignored: เมิน,
           ignoredNote:
-            "ส่งมาแล้วเส้นนี้ไม่ได้ใช้เลย (เส้นนี้พิจารณาแค่ `day` กับ `limit` ⇒ ดู `applied`) " +
+            "ส่งมาแล้วเส้นนี้ไม่ได้ใช้เลย (ตัวที่ใช้จริงอยู่ใน `applied`) " +
             "⇒ ปุ่มกรองบนจอที่ส่งค่าเหล่านี้ **ไม่มีผลกับผลลัพธ์** ต้องซ่อนปุ่ม หรือมาทำตัวกรองที่ท่อ",
         } : {}),
       });
