@@ -2108,8 +2108,27 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "sales") {
+      const ผล = await listSales({ day: url.searchParams.get("day"), limit: url.searchParams.get("limit") });
+      /* 🔎 **ประกาศตัวที่ส่งมาแล้วไม่ได้ใช้ — คิดจากคำขอจริง ไม่ใช่รายชื่อที่พิมพ์ทิ้งไว้**
+         ตัวไหนที่ผู้เรียกส่งมาแต่ไม่อยู่ใน `applied` ⇒ เข้า `ignored` ทันที
+         🔑 ทำแบบนี้แล้ว **พารามิเตอร์ชื่อใหม่ที่จอคิดขึ้นเอง ก็ถูกฟ้องเองโดยไม่ต้องมีใครมาเติมรายชื่อ**
+            (รายชื่อที่พิมพ์ไว้จะค้างทันทีที่มีคนเพิ่มปุ่มใหม่ — คลาสเดียวกับเลขที่โตเอง)
+         ⚠️ `ignored` = "ส่งมาแล้วไม่ได้ใช้" **ไม่ได้บอกว่าควรมีหรือไม่ควรมี** — อันนั้นคนตัดสิน */
+      const พิจารณา = new Set(Object.keys(ผล?.applied ?? {}));
+      const ไม่นับ = new Set(["list"]);
+      const เมิน = {};
+      for (const [k, v] of url.searchParams.entries()) {
+        if (ไม่นับ.has(k) || พิจารณา.has(k)) continue;
+        เมิน[k] = String(v).slice(0, 60);
+      }
       return okJson({
-        ...(await listSales({ day: url.searchParams.get("day"), limit: url.searchParams.get("limit") })),
+        ...ผล,
+        ...(Object.keys(เมิน).length ? {
+          ignored: เมิน,
+          ignoredNote:
+            "ส่งมาแล้วเส้นนี้ไม่ได้ใช้เลย (เส้นนี้พิจารณาแค่ `day` กับ `limit` ⇒ ดู `applied`) " +
+            "⇒ ปุ่มกรองบนจอที่ส่งค่าเหล่านี้ **ไม่มีผลกับผลลัพธ์** ต้องซ่อนปุ่ม หรือมาทำตัวกรองที่ท่อ",
+        } : {}),
       });
     }
     // SKU ที่ Shopee ขายอยู่แต่คลังเราไม่รู้จัก (พร้อมเดารหัสฐานให้) — ให้จอเตือนเอาไปโชว์
