@@ -15,6 +15,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
+import { เล่นประวัติซ้ำไหม } from "../lib/เล่นประวัติซ้ำไหม.mjs";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -34,22 +35,6 @@ const ราก = fileURLToPath(new URL("../..", import.meta.url));
       ทันทีที่โลกข้างนอกขยับ — โดยไม่มีอะไรฟ้อง
    ⇒ วิธีวัดจึงต้องประกาศว่า `นอกรีโป` และตอน **เล่นประวัติซ้ำ** ให้เป็น "ต้องมาดู" ไม่ใช่ "ตก"
    🚫 แต่ที่ปลายกิ่ง (ปัจจุบัน) ต้อง **ตกเหมือนเดิม** ไม่งั้นหมุดจะไม่มีใครมาอัปเดต */
-/* 🔴 **`--format=%(objectname)` ต้องอยู่ในเครื่องหมายคำพูด** — `execSync` ใช้ `/bin/sh`
-   ไม่ใส่ = `Syntax error: "(" unexpected` ⇒ โยน ⇒ `catch` คืน "อยู่ปัจจุบัน" ⇒ **ตกเหมือนไม่มีของใหม่**
-   🔑 ผมพลาดข้อนี้ทันทีที่เขียนฟังก์ชันนี้ และมันพังไป **ทางเดียวกับสัญญาณเตือน**
-      ⇒ เห็นผล "ตก" แล้วเกือบสรุปว่า "ตรรกะใหม่ใช้ไม่ได้" ทั้งที่เป็นเรื่องเครื่องหมายคำพูด
-   ⇒ จึงคืนค่าเป็นสามสถานะ และ **ทางถอยต้องประกาศตัว** ไม่ใช่เงียบแล้วเข้มขึ้นเฉย ๆ */
-const กำลังเล่นประวัติซ้ำ = () => {
-  try {
-    const head = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-    const ปลายกิ่ง = execSync('git for-each-ref "--format=%(objectname)" refs/heads', { encoding: "utf8" })
-      .split("\n").map((x) => x.trim()).filter(Boolean);
-    if (!ปลายกิ่ง.length) return { ตอบไม่ได้: "ไม่มีกิ่งในรีโปนี้เลย" };
-    return { ใช่: !ปลายกิ่ง.includes(head) };
-  } catch (e) {
-    return { ตอบไม่ได้: `ถาม git ไม่ได้: ${String(e?.message || e).slice(0, 80)}` };
-  }
-};
 
 const วิธีวัด = {
   "ไฟล์ใน ~/bin ที่ยิง gucut.com/api/": Object.assign(() => {
@@ -103,7 +88,7 @@ test("เลขในหมุดต้องตรงกับที่วั�
   assert.ok(หมุด.length > 0, "ไม่มีหมุดเลย = กติกานี้ยังไม่ถูกใช้ ⇒ ถือว่าตะแกรงพัง");
   const ข้าม = [];
   const ต้องมาดู = [];
-  const สภาพ = กำลังเล่นประวัติซ้ำ();
+  const สภาพ = เล่นประวัติซ้ำไหม();
   /* ตอบไม่ได้ ⇒ เข้มไว้ (ถือว่าอยู่ปัจจุบัน) **แต่ต้องพูดออกมา** ไม่ใช่เงียบ */
   if (สภาพ.ตอบไม่ได้) t.diagnostic(`⚠️ แยกไม่ออกว่าอยู่ปลายกิ่งหรือเล่นประวัติซ้ำ (${สภาพ.ตอบไม่ได้}) ⇒ ตัดสินแบบเข้ม`);
   const เล่นซ้ำ = สภาพ.ใช่ === true;
