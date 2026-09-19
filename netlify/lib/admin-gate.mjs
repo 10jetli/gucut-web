@@ -57,7 +57,10 @@ const json = (o, s = 200) =>
   });
 
 // เทียบรหัสแบบใช้เวลาเท่ากันเสมอ ไม่ว่าจะตรงกี่ตัว
-function same(a, b) {
+/* 🔓 export เพิ่ม 19 ก.ย. 2569 ค่ำ — **เพื่อให้เทสแตะถึงได้ ไม่แตะพฤติกรรม**
+   🔴 coverage บอกว่าไฟล์นี้ `funcs 0%` ทั้งที่เป็น **ด่านตรวจรหัสของ API หลังร้านทุกเส้น**
+      ⇒ ของที่ทั้งระบบพึ่ง แต่ตาข่ายไม่เคยแตะ (กองเดียวกับ `lib-notify` ฝั่งจอ) */
+export function same(a, b) {
   const x = Buffer.from(String(a), "utf8");
   const y = Buffer.from(String(b), "utf8");
   if (x.length !== y.length) {
@@ -74,14 +77,14 @@ function same(a, b) {
     ⇒ ตัวนับที่ผูกกับตัวหน้า = ยิงเดาได้ไม่จำกัด **ตัวกันเดาเท่ากับไม่มี**
     ตัวที่ผู้ให้บริการเติมท้ายสุดคือค่าที่ใกล้ความจริงที่สุดเท่าที่ชั้นนี้จะรู้ได้
     ⚠️ ตัวนี้เป็น**ทางสำรองชั้นที่สาม**เท่านั้น — ปกติ `context.ip` ของ Netlify มาก่อนเสมอ */
-const lastForwardedFor = (req) => {
+export const lastForwardedFor = (req) => {
   const raw = req?.headers?.get?.("x-forwarded-for");
   if (!raw) return "";
   const parts = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "";
 };
 
-const who = (req, context) =>
+export const who = (req, context) =>
   context?.ip ||
   req.headers.get("x-nf-client-connection-ip") ||
   lastForwardedFor(req) ||
