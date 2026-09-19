@@ -20,6 +20,7 @@
  *    (คำกำชับของฝั่งจอ · ด่านนี้ตอบได้แค่ "ไม่ได้ตรวจข้อความล้วน" ไม่ได้ตอบว่า "ตรวจแน่นพอ")
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { เตือนถ้ามีไฟล์ซ้อนชั้น } from "./lib/ไฟล์ซ้อนชั้นที่ด่านมองไม่เห็น.mjs";
 
 const ไทย = /[฀-๿]/;
 /* รูปที่ถือว่าเป็น "กลไก" — ถ้าแพตเทิร์นมีอันใดอันหนึ่ง ถือว่าจับกลไก ไม่ใช่คำบรรยาย */
@@ -37,6 +38,10 @@ const ใช้ตัวถอดคอมเมนต์ = [];
 let ไฟล์เทสทั้งหมด = 0;
 let ไฟล์ที่อ่านซอร์ส = 0;
 
+/* 🔑 กวาด `scripts/tests` ชั้นเดียว ⇒ เทสในโฟลเดอร์ย่อยจะหลุดเงียบ ๆ (20 ก.ย. 2569) */
+if (เตือนถ้ามีไฟล์ซ้อนชั้น(["scripts/tests"], (n) => n.endsWith(".test.mjs"), "check-source-gates")) {
+  process.exit(1);
+}
 for (const f of readdirSync("scripts/tests").filter((x) => x.endsWith(".test.mjs"))) {
   ไฟล์เทสทั้งหมด++;
   const s = readFileSync(`scripts/tests/${f}`, "utf8");

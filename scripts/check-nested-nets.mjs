@@ -22,6 +22,7 @@
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { เตือนถ้ามีไฟล์ซ้อนชั้น } from "./lib/ไฟล์ซ้อนชั้นที่ด่านมองไม่เห็น.mjs";
 
 const โฟลเดอร์ = ["netlify/lib", "netlify/functions"];
 
@@ -38,6 +39,11 @@ const ตาข่าย = [
  *     ⇒ ของที่ตะแกรงนี้ไม่เจอ ห้ามอ่านว่า "ไม่มี" */
 const คำสวิตช์ = /\b(mode|source|mirror|live|dry|cache|cached|stale|enabled?|disabled?|flag|switch|process\.env|เปิด|ปิด|โหมด|แหล่ง)\b/i;
 
+/* 🔑 กวาด netlify/lib · netlify/functions ชั้นเดียว ⇒ ไฟล์ในโฟลเดอร์ย่อยจะหลุดเงียบ ๆ
+   (วัดแล้ว 20 ก.ย. 2569: ทั้งสองรากแบนจริง 0 ไฟล์) */
+if (เตือนถ้ามีไฟล์ซ้อนชั้น(โฟลเดอร์, (n) => n.endsWith(".mjs"), "check-nested-nets")) {
+  process.exit(1);
+}
 const ผล = [];
 let ไฟล์ที่สแกน = 0;
 let ตาข่ายที่เจอ = 0;

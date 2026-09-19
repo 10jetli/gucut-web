@@ -19,6 +19,7 @@
  * ใช้: node scripts/check-attestation-ratio.mjs [--รายไฟล์]
  */
 import { readdirSync, readFileSync } from "node:fs";
+import { เตือนถ้ามีไฟล์ซ้อนชั้น } from "./lib/ไฟล์ซ้อนชั้นที่ด่านมองไม่เห็น.mjs";
 
 const ไดเรกทอรี = "scripts/tests";
 /* คำรับรอง = assert ที่ตรวจ **เนื้อไฟล์/ข้อความที่คนเขียนไว้** ⇒ เขียนข้อความให้ตรงก็ผ่าน
@@ -32,6 +33,11 @@ let คำรับรองแน่ = 0;  // assert ที่สิ่งถ�
 let แยกไม่ออก = 0;    // assert ในไฟล์ที่อ่านซอร์ส แต่ตัวที่ถูกตรวจชื่ออะไรก็ไม่รู้
 const รายไฟล์ = [];
 
+/* 🔑 ด่านนี้กวาด `scripts/tests` **ชั้นเดียว** ⇒ ต้องรู้ตัวถ้ามีเทสย้ายลงโฟลเดอร์ย่อย
+   (วัดแล้ว 20 ก.ย. 2569: ยังแบนจริง 0 ไฟล์ ⇒ ด่านถูกวันนี้ แต่ถูกเพราะข้อเท็จจริงนอกตัวมันเอง) */
+if (เตือนถ้ามีไฟล์ซ้อนชั้น([ไดเรกทอรี], (n) => n.endsWith(".test.mjs"), "check-attestation-ratio")) {
+  process.exit(1);
+}
 for (const f of readdirSync(ไดเรกทอรี).filter((x) => x.endsWith(".test.mjs"))) {
   ไฟล์ += 1;
   const s = readFileSync(`${ไดเรกทอรี}/${f}`, "utf8");
