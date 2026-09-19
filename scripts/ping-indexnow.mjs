@@ -17,6 +17,32 @@ const root = process.cwd();
 const SITE = (process.env.NEXT_PUBLIC_SITE_URL || "https://gucut.com").replace(/\/$/, "");
 const host = new URL(SITE).hostname;
 
+/* 🔴 **ห้ามยิงออกนอกบ้านตอน build ในเครื่อง** (เพิ่ม 19 ก.ย. 2569)
+   เจอตอนรัน `npm run build` ในเครื่องเพื่อ **ตรวจ** ว่า build ผ่าน ⇒ postbuild
+   ยิง IndexNow บอก Bing/Yandex ว่า 10 หน้าเปลี่ยนแล้ว **ทั้งที่ไม่มีอะไร deploy ขึ้นไปเลย**
+   (วันนี้เป็นวันหยุด deploy ⇒ ข้อมูลที่ส่งไปเป็นเท็จโดยสมบูรณ์)
+   ⇒ ยิงซ้ำทุกครั้งที่ใครตรวจ build = สแปม ซึ่งไฟล์นี้เตือนตัวเองไว้ข้างบนแล้วว่าเสี่ยงโดนเมินทั้งโดเมน
+   🔑 คลาส: **ขั้นตอน "ตรวจ" ต้องไม่มีผลออกนอกบ้าน**
+
+   ⚠️ **ความเสี่ยงของตัวกันนี้เอง: ถ้าเดาชื่อตัวแปรผิด IndexNow จะไม่ยิงอีกตลอดกาลแบบเงียบ**
+      = เอาของที่ทำงานอยู่ไปพัง ซึ่งแย่กว่าปัญหาที่กำลังแก้
+      ⇒ จึงดูหลายตัว **และพิมพ์เหตุผลออกมาทุกครั้ง** ⇒ ถ้าวันหนึ่งมันข้ามบน Netlify จริง
+        บรรทัดนี้จะอยู่ใน build log ให้เห็น (ทางถอยต้องประกาศตัวเมื่อถูกใช้)
+      ⚠️ ยังไม่ได้ยืนยันด้วย build จริงบน Netlify — **ต้องดู build log รอบแรกหลังปลดวันหยุด deploy**
+   ⚠️ ปลดล็อกมือได้ด้วย `INDEXNOW_FORCE=1` */
+const ตัวบ่งชี้Netlify = ["NETLIFY", "DEPLOY_PRIME_URL", "NETLIFY_BUILD_BASE", "BUILD_ID", "SITE_NAME"]
+  .filter((k) => process.env[k]);
+if (!ตัวบ่งชี้Netlify.length && process.env.INDEXNOW_FORCE !== "1") {
+  console.log(
+    "ping-indexnow: ข้าม — ไม่พบตัวบ่งชี้ว่า build บน Netlify (หาจาก NETLIFY · DEPLOY_PRIME_URL · " +
+    "NETLIFY_BUILD_BASE · BUILD_ID · SITE_NAME) ⇒ การ build ในเครื่องต้องไม่ยิงบอกเครื่องค้นหา\n" +
+    "   ⚠️ ถ้าเห็นบรรทัดนี้ใน build log ของ Netlify แปลว่าชื่อตัวแปรที่ใช้ตรวจผิด — ต้องแก้ทันที"
+  );
+  process.exit(0);
+}
+if (process.env.INDEXNOW_FORCE === "1") console.log("ping-indexnow: สั่งยิงด้วยมือ (INDEXNOW_FORCE=1)");
+else console.log(`ping-indexnow: อยู่บน Netlify (เจอ ${ตัวบ่งชี้Netlify.join(", ")}) ⇒ ยิงตามปกติ`);
+
 let key = "";
 try {
   key = JSON.parse(fs.readFileSync(path.join(root, "src/lib/indexnow-key.json"), "utf8")).key;
