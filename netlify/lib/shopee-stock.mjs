@@ -577,7 +577,14 @@ export async function shopeeStockCompare(o = {}) {
       if (ป้าย.kind === "bundle_multi_part") missingBundleMultiPart += 1;
       // ต้องเห็นตัวอย่างด้วย ไม่งั้นบอกไม่ได้ว่าเป็นสินค้าที่ไม่มีใน ZORT
       // หรือเป็นแค่ชื่อ SKU เขียนคนละแบบ (ตัวพิมพ์ · ขีด · เว้นวรรค)
-      if (missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name, ...ป้าย });
+      /* 🔴 **ขอ full ต้องได้รายชื่อครบ** (แก้ 19 ก.ย. 2569 · ฝั่งจอจับได้)
+         ของเดิมตัดที่ 20 **ทุกกรณี** ⇒ ตัวนับบอก 31 แต่รายชื่อมี 26 ⇒ มี 5 รหัสที่นับแล้วไม่มีชื่อ
+         ⇒ จอขึ้นคำเตือน "มีเลขแต่ไม่มีรายการ" แล้ว **ไล่ต่อไม่ได้ว่า 5 ตัวนั้นอยู่กองไหน**
+         🔑 คลาส: **เลขเพื่อการแสดงผลถูกเอาไปตัดสินใจ** — ตัวนับมาจาก `missing`
+            แต่รายชื่อมาจากตัวอย่างที่ถูกตัด ⇒ สองค่ามาจากคนละที่โดยไม่มีใครประกาศ
+         📌 `lazada.mjs` แก้ข้อนี้ไปแล้วตั้งแต่ก่อน (`o.full || …`) — เหลือ shopee กับ tiktok
+            ⇒ ของจริงคือ **แก้ไปแล้ว 1 จาก 3 เจ้า** แล้วไม่มีใครรู้ว่าอีกสองเจ้ายังไม่แก้ */
+      if (o.full || missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name, ...ป้าย });
       continue;
     }
     const ours = snap.get(r.sku);
@@ -596,6 +603,10 @@ export async function shopeeStockCompare(o = {}) {
        ⇒ ปลายทางต้องเขียนคำให้ตรง: ไม่ใช่ "คลังไม่รู้จัก" แต่เป็น "คิดจำนวนจากสูตรหลายชิ้นไม่ได้" */
     missingBundleMultiPart,
     missingNotInWarehouse: missing - missingBundleMultiPart,
+    /* 📏 ประกาศว่า **รายชื่อครบหรือถูกตัด** — ห้ามให้ปลายทางเดาจากการนับความยาว
+       (ตัวนับ `missing` กับความยาว `missingSample` มาจากคนละที่ ⇒ ไม่เท่ากันได้โดยไม่ใช่บั๊ก) */
+    missingSampleครบ: Boolean(o.full) || missingSample.length >= missing,
+    missingSampleเพดาน: o.full ? null : 20,
     // จับคู่ได้เพราะมีสูตรชุด (ไม่ใช่การเดา) — เดิมตกอยู่ในกอง "คลังไม่รู้จัก" ทั้งหมด
     matchedByRecipe: viaRecipe,
     bundlesWithRecipe: recipe.size,

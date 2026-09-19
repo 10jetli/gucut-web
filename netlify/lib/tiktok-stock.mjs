@@ -242,7 +242,9 @@ export async function tiktokStockCompare(o = {}) {
       core = num(snap.get(r.sku));
     } else {
       missing++;
-      if (missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name });
+      /* 🔴 **ขอ full ต้องได้รายชื่อครบ** (แก้ 19 ก.ย. 2569 — เหตุผลเต็มอยู่ใน shopee-stock.mjs)
+         ตัวนับมาจาก `missing` · รายชื่อมาจากตัวอย่างที่ถูกตัด ⇒ เลขไม่ตรงกันโดยไม่มีใครประกาศ */
+      if (o.full || missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name });
       continue;
     }
     if (core === num(r.qty)) same++;
@@ -256,6 +258,9 @@ export async function tiktokStockCompare(o = {}) {
     noSellerSku: noSku,
     same,
     missing,
+    /* 📏 รายชื่อครบหรือถูกตัด — ห้ามให้ปลายทางเดาจากการนับความยาว */
+    missingSampleครบ: Boolean(o.full) || missingSample.length >= missing,
+    missingSampleเพดาน: o.full ? null : 20,
     viaRecipe,
     diffCount: diff.length,
     diff,
