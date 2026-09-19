@@ -18,6 +18,8 @@
 const API_VERSION = "v21";
 const HOST = `https://googleads.googleapis.com/${API_VERSION}`;
 
+import { ตรวจช่องเงินโฆษณาหาย } from "./adstats.mjs";
+
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
 /** เลขบัญชีของ Google เขียนกันหลายแบบ (745-572-5873) — API รับแต่ตัวเลขล้วน */
@@ -110,7 +112,20 @@ export async function googleInsights(cfg, { since, until }) {
 
   const rows = [...byName.values()];
   rows.sort((a, b) => b.spend - a.spend);
-  return rows;
+  /* 🔎 ด่านเดียวกับฝั่ง Facebook — **ใช้แกนกลางตัวเดียว กติกาไม่แตกสองที่**
+     ⚠️ ตรวจจาก **แถวดิบ** ไม่ใช่แถวที่รวมแล้ว เพราะการรวมใช้ `num()` ซึ่งกลืน
+        "ไม่มีช่อง" เป็น 0 ไปแล้ว ⇒ ตรวจของที่ถูกกลืนแล้วจะไม่เจออะไรตลอดกาล
+        (คลาสเดียวกับ "ตัวตรวจที่ใช้สมมติฐานร่วมกับตัวที่ถูกตรวจ")
+     💰 `costMicros` เป็น int64 ⇒ Google ส่งมาเป็น **สตริง** ตามปกติของ REST API เจ้านี้
+        ⇒ ช่องหาย (เปลี่ยนชื่อ/ไม่ได้ขอ field มา) ⇒ 0 ⇒ "ไม่ได้ใช้เงิน" ⇒ ROAS เป็นอนันต์ */
+  const ดิบ = chunks.flatMap((c) => c?.results || []);
+  const เตือน = ตรวจช่องเงินโฆษณาหาย(ดิบ, {
+    อ่านเงิน: (r) => r?.metrics?.costMicros,
+    อ่านแสดงผล: (r) => r?.metrics?.impressions,
+    เจ้า: "Google Ads",
+    ไฟล์: "googleads.mjs",
+  });
+  return เตือน ? Object.assign(rows, { fieldWarning: เตือน }) : rows;
 }
 
 // ---------------------------------------------------------------------------

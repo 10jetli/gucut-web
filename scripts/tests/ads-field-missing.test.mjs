@@ -63,3 +63,37 @@ test("ยอดแสดงผลที่มีจุลภาค ต้อง�
   const เตือน = ตรวจช่องค่าโฆษณาหาย([{ campaign_name: "A", impressions: "1,500" }]);
   assert.match(String(เตือน), /1 จาก 1/);
 });
+
+/* ── ฝั่ง Google Ads ใช้แกนกลางตัวเดียวกัน แต่ **ชื่อช่องคนละชุด** ────────────────
+   ⚠️ เทสข้างบนพิสูจน์แกนกลาง · ชุดนี้พิสูจน์ **การต่อสายชื่อช่องของ Google**
+      (ผลถูกไม่ได้แปลว่าสายที่ต่อถูก — ต้องมีเทสที่เดินผ่านสายนั้นจริง) */
+import { ตรวจช่องเงินโฆษณาหาย } from "../../netlify/lib/adstats.mjs";
+
+const สายGoogle = {
+  อ่านเงิน: (r) => r?.metrics?.costMicros,
+  อ่านแสดงผล: (r) => r?.metrics?.impressions,
+  เจ้า: "Google Ads",
+  ไฟล์: "googleads.mjs",
+};
+
+test("Google: ช่อง costMicros หายแต่มียอดแสดงผล ⇒ เตือน และบอกชื่อเจ้ากับไฟล์ที่ต้องแก้", () => {
+  const เตือน = ตรวจช่องเงินโฆษณาหาย(
+    [{ campaign: { name: "A" }, metrics: { impressions: "2000", clicks: "30" } }], สายGoogle);
+  assert.match(String(เตือน), /Google Ads/);
+  assert.match(String(เตือน), /googleads\.mjs/, "ต้องบอกไฟล์ที่ต้องไปแก้ ไม่ใช่แค่บอกว่าเสีย");
+});
+
+test("Google: costMicros เป็นสตริง (int64 ของ REST API) ⇒ ไม่เตือน", () => {
+  /* Google ส่ง int64 เป็นสตริงตามปกติ — ถ้าด่านเตือนกรณีนี้ = แดงลวงทุกวัน */
+  assert.equal(ตรวจช่องเงินโฆษณาหาย(
+    [{ campaign: { name: "A" }, metrics: { impressions: "2000", costMicros: "3830000000" } }], สายGoogle), null);
+});
+
+test("Google: costMicros เป็น \"0\" (ยิงแล้วยังไม่เสียเงิน) ⇒ ไม่เตือน", () => {
+  assert.equal(ตรวจช่องเงินโฆษณาหาย(
+    [{ campaign: { name: "A" }, metrics: { impressions: "5", costMicros: "0" } }], สายGoogle), null);
+});
+
+test("Google: ไม่มีก้อน metrics เลย + ไม่มียอดแสดงผล ⇒ ไม่เตือน (แคมเปญที่ไม่ได้ยิง)", () => {
+  assert.equal(ตรวจช่องเงินโฆษณาหาย([{ campaign: { name: "A" } }], สายGoogle), null);
+});
