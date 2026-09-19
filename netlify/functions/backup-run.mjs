@@ -15,7 +15,17 @@ export default async () => {
      ⚠️ `left > 0` **ไม่ใช่ล้ม** — รอบนี้หมดงบเวลา 18 วิ แล้วรอบถัดไปเก็บต่อเองตามดีไซน์ */
   const t = await วัดเวลางาน("backup-run", () => runBackup(18000), {
     ตัดสินผล: (x) => (x?.totals?.failed ? "failed" : x?.totals ? "ok" : null),
-    อธิบาย: (x) => (x?.totals ? `saved ${x.totals.saved} · keys ${x.totals.keys} · left ${x.totals.left} · failed ${x.totals.failed}` : null),
+    /* 🔴 **failed ต้องบอกว่า "ถังไหน และเพราะอะไร" ไม่ใช่แค่จำนวน** (แก้ 19 ก.ย. ค่ำ)
+       ของจริงเมื่อ 19:40: สมุดจดว่า `failed 1` ⇒ รู้ว่ามีถังพัง **แต่ไม่รู้ว่าถังไหน**
+       ⇒ ต้องไปเปิด `?backupstatus=1` เทียบเวลาเองทีละถัง และยังไม่ได้เหตุผลอยู่ดี
+       🔑 คลาสเดิมของวันนี้: **เลขที่ไม่มีตัวตนกำกับ ใช้ลงมือต่อไม่ได้**
+          (`runBackup` เก็บ `error` ของถังนั้นไว้แล้ว — ผมแค่ไม่ได้เอามาใส่ในสมุด) */
+    อธิบาย: (x) => {
+      if (!x?.totals) return null;
+      const พัง = (x.stores ?? []).filter((s) => s?.error).map((s) => `${s.store}: ${s.error}`);
+      return `saved ${x.totals.saved} · keys ${x.totals.keys} · left ${x.totals.left} · failed ${x.totals.failed}` +
+        (พัง.length ? ` · ถังที่พัง ⇒ ${พัง.join(" | ")}` : "");
+    },
   });
   const r = t.ผลลัพธ์;
   console.log("backup:", JSON.stringify(r?.totals ?? r), "· จดเวลา:", t.จดเวลา, `· ${t.ms} ms`);
