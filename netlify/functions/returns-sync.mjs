@@ -7,21 +7,44 @@
 // ⚠️ ไม่มี URL (Netlify ไม่ให้ schedule พร้อม path) · สั่งเดี๋ยวนั้น: GET /api/core?syncreturns=1
 //    (commit bea658d เขียนชื่อผิดเป็น ?syncreturnorders=1 ซึ่งตกไปคำตอบหน้าแรก — แก้ 15 ก.ย. 2569)
 // ⚠️ ล้มหรือไม่ครบต้องส่งเสียง — ไม่งั้นยอดหักคืนผิดโดยจอยังโชว์เลขสวย (จอเห็นได้จาก returnsSyncedAtUtc/returnsSyncComplete ด้วย)
+// ⏱️ จดเวลาตัวเองลงสมุด job_run_log ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
+//    ⚠️ รอบนี้ทำสองร้าน (z1+z2) ⇒ จดเป็น **รอบเดียว** เพราะทั้งคู่ใช้งบเวลาก้อนเดียวกัน
 import { syncReturnOrders } from "../lib/core-purchases.mjs";
+import { วัดเวลางาน } from "../lib/job-timing.mjs";
 
 export default async function handler() {
+  /* ⏱️ ครอบทั้งรอบ (z1+z2) ไว้ในการวัดครั้งเดียว — แต่ **try ของแต่ละร้านยังแยกกันเหมือนเดิม**
+     z2 ล้มต้องไม่ลาก z1 · และเวลาที่จดต้องเป็นเวลารวมของรอบ ซึ่งคือสิ่งที่กินงบฟังก์ชันจริง */
   let r;
-  try {
-    r = await syncReturnOrders({ pages: 12 });
-  } catch (e) {
-    r = { ok: false, error: String(e?.message || e).slice(0, 300) };
-  }
-  // ร้าน z2 (15 ก.ย. 2569 · ใบ t_mu2pfve9) — แยก try ของตัวเอง · ล้มไม่ลาก z1
   let rz2;
-  try {
-    rz2 = await syncReturnOrders({ pages: 12, store: "z2" });
-  } catch (e) {
-    rz2 = { ok: false, error: String(e?.message || e).slice(0, 300) };
+  let จดเวลา = null;
+  {
+    const t = await วัดเวลางาน("returns-sync", async () => {
+      let a;
+      try {
+        a = await syncReturnOrders({ pages: 12 });
+      } catch (e) {
+        a = { ok: false, error: String(e?.message || e).slice(0, 300) };
+      }
+      // ร้าน z2 (15 ก.ย. 2569 · ใบ t_mu2pfve9) — แยก try ของตัวเอง · ล้มไม่ลาก z1
+      let b;
+      try {
+        b = await syncReturnOrders({ pages: 12, store: "z2" });
+      } catch (e) {
+        b = { ok: false, error: String(e?.message || e).slice(0, 300) };
+      }
+      return { z1: a, z2: b };
+    }, {
+      // ล้มถ้าร้านใดร้านหนึ่งมี error หรือดึงมาไม่ครบ (complete === false) · skip ไม่ใช่ล้ม
+      ตัดสินผล: (x) => {
+        const เสีย = (o) => !!o?.error || (!o?.skip && o?.complete === false);
+        return เสีย(x?.z1) || เสีย(x?.z2) ? "failed" : "ok";
+      },
+      อธิบาย: (x) => `z1 fetched ${x?.z1?.fetched ?? "?"} · z2 fetched ${x?.z2?.fetched ?? "?"}`,
+    });
+    r = t.ผลลัพธ์.z1;
+    rz2 = t.ผลลัพธ์.z2;
+    จดเวลา = t.จดเวลา;
   }
   const problem = r?.error
     ? `ล้ม: ${r.error}`
@@ -64,7 +87,8 @@ export default async function handler() {
       }).catch(() => null);
     }
   }
-  return new Response(JSON.stringify({ ...r, z2: rz2 }), { headers: { "content-type": "application/json" } });
+  if (จดเวลา && จดเวลา !== "ok") console.log(`⏱️ จดเวลา returns-sync ไม่ได้: ${จดเวลา}`);
+  return new Response(JSON.stringify({ ...r, z2: rz2, จดเวลา }), { headers: { "content-type": "application/json" } });
 }
 
 /* นาทีที่ 7 — ไม่ชน core-sync (:13/:43) · beam-sweep (:00/:30) · bundle-recipe-sync (วันละครั้ง 03:00 UTC — เดิม :27/:57 เปลี่ยน 18 ก.ย. 2569) · backup (:40)

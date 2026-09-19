@@ -1,0 +1,89 @@
+#!/usr/bin/env node
+/* 🔑 อ่าน **ชุดคีย์ของ `applied`** ของทุกเส้น `list=` — คำประกาศที่เส้นนั้นพูดเอง
+ *
+ * 🔴 ที่มา 19 ก.ย. 2569 — ผมสร้างตัววัดสองรุ่นก่อนหน้านี้ และ **ผิดทั้งสองรุ่น**
+ *    รุ่น ① สกัดชื่อจากซอร์ส ⇒ ผิดทั้งสองทิศ (ฝั่งจอพิสูจน์)
+ *    รุ่น ② ยิงค่ามั่วแล้วเทียบจำนวนแถว ⇒ **ยังกำกวม** เพราะ "แถวเท่าเดิม" แยกสามกรณีนี้ไม่ออก:
+ *      · ท่อเมินตัวกรองนี้  · ท่อเมินเฉพาะ **ค่านี้**  · ค่ามั่วดันไปตรงของจริง
+ *      ⇒ ของจริง: ผมสรุปว่า `carrier` ของ logistics เป็นปุ่มหลอก **ผิด**
+ *        ฝั่งจอยิงด้วยชื่อขนส่งจริง: total 35,781 → 32,499 ⇒ **กรองจริง**
+ *
+ * ✅ **รุ่นนี้ไม่เดาอะไรเลย** — ยิงเปล่า 1 ครั้งต่อเส้น แล้วอ่าน **ชุดคีย์** ของ `applied`
+ *    วัดจริงแล้วว่าชุดคีย์ **คงที่ ไม่ขึ้นกับค่าที่ส่งไป** (ยิง 3 แบบได้ชุดเดียวกัน)
+ *    ⇒ ชุดคีย์นั้นคือ **รายการพารามิเตอร์ที่เส้นนั้นพิจารณา** = คำประกาศที่เชื่อได้
+ *    🔑 **ท่อรู้คำตอบและบอกอยู่แล้ว — สองรุ่นก่อนหน้าผมไปเดาจากอาการ**
+ *       (คลาสเดียวกับบทเรียน "ถามอีกฝ่าย ก่อนจ่ายเงินไปวัดสถานะของเขา")
+ *
+ * ⚠️ สิ่งที่ชุดคีย์ **ไม่** บอก: ค่าที่ส่งไปใช้ได้ไหม ⇒ อันนั้นดูที่ `ignored` ต่อคำขอ
+ *    ⇒ สองช่องตอบคนละคำถาม: `applied` = "พิจารณาอะไร" · `ignored` = "ค่าที่ส่งมารอบนี้ใช้ไม่ได้ตัวไหน"
+ * ⚠️ เส้นที่ **ไม่มี `applied`** ⇒ `null` = **ยังไม่รู้** ไม่ใช่ "ไม่รับตัวกรองอะไร"
+ *    ⇒ และนั่นคือช่องว่างฝั่งท่อที่ควรปิด: ให้ทุกเส้น `list=` ส่ง `applied` ⇒ เลิกต้องเดาตลอดกาล
+ *
+ * ใช้: node scripts/probe-applied-keys.mjs [--write]
+ */
+import { readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
+import { lists } from "../netlify/lib/endpoints.mjs";
+
+let KEY = "";
+try {
+  KEY = readFileSync(join(homedir(), ".gucut-admin-key"), "utf8").trim();
+} catch {
+  console.error("❌ อ่าน ~/.gucut-admin-key ไม่ได้ — **วัดไม่ได้ทั้งชุด ไม่ใช่ 'ผ่าน'**");
+  process.exit(2);
+}
+const SITE = process.env.SITE || "https://gucut.com";
+const เขียนไฟล์ = process.argv.includes("--write");
+
+const ผล = {};
+let มีapplied = 0;
+console.log(`🔑 อ่านชุดคีย์ของ applied — ${SITE}\n`);
+
+for (const ชื่อ of lists) {
+  let d = null;
+  let err = null;
+  try {
+    const r = await fetch(`${SITE}/api/core?list=${encodeURIComponent(ชื่อ)}&limit=1`, {
+      headers: { "x-admin-key": KEY },
+      signal: AbortSignal.timeout(60000),
+    });
+    d = await r.json().catch(() => null);
+    if (!d) err = `ตอบ ${r.status} แต่อ่าน JSON ไม่ได้`;
+  } catch (e) {
+    err = String(e?.message || e).slice(0, 100);
+  }
+  if (err) {
+    console.log(`⚠️  ${ชื่อ} — ยิงไม่สำเร็จ: ${err} ⇒ **ยังไม่ได้วัด ไม่ใช่ตก**`);
+    ผล[ชื่อ] = { พิจารณา: null, เหตุ: `ยิงไม่สำเร็จ: ${err}` };
+    continue;
+  }
+  const ap = d.applied;
+  const ชื่อจริง = d.appliedParamNames ?? null;   // แผนที่ชื่อบนจอ → ชื่อพารามิเตอร์จริง
+  if (!ap || typeof ap !== "object" || Array.isArray(ap)) {
+    console.log(`⬜ ${ชื่อ} — **ไม่ส่ง applied** ⇒ ยังไม่รู้ว่าเส้นนี้พิจารณาอะไร`);
+    ผล[ชื่อ] = { พิจารณา: null, เหตุ: "เส้นนี้ไม่ส่ง applied ⇒ ต้องเพิ่มที่ฝั่งท่อ" };
+    continue;
+  }
+  มีapplied++;
+  const คีย์ = Object.keys(ap).sort();
+  ผล[ชื่อ] = { พิจารณา: คีย์, ชื่อบนจอ: ชื่อจริง, วัดเมื่อ: new Date().toISOString().slice(0, 10) };
+  console.log(`✅ ${ชื่อ} — พิจารณา: ${คีย์.join(" ")}${ชื่อจริง ? ` · แผนที่ชื่อ: ${JSON.stringify(ชื่อจริง)}` : ""}`);
+}
+
+console.log(
+  `\nมี applied: ${มีapplied} จาก ${lists.length} เส้น` +
+  "\n⬜ ที่ยังไม่มี = ช่องว่างฝั่งท่อ ⇒ เพิ่ม applied แล้วปลายทางเลิกต้องเดาตลอดกาล" +
+  "\n⚠️ ชุดคีย์บอกว่า **พิจารณาอะไร** ไม่ได้บอกว่า **ค่าที่ส่งไปใช้ได้ไหม** (อันนั้นดู `ignored` ต่อคำขอ)"
+);
+
+if (เขียนไฟล์) {
+  writeFileSync("netlify/lib/list-applied-keys.mjs",
+    "/* 🤖 สร้างโดย `scripts/probe-applied-keys.mjs --write` — **ห้ามแก้มือ**\n" +
+    " * 🔑 ค่านี้คือ **ชุดคีย์ของ `applied`** ที่แต่ละเส้นส่งออกมาเอง = คำประกาศที่เส้นนั้นพูดเอง\n" +
+    " *    ไม่ใช่การสกัดชื่อจากซอร์ส (ผิดทั้งสองทิศ) และไม่ใช่การเทียบจำนวนแถว (กำกวม)\n" +
+    " * 🚫 `พิจารณา: null` = **ยังไม่รู้** (เส้นนั้นไม่ส่ง applied) ไม่ใช่ 'ไม่รับตัวกรอง'\n" +
+    " * ⚠️ บอกว่า 'พิจารณาอะไร' ไม่ได้บอกว่า 'ค่าที่ส่งไปใช้ได้ไหม' ⇒ อันนั้นดู `ignored` ต่อคำขอ */\n" +
+    "export const คีย์ที่เส้นพิจารณา = " + JSON.stringify(ผล, null, 2) + ";\n");
+  console.log(`\n💾 เขียน netlify/lib/list-applied-keys.mjs แล้ว (${Object.keys(ผล).length} เส้น)`);
+}

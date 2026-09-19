@@ -6,12 +6,22 @@
 // ⚠️ แยกงานของตัวเอง — งานตามเวลาอื่นมีงบเวลาตึงอยู่แล้ว [[time-budget-is-shared]]
 // ⚠️ ไม่มี URL (Netlify ไม่ให้ schedule พร้อม path) · สั่งเดี๋ยวนั้น: GET /api/core?synccontactsnow=1
 // ⚠️ ล้มต้องส่งเสียง — ไม่งั้นจอผู้ติดต่อเก่าลงเรื่อย ๆ โดยตัวเลขยังดูปกติ (จอเห็นได้จาก sync.recentAtUtc ด้วย)
+// ⏱️ จดเวลาตัวเองลงสมุด job_run_log ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
+//    🔑 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันเขียนกระจกผู้ติดต่อจริงและกินเวลาที่กำลังจะวัดพอดี
 import { syncContactsScheduled } from "../lib/core-contacts.mjs";
+import { วัดเวลางาน } from "../lib/job-timing.mjs";
 
 export default async function handler() {
   let r;
+  let จดเวลา = null;
   try {
-    r = await syncContactsScheduled();
+    const t = await วัดเวลางาน("contacts-sync", syncContactsScheduled, {
+      // ข้าม = ทำงานปกติ (ยังไม่ถึงรอบ) · มี errors = ล้ม · นอกนั้นถือว่าจบดี
+      ตัดสินผล: (x) => (Array.isArray(x?.errors) && x.errors.length && !x?.skip ? "failed" : "ok"),
+      อธิบาย: (x) => (x?.skip ? `skip: ${x.skip}` : x?.written != null ? `written ${x.written}` : null),
+    });
+    r = t.ผลลัพธ์;
+    จดเวลา = t.จดเวลา;
   } catch (e) {
     r = { ok: false, errors: [{ stage: "throw", error: String(e?.message || e).slice(0, 300) }] };
   }
@@ -30,7 +40,8 @@ export default async function handler() {
       }).catch(() => null);
     }
   }
-  return new Response(JSON.stringify(r), { headers: { "content-type": "application/json" } });
+  if (จดเวลา && จดเวลา !== "ok") console.log(`⏱️ จดเวลา contacts-sync ไม่ได้: ${จดเวลา}`);
+  return new Response(JSON.stringify({ ...r, จดเวลา }), { headers: { "content-type": "application/json" } });
 }
 
 // นาทีที่ 19 — ไม่ชน beam-sweep (:00/:30) · returns-sync (:07) · core-sync (:13/:43) · bundle-recipe-sync (วันละครั้ง 03:00 UTC — เดิม :27/:57 เปลี่ยน 18 ก.ย. 2569) · backup (:40)

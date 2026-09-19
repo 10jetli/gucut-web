@@ -6,11 +6,19 @@
 // ตัวเนื้องานอยู่ที่ netlify/lib/backup.mjs · สั่งเดี๋ยวนั้นได้ที่ /api/core?backup=1
 //
 // ⚠️ งานตั้งเวลาใส่ `path` ไม่ได้ ต้องมีแต่ `schedule` — ใส่ทั้งคู่แล้วจะไม่ถูกตั้งเวลาให้
+// ⏱️ จดเวลาตัวเองลงสมุด job_run_log ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
 import { runBackup } from "../lib/backup.mjs";
+import { วัดเวลางาน } from "../lib/job-timing.mjs";
 
 export default async () => {
-  const r = await runBackup(18000);
-  console.log("backup:", JSON.stringify(r?.totals ?? r));
+  /* ⚠️ `failed` ในสรุปคือ "ถังที่สำรองไม่ได้" ⇒ นับเป็นล้มของรอบนี้
+     ⚠️ `left > 0` **ไม่ใช่ล้ม** — รอบนี้หมดงบเวลา 18 วิ แล้วรอบถัดไปเก็บต่อเองตามดีไซน์ */
+  const t = await วัดเวลางาน("backup-run", () => runBackup(18000), {
+    ตัดสินผล: (x) => (x?.totals?.failed ? "failed" : x?.totals ? "ok" : null),
+    อธิบาย: (x) => (x?.totals ? `saved ${x.totals.saved} · keys ${x.totals.keys} · left ${x.totals.left} · failed ${x.totals.failed}` : null),
+  });
+  const r = t.ผลลัพธ์;
+  console.log("backup:", JSON.stringify(r?.totals ?? r), "· จดเวลา:", t.จดเวลา, `· ${t.ms} ms`);
   return new Response("ok");
 };
 
