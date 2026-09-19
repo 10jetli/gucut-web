@@ -14,6 +14,7 @@
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { เตือนถ้ามีไฟล์ซ้อนชั้น } from "./lib/ไฟล์ซ้อนชั้นที่ด่านมองไม่เห็น.mjs";
 
 const ราก = join(dirname(fileURLToPath(import.meta.url)), "..");
 const โฟลเดอร์ = join(ราก, "netlify", "functions");
@@ -34,6 +35,18 @@ function หาคำอธิบาย(src) {
     if (t && !t.startsWith("import") && t.length > 8) return t.slice(0, 160);
   }
   return null;
+}
+
+/* 🔴 **20 ก.ย. 2569 — Netlify รองรับฟังก์ชันซ้อนโฟลเดอร์** (`functions/ชื่อ/ชื่อ.mjs`)
+   ⇒ ตัวนี้กวาด `netlify/functions` **ชั้นเดียว** ⇒ วันที่ใครเขียนงานตามเวลาในรูปนั้น
+     **ตารางนี้จะไม่มีงานตัวนั้นเลย** และไม่มีอะไรฟ้อง (จอกับหน้าสถานะอ่านตารางนี้)
+   🔑 ต่างจากด่านทั่วไปหนึ่งชั้น: นี่คือ **ตัวสร้างข้อมูล** ⇒ ของที่หายไปกลายเป็น
+     "ความจริงที่ปลายทางเชื่อ" ไม่ใช่แค่ "ผลตรวจที่ไม่ครบ"
+   📏 วัดแล้ววันนี้: `netlify/functions` แบนจริง (ไฟล์ซ้อนชั้น 0) ⇒ ตารางครบวันนี้
+   (ฝั่งจอเจอรูปเดียวกันใน `check-cron-table` ของเขา แล้วส่งมาให้ผมส่อง) */
+if (เตือนถ้ามีไฟล์ซ้อนชั้น([โฟลเดอร์], (n) => n.endsWith(".mjs"), "gen-cron-table")) {
+  console.error("   ⇒ 🔴 **ตารางงานตามเวลาจะไม่ครบ** ⇒ หยุดก่อน ไม่เขียนไฟล์ที่ปลายทางจะเชื่อ");
+  process.exit(1);
 }
 
 const งาน = [];
