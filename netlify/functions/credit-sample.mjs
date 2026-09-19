@@ -23,10 +23,14 @@
 // 🔒 ห้าม log/ส่งออก token หรือรายละเอียดบิล — เก็บแค่ยอดรวมกับเวลา
 
 import { getStore } from "@netlify/blobs";
+/* 📜 สัญญาของประวัติ — **ไฟล์เดียวกับที่ตัวอ่านใช้** (เคยเขียนซ้ำสองไฟล์ ดูเหตุผลใน lib) */
+import { ประวัติKEY, เก็บกี่จุด } from "../lib/credit-history.mjs";
+/* ⚠️ **cron ข้างล่างต้องตรงกับ `ชั่วโมงต่อรอบเก็บ` ใน lib/credit-history.mjs**
+   ไฟล์นี้ไม่ได้ import ค่านั้นมาใช้ (cron เป็นข้อความคงที่ Netlify อ่านตอน build แทนค่าตัวแปรไม่ได้)
+   ⇒ จึงมีด่าน `credit-history-contract.test.mjs` อ่าน cron จากไฟล์นี้แล้วเทียบกับค่านั้นให้
+   ⇒ เปลี่ยน cron แล้วไม่แก้ค่านั้น = ทดสอบตก (เพราะเกณฑ์ที่ท่อส่งให้จอจะผิด) */
 
 const SLUG = "10jetli";
-const ประวัติKEY = "netlify-credits-history";
-const เก็บกี่จุด = 60;
 
 export default async function handler() {
   const token = process.env.NLF_CREDITS_TOKEN;
