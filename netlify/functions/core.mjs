@@ -780,6 +780,56 @@ async function route(req, context) {
         to: url.searchParams.get("to"),
       })) });
     }
+    /* 🏦 กระจกการเงินมาร์เก็ตเพลส — **สามตาราง** (ใบ t_mu5bxe47 · 19 ก.ย. 2569)
+       GET  ?mkpfinancemirror=1   ⇒ กระจกครอบถึงไหนแล้ว (จำนวนแถว · ช่วงวัน · ซิงก์ล่าสุด)
+       POST ?mkpfinancesync=1&days=N&pages=M ⇒ ดึงจากสามเจ้าแล้วเขียนลงกระจก
+       🔴 **ต้องเป็น POST** เพราะเขียนของจริงลงฐาน (ป้าย routeMethod จะอ่านออกเอง)
+       ⚠️ ไล่หลายหน้าเพราะทุกเจ้า `truncated:true` ที่ 100 แถว ⇒ หน้าเดียวไม่ใช่ทั้งชุด
+          **สามเจ้าไล่หน้าคนละกติกา** (shopee/lazada = page · tiktok = pageToken)
+          รอบนี้ไล่เฉพาะ page ⇒ TikTok ได้หน้าแรกเท่านั้น และ **บอกออกไปตรง ๆ** ห้ามเงียบ */
+    if (url.searchParams.get("mkpfinancemirror")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { ยอดกระจกการเงิน } = await import("../lib/mkp-finance-store.mjs");
+      return okJson(await ยอดกระจกการเงิน());
+    }
+    if (url.searchParams.get("mkpfinancesync")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST — ตัวนี้เขียนของจริงลงฐาน" }, 405);
+      const { readMarketplaceFinance } = await import("../lib/mkp-finance.mjs");
+      const { สร้างตารางการเงิน, เขียนการเงิน } = await import("../lib/mkp-finance-store.mjs");
+      await สร้างตารางการเงิน();
+      const days = url.searchParams.get("days") || "7";
+      const หน้าสุด = Math.min(Math.max(Number(url.searchParams.get("pages") || 3), 1), 10);
+      const ผล = {};
+      const ไล่หน้าไม่ครบ = [];
+      for (let page = 1; page <= หน้าสุด; page++) {
+        const r = await readMarketplaceFinance({ days, limit: "100", page: String(page) });
+        for (const p of r?.results || []) {
+          if (!Array.isArray(p?.rows) || !p.rows.length) continue;
+          const grain = p.rows[0]?.grain;
+          const w = await เขียนการเงิน(grain, p.rows);
+          const k = w?.ตาราง || `grain:${grain}`;
+          if (!ผล[k]) ผล[k] = { ...w, หน้าที่ไล่: 0 };
+          else {
+            ผล[k].รับมา += w.รับมา; ผล[k].ส่งไป += w.ส่งไป || 0;
+            ผล[k].ยุบ += w.ยุบ || 0; ผล[k].ขาดกุญแจ += w.ขาดกุญแจ || 0;
+            ผล[k].แถวในฐานหลัง = w.แถวในฐานหลัง;
+          }
+          ผล[k].หน้าที่ไล่ = page;
+          /* 🔴 ยังตัดอยู่ที่หน้าสุดท้ายที่เราไล่ ⇒ **ยังไม่ครบทั้งชุด** ห้ามรายงานว่าครบ */
+          if (page === หน้าสุด && p.truncated) ไล่หน้าไม่ครบ.push(k);
+        }
+      }
+      return okJson({
+        days, หน้าที่ไล่สูงสุด: หน้าสุด, ผล,
+        ...(ไล่หน้าไม่ครบ.length ? { ไล่หน้าไม่ครบ } : {}),
+        "⚠️ ขอบเขต":
+          "ไล่ด้วย `page` เท่านั้น ⇒ **TikTok ใช้ `pageToken`** จึงได้เฉพาะหน้าแรกของ TikTok · " +
+          (ไล่หน้าไม่ครบ.length
+            ? `และตารางเหล่านี้ยังตัดอยู่ที่หน้าสุดท้ายที่ไล่: ${ไล่หน้าไม่ครบ.join(", ")} ⇒ **ยังไม่ครบทั้งชุด** `
+            : "ทุกตารางไล่จนไม่ตัดแล้วในช่วงวันที่ขอ (ยังไม่แปลว่าครบทุกวันในประวัติ) ") +
+          "· 🚫 ห้ามบวกยอดข้ามตาราง สามตารางเป็นข้อมูลคนละระดับ",
+      }, 200);
+    }
     /* GET ?mkpfees=1&platform=shopee&id=<order_sn> | &platform=tiktok&id=<statement id>
        ⇒ ค่าธรรมเนียม **รายเอกสาร** (ของที่จะเติมคอลัมน์ 13 ช่องของ ZORT ได้) · ใบ t_mu2xtzr2
        🔒 allowlist เข้ม: escrow ของ Shopee มีชื่อผู้ซื้อ/ที่อยู่ ⇒ คืนเฉพาะช่องเงินที่ระบุไว้
