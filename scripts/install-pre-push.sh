@@ -27,20 +27,34 @@ cat > .git/hooks/pre-push <<'HOOK_EOF'
 # ด่านก่อน push — สร้างโดย scripts/install-pre-push.sh
 # ข้ามได้ด้วย SKIP_PREPUSH=1 git push  (ใช้เมื่อจำเป็นจริง ๆ และรู้ว่าทำอะไรอยู่)
 set -u
-[ "${SKIP_PREPUSH:-}" = "1" ] && { echo "⏭  ข้ามด่านก่อน push ตามที่สั่ง"; exit 0; }
+cd "$(git rev-parse --show-toplevel)" 2>/dev/null || exit 0
 
-cd "$(git rev-parse --show-toplevel)" || exit 0
-
-# ── 🧊 วันหยุด deploy (ตั้งด้วย scripts/freeze-deploy.sh) ──
-# ทุกครั้งที่ push = สร้างเว็บใหม่ = เครดิต · deploy กิน 92% ของทั้งหมด
+# ── 🧊 วันหยุด deploy — **คำสั่งท่านประธาน ไม่ใช่ด่านวิศวกรรม** ──
+# 🔴 แยกอำนาจสองระดับ (แก้ 19 ก.ย. 2569 · ท่านประธานยืนยันว่า "เลิกหยุดได้เฉพาะผมสั่ง")
+#    · ด่านทดสอบ/promise ลอย = **ด่านวิศวกรรม** ⇒ ข้ามด้วย SKIP_PREPUSH=1 ได้ (เราเป็นเจ้าของเกณฑ์)
+#    · วันหยุด deploy = **คำสั่งของท่านประธาน** ⇒ SKIP_PREPUSH **ต้องข้ามไม่ได้**
+# 🔑 ของเดิมเช็ค SKIP_PREPUSH ก่อน ⇒ ใครก็ข้ามคำสั่งท่านได้ด้วยตัวแปรเดียว
+#    ⇒ ด่านที่ข้ามได้ด้วยตัวแปรที่ตั้งเองทุกวัน ไม่ใช่ด่าน
+# ⚠️ ยังเปิดทางฉุกเฉินไว้ แต่ต้องเป็น **การอ้างคำสั่งท่านอย่างชัดเจน** และ **ถูกจดทุกครั้ง**
 FREEZE="$HOME/.gucut-deploy-freeze"
 if [ -f "$FREEZE" ]; then
-  echo "🧊 กำลังหยุด deploy อยู่ — ไม่ push"
-  sed "s/^/   /" "$FREEZE"
-  echo "   งานที่ทำเสร็จให้ commit เก็บไว้ในเครื่องก่อน แล้ว push รวมรอบเดียวตอนเลิกหยุด"
-  echo "   ของด่วนจริง ๆ: SKIP_PREPUSH=1 git push"
-  exit 1
+  if [ "${CHAIRMAN_ORDERED:-}" = "1" ]; then
+    printf '%s  push ระหว่างวันหยุด deploy โดยอ้างคำสั่งท่านประธาน (%s)\n' \
+      "$(date '+%Y-%m-%d %H:%M')" "$(git rev-parse --abbrev-ref HEAD 2>/dev/null)" \
+      >> "$HOME/.gucut-deploy-freeze.log"
+    echo "⚠️  push ระหว่างวันหยุด deploy — ผ่านเพราะอ้างคำสั่งท่านประธาน (จดไว้แล้ว)"
+  else
+    echo "🧊 กำลังหยุด deploy อยู่ — ไม่ push"
+    sed "s/^/   /" "$FREEZE"
+    echo "   งานที่ทำเสร็จให้ commit เก็บไว้ในเครื่องก่อน แล้ว push รวมรอบเดียวตอนเลิกหยุด"
+    echo ""
+    echo "   🚫 SKIP_PREPUSH=1 **ข้ามข้อนี้ไม่ได้** — นี่เป็นคำสั่งท่านประธาน ไม่ใช่ด่านของเรา"
+    echo "   ถ้าท่านสั่งให้ push จริง ๆ:  CHAIRMAN_ORDERED=1 git push   (จะถูกจดไว้)"
+    exit 1
+  fi
 fi
+
+[ "${SKIP_PREPUSH:-}" = "1" ] && { echo "⏭  ข้ามด่านวิศวกรรมตามที่สั่ง (วันหยุด deploy ยังบังคับอยู่)"; exit 0; }
 
 echo "🚦 ด่านก่อน push — กัน build พังไม่ให้เผาเครดิต"
 
