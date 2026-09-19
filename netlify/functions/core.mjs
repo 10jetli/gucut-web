@@ -2248,7 +2248,11 @@ async function route(req, context) {
       return okJson(await posCats());
     }
     if (url.searchParams.get("list") === "branches") {
-      return json({ ok: true, branches: branches() });
+      /* 🔑 แนบ `ที่มาของรายชื่อ` ทุกครั้ง — ทางถอยต้องประกาศตัว ไม่ใช่ให้จอเดา (20 ก.ย. 2569)
+         จอฝั่ง gucut-next อ่าน "ดึงจากเซิร์ฟเวอร์" แล้วเข้าใจว่าจำนวนสาขาเป็นข้อมูลที่ร้านตั้ง
+         ⇒ ของจริงตอนนี้เป็นค่าตั้งต้นในโค้ด ⇒ ต้องบอกออกไป ไม่งั้นทั้งสองฝั่งเชื่อผิดพร้อมกัน */
+      const { ที่มาของรายชื่อสาขา } = await import("../lib/pos.mjs");
+      return json({ ok: true, branches: branches(), "ที่มาของรายชื่อ": ที่มาของรายชื่อสาขา() });
     }
     if (url.searchParams.get("poslookup") !== null && url.searchParams.get("poslookup") !== undefined) {
       return okJson({
