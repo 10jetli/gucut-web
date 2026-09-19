@@ -1118,7 +1118,13 @@ async function route(req, context) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductLabels } = await import("../lib/zort-write.mjs");
       const r = await zortProductLabels(url.searchParams.get("productlabels"));
-      return json(r, r.ok ? 200 : r.failed?.length ? 502 : 400);
+      /* 🔴 **ห้ามเอา `r.ok` (จำนวน) ไปตีเป็นจริง/เท็จ** (แก้ 19 ก.ย. 2569)
+         ของเดิม: ส่ง 5 ใบ สำเร็จ 3 ล้ม 2 ⇒ `ok` = 3 = truthy ⇒ **ตอบ 200 แล้วกลืนใบที่ล้ม**
+         และรูปคำตอบของ PEAK เปลี่ยน ⇒ `ok: 0, failed: []` ⇒ ตอบ **400** = "คำขอคุณผิด"
+         ⇒ ชี้ไปผิดทาง คนจะไปไล่หาว่ากรอกอะไรผิด ทั้งที่เราอ่านคำตอบเขาไม่ได้เอง
+         ⇒ ตัดสินจาก `สรุป` ซึ่งมีความหมายเดียว (ดู lib/peak.mjs) */
+      const รหัส = r.สรุป === "สำเร็จครบทุกใบ" ? 200 : r.สรุป === "อ่านคำตอบของ PEAK ไม่ได้" ? 502 : 502;
+      return json(r, รหัส);
     }
     if (url.searchParams.get("productimage")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);

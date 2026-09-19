@@ -162,6 +162,47 @@ function contactCode(order) {
     ⚠️ **ยอดรวมของเอกสารต้องเท่ากับยอดหัวใบ ไม่ใช่เท่ากับผลรวมบรรทัดสินค้า** */
 const SHIPPING_LINE = "ค่าจัดส่ง";
 
+/** สรุปผลการส่งใบเข้า PEAK จาก "คำตอบดิบ" — **ฟังก์ชันบริสุทธิ์ เพื่อทดสอบได้ไม่ต้องยิงเน็ต**
+ *
+ *  🔴 ที่มา 19 ก.ย. 2569 — ของเดิมเขียน `const rows = box.invoices ?? []`
+ *     ⇒ PEAK ตอบ 200 แต่รูปคำตอบเปลี่ยน (เปลี่ยนชื่อคีย์ · ห่อใหม่) ⇒ `rows = []`
+ *     ⇒ ได้ `ok: 0, failed: []` = **"ไม่มีอะไรสำเร็จ และไม่มีอะไรล้ม"** ซึ่งเป็นสถานะที่เป็นไปไม่ได้
+ *       · ใครเช็ค `failed.length === 0` อ่านว่า **เรียบร้อย**
+ *       · ใครเช็ค `ok` อ่านว่า **ล้มหมด**
+ *     ⇒ และนี่คือ **สะพานส่งยอดขายเข้าบัญชี/ภาษี** ⇒ ผิดทางนี้แพงกว่าจอเพี้ยน
+ *  🔑 สามสถานะ ห้ามยุบ: **อ่านคำตอบไม่ได้ ≠ ส่งไม่สำเร็จ ≠ ส่งสำเร็จ**
+ *  🔑 และ `สรุป` มีความหมายเดียว ⇒ ปลายทางไม่ต้องเอา "จำนวน" ไปตีเป็นจริง/เท็จเอง
+ */
+export function สรุปผลส่งPEAK(กี่ใบที่ส่ง, box) {
+  const อ่านคำตอบได้ = Array.isArray(box?.invoices);
+  const rows = อ่านคำตอบได้ ? box.invoices : [];
+  const ok = rows.filter((r) => String(r?.resCode) === "200").length;
+  const failed = rows
+    .filter((r) => String(r?.resCode) !== "200")
+    .map((r) => ({ code: r?.resCode, desc: r?.resDesc }));
+  const สรุป = !อ่านคำตอบได้
+    ? "อ่านคำตอบของ PEAK ไม่ได้"
+    : rows.length !== กี่ใบที่ส่ง
+      ? "PEAK ตอบมาไม่ครบจำนวนใบที่ส่ง"
+      : failed.length === 0
+        ? "สำเร็จครบทุกใบ"
+        : ok === 0
+          ? "ล้มทั้งหมด"
+          : "สำเร็จบางส่วน";
+  return {
+    sent: กี่ใบที่ส่ง,
+    /* ⚠️ อ่านคำตอบไม่ได้ ⇒ `null` **ห้ามเป็น 0** (ไม่รู้ ≠ ไม่สำเร็จเลย) */
+    ok: อ่านคำตอบได้ ? ok : null,
+    failed: อ่านคำตอบได้ ? failed : null,
+    ตอบกลับมากี่ใบ: อ่านคำตอบได้ ? rows.length : null,
+    อ่านคำตอบได้,
+    สรุป,
+    "🔑 ปลายทางอ่านยังไง":
+      "ตัดสินจาก `สรุป` เท่านั้น **ห้ามเอา `ok` ไปตีเป็นจริง/เท็จ** — `ok` เป็นจำนวน " +
+      "⇒ สำเร็จบางส่วนจะ truthy แล้วกลืนใบที่ล้ม · `ok: null` = อ่านคำตอบไม่ได้ ไม่ใช่ล้มหมด",
+  };
+}
+
 export function toInvoice(order, items) {
   const day = String(order?.order_date ?? "").replace(/-/g, ""); // yyyyMMdd
   const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -252,13 +293,11 @@ export async function sendInvoices(invoices, { dryRun = true } = {}) {
   }
   const data = await peakCall("/api/v1/Invoices", { peakInvoices: { invoices } });
   const box = data?.peakInvoices ?? data?.PeakInvoices ?? {};
-  const rows = box.invoices ?? [];
-  return {
-    sent: invoices.length,
-    ok: rows.filter((r) => String(r?.resCode) === "200").length,
-    failed: rows.filter((r) => String(r?.resCode) !== "200").map((r) => ({
-      code: r?.resCode,
-      desc: r?.resDesc,
-    })),
-  };
+  /* 🔴 **`box.invoices ?? []` เดิมสร้างสถานะที่เป็นไปไม่ได้** (แก้ 19 ก.ย. 2569)
+      ถ้า PEAK ตอบ 200 แต่รูปคำตอบเปลี่ยน (เปลี่ยนชื่อคีย์ · ห่อใหม่) ⇒ `rows = []`
+      ⇒ ได้ `ok: 0, failed: []` = **"ไม่มีอะไรสำเร็จ และไม่มีอะไรล้ม"**
+        ⇒ ใครเช็ค `failed.length === 0` จะอ่านว่า **เรียบร้อย** · ใครเช็ค `ok` จะอ่านว่าล้มหมด
+        ⇒ และนี่คือ **สะพานส่งยอดขายเข้าบัญชี/ภาษี** ⇒ ผิดทางนี้แพงกว่าจอเพี้ยน
+      🔑 อ่านคำตอบไม่ได้ ≠ ส่งไม่สำเร็จ ≠ ส่งสำเร็จ — **สามสถานะ ห้ามยุบ** */
+  return สรุปผลส่งPEAK(invoices.length, box);
 }
