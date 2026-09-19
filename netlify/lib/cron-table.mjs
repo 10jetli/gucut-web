@@ -1,6 +1,6 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
 // ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
-export const generatedAt = "2026-09-19T02:30:43.050Z";
+export const generatedAt = "2026-09-19T03:43:42.666Z";
 export const source = "netlify/functions/*.mjs (export const config)";
 export const jobs = [
  {
@@ -38,6 +38,12 @@ export const jobs = [
   "file": "netlify/functions/core-sync.mjs",
   "cron": "13 * * * *",
   "desc": "คลังเงา GUCUT Core — งานตามเวลา **รันเองชั่วโมงละครั้ง (นาทีที่ 13)**"
+ },
+ {
+  "id": "credit-sample",
+  "file": "netlify/functions/credit-sample.mjs",
+  "cron": "53 * * * *",
+  "desc": "เก็บตัวอย่างยอดใช้เครดิต Netlify ลงประวัติ — **งานตามเวลาชั่วโมงละครั้ง (นาทีที่ 53)**"
  },
  {
   "id": "live-sweep",
