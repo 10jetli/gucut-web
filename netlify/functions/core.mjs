@@ -1790,14 +1790,33 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "contacts") {
+      /* 🔴 **ค่าผิดรูปต้องตอบ 400 ไม่ใช่เมินเงียบ** (แก้ 19 ก.ย. 2569 · ด่าน check-filters-work จับได้)
+         ของเดิมเทียบ `=== "1"` ตรง ๆ ⇒ ส่ง `withphone=maybe` แล้วได้ผลของ **ไม่กรอง** (28,348 แถว)
+         ⇒ คนขอ "เฉพาะคนที่มีเบอร์" ได้ทั้งฐานกลับไปโดยเชื่อว่ากรองแล้ว
+         🔑 ตัวกรองที่เมินค่าผิดรูปเงียบ ๆ คือ **ปุ่มหลอก** — และไม่มีอะไรฟ้องเลย
+         ⚠️ ยังรับ `true/yes/0/false/no` ได้เหมือนเดิม (ไม่พังจอที่ส่งคำเต็ม) ⇒ 400 เฉพาะค่านอกชุด */
+      const ธงผู้ติดต่อ = {};
+      for (const [ชื่อฟิลด์, ชื่อพารามิเตอร์] of [["withPhone", "withphone"], ["withEmail", "withemail"]]) {
+        const ดิบ = url.searchParams.get(ชื่อพารามิเตอร์);
+        if (ดิบ === null) continue;
+        const v = ธงจากค่า(ดิบ);
+        if (v === null) {
+          return json({
+            error: `ค่าของ ${ชื่อพารามิเตอร์} อ่านไม่ออก (ได้ "${String(ดิบ).slice(0, 20)}")`,
+            accepts: ["1", "0", "true", "false", "yes", "no"],
+            why: "เมินเงียบ ๆ แล้วคืนผลของ 'ไม่กรอง' อันตรายกว่าตอบว่าค่าผิด — คนจะเชื่อว่ากรองแล้ว",
+          }, 400);
+        }
+        ธงผู้ติดต่อ[ชื่อฟิลด์] = v ? "1" : "0";
+      }
       return okJson({
         ...(await listContacts({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           // ตัวกรอง 15 ก.ย. 2569 — ไม่นับเป็นคำค้น (ด่านกันกวาดทั้งฐานยังบังคับ)
-          withPhone: url.searchParams.get("withphone") ?? undefined,
-          withEmail: url.searchParams.get("withemail") ?? undefined,
+          withPhone: ธงผู้ติดต่อ.withPhone ?? undefined,
+          withEmail: ธงผู้ติดต่อ.withEmail ?? undefined,
         })),
       });
     }
@@ -1877,6 +1896,20 @@ async function route(req, context) {
     }
     // 🔔 สินค้าที่หายไปจากช่องทางขาย — จับเรื่องแบบเครื่อง 00073 ที่เงียบไป 3 เดือน
     if (url.searchParams.get("list") === "channel-gaps") {
+      /* 🔴 **ตัวเลขที่อ่านไม่ออกต้องตอบ 400** (แก้ 19 ก.ย. 2569 · ด่าน check-filters-work จับได้)
+         ส่ง `quietdays=abc` แล้วได้ผลเท่ากับไม่ส่ง (91 แถว) **โดยไม่ประกาศว่าเมิน**
+         ⇒ คนตั้งเกณฑ์ผิดพิมพ์แล้วได้ผลของเกณฑ์ตั้งต้น โดยเชื่อว่าเป็นผลของเกณฑ์ที่ตั้งไว้
+         ⚠️ ไม่ส่งมาเลย = ใช้ค่าตั้งต้น (ปกติ) · ส่งมาแล้วอ่านไม่ออก = **ผิดที่ผู้เรียก ⇒ 4xx** */
+      for (const ชื่อ of ["quietdays", "lookbackdays", "minsold"]) {
+        const ดิบ = url.searchParams.get(ชื่อ);
+        if (ดิบ === null || String(ดิบ).trim() === "") continue;
+        if (!Number.isFinite(Number(ดิบ))) {
+          return json({
+            error: `ค่าของ ${ชื่อ} ต้องเป็นตัวเลข (ได้ "${String(ดิบ).slice(0, 20)}")`,
+            why: "เมินเงียบ ๆ แล้วใช้ค่าตั้งต้น อันตรายกว่าตอบว่าค่าผิด — คนจะอ่านผลว่าเป็นของเกณฑ์ที่ตั้งไว้",
+          }, 400);
+        }
+      }
       return okJson({
         ...(await channelGaps({
           quietDays: url.searchParams.get("quietdays"),
