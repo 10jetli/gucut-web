@@ -15,16 +15,24 @@
  *    ⚠️ "ตอบไม่ได้" ⇒ ผู้เรียกต้องเข้มไว้ (ถือว่าอยู่ปัจจุบัน) **แต่ต้องพูดออกมา**
  *       ไม่ใช่เงียบแล้วเข้มขึ้นเฉย ๆ — ทางถอยที่ไม่ประกาศตัวคือทางหลักที่ไม่มีใครตัดสินใจ
  */
-import { execSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 /** @returns {{ใช่:boolean}|{ตอบไม่ได้:string}} */
 export function เล่นประวัติซ้ำไหม() {
+  /* 🔑 **`spawnSync` ไม่เปิดเชลล์** — ฝั่งจอเสนอ 20 ก.ย. 2569 และท่านี้ถูกกว่าของผมเดิม
+     ของเดิมผมใช้ `execSync` + ใส่เครื่องหมายคำพูดรอบ `--format=%(objectname)` ให้ถูก
+     ⇒ **ถูกโดยการระวัง** ⇒ วันที่ใครแก้บรรทัดนี้แล้วลืมคำพูด `/bin/sh` จะตอบ
+       `Syntax error: "(" unexpected` ⇒ กลายเป็น "ตอบไม่ได้" ทุกครั้งแบบเงียบ ๆ (ผมเจอมาแล้ว)
+     ⇒ ไม่เปิดเชลล์ = **วงเล็บไม่มีทางถูกตีความ** ⇒ ปลอดภัยโดยโครงสร้าง ไม่ใช่โดยความจำ */
+  const ถาม = (args) => {
+    const r = spawnSync("git", args, { encoding: "utf8" });
+    if (r.error) throw r.error;
+    if (r.status !== 0) throw new Error(`git ${args[0]} ตอบ ${r.status}: ${String(r.stderr || "").slice(0, 60)}`);
+    return String(r.stdout || "");
+  };
   try {
-    const head = execSync("git rev-parse HEAD", { encoding: "utf8" }).trim();
-    /* ⚠️ `--format=%(objectname)` **ต้องอยู่ในเครื่องหมายคำพูด** — `execSync` ใช้ `/bin/sh`
-       ไม่ใส่ = `Syntax error: "(" unexpected` ⇒ โยน ⇒ กลายเป็น "ตอบไม่ได้" ทุกครั้งแบบเงียบ ๆ
-       (พลาดมาแล้ว 20 ก.ย. 2569 และมันพังไปทางเดียวกับสัญญาณเตือน) */
-    const ปลายกิ่ง = execSync('git for-each-ref "--format=%(objectname)" refs/heads', { encoding: "utf8" })
+    const head = ถาม(["rev-parse", "HEAD"]).trim();
+    const ปลายกิ่ง = ถาม(["for-each-ref", "--format=%(objectname)", "refs/heads"])
       .split("\n").map((x) => x.trim()).filter(Boolean);
     if (!ปลายกิ่ง.length) return { ตอบไม่ได้: "ไม่มีกิ่งในรีโปนี้เลย" };
     return { ใช่: !ปลายกิ่ง.includes(head) };
