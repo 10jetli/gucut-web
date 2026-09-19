@@ -434,6 +434,23 @@ export function ที่อยู่ของรหัส(rows, pick) {
   return out;
 }
 
+/** 🏷️ ป้ายเหตุที่ "จับคู่รหัสกับคลังไม่ได้" — **แยกออกมาเป็นฟังก์ชันบริสุทธิ์เพื่อให้ทดสอบได้**
+ *  เดิมตรรกะนี้ฝังอยู่กลางลูปที่ต้องยิงเน็ตก่อนจะถึง ⇒ เขียนเทสต์ให้แตะของจริงไม่ได้
+ *  ⇒ ถ้าปล่อยไว้ เทสต์จะกลายเป็นของประดับที่เขียวโดยไม่เคยเรียกโค้ดนี้เลย
+ *  @param จำนวนชิ้นส่วน  จำนวนบรรทัดในสูตรชุดของรหัสนี้ (0 = ไม่อยู่ในทะเบียนชุด)
+ */
+export function ป้ายเหตุจับคู่ไม่ได้(จำนวนชิ้นส่วน) {
+  const n = Number(จำนวนชิ้นส่วน) || 0;
+  if (n > 1) {
+    return {
+      kind: "bundle_multi_part",
+      parts: n,
+      why: `อยู่ในทะเบียนชุด (${n} ชิ้นส่วน) — คลังรู้จัก แต่ตัวเทียบนี้คิดจำนวนจากสูตรหลายชิ้นไม่ได้`,
+    };
+  }
+  return { kind: "not_in_warehouse", why: "คลังไม่รู้จักรหัสนี้เลย (ทั้งทะเบียนสินค้าและทะเบียนชุด)" };
+}
+
 export async function shopeeStockCompare(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const t = await validToken();
@@ -511,12 +528,23 @@ export async function shopeeStockCompare(o = {}) {
      ⚠️ ห้ามใช้ bundles.available เป็นตัวเลข — เพี้ยนจากม้วนจริง −1.8% ถึง +1.5%
         และเพี้ยนไม่เท่ากันแต่ละตระกูล (ดู handoff หัวข้อกับดักแผนดันสต็อก) */
   const recipe = new Map();
+  /* 🔴 **ชุดหลายชิ้นถูกข้ามที่นี่ แล้วไปตกกอง "คลังไม่รู้จักรหัสนี้" ซึ่งเป็นป้ายที่ผิด**
+     (ฝั่งจอจับได้ 19 ก.ย. 2569: 11 รหัสใน 26 รหัสกอง `unknown` **อยู่ในทะเบียนชุด 360 รหัสตรงตัว**
+      เช่น `00073-11.8-KK` · `00277 set ลูกสูบ`)
+     🔑 คลังรู้จักมันดี — ที่ทำไม่ได้คือ **ตัวเทียบนี้คิดจำนวนจากสูตรหลายชิ้นไม่ได้**
+        สองอย่างนี้คนละเรื่อง และป้ายที่ผิดพาคนไปทำงานผิด
+        (ใบงานเกือบกลายเป็น "ไปจัดระเบียบรายการที่ลงขาย" ทั้งที่ของถูกจดทะเบียนไว้แล้ว)
+     ⇒ แยกกองให้ชัด: `ชุดหลายชิ้น` ⇒ ติดป้าย `kind` ไปกับตัวอย่าง ให้ปลายทางเขียนคำที่ถูก
+     ⏳ **ยังไม่คิดจำนวนให้มันในรอบนี้โดยตั้งใจ** — คิดได้ (min ของ floor(ชิ้นส่วน/ต่อหน่วย))
+        และมีโค้ดอยู่แล้วใน `summarizeUnlisted` ไฟล์เดียวกัน
+        แต่ทำแล้วรหัสกลุ่มนี้จะ **เข้าแผนดันสต็อกทันที** ⇒ เปลี่ยนเลขบนหน้าร้าน Lazada ที่เปิดยิงจริงอยู่
+        ⇒ เป็นการตัดสินใจของท่านประธาน ไม่ใช่ผลข้างเคียงของการแก้ป้าย */
+  const นับชิ้นส่วน = new Map();
+  for (const r of recRows) นับชิ้นส่วน.set(String(r.sku).trim(), (นับชิ้นส่วน.get(String(r.sku).trim()) || 0) + 1);
   {
-    const count = new Map();
-    for (const r of recRows) count.set(String(r.sku), (count.get(String(r.sku)) || 0) + 1);
     for (const r of recRows) {
       const k = String(r.sku).trim();
-      if (count.get(k) !== 1) continue; // ชุดหลายชิ้นคิดแบบนี้ไม่ได้
+      if (นับชิ้นส่วน.get(k) !== 1) continue; // ชุดหลายชิ้นคิดแบบนี้ไม่ได้ — ดูคอมเมนต์ข้างบน
       const per = num(r.per);
       if (per > 0 && r.base) recipe.set(k, { base: String(r.base).trim(), per });
     }
@@ -526,6 +554,7 @@ export async function shopeeStockCompare(o = {}) {
   const missingSample = [];
   let same = 0;
   let missing = 0;
+  let missingBundleMultiPart = 0;   // ในกอง missing มีกี่รหัสที่จริง ๆ คลังรู้จัก (ชุดหลายชิ้น)
   let viaRecipe = 0;
   for (const r of withSku) {
     // ชุดก่อน — ระบุตัวได้ตรงตัวจากสูตร แล้วคิดจำนวนจากม้วนแม่จริง
@@ -539,10 +568,16 @@ export async function shopeeStockCompare(o = {}) {
     }
     if (!snap.has(r.sku)) {
       missing += 1;
-      // Shopee มี SKU นี้ แต่คลังเราไม่รู้จัก — คนละเรื่องกับ "ตัวเลขไม่ตรง"
+      /* 🏷️ **ป้ายว่าทำไมจับคู่ไม่ได้ — คนละเหตุ คนละงาน คนละคนแก้** (เพิ่ม 19 ก.ย. 2569)
+         `bundle_multi_part` = คลัง**รู้จัก**รหัสนี้ในทะเบียนชุด แต่เป็นชุดหลายชิ้น
+            ⇒ ตัวเทียบนี้คิดจำนวนไม่ได้ ⇒ **ห้ามเขียนว่า "คลังไม่รู้จัก"**
+         `not_in_warehouse` = ไม่รู้จักจริง ⇒ ต้องจัดระเบียบรายการที่ลงขาย หรือสร้างสินค้า/ชุด
+         🔑 ป้ายที่ผิดพาคนไปทำงานผิด — ของจริง 11 จาก 26 รหัสถูกติดป้ายผิดอยู่ 2 วัน */
+      const ป้าย = ป้ายเหตุจับคู่ไม่ได้(นับชิ้นส่วน.get(String(r.sku).trim()) || 0);
+      if (ป้าย.kind === "bundle_multi_part") missingBundleMultiPart += 1;
       // ต้องเห็นตัวอย่างด้วย ไม่งั้นบอกไม่ได้ว่าเป็นสินค้าที่ไม่มีใน ZORT
       // หรือเป็นแค่ชื่อ SKU เขียนคนละแบบ (ตัวพิมพ์ · ขีด · เว้นวรรค)
-      if (missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name });
+      if (missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name, ...ป้าย });
       continue;
     }
     const ours = snap.get(r.sku);
@@ -557,6 +592,10 @@ export async function shopeeStockCompare(o = {}) {
     shopeeSkus: withSku.length,
     noSku: rows.length - withSku.length,
     same,
+    /* 🔴 ในกอง `missing` มีกี่รหัสที่ **คลังรู้จักแต่คิดจำนวนไม่ได้** (ชุดหลายชิ้น)
+       ⇒ ปลายทางต้องเขียนคำให้ตรง: ไม่ใช่ "คลังไม่รู้จัก" แต่เป็น "คิดจำนวนจากสูตรหลายชิ้นไม่ได้" */
+    missingBundleMultiPart,
+    missingNotInWarehouse: missing - missingBundleMultiPart,
     // จับคู่ได้เพราะมีสูตรชุด (ไม่ใช่การเดา) — เดิมตกอยู่ในกอง "คลังไม่รู้จัก" ทั้งหมด
     matchedByRecipe: viaRecipe,
     bundlesWithRecipe: recipe.size,
