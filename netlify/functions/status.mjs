@@ -80,12 +80,43 @@ export default async function handler(req, context) {
     check("สต็อกและราคาจาก ZORT", async () => {
       const { ZORT_STORENAME: st, ZORT_APIKEY: k, ZORT_APISECRET: sec } = env;
       if (!st || !k || !sec) return { off: true, note: "ยังไม่ได้ใส่รหัส ZORT" };
-      const r = await fetch("https://open-api.zortout.com/v4/Product/GetProducts?limit=1", {
+      /* 🔴 **ขอ 5 แถวไม่ใช่ 1 เพราะต้องตรวจ "ชื่อช่องข้อมูล" ด้วย ไม่ใช่แค่ว่าตอบ 200**
+          (เพิ่ม 19 ก.ย. 2569) อาการที่กลัวที่สุดของเส้นนี้ไม่ใช่ ZORT ล่ม — ล่มแล้วเรารู้เอง
+          แต่เป็น **ZORT ตอบ 200 แต่เปลี่ยนชื่อช่องสต็อก** ⇒ ตัวกวาดอ่านได้ 0 ทุกแถว
+          ⇒ เขียนทับแคชด้วยสต็อกศูนย์ ⇒ **หน้าร้านขึ้น "สินค้าหมด" ทั้งเว็บ โดยการ์ดนี้ยังเขียว**
+          ⇒ การ์ดที่เขียวได้ทั้งที่ของจริงพัง อันตรายกว่าไม่มีการ์ด
+          ⚠️ ขอ 5 แถวแล้วดูว่า **มีสักแถวที่อ่านสต็อกได้ไหม** ไม่ใช่ดูแถวเดียว
+             เพราะสินค้าบางตัว (บริการ/ของแถม) อาจไม่มีช่องราคา ⇒ ดูแถวเดียวจะได้แดงลวง
+          🔑 เกณฑ์ผูกกับ **"ช่องไม่มีอยู่"** ไม่ใช่ "ค่าเป็น 0" ⇒ วันที่ของหมดจริงการ์ดต้องเงียบ */
+      const r = await fetch("https://open-api.zortout.com/v4/Product/GetProducts?limit=5", {
         headers: { storename: st, apikey: k, apisecret: sec },
         signal: timeout(8000),
       });
       if (!r.ok) throw new Error(`ZORT ตอบ ${r.status}`);
-      return {};
+      const d = await r.json().catch(() => null);
+      const rows = d?.list || d?.List || [];
+      if (!Array.isArray(rows) || !rows.length) {
+        /* ไม่มีแถวมา = แยกไม่ได้ว่าร้านไม่มีสินค้าหรือรูปคำตอบเปลี่ยน ⇒ ต้องบอกว่าแยกไม่ได้ */
+        return { warn: true, note: "ZORT ตอบ 200 แต่ไม่ส่งแถวสินค้ามา — แยกไม่ได้ว่ารูปคำตอบเปลี่ยนหรือคลังว่าง" };
+      }
+      const มีช่อง = (x, ...ชื่อ) => ชื่อ.some((n) => x?.[n] !== undefined && x?.[n] !== null && x?.[n] !== "");
+      const อ่านสต็อกได้ = rows.filter((x) => มีช่อง(x, "availablestock", "stock")).length;
+      const อ่านราคาได้ = rows.filter((x) => มีช่อง(x, "sellprice", "price")).length;
+      if (อ่านสต็อกได้ === 0) {
+        return {
+          warn: true,
+          note:
+            `ZORT ส่งสินค้ามา ${rows.length} แถว แต่ **ไม่มีแถวไหนมีช่องสต็อกเลย** ` +
+            "(ไม่มีทั้ง availablestock และ stock) ⇒ น่าจะเปลี่ยนชื่อช่องข้อมูล ⇒ " +
+            "ตัวกวาดจะอ่านได้ 0 ทุกแถว **ต้องแก้ชื่อช่องใน netlify/lib/zort-stock.mjs ก่อน**",
+        };
+      }
+      return {
+        note:
+          `ชื่อช่องข้อมูลยังตรง — จาก ${rows.length} แถวตัวอย่าง อ่านสต็อกได้ ${อ่านสต็อกได้} · ` +
+          `อ่านราคาได้ ${อ่านราคาได้}` +
+          (อ่านราคาได้ === 0 ? " ⚠️ ไม่มีแถวไหนมีช่องราคา — ดูว่าเป็นสินค้าบริการทั้งชุดหรือช่องเปลี่ยนชื่อ" : ""),
+      };
     }),
 
     // ---------- แจ้งเตือนเข้ากลุ่มร้าน ----------
