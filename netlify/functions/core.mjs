@@ -489,6 +489,16 @@ async function route(req, context) {
         ช่องทางที่ยังไม่ได้ต่อ: ml.notConnected || [],
       });
     }
+    /* ⏱️ GET ?sweeptiming=1[&hours=N] ⇒ การกระจายเวลาต่อรอบของงานกวาด **จากสมุดที่มีอยู่แล้ว**
+       🔑 ฝั่งจอค้านวิธีวัดในใบงาน (ที่สั่งให้ยิงงานตามเวลา 4 ตัว) และเขาถูก:
+          ท่อจด `ms` ลง `push_sweep_log` ทุกรอบอยู่แล้ว ⇒ ยิงเพิ่มคือ **สร้างข้อมูลใหม่**
+          เพื่อวัดของที่มีข้อมูลอยู่แล้ว และได้แค่ตัวอย่างที่เราสร้างเอง ไม่ใช่การกระจายจริง
+       ⇒ เส้นนี้อ่านอย่างเดียว ไม่ยิงอะไรใหม่สักรอบ */
+    if (url.searchParams.get("sweeptiming")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { เวลาต่อรอบ } = await import("../lib/stock-push-sweep.mjs");
+      return okJson(await เวลาต่อรอบ({ ชั่วโมงย้อนหลัง: url.searchParams.get("hours") }));
+    }
     if (url.searchParams.get("pushstate")) {
       const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");
       return okJson(await สถานะดันสต็อก());
