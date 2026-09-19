@@ -8,8 +8,9 @@
 import { getStore } from "@netlify/blobs";
 import { sweepBeamOrders } from "../lib/beam-sweep.mjs";
 import { syncShippingAll } from "../lib/zort-order.mjs";
+import { ครอบงานตามเวลา } from "../lib/job-timing.mjs";
 
-export default async function handler() {
+async function handler() {
   try {
     const r = await sweepBeamOrders();
     // พ่วงกวาดสถานะส่งของจาก ZORT + แจ้ง LINE ลูกค้า (27 ส.ค. 2569)
@@ -41,4 +42,12 @@ export default async function handler() {
 }
 
 // ทุกครึ่งชั่วโมง — QR หมดอายุใน 30 นาที ช่องที่รู้ช้าสุดจึงพอ ๆ กับอายุ QR หนึ่งใบ
+/* ⏱️ จดเวลาของรอบนี้ลงสมุด `job_run_log` ทุกรอบ (19 ก.ย. 2569 · ใบ S1)
+   🔑 ฝั่งจอวัดจาก cron จริงแล้วชี้ว่า ยอด 26.25 นาที/วันที่เคยรายงาน **ครอบแค่ 58% ของรอบทั้งหมด**
+      (288 รอบ/วันมีสมุด · 209 รอบ/วันไม่มี) ⇒ ตัวนี้อยู่ในกองที่ยังไม่มีใครวัด
+   🚫 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันทำงานจริง (เงิน/สต็อก/กระจก) และกินเวลาที่กำลังจะวัดพอดี
+   ⚠️ ผลในสมุดเป็น `ไม่ได้ตัดสิน` โดยตั้งใจ — งานนี้ตอบ 200 ได้แม้ข้างในมี error
+      ⇒ เดาว่า 200 = สำเร็จ จะได้สมุดที่เต็มไปด้วย ok ปลอม (แย่กว่าไม่รู้) · ดู note = HTTP status */
+export default ครอบงานตามเวลา("beam-sweep", handler);
+
 export const config = { schedule: "*/30 * * * *" };

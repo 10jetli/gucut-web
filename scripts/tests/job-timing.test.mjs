@@ -89,3 +89,19 @@ test("ตัวหารของ `ครอบคลุม` ต้องเป�
   assert.equal(ควรมี(24, 24), 24);    // สมุดเปิดครบช่วง ⇒ เท่าเดิม
   assert.equal(ควรมี(4, 1), 1, "งานทุก 6 ชม. ในช่วง 1 ชม. ⇒ อย่างน้อย 1 ห้ามเป็น 0 (หารศูนย์)");
 });
+
+test("ครอบงานตามเวลา: ต้องคืน Response เดิม · ไม่ตัดสินผลจาก HTTP status เอง", async () => {
+  /* 🚫 งานตามเวลาหลายตัวตอบ 200 พร้อมคีย์ error ข้างใน ⇒ เดาว่า 200 = สำเร็จ
+     จะได้สมุดที่เต็มไปด้วย ok ปลอม ซึ่งแย่กว่าไม่รู้ ⇒ ค่าปริยายต้องเป็น "ไม่ได้ตัดสิน" */
+  const { ครอบงานตามเวลา } = await import("../../netlify/lib/job-timing.mjs");
+  const เก่า = process.env.CLOUDFLARE_D1_TOKEN;
+  delete process.env.CLOUDFLARE_D1_TOKEN;   // จดไม่ได้ ⇒ ต้องไม่ลากงานล้ม
+  try {
+    const h = ครอบงานตามเวลา("เทส", async (ก) => new Response(JSON.stringify({ ok: false, ส่งมา: ก }), { status: 200 }));
+    const res = await h("ค่าที่ส่งเข้าไป");
+    assert.equal(res.status, 200, "ต้องคืน Response ของ handler เดิม ไม่ใช่ของตัวครอบ");
+    assert.deepEqual(await res.json(), { ok: false, ส่งมา: "ค่าที่ส่งเข้าไป" }, "อาร์กิวเมนต์ต้องส่งต่อครบ");
+  } finally {
+    if (เก่า !== undefined) process.env.CLOUDFLARE_D1_TOKEN = เก่า;
+  }
+});

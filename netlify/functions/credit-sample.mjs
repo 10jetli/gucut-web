@@ -25,6 +25,7 @@
 import { getStore } from "@netlify/blobs";
 /* 📜 สัญญาของประวัติ — **ไฟล์เดียวกับที่ตัวอ่านใช้** (เคยเขียนซ้ำสองไฟล์ ดูเหตุผลใน lib) */
 import { ประวัติKEY, เก็บกี่จุด } from "../lib/credit-history.mjs";
+import { ครอบงานตามเวลา } from "../lib/job-timing.mjs";
 /* ⚠️ **cron ข้างล่างต้องตรงกับ `ชั่วโมงต่อรอบเก็บ` ใน lib/credit-history.mjs**
    ไฟล์นี้ไม่ได้ import ค่านั้นมาใช้ (cron เป็นข้อความคงที่ Netlify อ่านตอน build แทนค่าตัวแปรไม่ได้)
    ⇒ จึงมีด่าน `credit-history-contract.test.mjs` อ่าน cron จากไฟล์นี้แล้วเทียบกับค่านั้นให้
@@ -32,7 +33,7 @@ import { ประวัติKEY, เก็บกี่จุด } from "../lib
 
 const SLUG = "10jetli";
 
-export default async function handler() {
+async function handler() {
   const token = process.env.NLF_CREDITS_TOKEN;
   /* ยังไม่ได้ตั้งคีย์ = ยังไม่เปิดใช้ **ไม่ใช่ของเสีย** ⇒ ออกเงียบ ๆ ไม่ต้องส่งเสียง */
   if (!token) return new Response(JSON.stringify({ skip: "ยังไม่ได้ตั้ง NLF_CREDITS_TOKEN" }), {
@@ -73,5 +74,13 @@ export default async function handler() {
   }
   return new Response(JSON.stringify(ผล), { headers: { "content-type": "application/json" } });
 }
+
+/* ⏱️ จดเวลาของรอบนี้ลงสมุด `job_run_log` ทุกรอบ (19 ก.ย. 2569 · ใบ S1)
+   🔑 ฝั่งจอวัดจาก cron จริงแล้วชี้ว่า ยอด 26.25 นาที/วันที่เคยรายงาน **ครอบแค่ 58% ของรอบทั้งหมด**
+      (288 รอบ/วันมีสมุด · 209 รอบ/วันไม่มี) ⇒ ตัวนี้อยู่ในกองที่ยังไม่มีใครวัด
+   🚫 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันทำงานจริง (เงิน/สต็อก/กระจก) และกินเวลาที่กำลังจะวัดพอดี
+   ⚠️ ผลในสมุดเป็น `ไม่ได้ตัดสิน` โดยตั้งใจ — งานนี้ตอบ 200 ได้แม้ข้างในมี error
+      ⇒ เดาว่า 200 = สำเร็จ จะได้สมุดที่เต็มไปด้วย ok ปลอม (แย่กว่าไม่รู้) · ดู note = HTTP status */
+export default ครอบงานตามเวลา("credit-sample", handler);
 
 export const config = { schedule: "53 * * * *" };

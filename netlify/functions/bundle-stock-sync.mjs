@@ -26,8 +26,9 @@
 //    (คลาสนี้กัดมาแล้ว 3 ครั้งใน 19 ก.ย. — bundle-recipe-sync · backup-run · core-sync)
 // ⚠️ สั่งเดี๋ยวนั้น: GET /api/core?syncbundles=1
 import { syncBundles } from "../lib/core-products.mjs";
+import { ครอบงานตามเวลา } from "../lib/job-timing.mjs";
 
-export default async function handler() {
+async function handler() {
   let stock;
   try {
     stock = await syncBundles();
@@ -54,5 +55,13 @@ export default async function handler() {
   }
   return new Response(JSON.stringify({ stock }), { headers: { "content-type": "application/json" } });
 }
+
+/* ⏱️ จดเวลาของรอบนี้ลงสมุด `job_run_log` ทุกรอบ (19 ก.ย. 2569 · ใบ S1)
+   🔑 ฝั่งจอวัดจาก cron จริงแล้วชี้ว่า ยอด 26.25 นาที/วันที่เคยรายงาน **ครอบแค่ 58% ของรอบทั้งหมด**
+      (288 รอบ/วันมีสมุด · 209 รอบ/วันไม่มี) ⇒ ตัวนี้อยู่ในกองที่ยังไม่มีใครวัด
+   🚫 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันทำงานจริง (เงิน/สต็อก/กระจก) และกินเวลาที่กำลังจะวัดพอดี
+   ⚠️ ผลในสมุดเป็น `ไม่ได้ตัดสิน` โดยตั้งใจ — งานนี้ตอบ 200 ได้แม้ข้างในมี error
+      ⇒ เดาว่า 200 = สำเร็จ จะได้สมุดที่เต็มไปด้วย ok ปลอม (แย่กว่าไม่รู้) · ดู note = HTTP status */
+export default ครอบงานตามเวลา("bundle-stock-sync", handler);
 
 export const config = { schedule: "33 * * * *" };
