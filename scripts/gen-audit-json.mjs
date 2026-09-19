@@ -20,7 +20,8 @@ await build({
   platform: "node",
   format: "esm",
   outfile: out,
-  alias: { "@": new URL("../src", import.meta.url).pathname },
+  // ⚠️ `.pathname` เข้ารหัส %xx ⇒ ใช้ fileURLToPath (แก้ 19 ก.ย. 2569)
+    alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) },
   loader: { ".json": "json" },
   logLevel: "silent",
 });

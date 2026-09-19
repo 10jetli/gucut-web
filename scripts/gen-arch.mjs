@@ -10,8 +10,11 @@
 //    ผังไม่ใช่ข้อมูลกฎหมาย เว็บ deploy ไม่ได้เพราะวาดผังไม่ออก = ได้ไม่คุ้มเสีย
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+/* ⚠️ ห้ามใช้ `.pathname` เป็นพาธไฟล์ — URL เข้ารหัสอักษรไทย/ช่องว่างเป็น %xx
+   ⇒ วันที่รีโปอยู่ในโฟลเดอร์ชื่อไทย พาธจะผิดเงียบ ๆ (แก้ 19 ก.ย. 2569) */
+const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => {
   try {
     return readFileSync(join(root, p), "utf8");
