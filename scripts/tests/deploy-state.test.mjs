@@ -8,6 +8,15 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+/* 🔑 **import ตรงหนึ่งบรรทัด เพื่อให้ coverage อ่านไฟล์จริงได้** (19 ก.ย. 2569 ค่ำ)
+ * 🔴 เทสข้างล่างต้องโหลดโมดูลใหม่ทุกครั้ง (`?t=${Date.now()}`) เพราะมันเปลี่ยน env/ไฟล์ก่อนเรียก
+ *    แต่ query ทำให้ Node เห็นเป็น **module URL อีกตัว** ⇒ `--experimental-test-coverage`
+ *    นับโค้ดที่รันให้ URL ที่มี query แล้ว **ไฟล์จริงเหลือ funcs 0%**
+ *    📏 พิสูจน์แล้วกับไฟล์นี้: ด้วย query ⇒ line 30.97% funcs 0% · ไม่มี query ⇒ line 93.81% funcs 100%
+ *    ⇒ ใครอ่าน `funcs 0%` ว่า "ไม่มีเทส" จะสรุปผิด ⇒ บรรทัดนี้ทำให้รายงานตรงกับความจริง
+ * 🚫 ห้ามลบ และห้ามเอาไปแทนการโหลดใหม่ข้างล่าง (เทสยังต้อง reload จริง) */
+import { สถานะการปล่อยของ as สถานะจากไฟล์จริง, ฟิลด์ที่ยังไม่ยืนยัน as ฟิลด์จริง } from "../../netlify/lib/deploy-state.mjs";
+
 
 const โหลด = async () => (await import(`../../netlify/lib/deploy-state.mjs?t=${Date.now()}`));
 
@@ -72,7 +81,21 @@ test("ใบล่าสุดตก แต่ใบก่อนหน้า pub
   assert.equal(r.ล่าสุด.สำเร็จไหม, false);
 });
 
-test("ฟิลด์ที่ยังไม่ยืนยันต้องติดไปกับคำตอบทุกเส้นทาง", async () => {
-  const { ฟิลด์ที่ยังไม่ยืนยัน } = await โหลด();
-  assert.ok(ฟิลด์ที่ยังไม่ยืนยัน.includes("state"), "state ยังไม่เคยเห็นค่าจริง ⇒ ต้องอยู่ในรายชื่อ");
+/* 🔑 ข้อนี้เรียกจาก **โมดูลที่ import ตรง** (ไม่ผ่าน `?t=`) โดยตั้งใจ — สองเหตุผล:
+   ① `token()` อ่าน env **ตอนเรียก** ไม่ใช่ตอนโหลด ⇒ ไม่ต้อง reload ก็ทดสอบได้
+   ② ทำให้ `--experimental-test-coverage` เห็นว่าฟังก์ชันถูกเรียกจริง
+      📏 วัดแล้ว: เรียกผ่าน `?t=` เท่านั้น ⇒ ไฟล์จริงรายงาน **funcs 0%** ทั้งที่เทสผ่านครบ
+         (query ทำให้ Node เห็นเป็น module URL อีกตัว) ⇒ ใครอ่าน 0% ว่า "ไม่มีเทส" จะสรุปผิด */
+test("ฟิลด์ที่ยังไม่ยืนยันต้องติดไปกับคำตอบทุกเส้นทาง + เรียกจากไฟล์จริงให้ coverage เห็น", async () => {
+  assert.ok(ฟิลด์จริง.includes("state"), "state ยังไม่เคยเห็นค่าจริง ⇒ ต้องอยู่ในรายชื่อ");
+  const เดิม = { a: process.env.NETLIFY_API_TOKEN, b: process.env.NETLIFY_AUTH_TOKEN };
+  delete process.env.NETLIFY_API_TOKEN; delete process.env.NETLIFY_AUTH_TOKEN;
+  try {
+    const r = await สถานะจากไฟล์จริง("x");
+    assert.ok(r.skip, "ไม่มี token ⇒ ต้อง skip (เรียกผ่านโมดูลที่ import ตรง)");
+    assert.equal("ok" in r, false);
+  } finally {
+    if (เดิม.a) process.env.NETLIFY_API_TOKEN = เดิม.a;
+    if (เดิม.b) process.env.NETLIFY_AUTH_TOKEN = เดิม.b;
+  }
 });

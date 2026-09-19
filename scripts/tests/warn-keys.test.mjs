@@ -11,6 +11,15 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+/* 🔑 **import ตรงหนึ่งบรรทัด เพื่อให้ coverage อ่านไฟล์จริงได้** (19 ก.ย. 2569 ค่ำ)
+ * 🔴 เทสข้างล่างต้องโหลดโมดูลใหม่ทุกครั้ง (`?t=${Date.now()}`) เพราะมันเปลี่ยน env/ไฟล์ก่อนเรียก
+ *    แต่ query ทำให้ Node เห็นเป็น **module URL อีกตัว** ⇒ `--experimental-test-coverage`
+ *    นับโค้ดที่รันให้ URL ที่มี query แล้ว **ไฟล์จริงเหลือ funcs 0%**
+ *    📏 พิสูจน์แล้วกับไฟล์นี้: ด้วย query ⇒ line 30.97% funcs 0% · ไม่มี query ⇒ line 93.81% funcs 100%
+ *    ⇒ ใครอ่าน `funcs 0%` ว่า "ไม่มีเทส" จะสรุปผิด ⇒ บรรทัดนี้ทำให้รายงานตรงกับความจริง
+ * 🚫 ห้ามลบ และห้ามเอาไปแทนการโหลดใหม่ข้างล่าง (เทสยังต้อง reload จริง) */
+import "../../netlify/lib/warn-keys.mjs"; // coverage อ่านไฟล์จริง
+
 
 const อ่านตาราง = async () => {
   const m = await import(`../../netlify/lib/warn-keys.mjs?t=${Date.now()}`);
