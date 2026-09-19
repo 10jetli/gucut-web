@@ -86,6 +86,17 @@ async function สร้างตาราง() {
        planned INTEGER, fired INTEGER, pushed INTEGER, rejected INTEGER,
        skipped INTEGER, ms INTEGER, note TEXT)`
   );
+  /* ⏱️ **เวลารายขั้น** (เพิ่ม 19 ก.ย. 2569 · ใบ t_mu7qyolx)
+     🔴 เหตุ: วัดจริงพบ `lazada live` ช้าสุด 28,492 ms ชนเพดานฟังก์ชัน ~30,000 ms
+        ⇒ ต้องรู้ว่า **เวลาหายไปที่แผนหรือที่ยิง** ถึงจะแก้ถูกจุด
+        เดิมมี `ขั้น.แผน_ms` / `ยิง_ms` / `เขียนสมุด_ms` คิดอยู่แล้ว **แต่ไม่เคยถูกจดลงสมุด**
+        🔑 ค่าที่คิดแล้วไม่ถูกเก็บ เท่ากับไม่ได้คิด (คลาสเดียวกับที่เจอเช้านี้)
+     ⚠️ ใช้ ALTER ทีละคอลัมน์ในกล่อง try — ตารางเก่ามีอยู่แล้ว `CREATE IF NOT EXISTS` จึงไม่เพิ่มให้
+        ⚠️ **แถวเก่าจะเป็น NULL ตลอดไป** (ไม่มีทางย้อนไปวัด) ⇒ ตัวอ่านต้องแยก
+           "ไม่มีข้อมูล" ออกจาก "ศูนย์" ให้ได้ [[new-columns-need-backfill]] */
+  for (const c of ["plan_ms INTEGER", "fire_ms INTEGER", "write_ms INTEGER"]) {
+    try { await coreQuery(`ALTER TABLE push_sweep_log ADD COLUMN ${c}`); } catch { /* มีอยู่แล้ว = ปกติ */ }
+  }
 }
 
 /** เขียนแถวเป็นชุด — D1 อยู่ APAC ฟังก์ชันอยู่ US (286 ms ต่อคำขอ)
@@ -519,8 +530,8 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   const ms = Date.now() - เริ่ม;
 
   await coreQuery(
-    `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note,plan_ms,fire_ms,write_ms)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(at) DO NOTHING`,
     [
       now, platform, ยิงจริง ? "live" : "dry",
@@ -531,6 +542,11 @@ export async function กวาดดันสต็อก({ platform = "lazada"
       แถว.length - p.push.length,
       ms,
       ผลยิง?.error ? String(ผลยิง.error).slice(0, 200) : null,
+      /* ⚠️ `?? null` ไม่ใช่ `?? 0` — ขั้นที่ไม่ได้ทำในรอบนั้น (เช่นไม่ได้ยิง) ต้องเป็น **ไม่มีข้อมูล**
+         ไม่ใช่ "ใช้เวลา 0 ms" ซึ่งจะทำให้ค่ากลางเพี้ยนต่ำลงโดยไม่มีใครรู้ */
+      ขั้น.แผน_ms ?? null,
+      ขั้น.ยิง_ms ?? null,
+      ขั้น.เขียนสมุด_ms ?? null,
     ]
   );
 
@@ -838,15 +854,37 @@ export async function เวลาต่อรอบ({ ชั่วโมงย�
     ? Math.max(1, Math.min(ดิบชม, 24 * 14))
     : 24;
   try {
-    const rows = await coreQuery(
-      `SELECT channel, mode, COUNT(*) AS รอบ,
-              MIN(ms) AS เร็วสุด, MAX(ms) AS ช้าสุด, SUM(ms) AS รวมms
-       FROM push_sweep_log
-       WHERE at > datetime('now', ?)
-       GROUP BY channel, mode
-       ORDER BY รวมms DESC`,
-      [`-${ชม} hours`]
-    );
+    /* ⏱️ อ่านเวลารายขั้นถ้ามีคอลัมน์ · ไม่มี ⇒ ถอยไปอ่านแบบเดิม **และประกาศว่าถอย**
+       🔴 คอลัมน์ `plan_ms`/`fire_ms`/`write_ms` เพิ่ม 19 ก.ย. 2569 ⇒ ตารางที่ยังไม่ถูก ALTER
+          (เช่นฐานใหม่ที่ยังไม่มีรอบกวาดเลย) จะทำให้ SELECT ล้มทั้งคำสั่ง
+          ⚠️ **ห้ามให้เส้นอ่านไป ALTER ตาราง** — เส้นอ่านอย่างเดียวต้องไม่เขียน
+          ⇒ ลองแบบมีคอลัมน์ก่อน ล้มแล้วถอย (ทางถอยต้องประกาศตัวเมื่อถูกใช้) */
+    let rows = null;
+    let มีเวลารายขั้น = true;
+    try {
+      rows = await coreQuery(
+        `SELECT channel, mode, COUNT(*) AS รอบ,
+                MIN(ms) AS เร็วสุด, MAX(ms) AS ช้าสุด, SUM(ms) AS รวมms,
+                MAX(plan_ms) AS แผนช้าสุด, MAX(fire_ms) AS ยิงช้าสุด, MAX(write_ms) AS สมุดช้าสุด,
+                SUM(CASE WHEN plan_ms IS NOT NULL THEN 1 ELSE 0 END) AS รอบที่มีเวลารายขั้น
+         FROM push_sweep_log
+         WHERE at > datetime('now', ?)
+         GROUP BY channel, mode
+         ORDER BY รวมms DESC`,
+        [`-${ชม} hours`]
+      );
+    } catch {
+      มีเวลารายขั้น = false;
+      rows = await coreQuery(
+        `SELECT channel, mode, COUNT(*) AS รอบ,
+                MIN(ms) AS เร็วสุด, MAX(ms) AS ช้าสุด, SUM(ms) AS รวมms
+         FROM push_sweep_log
+         WHERE at > datetime('now', ?)
+         GROUP BY channel, mode
+         ORDER BY รวมms DESC`,
+        [`-${ชม} hours`]
+      );
+    }
     /* ค่ากลางจริงต้องเรียงข้อมูลทั้งชุด — SQLite ไม่มี median ⇒ ดึง ms มาคิดในโค้ด
        ⚠️ จำกัดจำนวนแถวที่ดึง กันคำตอบบวมเมื่อสมุดโตขึ้น (และประกาศว่าจำกัด) */
     const เพดานแถว = 2000;
@@ -886,6 +924,15 @@ export async function เวลาต่อรอบ({ ชั่วโมงย�
         นาทีต่อวันประมาณ: Number(((รวม / 1000 / 60) * (24 / ชม)).toFixed(2)),
         /* 🔴 รอบที่ใช้เวลาเกิน 80% ของเพดาน — **ตัวที่จะพังก่อน ไม่ใช่ค่ากลาง** */
         รอบที่เกือบชนเพดาน: เกือบชน.get(`${r.channel}|${r.mode}`) ?? null,
+        /* ⏱️ เวลาช้าสุดรายขั้น — ตอบว่า "เวลาหายไปที่แผนหรือที่ยิง"
+           ⚠️ `null` = **แถวในช่วงนี้ยังไม่มีเวลารายขั้น** (รอบก่อนวันที่เพิ่มคอลัมน์)
+              ไม่ใช่ "ใช้เวลา 0" ⇒ ห้ามเอาไปหาผลต่าง */
+        ...(มีเวลารายขั้น ? {
+          แผนช้าสุด_ms: r.แผนช้าสุด ?? null,
+          ยิงช้าสุด_ms: r.ยิงช้าสุด ?? null,
+          เขียนสมุดช้าสุด_ms: r.สมุดช้าสุด ?? null,
+          รอบที่มีเวลารายขั้น: Number(r.รอบที่มีเวลารายขั้น) || 0,
+        } : {}),
       };
     });
     return {
@@ -895,7 +942,10 @@ export async function เวลาต่อรอบ({ ชั่วโมงย�
       เกือบชนเพดานที่_ms,
       แถว,
       รวมนาทีต่อวันประมาณ: Number(แถว.reduce((s, r) => s + (r.นาทีต่อวันประมาณ || 0), 0).toFixed(2)),
+      /* ทางถอยต้องประกาศตัวเมื่อถูกใช้ — ไม่งั้นกลายเป็นทางหลักโดยไม่มีใครตัดสินใจ */
+      เวลารายขั้นอ่านได้: มีเวลารายขั้น,
       "⚠️ ขอบเขต":
+        (มีเวลารายขั้น ? "" : "🔴 ตารางยังไม่มีคอลัมน์เวลารายขั้น ⇒ ถอยไปอ่านแบบเดิม (ไม่มี แผน/ยิง/สมุด) · ") +
         `คิดจากแถวใน push_sweep_log ย้อน ${ชม} ชม. (ค่ากลางคิดจากไม่เกิน ${เพดานแถว} แถวล่าสุด) · ` +
         "🚫 **รอบที่ล้มก่อนเขียนสมุดจะไม่อยู่ในนี้** ⇒ ห้ามอ่านว่า \"ทุกรอบเร็วเท่านี้\" · " +
         "⚠️ แยกตาม `mode` เสมอ — `fast-skip` เร็วกว่ารอบเต็มหลายเท่าโดยตั้งใจ " +
