@@ -196,9 +196,15 @@ async function route(req, context) {
     }
   }
   if (!gate.ok && !ticket) {
+    /* 🔴 **401 ตัวนี้คือเคสที่พบบ่อยที่สุด และเดิมไม่มีหัวบอกอะไรเลย** (แก้ 19 ก.ย. 2569)
+       ผมใส่หัว `x-gucut-gate`/`x-core-build` ไว้ที่ `admin-gate.mjs` แล้วรายงานว่าเสร็จ
+       ⇒ ยิงของจริงพบว่า 401 ที่ลูกค้าเจอ **ไม่มีหัวพวกนั้น** เพราะมันออกจากที่นี่ ไม่ใช่จากด่าน
+       🔑 แก้ที่ผู้ผลิตตัวหนึ่ง แล้วเชื่อว่าครบ ทั้งที่มีผู้ผลิตสองตัว (คลาสเดิมของวันนี้)
+       ⇒ ใช้ `หัวของด่าน()` แหล่งเดียว · และมีด่านยิงจริงเฝ้าไว้ใน verify-claims */
+    const { หัวของด่าน } = await import("../lib/admin-gate.mjs");
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
-      headers: { "content-type": "application/json" },
+      headers: { "content-type": "application/json", ...หัวของด่าน() },
     });
   }
 
