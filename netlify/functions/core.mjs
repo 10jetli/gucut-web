@@ -1720,6 +1720,18 @@ async function route(req, context) {
     }
     // บริการส่งสินค้า — อ่านจากกระจกออเดอร์ (ZORT ไม่มี API ขนส่งแยก)
     if (url.searchParams.get("list") === "logistics") {
+      /* 📐 **คำประกาศตัวกรองแบบสามสถานะ** (เพิ่ม 19 ก.ย. 2569 · วัดด้วย `probe-list-filters.mjs`)
+         🔴 ทำไมต้องสามสถานะ: `supportedFilters` เพียงลำพังเป็นช่อง **สองสถานะ**
+            ⇒ ตัวที่ไม่อยู่ในรายการ จะถูกอ่านว่า "ไม่รองรับ" ทั้งที่บางตัวเรา **วัดไม่ได้**
+            ⇒ ด่านฝั่งจอจะฟ้องจอที่ส่งตัวนั้นไป ทั้งที่จออาจถูก ⇒ ส่งคนไปพังของที่ยังดี
+         ✅ วัดแล้วกรองจริง: q from to
+         🔴 วัดแล้ว **เมินจริง**: carrier ⇒ ส่งค่าชื่อขนส่งที่ไม่มีอยู่ **จำนวนแถวเท่าเดิม**
+            ⇒ จอที่มีปุ่มเลือกขนส่ง = **ปุ่มหลอก** ⇒ ประกาศออกมาให้จอขึ้นเตือนได้
+         ⚠️ `only` **วัดด้วยค่ามั่วไม่ได้** (เป็นชุดค่าที่กำหนดไว้ ค่ามั่วถูกเมินโดยชอบธรรม)
+            ⇒ อยู่ในกอง `unmeasuredFilters` — **ห้ามอ่านว่าไม่รองรับ** */
+      const ส่งมา = (k) => url.searchParams.get(k);
+      const เมินอยู่ = {};
+      if (ส่งมา("carrier")) เมินอยู่.carrier = ส่งมา("carrier");
       return okJson({
         ...(await listLogistics({
           q: url.searchParams.get("q"),
@@ -1730,6 +1742,12 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),
+        supportedFilters: ["q", "from", "to", "limit", "offset"],
+        unmeasuredFilters: ["only"],
+        ...(Object.keys(เมินอยู่).length ? { ignored: เมินอยู่ } : {}),
+        ignoredNote:
+          "carrier: วัดจริง 19 ก.ย. 2569 — ส่งชื่อขนส่งที่ไม่มีอยู่แล้วจำนวนแถวเท่าเดิม ⇒ ไม่ได้กรอง · " +
+          "only: ยังวัดไม่ได้ด้วยค่ามั่ว (เป็นชุดค่าที่กำหนดไว้) **ห้ามอ่านว่าไม่รองรับ**",
       });
     }
     // รายการสินค้าในใบซื้อ — แยกรายสินค้าแบบรายงานยอดซื้อของ ZORT
@@ -3966,7 +3984,23 @@ async function route(req, context) {
           marketplaces: url.searchParams.get("marketplaces"),
           waitUntil,
         });
-      return okJson(r, r?.error ? 400 : 200);
+      /* 📐 คำประกาศตัวกรองแบบสามสถานะ (วัด 19 ก.ย. 2569) — เหตุผลเต็มที่ list=logistics
+         ✅ วัดแล้วกรองจริง: q · category · channel (ตอบ 400 เมื่อค่าไม่อยู่ในชุด = รับจริงและตรวจค่า)
+         🔴 วัดแล้วเมินจริง: store status from to days source
+         ⚠️ วัดด้วยค่ามั่วไม่ได้: kind only sort soldDays marketplaces ⇒ **ห้ามอ่านว่าไม่รองรับ** */
+      return okJson(
+        r?.error
+          ? r
+          : {
+              ...r,
+              supportedFilters: ["q", "category", "channel", "limit", "offset"],
+              unmeasuredFilters: ["kind", "only", "sort", "soldDays", "marketplaces"],
+              ignoredNote:
+                "วัดจริง 19 ก.ย. 2569: store/status/from/to/days/source ส่งไปแล้วจำนวนแถวเท่าเดิม ⇒ ไม่ได้กรอง · " +
+                "kind/only/sort/soldDays/marketplaces เป็นชุดค่าที่กำหนดไว้หรือไม่ใช่ตัวกรองแถว ⇒ ยังวัดไม่ได้",
+            },
+        r?.error ? 400 : 200,
+      );
     }
     /* ── เบา: เอาแค่ป้ายชื่อร้าน + ยอดแยกช่องทาง ──
        ยิง D1 2 รอบ แทนที่จะเป็น 11 รอบของ list=orders
