@@ -45,7 +45,7 @@ for (const ชื่อ of ต้องมาดู) {
 
 /** ทะเบียน — เพิ่มด่านใหม่ที่นี่ พร้อม **วิธีปลูกที่เหมือนของจริง**
  *  🔑 `ยืนยันปลูกลง` คือคำสั่งที่ **ต้องล้ม** หลังปลูก ⇒ กัน "ปลูกไม่ลงแล้วอ่านเขียวว่าด่านพัง" */
-import { ทะเบียน } from "./lib/ทะเบียนด่าน.mjs";
+import { ทะเบียน, ตัวตรวจนอกลูกโซ่ } from "./lib/ทะเบียนด่าน.mjs";
 
 const กรอง = process.argv[2];
 const รายการ = กรอง ? ทะเบียน.filter((t) => t.ด่าน.includes(กรอง)) : ทะเบียน;
@@ -92,11 +92,6 @@ const ด่านทั้งหมด = readdirSync("scripts").filter((f) => f
  *  🔑 **ต้องเป็นรายชื่อ ไม่ใช่ตัวเลข** — เลขที่เขียนฝังจะค้างทันทีที่พิสูจน์เพิ่มได้หนึ่งตัว
  *     (เพิ่งเกิดกับบรรทัดนี้เอง: เขียน "9 ตัวที่ยังไม่เคยพิสูจน์" แล้วพิสูจน์ `check-permit-models`
  *      ในนาทีเดียวกัน ⇒ ข้อความค้างทันที) */
-const ตัวตรวจนอกลูกโซ่ = [
-  "audit-core-contract.mjs", "check-filters-work.mjs", "check-ordercheck-shipping.mjs",
-  "check-paging-complete.mjs", "check-permit-models.mjs", "probe-applied-keys.mjs",
-  "probe-list-filters.mjs", "verify-claims.mjs", "verify-contract-keys.mjs",
-];
 const ชื่อในทะเบียน = new Set(ทะเบียน.map((t) => t.ด่าน.split(" ")[0] + ".mjs"));
 const ยังไม่พิสูจน์ = ด่านทั้งหมด.filter((f) => !ชื่อในทะเบียน.has(f));
 /* เซตรวมไม่ซ้ำของ "ทุกตัวตรวจที่ควรถูกพิสูจน์" — ตัวหารเดียวที่ใช้ได้ */

@@ -19,8 +19,45 @@
  *
  * ใช้: node scripts/check-plant-formulas.mjs
  */
-import { existsSync, readFileSync } from "node:fs";
-import { ทะเบียน } from "./lib/ทะเบียนด่าน.mjs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
+import { ทะเบียน, ตัวตรวจนอกลูกโซ่ } from "./lib/ทะเบียนด่าน.mjs";
+
+/* ── 🔍 รายการ "ตัวตรวจนอกลูกโซ่" ต้องไม่ล้าสมัย (20 ก.ย. 2569) ──────────────
+   รายการนั้นพิมพ์ด้วยมือและเป็น **ตัวหาร** ของความครอบคลุม
+   ⇒ ค้างเมื่อไหร่ ตัวเลขความครอบคลุมจะผิดโดยไม่มีใครรู้ (ทิศไหนก็ได้)
+   🔑 ฝั่งจอทำรายการของเขาให้ตรวจตัวเองก่อน แล้วบอกมา ⇒ ผมทำตาม ── */
+{
+  const พัง = [];
+  for (const ชื่อ of ตัวตรวจนอกลูกโซ่) {
+    if (!existsSync(`scripts/${ชื่อ}`)) พัง.push(`${ชื่อ} — ไม่มีไฟล์นี้แล้ว ⇒ รายการค้าง`);
+  }
+  try {
+    const pkg = JSON.parse(readFileSync("package.json", "utf8"));
+    /* 🔴 **ต้องดูทุกห่วงที่รันด่าน ไม่ใช่แค่ `prebuild`** (เจอทันทีที่รันครั้งแรก 20 ก.ย. 2569)
+       ด่านนี้ฟ้อง `check-leaks.mjs` ว่า "หลุดจากตัวหาร" ⇒ ของจริงคือมันอยู่ใน **`postbuild`**
+       ⇒ **ด่านจับถูกว่ามีของผิด แต่จัดประเภทผิด** ⇒ ถ้าผมเชื่อตามตัวอักษร
+         ผมจะเอา `check-leaks` ไปใส่รายการ "นอกลูกโซ่" ซึ่ง **เป็นเท็จ**
+       🔑 ⇒ ชื่อของตัวแปร (`prebuild`) ทำให้ขอบเขตดูสมเหตุสมผลกว่าที่มันเป็น */
+    const สาย = ["prebuild", "postbuild", "test"].map((k) => String(pkg?.scripts?.[k] ?? "")).join(" ");
+    const ในสาย = new Set((สาย.match(/scripts\/[\w\-.]+\.mjs/g) ?? []).map((x) => x.replace("scripts/", "")));
+    const ทุกตัวตรวจ = readdirSync("scripts").filter((f) => f.startsWith("check-") && f.endsWith(".mjs"));
+    for (const f of ทุกตัวตรวจ) {
+      if (!ในสาย.has(f) && !ตัวตรวจนอกลูกโซ่.includes(f)) {
+        พัง.push(`${f} — ไม่อยู่ในลูกโซ่ build (prebuild/postbuild/test) และไม่อยู่ในรายการ ⇒ **หลุดจากตัวหาร**`);
+      }
+    }
+  } catch (e) {
+    พัง.push(`อ่าน package.json ไม่ได้: ${String(e?.message || e).slice(0, 60)} ⇒ ตรวจรายการไม่ครบ`);
+  }
+  if (พัง.length) {
+    console.error(
+      `🔴 รายการ \`ตัวตรวจนอกลูกโซ่\` ล้าสมัย ${พัง.length} จุด\n` +
+      พัง.map((x) => `   · ${x}`).join("\n") +
+      "\n   ⇒ รายการนี้เป็น **ตัวหาร** ของความครอบคลุม ⇒ ค้าง = ตัวเลขผิดโดยไม่มีใครรู้"
+    );
+    process.exit(1);
+  }
+}
 
 let ตก = 0;
 let ผ่าน = 0;
