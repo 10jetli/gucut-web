@@ -20,6 +20,7 @@
  * ใช้: node scripts/probe-fallthrough-markers.mjs   (ต้องมี ~/.gucut-admin-key)
  */
 import { readFileSync, readdirSync } from "node:fs";
+import { จดว่ารันแล้ว } from "./lib/จดว่ารันแล้ว.mjs";
 import { execFileSync } from "node:child_process";
 import { homedir } from "node:os";
 
@@ -105,3 +106,7 @@ if (เงียบ.length) {
   console.log("\n🔴 เส้นที่ตกไปคำตอบตั้งต้นเงียบ ๆ ⇒ จอที่ถามผิดจะเขียนว่า \"ไม่มีรายการ\":\n" +
     เงียบ.map((x) => `   · /api/${x.s}`).join("\n"));
 }
+
+/* 🕰️ **จดว่ารันแล้ว** — ตัวนี้ไม่มีอะไรจุดชนวน ⇒ ถ้าไม่จด **ไม่มีใครรู้ว่ามันตายไปแล้วหรือยัง**
+   🚫 จดไม่ได้ ⇒ ไม่ทำให้ตัวตรวจล้ม (เสียบันทึกดีกว่าเสียผลตรวจ) */
+จดว่ารันแล้ว('probe-fallthrough-markers.mjs', `แยกได้ ${แยกได้}/${เส้น.length}`);
