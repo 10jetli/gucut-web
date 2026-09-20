@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-09-20T05:24:13.014Z",
+  "generatedAt": "2026-09-20T05:28:52.949Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -598,12 +598,14 @@ export const ZORT_ARCH = {
         {
           "id": "quotation",
           "menu": "ใบเสนอราคา",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ขาย",
           "ours": "core/quotations"
         },
         {
           "id": "order",
           "menu": "รายการขาย",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ขาย",
           "ours": "core/sales",
           "stock": "ตัดออก"
@@ -611,6 +613,7 @@ export const ZORT_ARCH = {
         {
           "id": "returnorder",
           "menu": "รับคืนสินค้า",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ขาย",
           "ours": "core/return-orders",
           "stock": "เพิ่มเข้า"
@@ -618,12 +621,14 @@ export const ZORT_ARCH = {
         {
           "id": "purchaseorder",
           "menu": "ใบสั่งซื้อ",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ซื้อ",
           "ours": "core/purchases"
         },
         {
           "id": "receive",
           "menu": "รับสินค้าเข้าคลัง",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ซื้อ",
           "ours": "core/receive",
           "stock": "เพิ่มเข้า"
@@ -631,6 +636,7 @@ export const ZORT_ARCH = {
         {
           "id": "returnpo",
           "menu": "คืนสินค้าผู้ขาย",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ซื้อ",
           "ours": "—",
           "stock": "ตัดออก"
@@ -638,6 +644,7 @@ export const ZORT_ARCH = {
         {
           "id": "transfer",
           "menu": "โอนย้ายสินค้า",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "คลัง",
           "ours": "core/transfers",
           "stock": "ย้ายคลัง ยอดรวมเท่าเดิม"
@@ -645,30 +652,35 @@ export const ZORT_ARCH = {
         {
           "id": "product",
           "menu": "สินค้า",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "คลัง",
           "ours": "core/stock"
         },
         {
           "id": "bundle",
           "menu": "สินค้าชุด",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "คลัง",
           "ours": "core/bundles"
         },
         {
           "id": "warehouse",
           "menu": "คลัง/สาขา",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ตั้งค่า",
           "ours": "core/branches"
         },
         {
           "id": "contact",
           "menu": "ลูกค้า/คู่ค้า",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ผู้ติดต่อ",
           "ours": "core/customers"
         },
         {
           "id": "document",
           "menu": "เอกสารบัญชี",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "เอกสาร",
           "ours": "core/accounting-docs"
         },
@@ -676,17 +688,20 @@ export const ZORT_ARCH = {
           "id": "channel",
           "menu": "ช่องทางขาย (Shopee/Lazada/TikTok)",
           "group": "เชื่อมต่อ",
+          "ชนิด": "ยังไม่ยืนยันว่าเป็นเมนู",
           "ours": "core/channels"
         },
         {
           "id": "social",
           "menu": "แชท (social.zortout.com)",
           "group": "เชื่อมต่อ",
+          "ชนิด": "คนละเว็บ",
           "ours": "core/chat"
         },
         {
           "id": "pos",
           "menu": "ขายหน้าร้าน POS",
+          "ชนิด": "เมนูแถบข้าง",
           "group": "ขาย",
           "ours": "core/pos"
         },
@@ -694,6 +709,7 @@ export const ZORT_ARCH = {
           "id": "peak",
           "menu": "PEAK (นอก ZORT)",
           "group": "ปลายทาง",
+          "ชนิด": "นอก ZORT",
           "ours": "core/peak"
         }
       ],
@@ -809,7 +825,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-09-20T05:24:13.015Z",
+    "at": "2026-09-20T05:28:52.950Z",
     "problems": [],
     "ok": true
   }
