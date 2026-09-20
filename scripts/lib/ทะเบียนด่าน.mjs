@@ -206,7 +206,11 @@ export const ทะเบียน = [
     ไฟล์: "scripts/lib/ท่อปลอมสำหรับวัดด่าน.mjs",
     เงื่อนไขเป้า: "ต้องทำให้ท่อปลอมเข้าโหมด **คืนแถวจริง + ประกาศ supportedFilters + เมินทุกตัวกรอง** · ท่อที่คืน 0 แถว ด่านจะตอบ 'วัดไม่ได้' ซึ่งซื่อสัตย์แต่ไม่แยกแยะ",
     แก้: (s) => s.replace("ถอดapplied = false, เมินตัวกรอง = false", "ถอดapplied = false, เมินตัวกรอง = true"),
-    ยืนยันปลูกลง: ["node", "-e", "import('./scripts/lib/ท่อปลอมสำหรับวัดด่าน.mjs').then(async(m)=>{const t=await m.เปิดท่อปลอม();const r=await fetch(t.ที่อยู่+'/api/core?list=x');const d=await r.json();await t.ปิด();if(!d.supportedFilters)process.exit(1)})"],
+    /* 🔴 **ครั้งที่สองของวันที่ผมเขียนตัวยืนยันกลับทิศ** — สัญญาคือ "คำสั่งที่ต้องล้ม *หลัง* ปลูก"
+       ⇒ เช็คคุณสมบัติที่ **จริงตอนยังไม่ปลูก** (ท่อปลอมไม่ประกาศ supportedFilters)
+         แล้วปลูกทำให้มันเท็จ ⇒ ล้ม
+       🔑 ผมพลาดรูปนี้ซ้ำทั้งที่เพิ่งแก้เมื่อไม่กี่ชั่วโมงก่อน ⇒ เขียนกำกับไว้ให้คนถัดไป(และตัวเอง) */
+    ยืนยันปลูกลง: ["node", "-e", "import('./scripts/lib/ท่อปลอมสำหรับวัดด่าน.mjs').then(async(m)=>{const t=await m.เปิดท่อปลอม();const r=await fetch(t.ที่อยู่+'/api/core?list=x');const d=await r.json();await t.ปิด();if(d.supportedFilters)process.exit(1)})"],
     คำสั่ง: ["node", "scripts/วัดด่านที่ต้องมีเว็บ.mjs", "probe-list-filters"],
     ต้องเอ่ยถึง: "supportedFilters ไม่ตรงกับที่วัดได้",
     ที่มา: "ปุ่มกรองหลอก — ทีมเจอของจริงหลายรอบ และทุกรอบหน้าตาเหมือนสำเร็จ (200 + ตัวเลขสมเหตุสมผล)",
