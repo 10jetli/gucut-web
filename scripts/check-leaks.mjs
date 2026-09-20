@@ -15,15 +15,12 @@
 import { readdirSync, readFileSync, statSync, existsSync } from "node:fs";
 import { join } from "node:path";
 
-const OUT = "out";
-if (!existsSync(OUT)) {
-  console.log("check-leaks: ยังไม่มีโฟลเดอร์ out/ — ข้าม (ยังไม่ได้ build)");
-  process.exit(0);
-}
+import { pathToFileURL } from "node:url";
 
-/* สิ่งที่ห้ามหลุด · แต่ละข้อบอกด้วยว่า "ถ้าเจอแล้วต้องดูยังไง"
-   ⚠️ `allow` = ข้อความที่ถ้าอยู่ใกล้ ๆ กัน ถือว่าเป็นเคสที่ตั้งใจ **ต้องมีเหตุผลกำกับ** */
-const RULES = [
+/* 🔓 **export เพื่อให้เทสแตะถึง — ไม่แตะพฤติกรรม** (20 ก.ย. 2569)
+   เลือกไฟล์นี้เป็นตัวแรกที่แก้โครงสร้าง เพราะเกณฑ์ "ถ้าพังเงียบ จะเสียอะไร":
+   ตัวนี้เฝ้า **ที่อยู่ร้าน · ค่าคีย์ลับ** ⇒ พังเงียบ = **ข้อมูลหลุดขึ้นเว็บจริง** */
+export const RULES = [
   {
     id: "ที่อยู่ร้าน",
     needle: "81 หมู่ 11",
@@ -51,66 +48,104 @@ const RULES = [
   },
 ];
 
-const files = [];
-(function walk(dir) {
-  for (const e of readdirSync(dir)) {
-    const p = join(dir, e);
-    const st = statSync(p);
-    if (st.isDirectory()) walk(p);
-    /* ตรวจเฉพาะไฟล์ที่ **ส่งให้เบราว์เซอร์จริง** — .js .html .txt .json .md
-       ⚠️ ไฟล์ source map (.map) ไม่นับ เพราะ Netlify ไม่ได้เสิร์ฟ และมันจะให้ผลบวกลวงเยอะ */
-    else if (/\.(js|html|txt|json|md|xml)$/.test(e) && !e.endsWith(".map")) files.push(p);
-  }
-})(OUT);
-
-const hits = [];
-for (const f of files) {
-  let s;
-  try { s = readFileSync(f, "utf8"); } catch { continue; }
-  for (const r of RULES) {
+/** 🧪 **ตัวตัดสินล้วน — ไม่แตะไฟล์ ไม่ออกรหัสจบ** ⇒ เทสเรียกได้ตรง ๆ
+ *  🔴 ที่มา 20 ก.ย. 2569: ฝั่งจอวัดแล้วพบว่า **โครงสร้างที่ทดสอบยาก ทำให้ไม่มีใครเขียนเทส**
+ *     📏 ฝั่งท่อ: ด่าน **28 ตัว · 24 ตัว `import` แล้วลงมือทันที** ⇒ เขียนเทสรายด่านไม่ได้เลย
+ *     ⇒ ⇒ **วิธี "ปลูกแล้ววัด" ผ่าน subprocess ของเรา เกิดจากข้อจำกัดนี้ ไม่ใช่เพราะมันดีกว่า**
+ *  🚫 "ว่าง" แปลว่า **ไม่พบตามกฎที่มี** ไม่ใช่ "ไม่มีของหลุด" — กฎครอบเท่าที่เขียนไว้ */
+export function ตรวจเนื้อ(เนื้อ, กฎ = RULES) {
+  const out = [];
+  const s = String(เนื้อ ?? "");
+  for (const r of กฎ) {
     let idx = -1;
     if (r.needle) idx = s.indexOf(r.needle);
-    else if (r.regex) { const m = r.regex.exec(s); idx = m ? m.index : -1; }
+    else if (r.regex) { const m = new RegExp(r.regex.source, r.regex.flags.replace("g", "")).exec(s); idx = m ? m.index : -1; }
     if (idx < 0) continue;
-    /* ⚠️ ดูบริบทรอบ ๆ ก่อนตัดสิน — ข้อความเดียวกันอยู่คนละที่มีความหมายคนละอย่าง
-        (บทเรียนของวันนี้: ตรวจของทีละชิ้นแล้วถูกหมด ไม่ได้แปลว่าของทั้งก้อนพูดความจริง) */
     const ctx = s.slice(Math.max(0, idx - 200), idx + 200);
     if (r.allowNear && r.allowNear.some((a) => ctx.includes(a))) continue;
-    hits.push({ rule: r, file: f, ctx: ctx.replace(/\s+/g, " ").slice(0, 160) });
+    out.push({ rule: r, ctx: ctx.replace(/\s+/g, " ").slice(0, 160) });
   }
+  return out;
 }
 
-/* 🔴 **ด่านนี้เขียวได้ทั้งที่ไม่ได้ตรวจอะไรเลย** — จับได้ 18 ก.ย. 2569 ด้วยวิธีของฝั่งจอ:
-      คัดลอกเฉพาะ `scripts/` ไปวางในสำเนาที่โฟลเดอร์อื่นเปล่า แล้วรันด่านทุกตัว
-      ⇒ ตัวนี้ขึ้น "ตรวจ 0 ไฟล์ — ไม่มีของต้องห้ามหลุด ✅" แล้ว **exit 0**
-      อาการจริงที่จะเกิด: เปลี่ยนโฟลเดอร์ผลลัพธ์ของ Next (out → .next/out ฯลฯ) หรือ
-      รันด่านผิดที่ ⇒ build เขียวสนิททั้งที่ **ไม่มีใครตรวจไฟล์ที่ส่งให้ลูกค้าเลย**
-      และของที่หลุดขึ้นเว็บแล้วเอากลับไม่ได้ ⇒ ด่านที่เขียวลวงตรงนี้แพงที่สุดในโปรเจกต์
-   🔑 "ไม่เจอ" กับ "ไม่มีของให้ตรวจ" ต้องเป็นสองสถานะ [[three-states-not-two]]
-   ⚠️ **พื้นตั้งไว้ต่ำ ๆ โดยตั้งใจ ห้ามล็อกเท่าจำนวนไฟล์วันนี้**
-      ล็อกเท่าวันนี้ = แดงทุกครั้งที่ลบหน้าตามปกติ แล้วคนจะปิดด่านทิ้ง (คำเตือนของฝั่งจอ)
-      หน้าที่ของตัวนี้คือ **จับศูนย์/จับผิดที่** ไม่ใช่เฝ้าจำนวน · เว็บนี้ build ออกมาหลายพันไฟล์
-      ⇒ ต่ำกว่า 100 แปลว่าอ่านผิดโฟลเดอร์แน่ ๆ ไม่ใช่ว่าร้านมีหน้าน้อยลง */
-const พื้นขั้นต่ำ = 100;
-if (files.length < พื้นขั้นต่ำ) {
-  console.error(
-    `check-leaks: ❌ อ่านไฟล์ใน out/ ได้แค่ ${files.length} ไฟล์ (ต่ำกว่าพื้น ${พื้นขั้นต่ำ})\n` +
-    `   ⇒ นี่คือ "ตรวจไม่ได้" ไม่ใช่ "ไม่มีของต้องห้าม" — ห้ามอ่านผลนี้ว่าปลอดภัย\n` +
-    `   ไล่ดู: build สำเร็จจริงไหม · โฟลเดอร์ผลลัพธ์ยังชื่อ out/ ไหม · รันด่านจากรากโปรเจกต์ไหม`
-  );
+/* 🔴 **ส่วน "ลงมือ" ต้องอยู่ใต้ guard — ไม่งั้น `import` ไฟล์นี้จะกวาดของจริงแล้ว `process.exit`**
+   📏 เจอทันทีที่เขียนเทสรอบแรก: เทส 6 ข้อ ⇒ รายงาน **`pass 1 · fail 0`** ⇒ **5 ข้อไม่ได้รันเลย**
+      เพราะ `process.exit(0)` ฆ่าโปรเซสหลังข้อแรก
+   ⇒ ⇒ **"pass 1 fail 0" หน้าตาเหมือนผ่าน** ⇒ คลาสที่เราไล่กันทั้งวัน:
+      **การหยุดกลางทางหน้าตาเหมือนความสำเร็จ** */
+const เป็นตัวหลัก = process.argv[1] && pathToFileURL(process.argv[1]).href === import.meta.url;
+if (เป็นตัวหลัก) {
+  const OUT = "out";
+  if (!existsSync(OUT)) {
+    console.log("check-leaks: ยังไม่มีโฟลเดอร์ out/ — ข้าม (ยังไม่ได้ build)");
+    process.exit(0);
+  }
+
+  /* สิ่งที่ห้ามหลุด · แต่ละข้อบอกด้วยว่า "ถ้าเจอแล้วต้องดูยังไง"
+     ⚠️ `allow` = ข้อความที่ถ้าอยู่ใกล้ ๆ กัน ถือว่าเป็นเคสที่ตั้งใจ **ต้องมีเหตุผลกำกับ** */
+
+  const files = [];
+  (function walk(dir) {
+    for (const e of readdirSync(dir)) {
+      const p = join(dir, e);
+      const st = statSync(p);
+      if (st.isDirectory()) walk(p);
+      /* ตรวจเฉพาะไฟล์ที่ **ส่งให้เบราว์เซอร์จริง** — .js .html .txt .json .md
+         ⚠️ ไฟล์ source map (.map) ไม่นับ เพราะ Netlify ไม่ได้เสิร์ฟ และมันจะให้ผลบวกลวงเยอะ */
+      else if (/\.(js|html|txt|json|md|xml)$/.test(e) && !e.endsWith(".map")) files.push(p);
+    }
+  })(OUT);
+
+  const hits = [];
+  for (const f of files) {
+    let s;
+    try { s = readFileSync(f, "utf8"); } catch { continue; }
+    for (const r of RULES) {
+      let idx = -1;
+      if (r.needle) idx = s.indexOf(r.needle);
+      else if (r.regex) { const m = r.regex.exec(s); idx = m ? m.index : -1; }
+      if (idx < 0) continue;
+      /* ⚠️ ดูบริบทรอบ ๆ ก่อนตัดสิน — ข้อความเดียวกันอยู่คนละที่มีความหมายคนละอย่าง
+          (บทเรียนของวันนี้: ตรวจของทีละชิ้นแล้วถูกหมด ไม่ได้แปลว่าของทั้งก้อนพูดความจริง) */
+      const ctx = s.slice(Math.max(0, idx - 200), idx + 200);
+      if (r.allowNear && r.allowNear.some((a) => ctx.includes(a))) continue;
+      hits.push({ rule: r, file: f, ctx: ctx.replace(/\s+/g, " ").slice(0, 160) });
+    }
+  }
+
+  /* 🔴 **ด่านนี้เขียวได้ทั้งที่ไม่ได้ตรวจอะไรเลย** — จับได้ 18 ก.ย. 2569 ด้วยวิธีของฝั่งจอ:
+        คัดลอกเฉพาะ `scripts/` ไปวางในสำเนาที่โฟลเดอร์อื่นเปล่า แล้วรันด่านทุกตัว
+        ⇒ ตัวนี้ขึ้น "ตรวจ 0 ไฟล์ — ไม่มีของต้องห้ามหลุด ✅" แล้ว **exit 0**
+        อาการจริงที่จะเกิด: เปลี่ยนโฟลเดอร์ผลลัพธ์ของ Next (out → .next/out ฯลฯ) หรือ
+        รันด่านผิดที่ ⇒ build เขียวสนิททั้งที่ **ไม่มีใครตรวจไฟล์ที่ส่งให้ลูกค้าเลย**
+        และของที่หลุดขึ้นเว็บแล้วเอากลับไม่ได้ ⇒ ด่านที่เขียวลวงตรงนี้แพงที่สุดในโปรเจกต์
+     🔑 "ไม่เจอ" กับ "ไม่มีของให้ตรวจ" ต้องเป็นสองสถานะ [[three-states-not-two]]
+     ⚠️ **พื้นตั้งไว้ต่ำ ๆ โดยตั้งใจ ห้ามล็อกเท่าจำนวนไฟล์วันนี้**
+        ล็อกเท่าวันนี้ = แดงทุกครั้งที่ลบหน้าตามปกติ แล้วคนจะปิดด่านทิ้ง (คำเตือนของฝั่งจอ)
+        หน้าที่ของตัวนี้คือ **จับศูนย์/จับผิดที่** ไม่ใช่เฝ้าจำนวน · เว็บนี้ build ออกมาหลายพันไฟล์
+        ⇒ ต่ำกว่า 100 แปลว่าอ่านผิดโฟลเดอร์แน่ ๆ ไม่ใช่ว่าร้านมีหน้าน้อยลง */
+  const พื้นขั้นต่ำ = 100;
+  if (files.length < พื้นขั้นต่ำ) {
+    console.error(
+      `check-leaks: ❌ อ่านไฟล์ใน out/ ได้แค่ ${files.length} ไฟล์ (ต่ำกว่าพื้น ${พื้นขั้นต่ำ})\n` +
+      `   ⇒ นี่คือ "ตรวจไม่ได้" ไม่ใช่ "ไม่มีของต้องห้าม" — ห้ามอ่านผลนี้ว่าปลอดภัย\n` +
+      `   ไล่ดู: build สำเร็จจริงไหม · โฟลเดอร์ผลลัพธ์ยังชื่อ out/ ไหม · รันด่านจากรากโปรเจกต์ไหม`
+    );
+    process.exit(1);
+  }
+
+  if (!hits.length) {
+    console.log(`check-leaks: ตรวจ ${files.length} ไฟล์ใน out/ — ไม่มีของต้องห้ามหลุด ✅`);
+    process.exit(0);
+  }
+  console.error(`\n🔴 check-leaks: เจอของต้องห้ามใน out/ ${hits.length} จุด — **หยุด deploy**\n`);
+  for (const h of hits) {
+    console.error(`  [${h.rule.id}] ${h.file}`);
+    console.error(`     เหตุผลที่ห้าม: ${h.rule.why}`);
+    console.error(`     บริบท: …${h.ctx}…\n`);
+  }
+  console.error("ถ้าเป็นเคสที่ตั้งใจให้มี ให้เพิ่มใน allowNear ของกฎนั้น **พร้อมเหตุผลกำกับ**");
+  console.error("⚠️ ห้ามยกเว้นโดยไม่เขียนเหตุผล — วันหนึ่งของจริงจะหลุดผ่านช่องนั้นโดยไม่มีใครรู้ว่าทำไม\n");
   process.exit(1);
-}
 
-if (!hits.length) {
-  console.log(`check-leaks: ตรวจ ${files.length} ไฟล์ใน out/ — ไม่มีของต้องห้ามหลุด ✅`);
-  process.exit(0);
 }
-console.error(`\n🔴 check-leaks: เจอของต้องห้ามใน out/ ${hits.length} จุด — **หยุด deploy**\n`);
-for (const h of hits) {
-  console.error(`  [${h.rule.id}] ${h.file}`);
-  console.error(`     เหตุผลที่ห้าม: ${h.rule.why}`);
-  console.error(`     บริบท: …${h.ctx}…\n`);
-}
-console.error("ถ้าเป็นเคสที่ตั้งใจให้มี ให้เพิ่มใน allowNear ของกฎนั้น **พร้อมเหตุผลกำกับ**");
-console.error("⚠️ ห้ามยกเว้นโดยไม่เขียนเหตุผล — วันหนึ่งของจริงจะหลุดผ่านช่องนั้นโดยไม่มีใครรู้ว่าทำไม\n");
-process.exit(1);
