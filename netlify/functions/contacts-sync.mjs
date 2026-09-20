@@ -9,13 +9,15 @@
 // ⏱️ จดเวลาตัวเองลงสมุด job_run_log ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
 //    🔑 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันเขียนกระจกผู้ติดต่อจริงและกินเวลาที่กำลังจะวัดพอดี
 import { syncContactsScheduled } from "../lib/core-contacts.mjs";
-import { วัดเวลางาน } from "../lib/job-timing.mjs";
+import { วัดเวลางาน, ผู้เรียกจากคำขอ } from "../lib/job-timing.mjs";
 
-export default async function handler() {
+export default async function handler(req) {
   let r;
   let จดเวลา = null;
   try {
     const t = await วัดเวลางาน("contacts-sync", syncContactsScheduled, {
+      // 🔎 "รอบนี้ใครสั่ง" — อ่านจากคำขอ ห้ามเดา (ดูเหตุผลใน job-timing.mjs)
+      ผู้เรียก: await ผู้เรียกจากคำขอ(req),
       // ข้าม = ทำงานปกติ (ยังไม่ถึงรอบ) · มี errors = ล้ม · นอกนั้นถือว่าจบดี
       ตัดสินผล: (x) => (Array.isArray(x?.errors) && x.errors.length && !x?.skip ? "failed" : "ok"),
       /* 🔴 เดิมอ่าน `x.written` ที่ระดับบนสุด ซึ่ง **ไม่มี** (ของจริงอยู่ใน recent/sweep) ⇒ note = null ทุกแถว

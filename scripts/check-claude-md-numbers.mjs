@@ -85,7 +85,13 @@ if (!ทะเบียน.length) {
     try {
       ได้ = execFileSync("bash", ["-lc", t.คำสั่งนับ], { encoding: "utf8", cwd: ราก, timeout: 20000 }).trim();
     } catch (e) {
-      เพี้ยน.push(`${t.ชื่อ} — คำสั่งรันไม่ได้: ${String(e?.message || e).slice(0, 70)}`);
+      const ออก = [e?.stdout, e?.stderr].map((x) => String(x ?? "").trim()).filter(Boolean).join(" | ");
+      เพี้ยน.push(
+        `${t.ชื่อ} — คำสั่งรันไม่ได้ (status=${e?.status ?? "-"} · signal=${e?.signal ?? "-"})\n` +
+        `     คำสั่ง: ${t.คำสั่งนับ}\n` +
+        `     ข้อความ: ${String(e?.message || e).trim()}\n` +
+        `     stdout/stderr: ${ออก || "(ว่าง)"}`
+      );
       continue;
     }
     const วัด = String(t.วัด());

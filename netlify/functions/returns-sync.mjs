@@ -10,9 +10,9 @@
 // ⏱️ จดเวลาตัวเองลงสมุด job_run_log ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
 //    ⚠️ รอบนี้ทำสองร้าน (z1+z2) ⇒ จดเป็น **รอบเดียว** เพราะทั้งคู่ใช้งบเวลาก้อนเดียวกัน
 import { syncReturnOrders } from "../lib/core-purchases.mjs";
-import { วัดเวลางาน } from "../lib/job-timing.mjs";
+import { วัดเวลางาน, ผู้เรียกจากคำขอ } from "../lib/job-timing.mjs";
 
-export default async function handler() {
+export default async function handler(req) {
   /* ⏱️ ครอบทั้งรอบ (z1+z2) ไว้ในการวัดครั้งเดียว — แต่ **try ของแต่ละร้านยังแยกกันเหมือนเดิม**
      z2 ล้มต้องไม่ลาก z1 · และเวลาที่จดต้องเป็นเวลารวมของรอบ ซึ่งคือสิ่งที่กินงบฟังก์ชันจริง */
   let r;
@@ -35,6 +35,8 @@ export default async function handler() {
       }
       return { z1: a, z2: b };
     }, {
+      // 🔎 "รอบนี้ใครสั่ง" — อ่านจากคำขอ ห้ามเดา (ดูเหตุผลใน job-timing.mjs)
+      ผู้เรียก: await ผู้เรียกจากคำขอ(req),
       // ล้มถ้าร้านใดร้านหนึ่งมี error หรือดึงมาไม่ครบ (complete === false) · skip ไม่ใช่ล้ม
       ตัดสินผล: (x) => {
         const เสีย = (o) => !!o?.error || (!o?.skip && o?.complete === false);

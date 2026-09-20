@@ -4,13 +4,15 @@
 // ⏱️ จดเวลาตัวเองลงสมุด `job_run_log` ทุกรอบ (19 ก.ย. 2569 · ใบ S1) — อ่านที่ /api/core?jobtiming=1
 //    🔑 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันเขียนข้อมูลจริงและกินเวลาฟังก์ชันที่กำลังจะวัดพอดี
 import { slipScanStep } from "../lib/slip-scan.mjs";
-import { วัดเวลางาน } from "../lib/job-timing.mjs";
+import { วัดเวลางาน, ผู้เรียกจากคำขอ } from "../lib/job-timing.mjs";
 
-export default async function handler() {
+export default async function handler(req) {
   let r;
   let จดเวลา = null;
   try {
     const t = await วัดเวลางาน("slips-sync", slipScanStep, {
+      // 🔎 "รอบนี้ใครสั่ง" — อ่านจากคำขอ ห้ามเดา (ดูเหตุผลใน job-timing.mjs)
+      ผู้เรียก: await ผู้เรียกจากคำขอ(req),
       // ตัวงานบอก ok มาตรง ๆ · ไม่มีคีย์ ok = ไม่ได้ตัดสิน (ห้ามเดาว่าสำเร็จ)
       ตัดสินผล: (x) => (x?.ok === false ? "failed" : x?.ok === true ? "ok" : null),
       /* 🔴 **note ต้องเป็นหลักฐานว่าแตะงานจริง ไม่ใช่ null** (แก้ 19 ก.ย. เย็น · ฝั่งจอชี้)
