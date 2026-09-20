@@ -18,8 +18,13 @@
 //    (ผังวาดไม่ออก ไม่ใช่เหตุผลที่ดีพอจะทำให้ร้านขายของไม่ได้)
 import { readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+/* 🔴 ต้องใช้ `fileURLToPath` ไม่ใช่ `.pathname` (แก้ 20 ก.ย. 2569 ตอนรวมสองสาย)
+   `.pathname` เข้ารหัสอักษรไทยและช่องว่างเป็น `%xx` ⇒ พาธที่มีไทยจะหาไฟล์ไม่เจอ
+   ⇒ รีโปนี้มีชื่อไฟล์ไทยจำนวนมาก ⇒ มีด่านเฝ้าเรื่องนี้อยู่ (`path-url-roundtrip.test.mjs`)
+   🔑 ไฟล์นี้มาจากอีกสาขาที่ไม่มีด่านนั้น ⇒ **การรวมสองสายทำให้โค้ดที่เคยผ่าน กลายเป็นไม่ผ่าน** */
+const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => { try { return readFileSync(join(root, p), "utf8"); } catch { return ""; } };
 const listDir = (p) => { try { return readdirSync(join(root, p)); } catch { return []; } };
 
