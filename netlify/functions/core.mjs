@@ -144,7 +144,12 @@ async function route(req, context) {
       ลงไปเพราะมันสะดวก ⇒ **นั่นคือวันที่มันกลายเป็นช่องส่องข้อมูลฟรีให้คนนอก**
       อยากได้ข้อมูลอะไรเพิ่ม ให้ไปสร้างเส้นใหม่ที่ผ่าน adminGate **ห้ามเกาะเส้นนี้**
       (ฝั่งจอทักเรื่องนี้เอง 6 ก.ย. 2569 — `build` ที่มีอยู่ไม่ใช่ของใหม่ มันติดอยู่ในหัว
-       `x-core-build` ของทุกคำตอบอยู่แล้ว จึงไม่ได้เปิดอะไรเพิ่ม) */
+       `x-core-build` ของทุกคำตอบอยู่แล้ว จึงไม่ได้เปิดอะไรเพิ่ม)
+      🔴 **ประโยคข้างบนนี้เคยเป็นเท็จสำหรับกิ่งนี้เอง** — ยิงตรวจ 6 เส้น 20 ก.ย. 2569 ค่ำ
+         พบว่า `?ping=1` เป็นเส้น **เดียว** ที่ **ไม่มี** หัว `x-core-build` (เส้นอื่นมีครบ)
+         ⇒ ⇒ และมันคือเส้นที่คนใช้เช็คยุคมากที่สุดเพราะ **ไม่ต้องมีรหัส**
+         🔑 หัวหาย ⇒ จออ่านว่า "ท่อรุ่นเก่า" = **แดงลวงทิศเดียวกับปัญหาที่เรากลัว**
+         ⇒ ใส่หัวให้ครบทุกคำตอบแล้ว + มีด่าน `ทุกคำตอบต้องบอกยุคท่อ.test.mjs` เพดาน 0 กันหลุดซ้ำ */
   if (new URL(req.url).searchParams.get("ping")) {
     /* 🔬 `inst` = รหัสสุ่มประจำ "เครื่อง" (สุ่มครั้งเดียวตอนโหลดโมดูล คงที่ตลอดอายุอินสแตนซ์)
         มีไว้ตอบคำถามเดียวที่ตัดสินทั้งเรื่องปลุกเครื่อง (ฝั่งจอเสนอ 6 ก.ย. 2569):
@@ -159,7 +164,7 @@ async function route(req, context) {
      ⚠️ ถอดออกได้เมื่อตอบคำถามข้างบนจบแล้ว — ไม่ใช่ของถาวร */
     return new Response(JSON.stringify({ ok: true, ping: true, build: CORE_BUILD, inst: INSTANCE_ID }), {
       status: 200,
-      headers: { "content-type": "application/json", "cache-control": "no-store" },
+      headers: { "x-core-build": CORE_BUILD, "content-type": "application/json", "cache-control": "no-store" },
     });
   }
 
@@ -179,6 +184,7 @@ async function route(req, context) {
     return new Response(null, {
       status: 204,
       headers: {
+        "x-core-build": CORE_BUILD,
         "access-control-allow-origin": "https://secure.zortout.com",
         "access-control-allow-headers": "content-type, x-admin-key, x-upload-token",
         "access-control-allow-methods": "POST, OPTIONS",
@@ -225,7 +231,7 @@ async function route(req, context) {
           extra,
           hint: "เอาพารามิเตอร์อื่นออก หรือใช้ x-admin-key แทนตั๋ว",
         }),
-        { status: 400, headers: { "content-type": "application/json; charset=utf-8" } }
+        { status: 400, headers: { "content-type": "application/json; charset=utf-8", "x-core-build": CORE_BUILD } }
       );
     }
   }
@@ -238,7 +244,7 @@ async function route(req, context) {
     const { หัวของด่าน } = await import("../lib/admin-gate.mjs");
     return new Response(JSON.stringify({ error: "unauthorized" }), {
       status: 401,
-      headers: { "content-type": "application/json", ...หัวของด่าน() },
+      headers: { "x-core-build": CORE_BUILD, "content-type": "application/json", ...หัวของด่าน() },
     });
   }
 
@@ -1804,6 +1810,7 @@ async function route(req, context) {
       return new Response(JSON.stringify(r.error ? { ok: false, ...r } : { ok: true, ...r }), {
         status: r.error ? 400 : 200,
         headers: {
+          "x-core-build": CORE_BUILD,
           "content-type": "application/json",
           "access-control-allow-origin": "https://secure.zortout.com",
         },
@@ -1817,6 +1824,7 @@ async function route(req, context) {
       return new Response(JSON.stringify(r.error ? { ok: false, ...r } : { ok: true, ...r }), {
         status: r.error ? 400 : 200,
         headers: {
+          "x-core-build": CORE_BUILD,
           "content-type": "application/json",
           "access-control-allow-origin": "https://secure.zortout.com",
         },
