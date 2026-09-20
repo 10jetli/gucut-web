@@ -1,6 +1,6 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ
 // ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)
-export const generatedAt = "2026-09-20T03:16:35.825Z";
+export const generatedAt = "2026-09-20T03:25:48.922Z";
 export const source = "netlify/functions/*.mjs (export const config)";
 export const jobs = [
  {
