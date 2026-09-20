@@ -164,11 +164,20 @@ echo "   ✅ build ผ่าน"
   fi
 }
 
-STAMP="$(git rev-parse --git-dir)/.last-push-at"
+# 🔴 **ด่านความถี่ต้องอ่าน "push ที่ถึง remote จริง" ไม่ใช่แสตมป์ในเครื่อง** (แก้ 21 ก.ย. 2569)
+#    ของจริงฝั่งจอ: ด่านบอกว่า "push ครั้งก่อนเพิ่งผ่านไป 4 นาที" ทั้งที่ **ไม่มี push ไหนสำเร็จเลยใน 3 ชม.**
+#    ต้นตอ: แสตมป์ถูกเขียน **ตอนด่านผ่าน** ซึ่งเกิด *ก่อน* git เริ่มส่งจริง
+#    ⇒ push ที่ถูกฆ่า/ล้มกลางทาง **จุดนาฬิกา 45 นาที ทั้งที่ไม่มีอะไรถึง remote**
+#    ⇒ ⇒ และฝั่งเราแพงเป็นพิเศษ: ลองใหม่แต่ละครั้งต้องรันเทสทั้งชุดซ้ำ
+# 🔑 กติกา: **ตัวนับที่ต้องตอบว่า "เกิดขึ้นจริงไหม" ห้ามเขียนก่อนเหตุการณ์**
+#    ⇒ reflog ของ refs/remotes/origin/<branch> รายการ `update by push` = ของที่ถึง remote จริงเท่านั้น
+#       (`fetch` ไม่นับ · ไม่มีธงในเครื่องให้เพี้ยน) — ท่านี้ฝั่งจอคิดก่อน ผมเอามาใช้
+BR=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
 NOW=$(date +%s)
 MINGAP="${PUSH_MIN_GAP_MIN:-45}"
-if [ -f "$STAMP" ]; then
-  LAST=$(cat "$STAMP" 2>/dev/null || echo 0)
+LAST=$(git reflog show --date=unix "refs/remotes/origin/$BR" 2>/dev/null \
+        | grep -m1 'update by push' | sed -n 's/.*@{\([0-9][0-9]*\)}.*/\1/p')
+if [ -n "$LAST" ]; then
   DIFF=$(( (NOW - LAST) / 60 ))
   if [ "$DIFF" -lt "$MINGAP" ]; then
     if [ "${ALLOW_FAST_PUSH:-}" = "1" ]; then
@@ -184,8 +193,11 @@ if [ -f "$STAMP" ]; then
       exit 1
     fi
   fi
+else
+  # 🚫 ไม่เจอ push ที่ถึง remote ⇒ **"ยังไม่รู้" ไม่ใช่ "ห่างพอแล้ว"** ⇒ ปล่อยผ่านพร้อมบอกเหตุ
+  echo "ℹ️ ไม่พบรายการ 'update by push' ใน reflog ของ origin/$BR ⇒ ด่านความถี่ไม่มีข้อมูลให้เทียบ (ข้ามรอบนี้)"
 fi
-echo "$NOW" > "$STAMP"
+# 🚫 **ห้ามเขียนแสตมป์ที่นี่** — ดูเหตุผลข้างบน (ของเดิม: echo "$NOW" > .git/.last-push-at)
 
 echo "✅ ผ่านด่าน — push ได้"
 HOOK_EOF
