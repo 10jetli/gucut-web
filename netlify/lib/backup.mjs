@@ -45,9 +45,22 @@ export const NEVER = [
   { store: "gucut-time", why: "รวมอยู่ใน gucut-staff แล้ว" },
 ];
 
-// ค่าเดียวที่ใหญ่เกินนี้ข้ามไป (รูป/ไฟล์แนบ) — D1 ไม่ได้ออกแบบมาเก็บไฟล์
-const MAX_ONE = 180_000;
-const BATCH_BYTES = 60_000;
+/* 🔴 **เพดานของเราต้องอยู่ใต้เพดานของ D1 เสมอ — 21 ก.ย. 2569 พิสูจน์ด้วยของจริง**
+   ของจริง: `gucut-coupon` ล้ม **6 รอบติดจาก 6** ด้วย
+   `D1 400: [{"code":7500,"message":"statement too long: SQLITE_TOOBIG"}]`
+   ⇒ ⇒ เดิม `MAX_ONE = 180_000` ซึ่ง **สูงกว่าเพดานคำสั่งของ D1 (~100 KB) เกือบสองเท่า**
+      ⇒ ค่าที่ผ่านด่าน "ไม่ใหญ่เกิน" ของเรา **ยังใหญ่เกินสำหรับปลายทาง** ⇒ **ด่านที่กันอะไรไม่ได้เลย**
+   🔑 คลาส: **เพดานที่เราตั้งเอง ถ้าไม่ต่ำกว่าเพดานของคนอื่น มันเป็นแค่ตัวเลขประดับ**
+
+   🔴 และของเดิมยังผิดอีกทางที่ตัวเลขปิดไม่ได้: มันวัด **ขนาดของค่า** แต่สิ่งที่ D1 จำกัดคือ
+      **ขนาดของคำสั่ง SQL** ⇒ escape (`'` → `''`) และโครง `(...)` ทำให้คำสั่งใหญ่กว่าค่า
+      และ `batchBytes >= BATCH_BYTES` ตรวจ **หลัง** ใส่แถวเข้าไปแล้ว
+      ⇒ ก้อนสุดท้ายโตได้ถึง `BATCH_BYTES + MAX_ONE` ⇒ **เกินเพดานได้ทั้งที่ทุกค่าผ่านด่าน**
+   ⇒ ทางแก้: วัด **ความยาวของแถว SQL จริง** และ **flush ก่อนจะเกิน** ไม่ใช่หลังเกิน */
+export const D1_คำสั่งยาวสุด_ไบต์ = 100_000;      // เพดานของ D1 (ค่าที่ทำให้เกิด SQLITE_TOOBIG จริง)
+export const SQL_ปลอดภัย = 80_000;                        // เพดานที่เราใช้ — ต้อง **ต่ำกว่า** ของ D1 พร้อมเผื่อโครงคำสั่ง
+export const MAX_ONE = 60_000;                            // แถวเดียวยาวเกินนี้ ⇒ ข้าม (และ **ต้องบอกชื่อคีย์**)
+const BATCH_BYTES = SQL_ปลอดภัย;
 
 export async function ensureBackupTables() {
   await coreQuery(
@@ -83,6 +96,11 @@ async function backupOne(cfg, deadline = Infinity) {
   );
 
   let saved = 0, unchanged = 0, skipped = 0, bytes = 0, left = 0;
+  /* 🚫 **ข้ามแบบเงียบ = เสียของสำคัญเงียบ ๆ** — ต้องคืนชื่อคีย์ที่ถูกข้ามออกไปด้วย
+     (ของจริงที่ทำให้ต้องมี: ถังที่ล้มคือ `gucut-coupon` = โค้ดส่วนลด · พิกเซล · กติกาบอต
+      ถ้าเปลี่ยนจาก "ล้มทั้งถัง" เป็น "ข้ามคีย์นั้น" โดยไม่บอกชื่อ เราจะไม่รู้ว่า
+      ของที่ไม่ได้สำรองคือ **กติกาบอต** หรือแค่ **แคชตัวเลขที่สร้างใหม่ได้**) */
+  const คีย์ที่ข้าม = [];
   let batch = [], batchBytes = 0;
   const flush = async () => {
     if (!batch.length) return;
@@ -132,10 +150,6 @@ async function backupOne(cfg, deadline = Infinity) {
           ยอมรับได้ (ได้สำเนาสดขึ้น) แต่จะกินโควตาเขียน D1 หนึ่งรอบ ⇒ จดไว้ให้คนอ่าน log ไม่ตกใจ
        🚫 ห้ามกลับไปใช้ `.length` — ถ้าอยากได้จำนวนอักขระ ให้ตั้งชื่อว่า chars ไม่ใช่ bytes */
     const size = Buffer.byteLength(text, "utf8");
-    if (size > MAX_ONE) {
-      skipped++;
-      continue;
-    }
     const p = prev.get(key);
     // เขียนเฉพาะที่เปลี่ยนจริง — ประหยัดโควตาเขียนของ D1
     // (ขนาดเท่าเดิม ลายนิ้วมือเดิม และไม่เคยหายไป = ถือว่าเหมือนเดิม)
@@ -144,13 +158,20 @@ async function backupOne(cfg, deadline = Infinity) {
       bytes += size;
       continue;
     }
-    batch.push(
-      `(${esc(cfg.store)},${esc(key)},${esc(text)},${size},datetime('now'),NULL,${tag ? esc(tag) : "NULL"})`
-    );
-    batchBytes += size;
+    /* 🔑 วัด **แถว SQL จริง** (รวม escape) ไม่ใช่ขนาดค่า — นั่นคือสิ่งที่ D1 จำกัด */
+    const แถวSQL = `(${esc(cfg.store)},${esc(key)},${esc(text)},${size},datetime('now'),NULL,${tag ? esc(tag) : "NULL"})`;
+    const แถวไบต์ = Buffer.byteLength(แถวSQL, "utf8");
+    if (แถวไบต์ > MAX_ONE) {
+      skipped++;
+      คีย์ที่ข้าม.push({ key, bytes: size, sqlBytes: แถวไบต์ });
+      continue;
+    }
+    // flush **ก่อน** จะเกิน — ตรวจหลังใส่แล้วสายเกินไป (ก้อนสุดท้ายจะโตเกินเพดาน)
+    if (batchBytes + แถวไบต์ > SQL_ปลอดภัย) await flush();
+    batch.push(แถวSQL);
+    batchBytes += แถวไบต์;
     saved++;
     bytes += size;
-    if (batchBytes >= BATCH_BYTES) await flush();
   }
   await flush();
 
@@ -176,6 +197,8 @@ async function backupOne(cfg, deadline = Infinity) {
   return {
     store: cfg.store, what: cfg.what, keys: keys.length,
     saved, unchanged, skipped, gone: vanished.length, bytes,
+    /* ชื่อคีย์ที่ถูกข้ามเพราะยาวเกิน — **ห้ามข้ามเงียบ** · เอาแค่ 10 ตัวแรกกันคำตอบบวม */
+    skippedKeys: คีย์ที่ข้าม.slice(0, 10),
     left: left || 0, // ยังเหลือกี่คีย์ที่ยังไม่ได้ดูรอบนี้ (หมดเวลา) — 0 = ครบแล้ว
   };
 }
@@ -204,6 +227,8 @@ export async function runBackup(budgetMs = 18000) {
       keys: out.reduce((s, r) => s + num(r.keys), 0),
       bytes: out.reduce((s, r) => s + num(r.bytes), 0),
       failed: out.filter((r) => r.error).length,
+      // คีย์ที่ถูกข้ามทั้งรอบ (ยาวเกินเพดาน SQL) — ต้องโผล่ในสรุป ไม่ใช่ซ่อนในรายถัง
+      skippedKeys: out.flatMap((r) => (r.skippedKeys ?? []).map((x) => `${r.store}/${x.key} (${x.sqlBytes} B)`)).slice(0, 20),
       // เหลือค้าง = รอบนี้หมดเวลาก่อน · รอบถัดไปเก็บต่อเอง ไม่ต้องสั่ง
       left: out.reduce((s, r) => s + num(r.left), 0),
     },
