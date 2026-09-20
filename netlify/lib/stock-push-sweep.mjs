@@ -559,9 +559,15 @@ export async function กวาดดันสต็อก({ platform = "lazada"
          ⚠️ `notSentKind` ไม่มีค่า = ตัวยิงรุ่นเก่า ⇒ **ถือเป็น error ไว้ก่อน**
             ระบบต้องพังไปทาง "มีคนมาดู" ไม่ใช่ทาง "เงียบ" */
       const เหตุไม่ส่ง = got.notSentKind ?? null;
-      const เป็นความผิดพลาด =
-        got.result === "rejected" ||
-        (got.result === "not_sent" && เหตุไม่ส่ง !== "policy_down" && เหตุไม่ส่ง !== "stale_plan");
+      /* 🔴 **เพิ่ม `policy_hold` 20 ก.ย. 2569** — ด่าน ⑧ (รหัสในใบค้างส่ง) และด่าน ⑥ (reopen)
+         เป็น **นโยบายของเราเอง** เหมือน `policy_down` ⇒ ห้ามนับเป็น error
+         📏 ฝั่งจอกางของจริง: 109 จาก 200 แถวที่มี `last_error` เป็นข้อความของด่าน ⑧
+         ⇒ ตัวนับ `มีข้อผิดพลาด` บวมด้วยนโยบาย ⇒ ของเสียจริงถูกกลบใต้เสียงรบกวน
+         ⚠️ `needs_human` **ยังนับเป็น error โดยตั้งใจ** (รหัสอยู่หลายที่ · ที่อยู่ไม่ถูก ·
+            อ่านใบค้างส่งไม่ได้) — พวกนั้นไม่ใช่ความผิดของแพลตฟอร์ม แต่ **ต้องมีคนมาดู**
+            ⇒ ถ้าย้ายไปกองนโยบาย มันจะเงียบตลอดกาล */
+      const เป็นนโยบาย = เหตุไม่ส่ง === "policy_down" || เหตุไม่ส่ง === "policy_hold" || เหตุไม่ส่ง === "stale_plan";
+      const เป็นความผิดพลาด = got.result === "rejected" || (got.result === "not_sent" && !เป็นนโยบาย);
       if (เป็นความผิดพลาด) {
         r.last_error = String(got.why || got.result).slice(0, 200);
         r.last_error_at = now;
@@ -575,7 +581,9 @@ export async function กวาดดันสต็อก({ platform = "lazada"
               = เขียนความว่างทับของจริง [[read-before-write-no-swallow]] */
         r.last_error = null;
         r.last_error_at = null;
-        if (เหตุไม่ส่ง === "policy_down") r.skip_reason = "policy_down";
+        /* เก็บชนิดนโยบายลง `skip_reason` (ช่องที่มีไว้เพื่อเรื่องนี้) ไม่ใช่ `last_error`
+           ⇒ จอแยก "เราเลือกกันไว้" ออกจาก "ของเสีย" ได้จากฟิลด์ ไม่ต้องอ่านข้อความ */
+        if (เหตุไม่ส่ง === "policy_down" || เหตุไม่ส่ง === "policy_hold") r.skip_reason = เหตุไม่ส่ง;
       }
     }
   }
