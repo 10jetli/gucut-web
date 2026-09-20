@@ -57,6 +57,19 @@ function receiverName(call) {
 // จึงตีความว่าเป็น Blobs เฉพาะเมื่อตัวรับหน้าตาเป็น store (s, s2, store, xxStore ฯลฯ)
 // ส่วน .setJSON มีแต่ Blobs เท่านั้น — จับทุกกรณี
 const STORE_LIKE = /^(s\d?|us|store)$|store$/i;
+/* 🔴 **ชื่อไม่พอ — ต้องดู "ที่มา" ของตัวแปรด้วย** (21 ก.ย. 2569)
+   ฝั่งจอเสนอท่านี้ก่อน (เขาเจอ `m.set(sku, g)` ที่เป็น `Map` ถูกจับเป็น Blobs ⇒ แดงลวง)
+   ⇒ ผมเอามาตรวจฝั่งตัวเอง แล้วพบ **ทิศตรงข้าม**: ตัวแปรที่เป็นถัง Blobs จริง **3 ตัว**
+      ที่ชื่อไม่เข้ารูป `STORE_LIKE` ⇒ `ถัง` (core.mjs) · `o` (push.mjs) · `cached` (marketplace-listings.mjs)
+   🔑 และตัวแรกคือ **ชื่อภาษาไทย ซึ่งไม่มีทางเข้ารูป regex อังกฤษได้เลย**
+      ⇒ เราตั้งชื่อตัวแปรเป็นไทยทั้งรีโป ⇒ **ตะแกรงที่ผูกกับชื่ออังกฤษจะพลาดมากขึ้นเรื่อย ๆ ตามเวลา**
+   ✅ ทางแก้: เก็บชื่อตัวแปรที่ **รับค่ามาจาก `getStore(...)` ในไฟล์นั้น** แล้วถือว่าเป็นถัง
+      **รวมกับ** ตะแกรงชื่อเดิม (union — ไม่ใช่แทนที่ · ถังที่มาจากพารามิเตอร์/ฟังก์ชันอื่นยังต้องพึ่งชื่อ)
+   🚫 ยังเป็นการวิเคราะห์แบบตัวอักษร ไม่ใช่ตามชนิดข้อมูลจริง ⇒ **เขียวยังแปลว่า "ไม่พบตามกฎที่มี"**
+   ⚠️ ตอนตรวจ (21 ก.ย.) ทั้งสามตัวไม่มีการเขียนแบบปล่อยลอย ⇒ **ยังไม่มีบั๊กจริง** แต่ตาข่ายมีรูอยู่ */
+const ตัวแปรถัง = (src) =>
+  new Set([...src.matchAll(/(?:const|let|var)\s+([A-Za-z_$\u0E00-\u0E7F][\w$\u0E00-\u0E7F]*)\s*=\s*(?:await\s+)?getStore\(/g)]
+    .map((m) => m[1]));
 /** ชื่อฟังก์ชันต้นสาย เช่น fetch(...) */
 function rootName(call) {
   let e = call.expression;
@@ -85,6 +98,8 @@ for (const root of ROOTS) {
     const text = fs.readFileSync(file, "utf8");
     const lines = text.split("\n");
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
+    // ถังที่ประกาศในไฟล์นี้ (รับค่าจาก getStore) — ใช้ร่วมกับตะแกรงชื่อ ดูเหตุผลที่ `ตัวแปรถัง`
+    const ถังในไฟล์ = ตัวแปรถัง(text);
 
     const flag = (node, why) => {
       const { line } = sf.getLineAndCharacterOfPosition(node.getStart());
@@ -104,7 +119,8 @@ for (const root of ROOTS) {
           const tail = tailMethod(expr);
           const rootFn = rootName(expr);
           const recv = receiverName(expr);
-          const blobsWrite = tail === "setJSON" || (WRITE_METHODS.has(tail) && STORE_LIKE.test(recv));
+          const blobsWrite = tail === "setJSON"
+            || (WRITE_METHODS.has(tail) && (STORE_LIKE.test(recv) || ถังในไฟล์.has(recv)));
           if (tail === "waitUntil") { /* ฝากถูกวิธีแล้ว */ }
           else if (blobsWrite) flag(node, `เขียน Blobs (.${tail}) โดยไม่ await — Netlify ฆ่าทิ้งก่อนเสร็จ`);
           else if (rootFn === "fetch") flag(node, "fetch โดยไม่ await — ตายกลางทางแบบเงียบ");
