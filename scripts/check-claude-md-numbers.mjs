@@ -19,6 +19,7 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
+import { execFileSync } from "node:child_process";
 import { เล่นประวัติซ้ำไหม } from "./lib/เล่นประวัติซ้ำไหม.mjs";
 import { fileURLToPath } from "node:url";
 
@@ -47,10 +48,10 @@ const นับใน = (ไฟล์) => {
 /** ทะเบียน: `หา` ต้องผูกกับ **ถ้อยคำที่มีความหมาย** ห้ามผูกกับช่องว่างจัดคอลัมน์
  *  🔴 ฝั่งจอผูกกับช่องว่างที่เดาเอา ⇒ หาไม่เจอตั้งแต่รันครั้งแรก (โชคดีที่ทางแดงนั้นถูกเดินจริง) */
 const ทะเบียน = [
-  { ชื่อ: "สินค้าใน products.json", คำสั่งนับ: 'node -e "const j=require(\'./src/data/products.json\');console.log(Array.isArray(j)?j.length:Object.keys(j).length)"', หา: /products\.json[^\n]*?วัดจริง[^\n]*?:\s*([\d,]+)\s*รายการ/, วัด: () => นับใน("src/data/products.json") },
+  { ชื่อ: "สินค้าใน products.json", คำสั่งนับ: `node -p "const j=require('./src/data/products.json'); Array.isArray(j)?j.length:Object.keys(j).length"`, หา: /products\.json[^\n]*?วัดจริง[^\n]*?:\s*([\d,]+)\s*รายการ/, วัด: () => นับใน("src/data/products.json") },
   { ชื่อ: "รูปสินค้าใน public/img", คำสั่งนับ: 'ls public/img | wc -l', หา: /ls public\/img \| wc -l[^\n]*?:\s*([\d,]+)\s*ไฟล์/, วัด: () => นับไฟล์("public/img") },
   { ชื่อ: "รูปรีวิวใน public/rv-img", คำสั่งนับ: 'ls public/rv-img | wc -l', หา: /ls public\/rv-img \| wc -l[^\n]*?:\s*([\d,]+)\s*ไฟล์/, วัด: () => นับไฟล์("public/rv-img") },
-  { ชื่อ: "บทความใน articles.json", คำสั่งนับ: 'node -e "const j=require(\'./src/data/articles.json\');console.log(Array.isArray(j)?j.length:Object.keys(j).length)"', หา: /articles\.json[^\n]*?วัดจริง[^\n]*?:\s*([\d,]+)\s*บทความ/, วัด: () => นับใน("src/data/articles.json") },
+  { ชื่อ: "บทความใน articles.json", คำสั่งนับ: `node -p "const j=require('./src/data/articles.json'); Array.isArray(j)?j.length:Object.keys(j).length"`, หา: /articles\.json[^\n]*?วัดจริง[^\n]*?:\s*([\d,]+)\s*บทความ/, วัด: () => นับใน("src/data/articles.json") },
 ];
 
 {
@@ -68,6 +69,37 @@ const ทะเบียน = [
 if (!ทะเบียน.length) {
   console.error("✗ check-claude-md-numbers: ทะเบียนว่าง ⇒ ไม่มีอะไรให้ตรวจ (ตะแกรงพัง ไม่ใช่ผ่าน)");
   process.exit(2);
+}
+
+/* ── 🔴 **ยิง `คำสั่งนับ` จริงทุก build แล้วเทียบกับที่ด่านวัด** (20 ก.ย. 2569) ──
+   ที่มา: ฝั่งจอเจอว่าคำสั่งนับของเขาให้ 3 ขณะที่ด่านวัดได้ 4
+   🔑 ประโยคของเขา: **คำสั่งนับที่ให้เลขคนละตัวกับด่าน แย่กว่าไม่มีคำสั่งนับ**
+      เพราะคนที่ลอกไปยิงจะสรุปว่า **ด่านผิด**
+   🔴 และฝั่งผมแย่กว่านั้น: **2 จาก 4 คำสั่งรันไม่ได้เลย** (escape เครื่องหมายคำพูดผิด)
+      ⇒ คนลอกไปยิงจะได้ error ⇒ **ยิ่งไม่เชื่อด่าน** · ผมใส่คำสั่งไว้ตอนเช้าโดย **ไม่เคยยิงเลย**
+   ⇒ ⇒ จึงไม่พึ่งว่าใครจะจำได้: ด่าน **ยิงเองและเทียบเอง** ⇒ คำสั่งพังหรือให้เลขต่าง = แดง ── */
+{
+  const เพี้ยน = [];
+  for (const t of ทะเบียน) {
+    let ได้;
+    try {
+      ได้ = execFileSync("bash", ["-lc", t.คำสั่งนับ], { encoding: "utf8", cwd: ราก, timeout: 20000 }).trim();
+    } catch (e) {
+      เพี้ยน.push(`${t.ชื่อ} — คำสั่งรันไม่ได้: ${String(e?.message || e).slice(0, 70)}`);
+      continue;
+    }
+    const วัด = String(t.วัด());
+    if (ได้ !== วัด) เพี้ยน.push(`${t.ชื่อ} — คำสั่งให้ ${ได้ || "(ว่าง)"} · ด่านวัดได้ ${วัด}`);
+  }
+  if (เพี้ยน.length) {
+    console.error(
+      `✗ \`คำสั่งนับ\` ไม่ตรงกับที่ด่านวัด ${เพี้ยน.length} แถว\n` +
+      เพี้ยน.map((x) => `   · ${x}`).join("\n") +
+      "\n   ⇒ คนที่ลอกคำสั่งไปยิงจะสรุปว่า **ด่านผิด** ⇒ แก้คำสั่งให้ตรง หรือแก้ตัววัดให้ตรง" +
+      "\n   🔑 **ทางนี้ทำให้ตก** เพราะแก้ได้โดยไม่ต้องแตะ CLAUDE.md"
+    );
+    process.exit(1);
+  }
 }
 
 const หาไม่เจอ = [];
