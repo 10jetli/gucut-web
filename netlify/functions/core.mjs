@@ -20,6 +20,8 @@ import { สัญญาของเส้น } from "../lib/list-contracts.mjs"
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 // 📓 สมุดคำสั่งที่เปลี่ยนข้อมูล — ไฟล์นี้ตั้งใจไม่ลากสายพึ่งพา (ดูหัวไฟล์) จึง import ตรงได้
 import { ควรจด, ชื่อเส้น, จดคำสั่งแอดมิน } from "../lib/admin-log.mjs";
+// 🕰️ ตาข่ายชั้นโครงสร้างของหัวยุคท่อ — ท่าที่รับมาจากฝั่งจอ (ห่อที่เดียว ไม่ไล่ใส่ทีละ return)
+import { ติดหัวยุคถ้าขาด } from "../lib/core-headers.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
@@ -88,7 +90,10 @@ export default async function handler(req, context) {
    🚫 ห้ามเปลี่ยนรูปคำตอบ — ตัวจดอยู่ข้างทาง ไม่ใช่กลางทาง
    ⚠️ ต้อง `await` (Netlify แช่แข็งฟังก์ชันทันทีที่ตอบ ⇒ promise ลอยตายกลางทางแบบไม่มี error) */
 async function จดแล้วส่งต่อ(req, context) {
-  const res = await route(req, context);
+  /* 🕰️ เติมหัวยุคให้คำตอบที่ยังไม่มี — **ที่จุดเดียว ลืมไม่ได้**
+     (ไล่ใส่ทีละ `return` คือท่าที่ผมใช้รอบแรก แล้วฝั่งจอชี้ว่าท่าห่อที่เดียวดีกว่า
+      เพราะวันหน้ามีคนเพิ่มทางออกใหม่แล้วลืม ⇒ หัวหายเฉพาะบางเส้น ⇒ อ่านว่า "รุ่นเก่า") */
+  const res = ติดหัวยุคถ้าขาด(await route(req, context), CORE_BUILD);
   if (ควรจด(req)) {
     /* 🔑 `ref` ตัวจริงของเราอยู่ใน **body** (`{sku,qty,reason,ref}`) ไม่ใช่ query
        ⇒ ต้อง `clone()` ก่อนอ่าน เพราะ `route` อ่าน body ไปแล้ว
