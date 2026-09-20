@@ -16,7 +16,8 @@
 //
 // ⚠️ ห้ามทำให้ build ตก — อ่านไม่ได้ให้ใส่ค่าว่างแล้วบอกในผังว่าอ่านไม่ได้
 //    (ผังวาดไม่ออก ไม่ใช่เหตุผลที่ดีพอจะทำให้ร้านขายของไม่ได้)
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -266,11 +267,15 @@ selfCheck.ok = selfCheck.problems.length === 0;
 out.selfCheck = selfCheck;
 if (!selfCheck.ok) for (const p of selfCheck.problems) console.warn(`gen-zort-arch ⚠️ ${p}`);
 
-writeFileSync(
+/* 🔴 20 ก.ย. 2569 — เดิมเขียนตรงด้วย `writeFileSync` ⇒ ไฟล์ถูกเขียนทุก build
+   เพราะข้างในมีช่องเวลา 2 ช่อง (`generatedAt` · `selfCheck.at`) ⇒ git ไม่สะอาด
+   ⇒ อีกบัญชี `pull` ไม่ได้ (ดู `build-artifacts-block-other-account` ในความจำ)
+   📏 วัดจริง: build ทั้งรอบเปลี่ยนไฟล์ **ตัวนี้ตัวเดียว** จากตัวสร้าง 19 ตัวที่เขียนตรง
+      ⇒ "เขียนตรง" ไม่ใช่เกณฑ์ตัดสิน · เกณฑ์คือ **ผลลัพธ์มีเวลาอยู่ข้างในไหม** */
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   join(root, "netlify/lib/zort-arch-data.mjs"),
   "// สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**\n" +
   "// แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต\n" +
   `export const ZORT_ARCH = ${JSON.stringify(out, null, 2)};\n`,
-  "utf8"
 );
-console.log(`gen-zort-arch: เส้นที่เรียกจริง ${callList.length} · โมดูล ${out.modules.length} · งานตามเวลาแตะ ZORT ${jobs.filter((j) => j.zort).length}/${jobs.length}`);
+console.log(`gen-zort-arch: ${ผลเขียน} · เส้นที่เรียกจริง ${callList.length} · โมดูล ${out.modules.length} · งานตามเวลาแตะ ZORT ${jobs.filter((j) => j.zort).length}/${jobs.length}`);
