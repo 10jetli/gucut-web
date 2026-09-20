@@ -11,7 +11,7 @@
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
 import { markSync, freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
-import { thaiDayFromUtc } from "./thaiday.mjs";
+import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -1277,8 +1277,9 @@ export async function reorderPlan(o = {}) {
   const scopeAll = String(o.scope ?? "") === "all";
 
   // วันแบบไทย — order_date เก็บเป็นวันไทยอยู่แล้ว จึงเทียบสตริงตรง ๆ ได้
-  const thai = (offset = 0) =>
-    new Date(Date.now() + 7 * 3600e3 - offset * 86400e3).toISOString().slice(0, 10);
+  /* 🔑 ใช้แหล่งกลาง (`วันไทยย้อน`) แทน arrow ที่ซ่อนในฟังก์ชันนี้
+     ⇒ เพราะตัวเดิม **เรียกในเทสไม่ได้** (ต้องมี D1) ⇒ ปลูกบั๊กแล้วเทส 716 ข้อเงียบสนิท (20 ก.ย. 2569) */
+  const thai = (offset = 0) => วันไทยย้อน(offset);
   const to = thai(0);
   const from = thai(days);
 

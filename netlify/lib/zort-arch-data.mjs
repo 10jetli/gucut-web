@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-09-20T06:47:12.589Z",
+  "generatedAt": "2026-09-20T06:56:15.255Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -558,6 +558,7 @@ export const ZORT_ARCH = {
     "stock-push-sweep.mjs",
     "stock-push.mjs",
     "tg.mjs",
+    "thaiday.mjs",
     "tiktok-orders.mjs",
     "value-scope.mjs",
     "warehouse-values.mjs",
@@ -826,7 +827,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-09-20T06:47:12.589Z",
+    "at": "2026-09-20T06:56:15.256Z",
     "problems": [],
     "ok": true
   }
