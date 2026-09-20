@@ -73,7 +73,15 @@ export function สถานะที่ควรตอบ(method, query) {
 const แถวปลอม = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `แถว ${i + 1}`, sku: `SKU${i + 1}` }));
 
 /** เปิดท่อปลอมที่พอร์ตว่าง — คืน { ที่อยู่, ปิด } */
-export function เปิดท่อปลอม({ ถอดคีย์เครดิต = "", ถอดapplied = false, เมินตัวกรอง = false } = {}) {
+/* 📄 **โหมดไล่หน้าจริง** (เพิ่ม 20 ก.ย. 2569) — ท่อปลอมเดิมคืน `rows: []` เสมอ
+   ⇒ ด่านที่ตัดสินจาก **การไล่หน้า** (`check-paging-complete`) และจาก **ตัวกรองมีผลไหม**
+     (`check-filters-work`) ตอบว่า "วัดไม่ได้" ทุกรอบ ⇒ **ซื่อสัตย์ แต่ไม่เคยเข้าสภาพที่มันมีไว้จับ**
+   ⇒ โหมดนี้ทำ 12 แถวคงที่ แล้วตัดตาม `limit`/`offset` จริง + คืน `total`
+   🔑 คู่กับ `ไล่หน้าเพี้ยน` ที่คืน **แถวชุดเดิมทุก offset** = สภาพ "ติดป้ายชวนไล่หน้า แต่ไล่ไม่ได้"
+      ⇒ สองโหมดนี้คือ **ควบคุมสองทิศ** ของด่านไล่หน้า */
+const ทั้งคลังปลอม = 12;
+
+export function เปิดท่อปลอม({ ถอดคีย์เครดิต = "", ถอดapplied = false, เมินตัวกรอง = false, ไล่หน้าจริง = false, ไล่หน้าเพี้ยน = false, ประกาศignored = false } = {}) {
   const credits = { ...เครดิต };
   if (ถอดคีย์เครดิต) delete credits[ถอดคีย์เครดิต];
   const list = { ...คำตอบlist };
@@ -102,6 +110,48 @@ export function เปิดท่อปลอม({ ถอดคีย์เค�
          ⇒ โหมดนี้จึง **ประกาศว่ากรอง `q` และ `sku` จริง** แล้ว **เมินทั้งคู่**
          ⇒ นั่นคือสภาพ "ปุ่มกรองหลอก" ที่ด่านมีไว้จับพอดี */
       res.end(JSON.stringify({ ...list, rows: แถวปลอม(5), total: 5, supportedFilters: ["q", "sku"] }));
+      return;
+    }
+    if (ไล่หน้าจริง || ไล่หน้าเพี้ยน) {
+      /* 🔴 **ด่านรหัสต้องมีจริงในท่อปลอม** — ด่านทั้งสองยิงตัวควบคุมชั้นสอง:
+         *ไม่ส่งรหัสแล้วต้องได้ 401* ⇒ ท่อที่ตอบ 200 ให้ทุกคน = "ด่านรหัสไม่ทำงาน" ⇒ ด่านหยุด
+         🔑 นี่คือสิ่งที่ผมอยากจดไว้ที่สุดจากรอบนี้: **ท่อปลอมที่หลวมกว่าท่อจริง
+            ทำให้ด่านที่ดีปฏิเสธจะวัด** ⇒ และถ้าคนอ่านแต่ exit code ก็จะเข้าใจว่า "ยิงแล้ว"
+         ⇒ ท่อปลอมต้องเลียนแบบ **ด่านความปลอดภัย** ด้วย ไม่ใช่เลียนแบบแค่รูปคำตอบ */
+      if ((req.headers["x-admin-key"] ?? "") === "") {
+        res.writeHead(401, หัว); res.end(JSON.stringify({ error: "unauthorized" })); return;
+      }
+      /* 🔴 **ท่อจริงตอบ 400 + `accepts` เมื่อ `list=` ไม่มีจริง** — คุณส้มยิงยืนยันไว้ 20 ก.ย. 2569
+         🔑 ผมไม่ได้ทำพฤติกรรมนี้ตอนแรก ⇒ ด่าน `check-paging-complete` / `check-filters-work`
+            **ปฏิเสธที่จะให้ผลเลย** เพราะตัวควบคุมของมันเอง (ยิงเส้นมั่วแล้วต้องได้ "ไม่รู้จัก") ตก
+         ⇒ ⇒ **ด่านเข้มกว่าท่อปลอม** ⇒ ถ้าผมอ่านแต่ exit code (0 = "ตรวจไม่ได้ ไม่ทำให้ตก")
+            ผมจะสรุปว่า "ยิงผ่านแล้ว" ทั้งที่มันไม่เคยวัดอะไรเลย */
+      const เส้น = u.searchParams.get("list");
+      const เส้นที่มี = ["orders", "stock", "moves", "sales", "branches"];
+      if (เส้น && !เส้นที่มี.includes(เส้น)) {
+        res.writeHead(400, หัว);
+        res.end(JSON.stringify({ error: `ไม่รู้จัก list=${เส้น}`, accepts: เส้นที่มี }));
+        return;
+      }
+      const limit = Math.max(1, Number(u.searchParams.get("limit") || 5));
+      const offset = Math.max(0, Number(u.searchParams.get("offset") || 0));
+      const q = (u.searchParams.get("q") || "").trim();
+      let ทั้งหมด = แถวปลอม(ทั้งคลังปลอม);
+      /* ตัวกรอง `q` ทำงานจริงในโหมดนี้ — ด่าน `check-filters-work` จึงเห็นว่ามันมีผล */
+      if (q && !ไล่หน้าเพี้ยน) ทั้งหมด = ทั้งหมด.filter((r) => r.sku.includes(q) || r.name.includes(q));
+      /* 🔴 โหมดเพี้ยน: **เมิน offset** ⇒ คืนหน้าแรกทุกครั้ง แต่ยังติดป้ายชวนไล่หน้า */
+      const หน้า = ไล่หน้าเพี้ยน ? ทั้งหมด.slice(0, limit) : ทั้งหมด.slice(offset, offset + limit);
+      const ถัดไป = offset + limit < ทั้งหมด.length ? offset + limit : null;
+      res.writeHead(200, หัว);
+      res.end(JSON.stringify({
+        ...list, rows: หน้า, total: ทั้งหมด.length,
+        ...(ถัดไป === null ? {} : { nextOffset: ถัดไป }),
+        supportedFilters: ["q"], applied: { q: q || null, from: null },
+        /* 🔑 **ทิศที่สองของการพิสูจน์** — `check-filters-work` ยอมรับสองคำตอบ:
+           กรองจริง **หรือ** ประกาศตรง ๆ ว่าไม่รองรับ ⇒ โหมดนี้เลือกทางที่สอง
+           ⇒ ด่านต้องเขียว ⇒ ถ้าเขียวไม่ได้ทั้งสองทาง ด่านนั้น **แดงตลอดกาล** ซึ่งจะถูกถอด */
+        ...(ประกาศignored ? { ignored: ["only", "kind", "channel", "from", "to", "sku", "reason", "store", "status"] } : {}),
+      }));
       return;
     }
     res.writeHead(200, หัว); res.end(JSON.stringify(list));
