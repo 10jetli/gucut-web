@@ -242,6 +242,6 @@ export const ทะเบียน = [
 export const ตัวตรวจนอกลูกโซ่ = [
   "audit-core-contract.mjs", "check-filters-work.mjs", "check-ordercheck-shipping.mjs",
   "check-paging-complete.mjs", "check-permit-models.mjs", "probe-applied-keys.mjs",
-  "probe-fallthrough-markers.mjs", "probe-list-filters.mjs", "verify-claims.mjs", "verify-contract-keys.mjs",
+  "probe-fallthrough-markers.mjs", "probe-skip-endpoints.mjs", "probe-list-filters.mjs", "verify-claims.mjs", "verify-contract-keys.mjs",
 ];
 
