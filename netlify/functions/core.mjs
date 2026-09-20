@@ -19,7 +19,7 @@ import { ความปลอดภัยของเส้น } from "../lib/r
 import { สัญญาของเส้น } from "../lib/list-contracts.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 // 📓 สมุดคำสั่งที่เปลี่ยนข้อมูล — ไฟล์นี้ตั้งใจไม่ลากสายพึ่งพา (ดูหัวไฟล์) จึง import ตรงได้
-import { ควรจด, ชื่อเส้น, จดคำสั่งแอดมิน } from "../lib/admin-log.mjs";
+import { จดจากคำขอ } from "../lib/admin-log.mjs";
 // 🕰️ ตาข่ายชั้นโครงสร้างของหัวยุคท่อ — ท่าที่รับมาจากฝั่งจอ (ห่อที่เดียว ไม่ไล่ใส่ทีละ return)
 import { ติดหัวยุคถ้าขาด } from "../lib/core-headers.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
@@ -94,25 +94,11 @@ async function จดแล้วส่งต่อ(req, context) {
      (ไล่ใส่ทีละ `return` คือท่าที่ผมใช้รอบแรก แล้วฝั่งจอชี้ว่าท่าห่อที่เดียวดีกว่า
       เพราะวันหน้ามีคนเพิ่มทางออกใหม่แล้วลืม ⇒ หัวหายเฉพาะบางเส้น ⇒ อ่านว่า "รุ่นเก่า") */
   const res = ติดหัวยุคถ้าขาด(await route(req, context), CORE_BUILD);
-  if (ควรจด(req)) {
-    /* 🔑 `ref` ตัวจริงของเราอยู่ใน **body** (`{sku,qty,reason,ref}`) ไม่ใช่ query
-       ⇒ ต้อง `clone()` ก่อนอ่าน เพราะ `route` อ่าน body ไปแล้ว
-       ⚠️ อ่านเฉพาะ JSON ก้อนเล็ก — ไฟล์อัปโหลดห้ามโคลนทั้งก้อนเข้าหน่วยความจำ */
-    let ref = "";
-    try {
-      const ยาว = Number(req.headers.get("content-length") || 0);
-      const ชนิด = String(req.headers.get("content-type") || "");
-      if (ชนิด.includes("json") && ยาว > 0 && ยาว < 100_000) {
-        const b = await req.clone().json();
-        ref = String(b?.ref ?? (Array.isArray(b?.moves) ? `${b.moves.length} รายการ` : "") ?? "");
-      }
-    } catch { /* อ่าน ref ไม่ได้ ⇒ ปล่อยว่าง **ห้ามเดา** และห้ามทำให้คำสั่งล้ม */ }
-    const จด = await จดคำสั่งแอดมิน({
-      เส้น: ชื่อเส้น(req.url), method: req.method, ref, ผล: String(res?.status ?? "?"),
-    }).catch((e) => `จดไม่ได้: ${String(e?.message || e).slice(0, 120)}`);
-    /* 🚫 ห้ามเงียบ — สมุดที่จดไม่ได้ต้องมีร่องรอยใน log ของฟังก์ชัน [[fallbacks-must-announce]] */
-    if (จด !== "ok") console.log(`📓 admin_action_log: ${จด}`);
-  }
+  /* 📓 จดคำสั่งที่เปลี่ยนข้อมูล — ตัวจด **สัญญาว่าไม่โยน** (ดูเหตุผลใน lib/admin-log.mjs)
+     🔑 ของที่อยู่บนทางเดินของทุกคำขอ เกณฑ์คือ **พังไม่ได้** ไม่ใช่แค่ถูกต้อง
+     🚫 ห้ามเงียบ: จดไม่ได้ต้องมีร่องรอยใน log ของฟังก์ชัน [[fallbacks-must-announce]] */
+  const จด = await จดจากคำขอ(req, res);
+  if (จด !== "ok" && จด !== "ข้าม") console.log(`📓 admin_action_log: ${จด}`);
   return res;
 }
 

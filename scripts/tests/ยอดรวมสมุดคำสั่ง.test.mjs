@@ -21,12 +21,14 @@ const ราก = fileURLToPath(new URL("../../netlify/lib/", import.meta.url));
 /* 🔴 **`mock.module` ปลอมได้ครั้งเดียวต่อโมดูล** — ปลอมในทุกเทสจะได้
    `Cannot mock ... already mocked` (เจอทันทีรอบแรก) ⇒ ปลอม **หนึ่งครั้ง** แล้วให้แต่ละเทส
    เปลี่ยน **สภาพ** ที่ตัวปลอมอ่าน · โครงนี้ยังเป็นการทดสอบเส้นทางจริง ไม่ใช่การอ่านซอร์ส */
-const สภาพ = { แถว: [], ยอดรวม: 0, นับล้ม: false };
+const สภาพ = { แถว: [], ยอดรวม: 0, นับล้ม: false, ล้มทุกคำสั่ง: false };
 mock.module(ราก + "coredb.mjs", {
   namedExports: {
     coreReady: () => true, coreInit: async () => null, withD1Meter: (f) => f(),
     d1Stats: () => null, d1Info: () => null,
     coreQuery: async (sql) => {
+      /* 🌱 ช่องปลูกของเสีย: ทำให้ D1 ปฏิเสธทุกคำสั่ง ⇒ ใช้พิสูจน์ว่า "ตัวจดพังไม่ได้" จริง */
+      if (สภาพ.ล้มทุกคำสั่ง) throw new Error("D1 ปฏิเสธ (ปลูกของเสีย)");
       if (/COUNT\(\*\)/.test(sql)) {
         if (สภาพ.นับล้ม) throw new Error("D1 timeout ตอนนับ");
         return { results: [{ n: สภาพ.ยอดรวม }] };
@@ -85,4 +87,35 @@ test("🔬 พลังแยกแยะ: ถ้าธงคิดจาก `�
   assert.equal(สูตรผิด(3, 100), true, "สูตรผิดบอกว่าเห็นครบ");
   const r = await เรียกด้วยD1ปลอม({ แถว: สามแถว, ยอดรวม: 137 });
   assert.equal(r["เห็นครบทุกแถวไหม"], false, "ของจริงต้องบอกว่าไม่ครบ ⇒ ต่างจากสูตรผิด");
+});
+
+/* ── 🛡️ ตัวจดต้อง "พังไม่ได้" — ของที่อยู่บนทางเดินของทุกคำขอที่เปลี่ยนข้อมูล ──
+   🔴 คลาสที่ฝั่งจอสรุปไว้ 21 ก.ย. 2569: **ท่าที่กันลืมได้ดี คือท่าที่ทำให้ความเสียหาย
+      กระจายเต็มพื้นที่เมื่อมันพลาด** ⇒ ห่อที่เดียว = ครอบคลุม 100% + จุดล้มเหลวเดียว 100%
+   ⇒ `จดจากคำขอ` จึงถูกย้ายออกมาจากตัวห่อของ `core.mjs` **เพื่อให้ปลูกของเสียใส่ได้จริง** */
+test("🛡️ D1 ล้ม ⇒ คืนข้อความเหตุ **ไม่โยน** (คำตอบของจอต้องไม่กระทบ)", async () => {
+  const { จดจากคำขอ } = await import(ราก + "admin-log.mjs");
+  สภาพ.นับล้ม = false;
+  const เดิม = สภาพ.แถว; สภาพ.แถว = [];
+  const req = new Request("https://x/api/core?move=1", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ref: "PO-1" }),
+  });
+  /* ปลอมให้ INSERT ล้มด้วยเหตุที่ไม่ใช่ "no such table" */
+  const เก่า = สภาพ.ล้มทุกคำสั่ง; สภาพ.ล้มทุกคำสั่ง = true;
+  let ผล;
+  await assert.doesNotReject(async () => { ผล = await จดจากคำขอ(req, { status: 200 }); });
+  assert.match(String(ผล), /จดไม่ได้|ตัวจดล้มเอง/, `ต้องคืนเหตุ ไม่ใช่เงียบ (ได้ ${ผล})`);
+  สภาพ.ล้มทุกคำสั่ง = เก่า; สภาพ.แถว = เดิม;
+});
+
+test("🛡️ คำขอรูปแปลก (ไม่มี headers · url พัง) ⇒ ไม่โยน", async () => {
+  const { จดจากคำขอ } = await import(ราก + "admin-log.mjs");
+  for (const req of [{ method: "POST", url: "ไม่ใช่ url" }, { method: "DELETE" }, {}]) {
+    await assert.doesNotReject(async () => { await จดจากคำขอ(req, { status: 500 }); }, `req=${JSON.stringify(req)}`);
+  }
+});
+
+test("คำขออ่าน (GET) ⇒ คืน `ข้าม` ไม่ยิง D1 เลย", async () => {
+  const { จดจากคำขอ } = await import(ราก + "admin-log.mjs");
+  assert.equal(await จดจากคำขอ(new Request("https://x/api/core?list=orders"), { status: 200 }), "ข้าม");
 });
