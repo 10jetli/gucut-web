@@ -65,8 +65,15 @@ export function สถานะที่ควรตอบ(method, query) {
   return 405;
 }
 
+/* 🔑 **โหมด "ประกาศว่ารับตัวกรองแต่เมิน"** (เพิ่ม 20 ก.ย. 2569)
+   ที่มา: เล็ง `probe-list-filters` มาที่ท่อปลอมแล้วมันตอบ "วัดไม่ได้ เพราะค่าฐาน 0 แถว"
+   ⇒ **ซื่อสัตย์ แต่ยังไม่แยกแยะ** — ท่อปลอมไม่เคยเข้าสภาพที่ด่านนั้นมีไว้จับ
+   ⇒ โหมดนี้จึงคืนแถวจริงจำนวนหนึ่ง **และเมินทุกตัวกรอง** ทั้งที่ `applied` ประกาศว่าพิจารณา
+   🔑 นี่คือ "ปุ่มกรองหลอก" ตรงตัว — รูปที่ทีมเจอของจริงมาหลายรอบ */
+const แถวปลอม = (n) => Array.from({ length: n }, (_, i) => ({ id: i + 1, name: `แถว ${i + 1}`, sku: `SKU${i + 1}` }));
+
 /** เปิดท่อปลอมที่พอร์ตว่าง — คืน { ที่อยู่, ปิด } */
-export function เปิดท่อปลอม({ ถอดคีย์เครดิต = "", ถอดapplied = false } = {}) {
+export function เปิดท่อปลอม({ ถอดคีย์เครดิต = "", ถอดapplied = false, เมินตัวกรอง = false } = {}) {
   const credits = { ...เครดิต };
   if (ถอดคีย์เครดิต) delete credits[ถอดคีย์เครดิต];
   const list = { ...คำตอบlist };
@@ -87,6 +94,16 @@ export function เปิดท่อปลอม({ ถอดคีย์เค�
       res.writeHead(400, หัว); res.end(JSON.stringify({ error: "id ต้องเป็นตัวเลข" })); return;
     }
     if (st !== 200) { res.writeHead(st, หัว); res.end(JSON.stringify({ error: "ปฏิเสธ" })); return; }
+    if (เมินตัวกรอง) {
+      /* เมินทุกตัวกรอง: ส่งแถวชุดเดิมและ total เดิมเสมอ ไม่ว่าคำขอจะใส่อะไรมา */
+      res.writeHead(200, หัว);
+      /* 🔑 ด่าน `probe-list-filters` ถือ **`supportedFilters`** เป็น "คำประกาศ" (อ่านตัวจับแล้ว
+         บรรทัด ~197: เทียบ `supportedFilters` กับที่วัดได้ ⇒ "ประกาศไว้แต่วัดแล้วเมิน")
+         ⇒ โหมดนี้จึง **ประกาศว่ากรอง `q` และ `sku` จริง** แล้ว **เมินทั้งคู่**
+         ⇒ นั่นคือสภาพ "ปุ่มกรองหลอก" ที่ด่านมีไว้จับพอดี */
+      res.end(JSON.stringify({ ...list, rows: แถวปลอม(5), total: 5, supportedFilters: ["q", "sku"] }));
+      return;
+    }
     res.writeHead(200, หัว); res.end(JSON.stringify(list));
   });
   return new Promise((resolve) => {

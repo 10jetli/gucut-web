@@ -14,6 +14,10 @@ const ชื่อ = process.argv[2];
 const ทะเบียน = {
   "verify-contract-keys": { ไฟล์: "scripts/verify-contract-keys.mjs", env: (u) => ({ SITE: u }) },
   "probe-applied-keys": { ไฟล์: "scripts/probe-applied-keys.mjs", env: (u) => ({ SITE: u }) },
+  /* 🔑 ตัวนี้ตัดสินจาก **พฤติกรรมของท่อ** (ส่งค่ากรองแล้วดูว่าจำนวนแถวเปลี่ยนไหม)
+     ⇒ ท่อปลอมต้องคืน **แถวจริง** ไม่ใช่ 0 แถว ไม่งั้นด่านตอบ "วัดไม่ได้" (ซื่อสัตย์ แต่ไม่แยกแยะ)
+     ⇒ สภาพที่ด่านมีไว้จับคือ **ประกาศ `supportedFilters` แล้วเมินจริง** ⇒ อยู่ในโหมดของท่อปลอม */
+  "probe-list-filters": { ไฟล์: "scripts/probe-list-filters.mjs", env: (u) => ({ SITE: u }) },
   "audit-core-contract": {
     ไฟล์: "scripts/audit-core-contract.mjs",
     env: (u) => ({ GUCUT_CORE_AUDIT_URL: `${u}/api/core`, GUCUT_CORE_AUDIT_KEY: "stub-local-key"   /* ⚠️ ASCII เท่านั้น — ค่านี้ไปเป็นหัว HTTP */ }),
