@@ -338,14 +338,19 @@ export async function reconYesterday() {
     [day, zortOrders, zortAmount, coreOrders, coreAmount, notes]
   );
 
+  /* 🔕 **ตรงกันแล้วไม่ต้องเด้ง** — ท่านประธานสั่ง 20 ก.ย. 2569 *"ตัวนี้มันตรงอยู่แล้วไม่ต้องแจ้ง"*
+     เตือนทุกวันทั้งที่ตรงกัน = คนเลิกอ่าน แล้ววันที่ไม่ตรงจริงจะถูกเลื่อนผ่านไปด้วย
+     ⚠️ **ราคาที่จ่าย: เงียบแปลได้สองอย่าง** — "ตรงกัน" กับ "งานไม่ได้รัน"
+        ตัวเลขยังจดลง `recon_log` ทุกวันเหมือนเดิม ดูย้อนหลังได้ที่แดชบอร์ด Core
+        แต่ยังไม่มีใครเฝ้าว่า recon_log ขาดวันไปหรือเปล่า (ดู [[nothing-triggers-it]])
+        จะปิดช่องนี้ต้องเพิ่มตัวตรวจ "เทียบยอดเมื่อวานขาดไปกี่วัน" ที่หน้าสถานะระบบ — ยังไม่ได้ทำ */
   const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
-  if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
-    const icon = match ? "🪞✅" : "🪞⚠️";
+  if (!match && TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
     const text =
-      `${icon} คลังเงา GUCUT Core — เทียบยอดเมื่อวาน (${day})\n` +
+      `🪞⚠️ คลังเงา GUCUT Core — เทียบยอดเมื่อวาน (${day})\n` +
       `ZORT: ${zortOrders} ใบ · ฿${zortAmount.toLocaleString("th-TH")}\n` +
       `Core: ${coreOrders} ใบ · ฿${coreAmount.toLocaleString("th-TH")}\n` +
-      (match ? "ตัวเลขตรงกัน" : `❗ ${notes} — ควรเข้าไปดู`);
+      `❗ ${notes} — ควรเข้าไปดู`;
     /* 🔴 ใช้ `lib/tg.mjs` ไม่ยิง fetch ตรง (18 ก.ย. 2569)
        ไฟล์นี้ถูก import โดยชุดทดสอบ 3 ใบ ⇒ ยิงตรงเมื่อไหร่ก็สแปมกลุ่มร้านจริงได้
        (คลาสเดียวกับที่ระเบิดวันนี้ — ดูเหตุผลเต็มหัวไฟล์ tg.mjs)

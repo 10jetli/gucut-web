@@ -1301,6 +1301,16 @@ async function route(req, context) {
       const { zortClaimCheck } = await import("../lib/zort-claim-check.mjs");
       return okJson(await zortClaimCheck());
     }
+    /* ผังสถาปัตยกรรม ZORT — ท่านประธานสั่ง 20 ก.ย. 2569 ("ใส่ในเมนู JET ให้ดูหน่อย")
+       🔑 **สามชั้นความน่าเชื่อถือ ห้ามวาดรวมกันจนแยกไม่ออก** (ดูเหตุผลเต็มใน gen-zort-arch.mjs)
+          `calls`/`jobs` = อ่านจากซอร์สจริง อัปเดตเองทุก build
+          `manual.flow`  = ผังเมนู · ทุกเส้นมี `basis` (code/probe/std) — เส้น `std` ยังไม่ได้ยิงยืนยัน
+          `blindSpots`   = ไฟล์ที่พูดถึง ZORT แต่ตัวจับไม่เห็นว่าเรียก = **รายการให้คนไปดู**
+       ⚠️ จอต้องโชว์ `manual.asOf` เสมอ — ส่วนที่คนกรอกไม่มีอะไรตรวจให้ มันเก่าเงียบ ๆ ได้ */
+    if (url.searchParams.get("zortarch")) {
+      const { ZORT_ARCH } = await import("../lib/zort-arch-data.mjs");
+      return okJson({ ok: true, ...ZORT_ARCH });
+    }
     if (url.searchParams.get("zortnoapi")) {
       const { ZORT_NO_API, ZORT_CAN_BUT_NOT_BUILT, ZORT_PROBE_METHOD, ZORT_WEBHOOK } =
         await import("../lib/zort-write.mjs");

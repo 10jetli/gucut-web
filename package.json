@@ -3,10 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "predev": "node scripts/gen-arch.mjs && node scripts/gen-shop-data.mjs",
+    "predev": "node scripts/gen-arch.mjs && node scripts/gen-zort-arch.mjs && node scripts/gen-shop-data.mjs",
     "dev": "node scripts/gen-details.mjs && node scripts/gen-image-list.mjs && node scripts/gen-image-manifest.mjs && node scripts/merge-pending-reviews.mjs && node scripts/gen-review-images.mjs && node scripts/gen-reviews.mjs && node scripts/gen-part-info.mjs && node scripts/gen-search-index.mjs && node scripts/gen-sku-images.mjs && node scripts/gen-agents-md.mjs && node scripts/gen-feed-base.mjs && node scripts/gen-llms-full.mjs && next dev",
     "test": "node --experimental-test-module-mocks --test scripts/tests/*.test.mjs",
-    "prebuild": "npm test && node scripts/check-floating.mjs && node scripts/check-num-helpers.mjs && node scripts/check-source-gates.mjs && node scripts/gen-cron-table.mjs && node scripts/gen-endpoints.mjs && node scripts/gen-list-filters.mjs && node scripts/gen-arch.mjs && node scripts/gen-shop-data.mjs && node scripts/gen-details.mjs && node scripts/gen-image-list.mjs && node scripts/gen-image-manifest.mjs && node scripts/merge-pending-reviews.mjs && node scripts/gen-review-images.mjs && node scripts/gen-reviews.mjs && node scripts/gen-part-info.mjs && node scripts/gen-search-index.mjs && node scripts/gen-sku-images.mjs && node scripts/gen-agents-md.mjs && node scripts/gen-feed-base.mjs && node scripts/gen-llms-full.mjs && node scripts/gen-audit-json.mjs",
+    "prebuild": "npm test && node scripts/check-floating.mjs && node scripts/check-num-helpers.mjs && node scripts/check-source-gates.mjs && node scripts/gen-cron-table.mjs && node scripts/gen-endpoints.mjs && node scripts/gen-list-filters.mjs && node scripts/gen-arch.mjs && node scripts/gen-zort-arch.mjs && node scripts/gen-shop-data.mjs && node scripts/gen-details.mjs && node scripts/gen-image-list.mjs && node scripts/gen-image-manifest.mjs && node scripts/merge-pending-reviews.mjs && node scripts/gen-review-images.mjs && node scripts/gen-reviews.mjs && node scripts/gen-part-info.mjs && node scripts/gen-search-index.mjs && node scripts/gen-sku-images.mjs && node scripts/gen-agents-md.mjs && node scripts/gen-feed-base.mjs && node scripts/gen-llms-full.mjs && node scripts/gen-audit-json.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
