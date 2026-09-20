@@ -30,6 +30,7 @@
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 /** แทน globSync (ยัง experimental ใน node 22) — อ่าน netlify/lib แล้วกรองด้วยคำนำหน้า */
 const libที่ขึ้นต้นด้วย = (pre) =>
   readdirSync("netlify/lib").filter((f) => f.startsWith(pre) && f.endsWith(".mjs")).sort()
@@ -123,7 +124,7 @@ const ผล = {
   คีย์มาจากไฟล์ไหน: Object.fromEntries(คีย์.map((k) => [k, [...พบ.get(k)].sort()])),
 };
 
-writeFileSync(
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   "netlify/lib/warn-keys.mjs",
   "/* 🤖 ไฟล์นี้ถูกสร้างอัตโนมัติโดย `scripts/gen-warn-keys.mjs` ตอน prebuild — **ห้ามแก้มือ**\n" +
   " * 🔴 ห้ามเปลี่ยนเป็น `.json` — ตัวรวมไฟล์ของ Netlify ไม่เอา .json ที่อ่านด้วย `createRequire`\n" +

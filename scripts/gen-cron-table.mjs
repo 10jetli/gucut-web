@@ -12,6 +12,7 @@
  * ⚠️ อ่านไม่ได้/ไม่เจอ ⇒ **ห้ามเดา** ปล่อย cron เป็น null แล้วให้จอเขียนว่า "ยังบอกไม่ได้"
  */
 import { readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { เตือนถ้ามีไฟล์ซ้อนชั้น } from "./lib/ไฟล์ซ้อนชั้นที่ด่านมองไม่เห็น.mjs";
@@ -84,7 +85,7 @@ if (!งาน.length) {
 /* เขียนเป็น .mjs ไม่ใช่ .json โดยตั้งใจ — JSON import ต้องมี import attribute
    ซึ่ง Node กับ bundler ของ Netlify ตีความต่างกันได้ ⇒ โมดูลธรรมดาไม่มีปัญหานั้นเลย
    ⚠️ ไฟล์นี้ถูกสร้างตอน build ⇒ **commit ทันทีหลังรัน** ไม่งั้นอีกบัญชี pull ไม่ผ่าน */
-writeFileSync(
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   ปลายทาง,
   "// ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-cron-table.mjs — ห้ามแก้มือ\n" +
   "// ค่า cron มาจาก `export const config` ของไฟล์ฟังก์ชันจริง (แหล่งเดียว)\n" +
