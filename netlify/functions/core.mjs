@@ -18,6 +18,8 @@ import { ขอบเขตของค่าที่ส่งไป } from "..
 import { ความปลอดภัยของเส้น } from "../lib/route-safety.mjs";
 import { สัญญาของเส้น } from "../lib/list-contracts.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
+// 📓 สมุดคำสั่งที่เปลี่ยนข้อมูล — ไฟล์นี้ตั้งใจไม่ลากสายพึ่งพา (ดูหัวไฟล์) จึง import ตรงได้
+import { ควรจด, ชื่อเส้น, จดคำสั่งแอดมิน } from "../lib/admin-log.mjs";
 import { syncContacts, listContacts } from "../lib/core-contacts.mjs";
 import { syncOrders, reconYesterday, snapshotStock } from "../lib/core-sync.mjs";
 import { syncShopeeOrders, shopeeRecon } from "../lib/shopee-orders.mjs";
@@ -74,7 +76,39 @@ try {
 }
 
 export default async function handler(req, context) {
-  return withD1Meter(() => route(req, context));
+  return withD1Meter(() => จดแล้วส่งต่อ(req, context));
+}
+
+/* 📓 **จดคำสั่งที่เปลี่ยนข้อมูลลง `admin_action_log` — ที่จุดเดียว ห้ามกระจายตามกิ่ง** (20 ก.ย. 2569)
+   🔴 ที่มา: ฝั่งจอไปอ่านสมุดของ ZORT มา แล้วพบว่า ZORT ตอบได้ว่า "ใครแก้ใบนี้" ฝั่งเราตอบไม่ได้เลย
+   🔑 ทำไมต้องจุดเดียว: กิ่งที่เขียนข้อมูลใน `/api/core` มีหลายสิบกิ่ง และ **เพิ่มขึ้นทุกสัปดาห์**
+      ⇒ จดตามกิ่ง = กิ่งใหม่จะไม่ถูกจด **เงียบ ๆ** แล้วสมุดที่ไม่ครบจะถูกอ่านเหมือนสมุดที่ครบ
+   ⚠️ เพิ่มการยิง D1 หนึ่งครั้ง **เฉพาะคำขอที่ไม่ใช่ GET** (~286 ms · คำสั่งเขียนเกิดนาน ๆ ครั้ง)
+      ⇒ เส้นอ่านที่จอ poll ถี่ ๆ **ไม่ได้รับผลกระทบเลย**
+   🚫 ห้ามเปลี่ยนรูปคำตอบ — ตัวจดอยู่ข้างทาง ไม่ใช่กลางทาง
+   ⚠️ ต้อง `await` (Netlify แช่แข็งฟังก์ชันทันทีที่ตอบ ⇒ promise ลอยตายกลางทางแบบไม่มี error) */
+async function จดแล้วส่งต่อ(req, context) {
+  const res = await route(req, context);
+  if (ควรจด(req)) {
+    /* 🔑 `ref` ตัวจริงของเราอยู่ใน **body** (`{sku,qty,reason,ref}`) ไม่ใช่ query
+       ⇒ ต้อง `clone()` ก่อนอ่าน เพราะ `route` อ่าน body ไปแล้ว
+       ⚠️ อ่านเฉพาะ JSON ก้อนเล็ก — ไฟล์อัปโหลดห้ามโคลนทั้งก้อนเข้าหน่วยความจำ */
+    let ref = "";
+    try {
+      const ยาว = Number(req.headers.get("content-length") || 0);
+      const ชนิด = String(req.headers.get("content-type") || "");
+      if (ชนิด.includes("json") && ยาว > 0 && ยาว < 100_000) {
+        const b = await req.clone().json();
+        ref = String(b?.ref ?? (Array.isArray(b?.moves) ? `${b.moves.length} รายการ` : "") ?? "");
+      }
+    } catch { /* อ่าน ref ไม่ได้ ⇒ ปล่อยว่าง **ห้ามเดา** และห้ามทำให้คำสั่งล้ม */ }
+    const จด = await จดคำสั่งแอดมิน({
+      เส้น: ชื่อเส้น(req.url), method: req.method, ref, ผล: String(res?.status ?? "?"),
+    }).catch((e) => `จดไม่ได้: ${String(e?.message || e).slice(0, 120)}`);
+    /* 🚫 ห้ามเงียบ — สมุดที่จดไม่ได้ต้องมีร่องรอยใน log ของฟังก์ชัน [[fallbacks-must-announce]] */
+    if (จด !== "ok") console.log(`📓 admin_action_log: ${จด}`);
+  }
+  return res;
 }
 
 async function route(req, context) {
@@ -584,6 +618,18 @@ async function route(req, context) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { อ่านเวลางาน } = await import("../lib/job-timing.mjs");
       return okJson(await อ่านเวลางาน({ ชั่วโมงย้อนหลัง: url.searchParams.get("hours") }));
+    }
+    /* 📓 GET ?adminlog=1[&hours=N&limit=M] ⇒ สมุด **คำสั่งที่เปลี่ยนข้อมูล** (`admin_action_log`)
+       🔑 เล่มนี้ตอบ "ใบนี้ถูกแก้เมื่อไหร่ ด้วยคำสั่งอะไร" — **ยังไม่ตอบ "ใครทำ"**
+          (กุญแจแอดมินดอกเดียว ⇒ ช่องผู้ใช้จะว่างตลอดกาล ⇒ ไม่ทำช่องนั้น)
+       ⚠️ ต้องอ่านคู่กับ `?jobtiming=1` จึงเห็นครบ — ขอบเขตอยู่ในคีย์ `⚠️ ขอบเขต` ของคำตอบ */
+    if (url.searchParams.get("adminlog")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { อ่านคำสั่งแอดมิน } = await import("../lib/admin-log.mjs");
+      return okJson(await อ่านคำสั่งแอดมิน({
+        ชั่วโมงย้อนหลัง: url.searchParams.get("hours"),
+        limit: url.searchParams.get("limit"),
+      }));
     }
     if (url.searchParams.get("pushstate")) {
       const { สถานะดันสต็อก } = await import("../lib/stock-push-sweep.mjs");

@@ -1,0 +1,76 @@
+/* 📓 ด่าน: **สมุดคำสั่งที่เปลี่ยนข้อมูล ต้องจดที่จุดเดียว และต้องประกาศขอบเขตของตัวเอง**
+ *
+ * 🔴 ที่มา 20 ก.ย. 2569 — ฝั่งจออ่านสมุดของ ZORT มา 4 เล่ม แล้วพบว่า ZORT ตอบได้ว่า
+ *    "ใครแก้ใบนี้" · ฝั่งเราตอบไม่ได้เลย ⇒ เปิดสมุด `admin_action_log`
+ *
+ * 🔑 สองข้อที่ด่านนี้กัน (ทั้งคู่เป็นคลาสที่ทีมเจ็บมาแล้ว)
+ *    ① **จดตามกิ่งจะไม่ครบ** — `/api/core` มีกิ่งที่เขียนข้อมูลหลายสิบกิ่งและเพิ่มทุกสัปดาห์
+ *       ⇒ กิ่งใหม่จะไม่ถูกจดเงียบ ๆ แล้วสมุดที่ไม่ครบจะถูกอ่านเหมือนสมุดที่ครบ
+ *       [[partial-coverage-reported-as-full]]
+ *    ② **ช่องที่ไม่มีวันมีค่า** — ถ้าลอก ZORT ตรง ๆ จะได้คอลัมน์ "ผู้ใช้" ที่ว่างตลอดกาล
+ *       (กุญแจแอดมินดอกเดียว) ⇒ คนอ่านจะเชื่อว่าระบบตอบคำถามนี้ได้
+ */
+import { test } from "node:test";
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { ควรจด, แถวคำสั่ง, ชื่อเส้น, เก็บกี่วัน } from "../../netlify/lib/admin-log.mjs";
+import { ตัดคอมเมนต์ } from "../_strip-comments.mjs";
+
+const โค้ดของ = (p) => ตัดคอมเมนต์(readFileSync(p, "utf8"), p);
+
+test("`ควรจด` — ไม่ใช่ GET/HEAD = จด · GET = ไม่จด", () => {
+  for (const m of ["POST", "DELETE", "PUT", "PATCH", "post"]) assert.equal(ควรจด({ method: m }), true, m);
+  for (const m of ["GET", "HEAD", "get", ""]) assert.equal(ควรจด({ method: m }), false, m);
+  assert.equal(ควรจด(undefined), false, "ไม่มีคำขอ ⇒ ไม่จด (ห้านโยน error)");
+});
+
+test("`ชื่อเส้น` เอาแค่ **ชื่อคำสั่ง** ไม่เอาค่า (ค่ามีเลขเอกสาร/รหัสลูกค้าได้)", () => {
+  assert.equal(ชื่อเส้น("https://x/api/core?movedel=DOC-123&limit=5"), "/api/core?movedel");
+  assert.equal(ชื่อเส้น("https://x/api/core?limit=5&offset=10"), "/api/core", "limit/offset ไม่ใช่คำสั่ง");
+  assert.equal(ชื่อเส้น("ไม่ใช่ url"), "?", "อ่านไม่ได้ ⇒ '?' ไม่ใช่การโยน error");
+  const s = ชื่อเส้น("https://x/api/core?movedel=DOC-123");
+  assert.ok(!s.includes("DOC-123"), "🔴 ค่าของพารามิเตอร์ต้องไม่ติดไปในสมุด");
+});
+
+test("`แถวคำสั่ง` — ลำดับตรงกับ VALUES และ ref ที่ไม่มีต้องเป็นสตริงว่าง ไม่ใช่ null", () => {
+  const เมื่อ = new Date("2026-09-20T18:07:00.000Z");
+  const r = แถวคำสั่ง({ เส้น: "/api/core?move", method: "post", ref: null, ผล: 200, เมื่อ });
+  assert.deepEqual(r, ["2026-09-20T18:07:00.000Z", "/api/core?move", "POST", "", "200", null]);
+  /* 🔑 `ref` เป็นส่วนของ PRIMARY KEY — NULL ใน PK ของ SQLite ไม่ชนกันเอง
+     ⇒ ปล่อย null = **กันยิงซ้ำไม่ได้** ซึ่งเป็นเหตุผลเดียวที่ใส่ ref ไว้ใน PK */
+  assert.equal(r[3], "", "ref ว่างต้องเป็น '' ไม่ใช่ null");
+});
+
+test("🔑 ตารางต้องมีกุญแจกันยิงซ้ำ และ **ต้องไม่มีคอลัมน์ผู้ใช้**", () => {
+  const s = โค้ดของ("netlify/lib/admin-log.mjs");
+  assert.match(s, /PRIMARY KEY \(at, endpoint, ref\)/, "ต้องกันยิงซ้ำที่ระดับฐานข้อมูล");
+  assert.doesNotMatch(
+    s, /\b(user|ผู้ใช้งาน|username) (TEXT|INTEGER)/,
+    "🔴 ห้ามมีคอลัมน์ผู้ใช้จนกว่าจะมีกุญแจต่อคน — ช่องที่ว่างตลอดกาลทำให้คนเชื่อว่าระบบตอบได้",
+  );
+});
+
+test("🔑 ต้องจดที่ **จุดเดียว** — ห้ามกระจายตามกิ่งใน core.mjs", () => {
+  const s = โค้ดของ("netlify/functions/core.mjs");
+  const ครั้ง = (s.match(/จดคำสั่งแอดมิน\(/g) || []).length;
+  assert.equal(ครั้ง, 1, `🔴 เจอการเรียกตัวจด ${ครั้ง} ที่ — มากกว่า 1 = กระจายตามกิ่ง ⇒ กิ่งใหม่จะหลุดเงียบ ๆ`);
+  assert.match(s, /withD1Meter\(\(\) => จดแล้วส่งต่อ\(req, context\)\)/, "ต้องจดในตัวห่อชั้นนอกสุด");
+  assert.match(s, /const res = await route\(req, context\);/, "ต้อง await route ก่อนจด (จะได้รู้สถานะจริง)");
+});
+
+test("คำตอบต้องประกาศขอบเขตครบ 4 ข้อ และบอกจำนวนวันที่เก็บ", () => {
+  const s = โค้ดของ("netlify/lib/admin-log.mjs");
+  for (const คำ of ["ยังไม่รู้ว่าใครทำ", "ไม่ครอบการแก้ที่ทำใน ZORT โดยตรง", "ไม่ใช่ GET", "เก็บกี่วัน"]) {
+    assert.ok(s.includes(คำ), `ขอบเขตต้องพูดถึง "${คำ}"`);
+  }
+  assert.equal(เก็บกี่วัน, 90);
+  assert.match(s, /\$\{เก็บกี่วัน\}/, "ข้อความบนจอต้องอ่านเลขจากตัวแปร ไม่ใช่พิมพ์ 90 ซ้ำ");
+});
+
+test("🔬 พลังแยกแยะ: ย้ายการจดไปอยู่ในกิ่ง ⇒ ด่าน 'จุดเดียว' ต้องแดง", () => {
+  const s = โค้ดของ("netlify/functions/core.mjs");
+  const ปลอม = s.replace("const จด = await จดคำสั่งแอดมิน({",
+    "await จดคำสั่งแอดมิน({ เส้น: 'x', method: 'POST' });\n    const จด = await จดคำสั่งแอดมิน({");
+  assert.notEqual(ปลอม, s, "ของปลูกต้องเปลี่ยนเนื้อจริง");
+  assert.equal((ปลอม.match(/จดคำสั่งแอดมิน\(/g) || []).length, 2, "ตะแกรงต้องนับได้ 2 ในของปลูก");
+});
