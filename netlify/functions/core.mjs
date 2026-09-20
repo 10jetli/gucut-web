@@ -2092,7 +2092,23 @@ async function route(req, context) {
       const { parseSingleStore } = await import("../lib/core-orders.mjs");
       const st = parseSingleStore(url.searchParams.get("store"));
       if (st.error) return json({ error: st.error }, 400);
-      return okJson(await syncReturnOrders({ pages: url.searchParams.get("pages"), store: st.source }));
+      /* 🔴 **20 ก.ย. 2569 เย็น — เส้นสั่งมือต้องจดสมุดด้วย (ผู้เรียก "มือ")**
+         เดิมเรียก `syncReturnOrders` ตรง ๆ ⇒ **การสั่งมือมองไม่เห็นในสมุดตลอดกาล**
+         ⇒ ⇒ ฝั่งจอวัดรอบต่อชั่วโมงได้ **0.67 แต่ cron บอก 0.33** แล้ว **แยกไม่ออก**
+           ว่า cron ยิงเกิน หรือมีคนสั่งมือ ⇒ ค้างเป็น "ยังไม่รู้" ทั้งวัน
+         ⚠️ **นี่เปลี่ยนความหมายของตัวเลขเดิม**: `แถวที่มี` / `ครอบคลุม` จะรวมการสั่งมือด้วย
+           ⇒ ฝั่งจอต้องอ่านคู่กับช่องใหม่ `รอบแยกตามผู้เรียก` (แจ้งแล้วในจดหมายรอบนี้)
+         🔑 ทางเลือกที่ไม่เอา: ไม่จดเลยเพื่อรักษาความหมายเดิม ⇒ แลกกับการที่
+           **การสั่งมือไม่มีร่องรอยถาวร** ซึ่งแพงกว่า เพราะคำถามเรื่องความถี่จะกลับมาอีก */
+      const { วัดเวลางาน } = await import("../lib/job-timing.mjs");
+      const t = await วัดเวลางาน("returns-sync", () => syncReturnOrders({ pages: url.searchParams.get("pages"), store: st.source }), {
+        ผู้เรียก: "มือ",
+        ตัดสินผล: (x) => (x && x.error ? "failed" : x ? "ok" : null),
+        อธิบาย: (x) => (x && typeof x === "object" ? `สั่งมือ · ${Object.entries(x).filter(([, v]) => typeof v === "number").map(([k, v]) => `${k} ${v}`).join(" · ") || "ไม่มีตัวเลขในคำตอบ"}` : null),
+      });
+      /* คืน **ผลลัพธ์เดิมเป๊ะ** — ห้ามให้รูปคำตอบเปลี่ยนเพราะเราเพิ่มการจด
+         (ฝั่งจอ/สคริปต์ที่เรียกเส้นนี้อยู่ต้องไม่กระทบ) · แต่แนบ `จดเวลา` ไว้ให้ตรวจได้ */
+      return okJson({ ...t.ผลลัพธ์, "จดเวลา": t.จดเวลา });
     }
     if (url.searchParams.get("list") === "returnorders") {
       const { listReturnOrders } = await import("../lib/core-purchases.mjs");
