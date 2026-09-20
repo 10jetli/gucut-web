@@ -20,6 +20,11 @@
  * ใช้: node scripts/check-lib-loads.mjs
  */
 import { readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { readFileSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+let ลำดับ = 0;
 import { pathToFileURL } from "node:url";
 import { resolve } from "node:path";
 
@@ -36,14 +41,48 @@ if (!ไฟล์.length) {
   process.exit(1);
 }
 
+/* 🔑 **โหลดใน "ลูกกระบวนการ" ไม่ใช่ในตัวด่านเอง** — รูปนี้มาจากฝั่งจอ (20 ก.ย. 2569)
+   เหตุผลที่ผมทำตามทันที เพราะรุ่นแรกของผมมีช่องโหว่ที่ผมไม่เห็น:
+   ① ตัวช่วยที่เรียก `process.exit()` **ที่ระดับบนสุด** จะ **ฆ่าด่านทิ้ง**
+      ⇒ ถ้ามันออกด้วย `0` ด่านจะจบกลางทาง **แบบดูเหมือนผ่าน** และตัวที่เหลือ **ไม่ถูกตรวจเลย**
+      ⇒ ⇒ นี่คือรูปที่แย่ที่สุด: **ตะแกรงหยุดกลางทางแล้วรายงานว่าเรียบร้อย**
+   ② ต้องแยก **เสียงของตัวช่วย** ออกจาก **เสียงของด่าน** ⇒ ถึงจะรู้ว่าใครพิมพ์
+   🚫 และด่านนี้ตกสองกรณี: **โหลดไม่ได้** · **โหลดแล้วส่งเสียง**
+      เพราะโมดูลใน `lib/` ต้องเป็นของที่ import ได้เงียบ ๆ
+      ⇒ ตัวที่ต้องพิมพ์/ออกรหัสจบ **เป็นสคริปต์ ไม่ใช่โมดูล** ⇒ ที่ของมันคือ `scripts/` ไม่ใช่ `scripts/lib/`
+      (ย้าย `ยืนยันคำตอบดีของท่อปลอม.mjs` ออกไปแล้วในคอมมิตเดียวกัน — มัน **มี shebang** ซึ่งเป็น
+       เกณฑ์ที่ **ประกาศตัวเอง** ว่า "ฉันเป็นสคริปต์") */
 const พัง = [];
 for (const ชื่อ of ไฟล์) {
-  try {
-    /* 🔑 ต้องเป็น `pathToFileURL` ไม่ใช่พาธเปล่า — ชื่อไฟล์ไทยจะพังบน import() ถ้าไม่แปลง
-       (คลาสเดียวกับที่ `.pathname` ทำให้ `gen-zort-arch` พัง) */
-    await import(pathToFileURL(resolve(ราก, ชื่อ)).href);
-  } catch (e) {
-    พัง.push({ ชื่อ, ชนิด: e?.constructor?.name ?? "Error", เหตุ: String(e?.message || e).slice(0, 160) });
+  const url = pathToFileURL(resolve(ราก, ชื่อ)).href;
+  /* 🔴 **หมุดยืนยันว่า import เดินจบ** — เพิ่ม 20 ก.ย. 2569 หลังปลูกทดสอบแล้วพบช่องโหว่
+     ลูกกระบวนการแก้เรื่อง "ตัวช่วยฆ่าด่าน" ได้ **แต่ไม่จับ `process.exit(0)` ตอนโหลด**
+     ⇒ ลูกออกด้วย 0 เงียบ ๆ ⇒ **ด่านถือว่าผ่าน ทั้งที่โมดูลขัดจังหวะการทำงานกลางทาง**
+     ⇒ ⇒ นี่คือรูปที่เราไล่กันทั้งวัน: **การหยุดกลางทางหน้าตาเหมือนความสำเร็จ**
+     🔑 หมุดต้อง **ไม่ปนกับเสียง** (ไม่งั้นด่าน "โหลดแล้วส่งเสียง" จะร้องใส่หมุดของตัวเอง)
+        ⇒ จึงเขียนเป็น **ไฟล์** ไม่ใช่พิมพ์ออกจอ */
+  const หมุด = join(tmpdir(), `libload-${process.pid}-${ลำดับ++}`);
+  const r = spawnSync(process.execPath, ["--input-type=module", "-e",
+    `await import(${JSON.stringify(url)}); (await import("node:fs")).writeFileSync(${JSON.stringify(หมุด)}, "ok");`],
+    { encoding: "utf8", timeout: 20000 });
+  let เดินจบ = false;
+  try { เดินจบ = readFileSync(หมุด, "utf8") === "ok"; } catch {}
+  try { rmSync(หมุด, { force: true }); } catch {}
+  if (r.error) { พัง.push({ ชื่อ, ชนิด: "รันไม่ได้", เหตุ: String(r.error.message).slice(0, 160) }); continue; }
+  if (r.status !== 0) {
+    const ข้อความ = `${r.stderr || ""}${r.stdout || ""}`.trim();
+    const ชนิด = (ข้อความ.match(/\b(ReferenceError|SyntaxError|TypeError|Error)\b/) || [])[1] ?? `ออกด้วยรหัส ${r.status}`;
+    พัง.push({ ชื่อ, ชนิด, เหตุ: ข้อความ.split("\n").find((l) => /Error|รหัส/.test(l))?.slice(0, 160) ?? ข้อความ.slice(0, 160) });
+    continue;
+  }
+  if (!เดินจบ) {
+    พัง.push({ ชื่อ, ชนิด: "ออกก่อน import จบ",
+      เหตุ: "โมดูลเรียก `process.exit()` (หรือหยุดการทำงาน) ที่ระดับบนสุด ⇒ ลูกออกด้วย 0 แบบดูเหมือนสำเร็จ" });
+    continue;
+  }
+  const เสียง = `${r.stdout || ""}${r.stderr || ""}`.trim();
+  if (เสียง) {
+    พัง.push({ ชื่อ, ชนิด: "โหลดแล้วส่งเสียง", เหตุ: `พิมพ์ ${เสียง.length} ตัวอักษรตอนถูก import ⇒ มีผลข้างเคียงที่ระดับบนสุด: ${เสียง.slice(0, 80)}` });
   }
 }
 
