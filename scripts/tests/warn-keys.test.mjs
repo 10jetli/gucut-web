@@ -50,6 +50,15 @@ test("คีย์ที่รู้ว่ามีอยู่จริงใ�
 test("🔑 สกัดใหม่ทุกครั้ง ไม่ใช่รายชื่อแช่ — ปลูกคีย์ใหม่แล้วต้องโผล่", () => {
   const path = "netlify/lib/pos.mjs";
   const เดิม = readFileSync(path, "utf8");
+  /* 🔴 **ต้องจำไฟล์ตารางไว้คืนด้วย** (เพิ่ม 20 ก.ย. 2569)
+     เดิมเทสนี้คืนแค่ซอร์สที่ปลูก แต่ `gen-warn-keys` ถูกเรียกสองครั้ง
+     ⇒ `warn-keys.mjs` ได้ `"สร้างเมื่อ"` ใหม่ ⇒ **`npm test` ทำให้ git สกปรกทุกครั้ง**
+     ⇒ ⇒ ท่ากิ่งทิ้งที่ต้องการ tree สะอาดใช้ไม่ได้ · และอีกบัญชีในเครื่อง pull ไม่ได้
+     🔑 ไล่เจอด้วยการ bisect ขั้น prebuild ทีละขั้นเทียบ md5 — **`npm test` เป็นตัวเขียน**
+        ซึ่งไม่มีใครสงสัยเลย เพราะ "เทส" ไม่ควรเปลี่ยนอะไรในรีโป
+     🚫 คืนด้วย `writeFileSync` ตรง ๆ **ไม่ผ่าน `เขียนถ้าเนื้อเปลี่ยน`** เพราะที่นี่เราต้องการ
+        เนื้อเดิมเป๊ะรวมทั้งบรรทัดเวลา */
+  const ตารางเดิม = readFileSync("netlify/lib/warn-keys.mjs", "utf8");
   const ปลูก = "ZZNOPEZZKeyOnlyForTest";
   try {
     // ปลูกในรูป **ที่ของจริงเป็น** (spread แบบมีเงื่อนไข) ไม่ใช่รูปที่พิมพ์ง่าย
@@ -62,6 +71,7 @@ test("🔑 สกัดใหม่ทุกครั้ง ไม่ใช่�
   } finally {
     writeFileSync(path, เดิม);
     execFileSync("node", ["scripts/gen-warn-keys.mjs"], { stdio: "ignore" }); // คืนตารางให้ตรงซอร์ส
+    writeFileSync("netlify/lib/warn-keys.mjs", ตารางเดิม);   // แล้วคืนบรรทัดเวลาเดิมด้วย
   }
   assert.ok(
     !readFileSync("netlify/lib/warn-keys.mjs", "utf8").includes("ZZNOPEZZ"),
