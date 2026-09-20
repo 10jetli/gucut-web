@@ -264,7 +264,7 @@ export async function probeBundleDetail(skuIn, whIn) {
       const text = await res.text();
       let body = null;
       try { body = JSON.parse(text); } catch { /* คืนสถานะ + ความยาวแทน */ }
-      return { http: res.status, body, bytes: text.length };
+      return { http: res.status, body, bytes: Buffer.byteLength(text, "utf8") }; // ไบต์จริง ไม่ใช่อักขระ (20 ก.ย. 2569)
     } catch (e) {
       return { http: 0, body: null, error: String(e?.message ?? e).slice(0, 120) };
     }

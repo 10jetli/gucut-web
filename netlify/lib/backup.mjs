@@ -121,7 +121,17 @@ async function backupOne(cfg, deadline = Infinity) {
     }
     if (body == null) continue;
     const text = typeof body === "string" ? body : JSON.stringify(body);
-    const size = text.length;
+    /* 🔴 **20 ก.ย. 2569 — เดิมเขียน `text.length` ซึ่งนับ *อักขระ* ไม่ใช่ *ไบต์***
+       เนื้อใน Blobs เป็น JSON ภาษาไทยเกือบทั้งก้อน ⇒ UTF-8 ตัวละ 3 ไบต์
+       ⇒ `BATCH_BYTES`/`MAX_ONE` ที่ตั้งใจเป็น **ไบต์** ถูกเทียบกับเลขที่ต่ำกว่าจริง 2–3 เท่า
+       ⇒ ก้อน SQL จริงใหญ่กว่าที่คิด และเลข `bytes` ที่รายงาน/เก็บลง D1 ก็ต่ำกว่าจริงตามกัน
+       🔑 ฝั่งจอเจอคลาสเดียวกันในเครื่องมือวัดของเขาวันเดียวกัน (`measure-core.mjs`)
+          ⇒ ไล่ทั้งคลาสสองฝั่ง · ฝั่งนี้เจอ 3 จุด (ที่นี่ · stock-moves · core-products)
+       ⚠️ **ผลข้างเคียงที่ตั้งใจ**: เงื่อนไข "เหมือนเดิม" เทียบ `p.bytes === size`
+          ⇒ รอบแรกหลังแก้ **ทุกคีย์จะดูเหมือนเปลี่ยน** ⇒ เขียนสำเนาใหม่หนึ่งรอบ
+          ยอมรับได้ (ได้สำเนาสดขึ้น) แต่จะกินโควตาเขียน D1 หนึ่งรอบ ⇒ จดไว้ให้คนอ่าน log ไม่ตกใจ
+       🚫 ห้ามกลับไปใช้ `.length` — ถ้าอยากได้จำนวนอักขระ ให้ตั้งชื่อว่า chars ไม่ใช่ bytes */
+    const size = Buffer.byteLength(text, "utf8");
     if (size > MAX_ONE) {
       skipped++;
       continue;

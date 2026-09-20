@@ -101,9 +101,12 @@ export async function applyMoves(list) {
     for (const pr of preds) {
       /* ⚠️ ท่อนเดียวยาวเกินเพดานเองก็ยังต้องยิง — ยิงแล้วพลาดดีกว่าข้ามเงียบ ๆ
           (ข้ามไป = `before`/`after` นับขาด ⇒ `added` เพี้ยน ⇒ จอบอกว่าซ้ำทั้งที่เพิ่งเข้า) */
-      if (batch.length && bytes + pr.length > MAX_SQL) await flush();
+      /* 🔴 20 ก.ย. 2569: เดิมใช้ `pr.length` (อักขระ) เทียบกับ `MAX_SQL` ที่คอมเมนต์ว่า **ไบต์**
+         `ref` เป็นข้อความที่คนกรอก ⇒ **มีไทยได้** ⇒ ก้อนจริงใหญ่กว่าที่วัดได้ถึง 3 เท่า */
+      const ขนาดpr = Buffer.byteLength(pr, "utf8");
+      if (batch.length && bytes + ขนาดpr > MAX_SQL) await flush();
       batch.push(pr);
-      bytes += pr.length + 4;
+      bytes += ขนาดpr + 4;
     }
     await flush();
     return n;
