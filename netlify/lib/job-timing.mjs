@@ -34,7 +34,23 @@ const DDL =
   `CREATE TABLE IF NOT EXISTS ${ตารางสมุดงาน} (
      job TEXT NOT NULL, at TEXT NOT NULL, ms INTEGER,
      outcome TEXT, note TEXT,
+     sub_ok INTEGER, sub_fail INTEGER,
      PRIMARY KEY (job, at))`;
+
+/* 🆕 **`ผลย่อย` — งานที่ทำหลายชิ้น ต้องบอกว่าสำเร็จกี่ชิ้น ล้มกี่ชิ้น** (20 ก.ย. 2569)
+   🔴 เหตุ: `backup-run` จด `outcome: failed` ทั้งที่ `note` บอก **`saved 1 · failed 1`**
+      ⇒ ⇒ **ทำงานได้ครึ่งเดียว แต่ป้ายบอกว่าล้มทั้งดุ้น** ⇒ คนอ่านแต่ป้ายจะคิดว่า
+         ไม่มีอะไรถูกสำรองเลย ⇒ **ผิดคนละทิศ**
+   🔑 ช่องว่างของสัญญาเดิม: `outcome` ตัดสินได้แต่หยาบ · `note` ละเอียดแต่
+      **ห้ามใช้ตัดสินใจ** (กติกาของเราเอง) ⇒ **ไม่มีช่องที่ทั้งละเอียดและตัดสินได้**
+   🚫 **งานที่ไม่ได้นับชิ้น ต้องเป็น `null` ไม่ใช่ `{สำเร็จ:0, ล้ม:0}`** (ฝั่งจอเตือนไว้ก่อนทำ)
+      `{0,0}` จะขึ้นจอว่า **"สำเร็จ 0 ชิ้น"** ⇒ อ่านว่าล้มเหลวสนิท ทั้งที่แปลว่า **"ไม่ได้นับชิ้น"**
+   ⚠️ คอลัมน์เพิ่มทีหลัง ⇒ ตารางเก่าต้องมาทาง `ALTER` · และ `SELECT` **ต้องทนตอนคอลัมน์ยังไม่มี**
+      (บทเรียน `new-column-select-before-migration`: จอขายเคยล่ม 3 นาทีเพราะ SELECT วิ่งก่อน ALTER) */
+const ALTER_ผลย่อย = [
+  `ALTER TABLE ${ตารางสมุดงาน} ADD COLUMN sub_ok INTEGER`,
+  `ALTER TABLE ${ตารางสมุดงาน} ADD COLUMN sub_fail INTEGER`,
+];
 
 /* ⚠️ ทางปกติยิง D1 **รอบเดียว** (INSERT) — D1 อยู่ APAC ฟังก์ชันอยู่ US ไป-กลับละ ~286 ms
    เจอ "no such table" ค่อยสร้างแล้วลองซ้ำ **หนึ่งครั้ง** (coreQuery ซ่อมให้เฉพาะ "no such column")
@@ -57,19 +73,33 @@ export function แถวที่จะจด({ งาน, ms, ผล, note = n
 }
 
 /** จดหนึ่งแถว — คืน `"ok"` หรือข้อความเหตุที่จดไม่ได้ (ไม่โยน error ออกไปหางานจริง) */
-export async function จดเวลางาน({ งาน, ms, ผล, note = null, เมื่อ = new Date() }) {
+export async function จดเวลางาน({ งาน, ms, ผล, note = null, ผลย่อย = null, เมื่อ = new Date() }) {
   const แถว = แถวที่จะจด({ งาน, ms, ผล, note, เมื่อ });
+  /* 🚫 **`{0,0}` ห้ามถูกสร้างขึ้นเอง** — ผู้เรียกที่ไม่ได้นับชิ้นต้องส่ง `null` (ข้อของฝั่งจอ)
+     ⇒ ที่นี่แค่ตรวจรูป: ถ้าไม่ใช่ `{สำเร็จ,ล้ม}` ที่เป็นเลขทั้งคู่ ⇒ **ถือว่าไม่ได้นับ** */
+  const ย่อยดี = ผลย่อย && Number.isFinite(Number(ผลย่อย.สำเร็จ)) && Number.isFinite(Number(ผลย่อย.ล้ม));
+  const แถวเต็ม = [...แถว, ย่อยดี ? Number(ผลย่อย.สำเร็จ) : null, ย่อยดี ? Number(ผลย่อย.ล้ม) : null];
+  const sqlเต็ม = `INSERT OR REPLACE INTO ${ตารางสมุดงาน} (job, at, ms, outcome, note, sub_ok, sub_fail) VALUES (?, ?, ?, ?, ?, ?, ?)`;
   const sql = `INSERT OR REPLACE INTO ${ตารางสมุดงาน} (job, at, ms, outcome, note) VALUES (?, ?, ?, ?, ?)`;
+  /* 🔴 **เขียนชุดเต็มก่อน · คอลัมน์ยังไม่มี ⇒ ALTER แล้วลองใหม่ · ยังไม่ได้ ⇒ ถอยไปชุดเดิม**
+     ⇒ ⇒ **ห้ามให้การเพิ่มคอลัมน์ทำให้ "จดเวลาไม่ได้เลย"** — เสียคำอธิบายดีกว่าเสียทั้งแถว */
+  const เขียน = async () => {
+    try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok"; }
+    catch (e) {
+      if (!/no such column/i.test(String(e?.message ?? e))) throw e;
+      for (const a of ALTER_ผลย่อย) await coreQuery(a).catch(() => null);
+      try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok"; }
+      catch { await coreQuery(sql, แถว); return "ok (ไม่มีผลย่อย — คอลัมน์ยังไม่มี)"; }
+    }
+  };
   try {
-    await coreQuery(sql, แถว);
-    return "ok";
+    return await เขียน();
   } catch (e) {
     const msg = String(e?.message ?? e);
     if (!ยังไม่มีตาราง.test(msg)) return `จดไม่ได้: ${msg.slice(0, 200)}`;
     try {
       await coreQuery(DDL);
-      await coreQuery(sql, แถว);
-      return "ok";
+      return await เขียน();
     } catch (e2) {
       return `จดไม่ได้ (สร้างตารางแล้วยังล้ม): ${String(e2?.message ?? e2).slice(0, 200)}`;
     }
@@ -81,7 +111,18 @@ export async function จดเวลางาน({ งาน, ms, ผล, note 
  *  @param อธิบาย   (r) => string|null — ข้อความประกอบไว้อ่านย้อน **ห้ามเอาไปตัดสินอะไร**
  *  ⚠️ งานโยน error ⇒ จด `failed` แล้ว **โยนต่อ** (ห้ามกลืน — ผู้เรียกต้องได้เตือน Telegram ตามเดิม)
  */
-export async function วัดเวลางาน(งาน, ทำงาน, { ตัดสินผล = null, อธิบาย = null } = {}) {
+/** @param นับชิ้น (r) => {สำเร็จ:number, ล้ม:number} | null — **งานที่ไม่ได้นับชิ้นต้องคืน `null`**
+ *  🚫 ห้ามคืน `{สำเร็จ:0, ล้ม:0}` เมื่อไม่ได้นับ — จอจะขึ้นว่า "สำเร็จ 0 ชิ้น" ⇒ อ่านว่าล้มเหลวสนิท */
+/* ตัวตัดสินพังเอง ⇒ **ถือว่าไม่ได้นับ (null)** ไม่ใช่ `{0,0}` — กติกาสามสถานะ */
+const อ่านผลย่อย = (fn, r) => {
+  if (typeof fn !== "function") return null;
+  try {
+    const v = fn(r);
+    return v && Number.isFinite(Number(v.สำเร็จ)) && Number.isFinite(Number(v.ล้ม)) ? v : null;
+  } catch { return null; }
+};
+
+export async function วัดเวลางาน(งาน, ทำงาน, { ตัดสินผล = null, อธิบาย = null, นับชิ้น = null } = {}) {
   const t0 = Date.now();
   let r;
   let ผล = "ไม่ได้ตัดสิน";
@@ -109,7 +150,7 @@ export async function วัดเวลางาน(งาน, ทำงาน,
     if (typeof อธิบาย === "function" && (note === null || note === undefined || note === "")) {
       note = "ตัวอธิบายคืนค่าว่าง — อ่านฟิลด์ในคำตอบไม่เจอ หรือไม่มีอะไรให้อธิบายรอบนี้";
     }
-    return { ผลลัพธ์: r, ms: Date.now() - t0, จดเวลา: await จดเวลางาน({ งาน, ms: Date.now() - t0, ผล, note }) };
+    return { ผลลัพธ์: r, ms: Date.now() - t0, จดเวลา: await จดเวลางาน({ ผลย่อย: อ่านผลย่อย(นับชิ้น, r), งาน, ms: Date.now() - t0, ผล, note }) };
   } catch (e) {
     const จด = await จดเวลางาน({ งาน, ms: Date.now() - t0, ผล: "failed", note: `throw: ${String(e?.message ?? e).slice(0, 200)}` });
     if (จด !== "ok") console.log(`⏱️ จดเวลา ${งาน} ไม่ได้: ${จด}`);
@@ -158,11 +199,23 @@ export async function อ่านเวลางาน({ ชั่วโมง�
 
   let แถว = null;
   let อ่านไม่ได้ = null;
+  let คอลัมน์ผลย่อยยังไม่มี = false;
   try {
-    แถว = await coreQuery(
-      `SELECT job, at, ms, outcome, note FROM ${ตารางสมุดงาน}
+    const คิวรี = (คอลัมน์) => coreQuery(
+      `SELECT ${คอลัมน์} FROM ${ตารางสมุดงาน}
         WHERE at > ? ORDER BY at DESC LIMIT 2000`, [ตั้งแต่]
     );
+    try {
+      แถว = await คิวรี("job, at, ms, outcome, note, sub_ok, sub_fail");
+    } catch (e) {
+      /* 🔴 **คอลัมน์ใหม่อาจยังไม่มีในฐานที่ deploy อยู่** ⇒ ถอยไปอ่านชุดเดิม
+         ⇒ ⇒ ถ้าไม่ถอย จอจะดับทั้งหน้าเพราะคอลัมน์ที่เพิ่งเพิ่ม (บทเรียนของเราเอง)
+         🚫 แต่ **ห้ามเงียบ** — ถ้าถอยแล้วต้องบอกว่าถอย ไม่งั้น `ผลย่อย: null` ทุกแถว
+            จะถูกอ่านว่า "ไม่มีงานไหนนับชิ้น" ทั้งที่แปลว่า "ฐานยังไม่มีคอลัมน์" */
+      if (!/no such column/i.test(String(e?.message ?? e))) throw e;
+      คอลัมน์ผลย่อยยังไม่มี = true;
+      แถว = await คิวรี("job, at, ms, outcome, note");
+    }
   } catch (e) {
     // ตารางยังไม่เกิด (ยังไม่มีงานไหนวิ่งหลัง deploy) ⇒ **ไม่ใช่ศูนย์ ไม่ใช่พัง** = ยังไม่มีข้อมูล
     อ่านไม่ได้ = String(e?.message ?? e).slice(0, 200);
@@ -239,6 +292,13 @@ export async function อ่านเวลางาน({ ชั่วโมง�
       /* นาที/วัน **วัดจากแถวจริงในช่วง** (ไม่ใช่ค่ากลาง × รอบ/วัน)
          ⇒ ถ้าครอบคลุม < 1 เลขนี้ก็ต่ำกว่าความจริงตามกัน ⇒ ต้องอ่านคู่กับ `ครอบคลุม` เสมอ */
       "นาทีต่อวัน(จากแถวจริง)": ms.length ? Math.round((ms.reduce((s, n) => s + n, 0) / ชมที่สมุดเปิด) * 24 / 60_000 * 100) / 100 : null,
+      /* 🆕 **ผลย่อยของรอบล่าสุด** — `null` = งานนี้ไม่ได้นับชิ้น (ไม่ใช่ "สำเร็จ 0 ชิ้น")
+         ⇒ ฝั่งจอตกลงแล้วว่า `null` ⇒ **ไม่โชว์ช่องนั้นเลย** */
+      "ผลย่อยรอบล่าสุด": (() => {
+        const ล่า = rs[0];
+        const a = ล่า?.sub_ok, b = ล่า?.sub_fail;
+        return a == null || b == null ? null : { "สำเร็จ": Number(a), "ล้ม": Number(b) };
+      })(),
       "ผล": {
         ok: rs.filter((r) => r.outcome === "ok").length,
         failed: rs.filter((r) => r.outcome === "failed").length,
