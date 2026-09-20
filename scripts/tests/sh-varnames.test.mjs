@@ -64,7 +64,7 @@ test("ตัวด่านจริง: ไฟล์นอกรีโป = ด
 
 test("ไม่พบโฟลเดอร์นอกรีโป ⇒ ต้องเขียนว่า 'ข้ามโดยตั้งใจ' ไม่ใช่เงียบ", () => {
   const out = execFileSync("node", ["scripts/check-shell-varnames.mjs"], {
-    env: { ...process.env, EXTRA_SH_DIRS: join(tmpdir(), "ไม่มีจริงZZNOPEZZ") },
+    env: { ...process.env, EXTRA_SH_DIRS: join(tmpdir(), "ไม่มีจริง" + "ZZ" + "NOPEZZ") },
     encoding: "utf8",
   });
   assert.match(out, /ข้ามโดยตั้งใจ ไม่ใช่ตรวจแล้วผ่าน/);

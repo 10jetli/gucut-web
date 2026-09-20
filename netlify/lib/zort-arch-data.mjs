@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-09-20T07:38:51.048Z",
+  "generatedAt": "2026-09-20T07:51:25.556Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -827,7 +827,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-09-20T07:38:51.049Z",
+    "at": "2026-09-20T07:51:25.557Z",
     "problems": [],
     "ok": true
   }

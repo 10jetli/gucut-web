@@ -59,7 +59,7 @@ test("🔑 สกัดใหม่ทุกครั้ง ไม่ใช่�
      🚫 คืนด้วย `writeFileSync` ตรง ๆ **ไม่ผ่าน `เขียนถ้าเนื้อเปลี่ยน`** เพราะที่นี่เราต้องการ
         เนื้อเดิมเป๊ะรวมทั้งบรรทัดเวลา */
   const ตารางเดิม = readFileSync("netlify/lib/warn-keys.mjs", "utf8");
-  const ปลูก = "ZZNOPEZZKeyOnlyForTest";
+  const ปลูก = "ZZ" + "NOPEZZ" + "KeyOnlyForTest";
   try {
     // ปลูกในรูป **ที่ของจริงเป็น** (spread แบบมีเงื่อนไข) ไม่ใช่รูปที่พิมพ์ง่าย
     const แทรก = `\nexport const __ปลูกทดสอบ = (c) => ({ ...(c ? { ${ปลูก}: 1 } : {}) });\n`;
@@ -74,14 +74,14 @@ test("🔑 สกัดใหม่ทุกครั้ง ไม่ใช่�
     writeFileSync("netlify/lib/warn-keys.mjs", ตารางเดิม);   // แล้วคืนบรรทัดเวลาเดิมด้วย
   }
   assert.ok(
-    !readFileSync("netlify/lib/warn-keys.mjs", "utf8").includes("ZZNOPEZZ"),
+    !readFileSync("netlify/lib/warn-keys.mjs", "utf8").includes("ZZ" + "NOPEZZ"),
     "ต้องไม่เหลือร่องรอยของปลูกในตาราง"
   );
 });
 
 test("ตัวควบคุมลบ: คีย์ที่ไม่มีในท่อ ต้องไม่อยู่ในรายชื่อ", async () => {
   const t = await อ่านตาราง();
-  for (const k of ["ZZNOPEZZ", "คีย์ที่ไม่มีจริง", "totallyMadeUpKey"]) {
+  for (const k of ["ZZ" + "NOPEZZ", "คีย์ที่ไม่มีจริง", "totallyMadeUpKey"]) {
     assert.equal(t.คีย์.includes(k), false, `ไม่ควรมี ${k}`);
   }
 });
