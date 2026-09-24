@@ -19,13 +19,20 @@ import { execFile } from "node:child_process";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
 import { join } from "node:path";
 import { promisify } from "node:util";
 
 const run = promisify(execFile);
 const HOST = "https://video.gucut.com";
 const BUCKET = "r2:gucut-video";
-const DONE_FILE = new URL("../.reseg-done.json", import.meta.url).pathname;
+/* 🔴 **ห้ามใช้ `.pathname` ของ URL เป็นพาธไฟล์** (แก้ 19 ก.ย. 2569 · ฝั่งจอเจอคลาสนี้ในของเขา)
+   URL เข้ารหัสอักษรที่ไม่ใช่ ASCII เป็น `%xx` ⇒ วันที่รีโปถูกวางไว้ในโฟลเดอร์ชื่อไทย/มีช่องว่าง
+   พาธที่ได้จะเป็น `/home/jetli/%E0%B9%82.../.reseg-done.json` ⇒ **เขียนผิดที่/อ่านไม่เจอเงียบ ๆ**
+   ⇒ ใช้ `fileURLToPath()` ซึ่งถอดรหัสให้ (พิสูจน์ด้วยการยิงเทียบสองทางแล้ว)
+   🔑 ญาติกับข้อ "ตะแกรงพังกับชื่อที่ยังไม่มี" — ของนี้คือ **ชื่อที่มีอยู่แล้วแต่ถูกเข้ารหัส**
+      วันนี้พาธของเราเป็น ASCII ล้วน ⇒ ยังไม่เคยพัง แต่พังวันที่มีคนย้ายโฟลเดอร์ */
+const DONE_FILE = fileURLToPath(new URL("../.reseg-done.json", import.meta.url));
 
 // ความคมชัดที่มี — bitrate ตั้งให้ "ตรงกับของเดิม" ที่วัดได้จริง
 // (637 / 1269 / 2458 kbps) ตั้งสูงกว่านี้ = ไฟล์ใหญ่ขึ้น ลูกค้าเปลืองเน็ต

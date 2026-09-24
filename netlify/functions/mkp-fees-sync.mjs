@@ -16,12 +16,13 @@
 //    ห้ามใช้ MAX(at) ของตาราง shopee_fees แทน — คืนไหนไม่มีใบใหม่ ค่านั้นจะเก่าทั้งที่งานปกติ
 import { mirrorShopeeFees } from "../lib/mkp-finance-mirror.mjs";
 import { coreQuery } from "../lib/coredb.mjs";
+import { ครอบงานตามเวลา } from "../lib/job-timing.mjs";
 
 /* ทุกชั่วโมงกวาด 3 วันล่าสุด · ตี 4 กวาดกว้าง 14 วัน (เผื่อ Shopee แก้ยอดย้อนหลัง)
    ⚠️ Shopee ปฏิเสธช่วง ≥15 วัน (wallet.time_invalid) ⇒ 14 คือเพดานจริง ไม่ใช่เลขที่เลือกเอง */
 const WIDE_HOUR_TH = 4;
 
-export default async function handler() {
+async function handler() {
   const hourTH = new Date(Date.now() + 7 * 3600e3).getUTCHours();
   const wide = hourTH === WIDE_HOUR_TH;
   let r;
@@ -83,4 +84,12 @@ export default async function handler() {
 
 // นาทีที่ 47 — ไม่ชน beam-sweep (:00/:30) · core-sync (:13/:43) · backup (:40) · slips (:50)
 //   stock-push shopee (:05/:20/:35/:50) · tiktok (:10/:25/:40/:55) · returns (:07) · contacts (:19)
+/* ⏱️ จดเวลาของรอบนี้ลงสมุด `job_run_log` ทุกรอบ (19 ก.ย. 2569 · ใบ S1)
+   🔑 ฝั่งจอวัดจาก cron จริงแล้วชี้ว่า ยอด 26.25 นาที/วันที่เคยรายงาน **ครอบแค่ 58% ของรอบทั้งหมด**
+      (288 รอบ/วันมีสมุด · 209 รอบ/วันไม่มี) ⇒ ตัวนี้อยู่ในกองที่ยังไม่มีใครวัด
+   🚫 **ห้ามยิงฟังก์ชันนี้เพื่อจับเวลา** — มันทำงานจริง (เงิน/สต็อก/กระจก) และกินเวลาที่กำลังจะวัดพอดี
+   ⚠️ ผลในสมุดเป็น `ไม่ได้ตัดสิน` โดยตั้งใจ — งานนี้ตอบ 200 ได้แม้ข้างในมี error
+      ⇒ เดาว่า 200 = สำเร็จ จะได้สมุดที่เต็มไปด้วย ok ปลอม (แย่กว่าไม่รู้) · ดู note = HTTP status */
+export default ครอบงานตามเวลา("mkp-fees-sync", handler);
+
 export const config = { schedule: "47 * * * *" };

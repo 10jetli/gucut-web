@@ -266,11 +266,16 @@ export async function getCustomerDetail(idOrName) {
   const key = String(idOrName ?? "").trim().slice(0, 120);
   if (!key) return { error: "ต้องระบุรหัสหรือชื่อผู้ติดต่อ" };
 
-  const contact = (
-    await coreQuery(
-      `SELECT * FROM contacts WHERE id = ${esc(key)} OR code = ${esc(key)} OR name = ${esc(key)} LIMIT 1`
-    )
-  )[0] || null;
+  /* 🔴 **ชื่อผู้ติดต่อไม่ได้ไม่ซ้ำกัน** (แก้ 19 ก.ย. เย็น · คลาส "ของที่มีมากกว่าหนึ่ง")
+      ของเดิม `LIMIT 1` แล้วหยิบ `[0]` ⇒ ถ้ามีสองรายชื่อเดียวกัน **เลือกใครก็ไม่รู้แบบเงียบ ๆ**
+      ⇒ จอจะโชว์ประวัติของรายหนึ่งเป็นของอีกราย โดยดูสมเหตุสมผลทุกประการ
+      ⇒ ดึงมา 2 แถวเพื่อ **รู้ว่าซ้ำ** (ไม่ใช่เพื่อใช้) แล้วยังคืนรายแรกเหมือนเดิม
+        + ติดธง `ชื่อซ้ำกันหลายราย` ให้จอเตือนได้ ⇒ **เพิ่มอย่างเดียว ไม่เปลี่ยนพฤติกรรมเดิม** */
+  const ผู้ติดต่อที่ตรง = await coreQuery(
+    `SELECT * FROM contacts WHERE id = ${esc(key)} OR code = ${esc(key)} OR name = ${esc(key)} LIMIT 2`
+  );
+  const contact = ผู้ติดต่อที่ตรง[0] || null;
+  const ชื่อซ้ำกันหลายราย = ผู้ติดต่อที่ตรง.length > 1;
 
   // ชื่อที่ใช้ตามหาออเดอร์ — จากทะเบียนถ้าเจอ ไม่งั้นใช้ค่าที่ส่งมาตรง ๆ
   const name = contact?.name || key;
@@ -353,6 +358,10 @@ export async function getCustomerDetail(idOrName) {
   const m = money[0] || {};
   return {
     contact,                                   // null = ไม่อยู่ในทะเบียน (แต่มีออเดอร์ได้)
+    /* ⚠️ **true = มีผู้ติดต่อมากกว่าหนึ่งรายที่ตรงกับคำค้นนี้** (ชื่อซ้ำกันได้ · เพิ่ม 19 ก.ย. เย็น)
+       ⇒ ค่าที่คืนไปเป็นของ **รายแรกที่ฐานให้มา** ⇒ จอต้องเขียนเตือนว่าอาจไม่ใช่รายที่ผู้ใช้หมายถึง
+       🚫 ห้ามซ่อน — ยอดขาย/ประวัติของคนละรายจะถูกอ่านเป็นของรายเดียวกันโดยดูสมเหตุสมผลทุกประการ */
+    "ชื่อซ้ำกันหลายราย": ชื่อซ้ำกันหลายราย,
     name,
     orders: { count: Number(s.n) || 0, total: Number(s.total) || 0,
               firstDay: s.first_day || null, lastDay: s.last_day || null, recent },

@@ -36,20 +36,31 @@ try {
   BUILD_AT = "";
 }
 
+/** หัวมาตรฐานของคำตอบจากด่าน — **ส่งออกให้ที่อื่นใช้ได้** (19 ก.ย. 2569)
+ *  🔴 เหตุ: ผมรายงานไปแล้วว่า "401 ของท่อมีหัว `x-gucut-gate` + `x-core-build`"
+ *     แต่ยิงของจริงพบว่า **ไม่มี** เพราะเคสที่พบบ่อยที่สุด (ไม่ส่งกุญแจ/กุญแจผิด)
+ *     ตกไปที่ 401 ของ `core.mjs` เอง ซึ่งเป็น **ผู้ผลิตคำตอบคนละตัว** และไม่ได้ใส่หัวพวกนี้
+ *  🔑 คลาสเดิม: แก้ที่ผู้ผลิตตัวหนึ่ง แล้วเชื่อว่าครบ ทั้งที่มีผู้ผลิตสองตัว
+ *     ⇒ รวบหัวไว้ที่นี่ที่เดียว แล้วให้ทุกคนที่ตอบ 401 เรียกตัวนี้ */
+export const หัวของด่าน = () => ({
+  "x-gucut-gate": "admin",
+  /* ⚠️ ใส่ `x-core-build` เฉพาะเมื่ออ่านค่าได้จริง — ส่งค่าว่างแย่กว่าไม่ส่ง */
+  ...(BUILD_AT ? { "x-core-build": BUILD_AT } : {}),
+});
+
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
     status: s,
     /* ⚠️ ใส่ `x-core-build` เฉพาะเมื่ออ่านค่าได้จริง — **ส่งค่าว่างแย่กว่าไม่ส่ง**
        เพราะปลายทางจะเห็นคีย์แล้วเชื่อว่าอ่านได้ (ไม่มีคีย์ = ท่อรุ่นเก่า · คีย์ว่าง = อ่านไม่ได้) */
-    headers: {
-      "content-type": "application/json",
-      "x-gucut-gate": "admin",
-      ...(BUILD_AT ? { "x-core-build": BUILD_AT } : {}),
-    },
+    headers: { "content-type": "application/json", ...หัวของด่าน() },
   });
 
 // เทียบรหัสแบบใช้เวลาเท่ากันเสมอ ไม่ว่าจะตรงกี่ตัว
-function same(a, b) {
+/* 🔓 export เพิ่ม 19 ก.ย. 2569 ค่ำ — **เพื่อให้เทสแตะถึงได้ ไม่แตะพฤติกรรม**
+   🔴 coverage บอกว่าไฟล์นี้ `funcs 0%` ทั้งที่เป็น **ด่านตรวจรหัสของ API หลังร้านทุกเส้น**
+      ⇒ ของที่ทั้งระบบพึ่ง แต่ตาข่ายไม่เคยแตะ (กองเดียวกับ `lib-notify` ฝั่งจอ) */
+export function same(a, b) {
   const x = Buffer.from(String(a), "utf8");
   const y = Buffer.from(String(b), "utf8");
   if (x.length !== y.length) {
@@ -66,14 +77,14 @@ function same(a, b) {
     ⇒ ตัวนับที่ผูกกับตัวหน้า = ยิงเดาได้ไม่จำกัด **ตัวกันเดาเท่ากับไม่มี**
     ตัวที่ผู้ให้บริการเติมท้ายสุดคือค่าที่ใกล้ความจริงที่สุดเท่าที่ชั้นนี้จะรู้ได้
     ⚠️ ตัวนี้เป็น**ทางสำรองชั้นที่สาม**เท่านั้น — ปกติ `context.ip` ของ Netlify มาก่อนเสมอ */
-const lastForwardedFor = (req) => {
+export const lastForwardedFor = (req) => {
   const raw = req?.headers?.get?.("x-forwarded-for");
   if (!raw) return "";
   const parts = String(raw).split(",").map((s) => s.trim()).filter(Boolean);
   return parts.length ? parts[parts.length - 1] : "";
 };
 
-const who = (req, context) =>
+export const who = (req, context) =>
   context?.ip ||
   req.headers.get("x-nf-client-connection-ip") ||
   lastForwardedFor(req) ||

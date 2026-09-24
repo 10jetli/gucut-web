@@ -29,6 +29,7 @@
  *      "อย่างน้อยเท่านี้" ไม่ใช่ "เท่านี้เท่านั้น" 🚫 **ห้ามใช้ตัดสินว่าเส้นไม่รับตัวกรองตัวหนึ่ง**
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 import { lists } from "../netlify/lib/endpoints.mjs";
 
 const SRC = readFileSync("netlify/functions/core.mjs", "utf8");
@@ -107,7 +108,7 @@ const ผล = {
   เส้น: ออก,
 };
 /* เขียนเป็นโมดูล ESM — **ห้ามกลับไปเป็น .json** (ดูเหตุผลหัวไฟล์) */
-writeFileSync(
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   "netlify/lib/list-filters.mjs",
   "/* 🤖 ไฟล์นี้ถูกสร้างอัตโนมัติโดย `scripts/gen-list-filters.mjs` ตอน prebuild — **ห้ามแก้มือ**\n" +
   " * 🔴 และห้ามเปลี่ยนกลับไปเป็น `.json` — ตัวรวมไฟล์ของ Netlify ไม่เอา .json ที่อ่านด้วย\n" +

@@ -18,7 +18,31 @@ export default async function handler() {
     const t = await วัดเวลางาน("contacts-sync", syncContactsScheduled, {
       // ข้าม = ทำงานปกติ (ยังไม่ถึงรอบ) · มี errors = ล้ม · นอกนั้นถือว่าจบดี
       ตัดสินผล: (x) => (Array.isArray(x?.errors) && x.errors.length && !x?.skip ? "failed" : "ok"),
-      อธิบาย: (x) => (x?.skip ? `skip: ${x.skip}` : x?.written != null ? `written ${x.written}` : null),
+      /* 🔴 เดิมอ่าน `x.written` ที่ระดับบนสุด ซึ่ง **ไม่มี** (ของจริงอยู่ใน recent/sweep) ⇒ note = null ทุกแถว
+         ⇒ ฝั่งจอชี้ว่าเหลือแต่ `outcome: ok` ที่ผู้เรียกบอกเอง ⇒ **ไม่ใช่หลักฐานว่าแตะงาน** */
+      อธิบาย: (x) => {
+        if (x?.skip) return `skip: ${x.skip}`;
+        const r = x?.recent;
+        const w = x?.sweep;
+        /* 🔴 **ห้ามคืน `null`** (แก้ 20 ก.ย. 2569 · ฝั่งจอยิงสมุดแล้วเจอ)
+           เดิมไม่มีทั้ง `recent` และ `sweep` ⇒ `null` ⇒ **`note` ว่าง**
+           ⇒ สมุดบอก `ok` โดยไม่มีหลักฐานว่าแตะงาน · งานนี้วิ่ง **24 รอบ/วัน**
+           🔑 `0 รายการ` เป็นหลักฐาน · **ไม่มี note ไม่ใช่หลักฐาน** */
+        if (!r && !w) {
+          return `ไม่มีทั้ง recent/sweep ⇒ คีย์ที่ได้: ${
+            x === null ? "null" : x && typeof x === "object" ? Object.keys(x).slice(0, 8).join(",") || "(ว่าง)" : typeof x
+          }`;
+        }
+        /* 🔴 **ส่ง "ตัวตนของความล้ม" ต่อเข้าสมุดด้วย ไม่ใช่แค่ตัวเลข** (แก้ 19 ก.ย. ค่ำ)
+           `errors[]` มี `{stage, error}` อยู่แล้ว และถูกส่งเข้า Telegram — **แต่สมุดได้แค่ fetched/written**
+           ⇒ ของจริงวันนี้: `backup-run` จด `failed 1` แล้วไม่มีใครรู้ว่าถังไหน ⇒ ชี้ตัวไม่ได้เลย
+           🔑 คลาสที่ฝั่งจอตั้งชื่อ: **"วัดได้แล้วทิ้งระหว่างทาง"** — แพงกว่า "วัดไม่ได้"
+              เพราะมันดูเหมือนข้อจำกัด ทั้งที่เป็น **ท่อขาดระหว่างที่จับค่ามาได้แล้ว** */
+        const errs = Array.isArray(x?.errors) ? x.errors : [];
+        return `recent fetched ${r?.fetched ?? "?"} written ${r?.written ?? "?"}` +
+          ` · sweep fetched ${w?.fetched ?? "?"} written ${w?.written ?? "?"}${w?.skipped ? ` (${w.skipped})` : ""}` +
+          (errs.length ? ` · ล้ม ${errs.length} จุด ⇒ ${errs.map((e) => `${e.stage}: ${e.error}`).join(" | ").slice(0, 200)}` : "");
+      },
     });
     r = t.ผลลัพธ์;
     จดเวลา = t.จดเวลา;

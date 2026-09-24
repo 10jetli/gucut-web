@@ -63,18 +63,23 @@ export async function เตรียมยิง(platform, body, { แผนท
   const skipped = [];
   for (const sku of wantSkus) {
     const rows = byPlan.get(sku);
-    if (!rows) { skipped.push({ sku, result: "not_sent", why: "ไม่อยู่ในแผนสดแล้ว (เลขตรงกันอยู่/ของเปลี่ยนระหว่างทาง)" }); continue; }
+    /* 🔴 20 ก.ย. 2569: ทั้งสี่จุดในฟังก์ชันนี้ **ไม่เคยใส่ `notSentKind`** ⇒ ปลายทางถือเป็น error
+       ทั้งหมด (ตามกติกา "ไม่มีค่า = ถือเป็น error ไว้ก่อน") ⇒ กองที่มีไว้ชี้ของเสียบวมด้วยนโยบาย
+       ⇒ ใส่ให้ครบทุกจุด · เพิ่มเหตุใหม่ที่นี่ต้องใส่ด้วยทุกครั้ง (ดูตารางใน stock-push-live.mjs) */
+    if (!rows) { skipped.push({ sku, result: "not_sent", notSentKind: "stale_plan", why: "ไม่อยู่ในแผนสดแล้ว (เลขตรงกันอยู่/ของเปลี่ยนระหว่างทาง)" }); continue; }
     const loc = p.locations[sku];
     /* 🔴 รหัสเดียวหลายที่อยู่ ⇒ ไม่ยิง: ดันเลขคลังเต็มทุกรายการ = ประกาศของซ้ำ ขายเกินของที่มี */
     if (rows.length > 1 || !Array.isArray(loc) || loc.length !== 1) {
-      skipped.push({ sku, result: "not_sent", why: `รหัสนี้อยู่ ${Array.isArray(loc) ? loc.length : 0} ที่บนแพลตฟอร์ม — ต้องมีที่เดียว (หลายที่ = ขายเกินของ) ต้องให้คนตัดสิน` });
+      skipped.push({ sku, result: "not_sent", notSentKind: "needs_human", why: `รหัสนี้อยู่ ${Array.isArray(loc) ? loc.length : 0} ที่บนแพลตฟอร์ม — ต้องมีที่เดียว (หลายที่ = ขายเกินของ) ต้องให้คนตัดสิน` });
       continue;
     }
     const r = rows[0];
     const ด่าน = ด่านบนชั้น(r, { ค้างส่ง: ค้าง.skus, allowClose: body?.allowClose === true, confirmReopen });
-    if (ด่าน) { skipped.push({ sku, result: "not_sent", kind: r.kind, from: r.from, to: r.to, why: ด่าน }); continue; }
+    /* `ด่าน` คืน `{ ชนิด, why }` แล้ว (เปลี่ยน 20 ก.ย. 2569) — เอา **ชนิด** ไปเป็น `notSentKind`
+       ⇒ ด่าน ⑧/⑥ = `policy_hold` (นโยบายของเรา ห้ามนับเป็น error) · ทิศลง = `policy_down` */
+    if (ด่าน) { skipped.push({ sku, result: "not_sent", notSentKind: ด่าน.ชนิด, kind: r.kind, from: r.from, to: r.to, why: ด่าน.why }); continue; }
     const ที่อยู่ = ตรวจที่อยู่(loc[0]);
-    if (typeof ที่อยู่ === "string") { skipped.push({ sku, result: "not_sent", why: ที่อยู่ }); continue; }
+    if (typeof ที่อยู่ === "string") { skipped.push({ sku, result: "not_sent", notSentKind: "needs_human", why: ที่อยู่ }); continue; }
     fire.push({ sku, from: r.from, to: r.to, kind: r.kind, ...ที่อยู่ });
   }
   return { fire, skipped, ที่มาแผน, wantSkus, ใบค้างส่ง: ค้าง.orders, p };

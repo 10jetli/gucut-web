@@ -51,17 +51,21 @@ test('อ่านไม่ได้ ⇒ error (ไม่ใช่เซ็ต�
   fail = null;
 });
 
+/* 🔴 **20 ก.ย. 2569 — สัญญาของ `ด่านบนชั้น` เปลี่ยนจาก "สตริง" เป็น `{ ชนิด, why }`**
+   เหตุ: ฝั่งจอกางของจริงแล้วพบว่า **109 จาก 200 แถวที่มี `last_error` คือข้อความของด่าน ⑧**
+   ซึ่งเป็นการปฏิเสธโดยนโยบาย ไม่ใช่ความล้มเหลวของแพลตฟอร์ม ⇒ ตัวนับ "มีข้อผิดพลาด" บวม
+   ⇒ ปลายทางต้องตัดสินจาก **ฟิลด์ชนิด** ไม่ใช่จากข้อความ [[explain-fields-cant-decide]] */
 test('ด่านบนชั้น: ⑧ ทับทุกชนิด · ⑥ reopen ต้องยืนยันรายรหัส · ทิศลงต้อง allowClose', () => {
   const ค้างส่ง = new Set(['HOT']);
-  assert.match(ด่านบนชั้น({ sku: 'HOT', kind: 'up', from: 1, to: 2 }, { ค้างส่ง }), /ใบค้างส่ง/);
-  assert.match(ด่านบนชั้น({ sku: 'HOT', kind: 'reopen', from: 0, to: 5 }, { ค้างส่ง, confirmReopen: new Set(['HOT']) }), /ใบค้างส่ง/);
-  assert.match(ด่านบนชั้น({ sku: 'R', kind: 'reopen', from: 0, to: 5 }, { ค้างส่ง }), /confirmReopen/);
+  assert.match(ด่านบนชั้น({ sku: 'HOT', kind: 'up', from: 1, to: 2 }, { ค้างส่ง }).why, /ใบค้างส่ง/);
+  assert.match(ด่านบนชั้น({ sku: 'HOT', kind: 'reopen', from: 0, to: 5 }, { ค้างส่ง, confirmReopen: new Set(['HOT']) }).why, /ใบค้างส่ง/);
+  assert.match(ด่านบนชั้น({ sku: 'R', kind: 'reopen', from: 0, to: 5 }, { ค้างส่ง }).why, /confirmReopen/);
   assert.equal(ด่านบนชั้น({ sku: 'R', kind: 'reopen', from: 0, to: 5 }, { ค้างส่ง, confirmReopen: new Set(['R']) }), null);
-  assert.match(ด่านบนชั้น({ sku: 'D', kind: 'down', from: 5, to: 3 }, { ค้างส่ง }), /allowClose/);
-  assert.match(ด่านบนชั้น({ sku: 'C', kind: 'close', from: 5, to: 0 }, { ค้างส่ง }), /allowClose/);
+  assert.match(ด่านบนชั้น({ sku: 'D', kind: 'down', from: 5, to: 3 }, { ค้างส่ง }).why, /allowClose/);
+  assert.match(ด่านบนชั้น({ sku: 'C', kind: 'close', from: 5, to: 0 }, { ค้างส่ง }).why, /allowClose/);
   assert.equal(ด่านบนชั้น({ sku: 'D', kind: 'down', from: 5, to: 3 }, { ค้างส่ง, allowClose: true }), null);
   assert.equal(ด่านบนชั้น({ sku: 'U', kind: 'up', from: 1, to: 3 }, { ค้างส่ง }), null);
-  assert.match(ด่านบนชั้น({ sku: 'U', kind: 'up', from: 1, to: 3 }, { ค้างส่ง: null }), /ตรวจด่าน ⑧ ไม่ได้/);
+  assert.match(ด่านบนชั้น({ sku: 'U', kind: 'up', from: 1, to: 3 }, { ค้างส่ง: null }).why, /ตรวจด่าน ⑧ ไม่ได้/);
 });
 
 /* ── คำปฏิเสธที่ซ้อนอยู่ในคำยืนยัน (18 ก.ย. 2569) ─────────────────────────────

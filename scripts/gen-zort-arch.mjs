@@ -16,10 +16,16 @@
 //
 // ⚠️ ห้ามทำให้ build ตก — อ่านไม่ได้ให้ใส่ค่าว่างแล้วบอกในผังว่าอ่านไม่ได้
 //    (ผังวาดไม่ออก ไม่ใช่เหตุผลที่ดีพอจะทำให้ร้านขายของไม่ได้)
-import { readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync } from "node:fs";
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
-const root = new URL("..", import.meta.url).pathname;
+/* 🔴 ต้องใช้ `fileURLToPath` ไม่ใช่ `.pathname` (แก้ 20 ก.ย. 2569 ตอนรวมสองสาย)
+   `.pathname` เข้ารหัสอักษรไทยและช่องว่างเป็น `%xx` ⇒ พาธที่มีไทยจะหาไฟล์ไม่เจอ
+   ⇒ รีโปนี้มีชื่อไฟล์ไทยจำนวนมาก ⇒ มีด่านเฝ้าเรื่องนี้อยู่ (`path-url-roundtrip.test.mjs`)
+   🔑 ไฟล์นี้มาจากอีกสาขาที่ไม่มีด่านนั้น ⇒ **การรวมสองสายทำให้โค้ดที่เคยผ่าน กลายเป็นไม่ผ่าน** */
+const root = fileURLToPath(new URL("..", import.meta.url));
 const read = (p) => { try { return readFileSync(join(root, p), "utf8"); } catch { return ""; } };
 const listDir = (p) => { try { return readdirSync(join(root, p)); } catch { return []; } };
 
@@ -127,9 +133,19 @@ const blindSpots = [...libSrc]
 /* 🔴 ส่วนนี้ **ไม่มีอะไรตรวจสอบให้** ⇒ หน้าจอต้องแสดงคนละสีกับ ① ②
       และต้องโชว์ `asOf` ให้เห็น ไม่งั้นอีกสามเดือนมันจะโกหกโดยไม่มีใครรู้
       (กฎเดียวกับ stale-state-comments — ของนอกโค้ดต้องเขียนเป็นเหตุการณ์+วันที่) */
+/* 🔴 **ทุกอย่างในก้อนนี้มาจากแหล่งเดียว — ห้ามนับเป็นหลักฐานหลายชิ้น** (เพิ่ม 20 ก.ย. 2569)
+   🔑 ที่มา: ฝั่งจอไล่ "ติดอะไร" ของแต่ละคนในผังนี้ แล้วเจอว่าข้ออ้าง
+      *"ZORT ไม่มี API ปรับยอดสต็อก"* **สอดคล้องกับ `flow.stockRule`**
+      ⇒ ⇒ **แต่ทั้งสองมาจากคนกรอกคนเดียวกัน (ก้อน `manual` นี้)**
+      ⇒ **ไม่ใช่การยืนยันอิสระ** ⇒ ถ้าใครเอามาวางคู่กันจะดูเหมือนหลักฐานสองชิ้น
+   ⇒ ⇒ นี่คือรูปเดียวกับกฎที่เราเขียนไว้แล้วว่า **ตัวตรวจที่ใช้สมมติฐานร่วมกับตัวที่ถูกตรวจ
+      = ถามซ้ำ ไม่ใช่ทดสอบ** — แต่เกิดที่ระดับ **ข้อมูลในไฟล์เดียวกัน**
+   📌 ของที่ยืนยันอิสระได้ในผังนี้คือ `probe` (ยิงจริง) และ `calls` (สกัดจากซอร์ส) เท่านั้น */
 const manual = {
   asOf: "2026-09-20",
   source: "ท่านประธานบอกเอง",
+  /* 🚫 ป้ายนี้ไปกับคำตอบ ⇒ ปลายทางอ่านได้เองว่าอย่านับซ้ำ (ไม่ต้องจำกติกา) */
+  "⚠️ ทุกช่องในก้อนนี้มาจากแหล่งเดียว": "ห้ามใช้สองช่องในก้อนนี้ยืนยันกันเอง — ไม่ใช่หลักฐานอิสระ · ของที่ยืนยันอิสระได้คือ probe (ยิงจริง) และ calls (สกัดจากซอร์ส)",
   roles: [
     { who: "บัญชี", uses: "ออกเอกสารขาย/ภาษี แล้วส่งต่อเข้า PEAK",
       ourReplacement: "core/peak", blocker: "รอคีย์ PEAK (ต้องแพ็กเกจ PRO Plus)" },
@@ -149,23 +165,34 @@ const manual = {
      ⚠️ เส้น `std` ห้ามเอาไปตัดสินใจย้ายระบบ — ต้องเปิด ZORT ของจริงดูก่อน */
   flow: {
     asOf: "2026-09-20",
+    /* 🏷️ **`ชนิด` ของกล่อง — "รู้ได้ยังไงว่านี่คือเมนู"** (เพิ่ม 20 ก.ย. 2569)
+       🔴 ที่มา: ฝั่งจอเทียบผังนี้กับตารางเมนู ZORT 46 แถวของเขา แล้วพบว่ากล่อง `channel`
+          ("ช่องทางขาย") **ไม่มีอยู่ในเมนูแถบข้างของ ZORT เลย** (ค้น `ช่องทาง`/`Channel`/`Shopee`
+          ใน DOM จริง 11 กลุ่ม 50 หน้า = 0 บรรทัด) ⇒ เขา**เกือบเติมแถวปลอมเข้าตาราง**
+       ⇒ ⇒ เหตุคือกล่องทุกตัวในผังนี้มีฟิลด์ `menu:` ⇒ **จอปลายทางเรียกทั้ง 16 กล่องว่า "เมนู ZORT"**
+          ⇒ **ผังพูดแทนของที่ยังไม่ได้ยืนยัน** (คำของเขาเอง)
+       🚫 **`ยังไม่ยืนยันว่าเป็นเมนู` ≠ `ไม่ใช่เมนู`** — ไฟล์เมนูทั้งแผงเขียนขอบเขตตัวเองไว้ว่า
+          *"เมนูที่สร้างด้วย JS ตอนคลิกอ่านไม่ได้"* ⇒ **"ไม่เจอ" ยังไม่ใช่ "ไม่มี"**
+          ⇒ ต้องมีคนเปิด ZORT ของจริงยืนยันหนึ่งครั้ง (กติกาเราคืออ่านอย่างเดียว ⇒ ทำได้)
+       ⚠️ ค่า `เมนูแถบข้าง` ของ 13 กล่องที่เหลือ **อ้างจากตารางเมนูของฝั่งจอ** ไม่ใช่ผมเปิดดูเอง
+          ⇒ นั่นคือหลักฐานระดับ "อีกฝั่งวัดมาแล้ว" ไม่ใช่ "ยิงยืนยันเอง" */
     nodes: [
-      { id: "quotation", menu: "ใบเสนอราคา", group: "ขาย", ours: "core/quotations" },
-      { id: "order", menu: "รายการขาย", group: "ขาย", ours: "core/sales", stock: "ตัดออก" },
-      { id: "returnorder", menu: "รับคืนสินค้า", group: "ขาย", ours: "core/return-orders", stock: "เพิ่มเข้า" },
-      { id: "purchaseorder", menu: "ใบสั่งซื้อ", group: "ซื้อ", ours: "core/purchases" },
-      { id: "receive", menu: "รับสินค้าเข้าคลัง", group: "ซื้อ", ours: "core/receive", stock: "เพิ่มเข้า" },
-      { id: "returnpo", menu: "คืนสินค้าผู้ขาย", group: "ซื้อ", ours: "—", stock: "ตัดออก" },
-      { id: "transfer", menu: "โอนย้ายสินค้า", group: "คลัง", ours: "core/transfers", stock: "ย้ายคลัง ยอดรวมเท่าเดิม" },
-      { id: "product", menu: "สินค้า", group: "คลัง", ours: "core/stock" },
-      { id: "bundle", menu: "สินค้าชุด", group: "คลัง", ours: "core/bundles" },
-      { id: "warehouse", menu: "คลัง/สาขา", group: "ตั้งค่า", ours: "core/branches" },
-      { id: "contact", menu: "ลูกค้า/คู่ค้า", group: "ผู้ติดต่อ", ours: "core/customers" },
-      { id: "document", menu: "เอกสารบัญชี", group: "เอกสาร", ours: "core/accounting-docs" },
-      { id: "channel", menu: "ช่องทางขาย (Shopee/Lazada/TikTok)", group: "เชื่อมต่อ", ours: "core/channels" },
-      { id: "social", menu: "แชท (social.zortout.com)", group: "เชื่อมต่อ", ours: "core/chat" },
-      { id: "pos", menu: "ขายหน้าร้าน POS", group: "ขาย", ours: "core/pos" },
-      { id: "peak", menu: "PEAK (นอก ZORT)", group: "ปลายทาง", ours: "core/peak" },
+      { id: "quotation", menu: "ใบเสนอราคา", ชนิด: "เมนูแถบข้าง", group: "ขาย", ours: "core/quotations" },
+      { id: "order", menu: "รายการขาย", ชนิด: "เมนูแถบข้าง", group: "ขาย", ours: "core/sales", stock: "ตัดออก" },
+      { id: "returnorder", menu: "รับคืนสินค้า", ชนิด: "เมนูแถบข้าง", group: "ขาย", ours: "core/return-orders", stock: "เพิ่มเข้า" },
+      { id: "purchaseorder", menu: "ใบสั่งซื้อ", ชนิด: "เมนูแถบข้าง", group: "ซื้อ", ours: "core/purchases" },
+      { id: "receive", menu: "รับสินค้าเข้าคลัง", ชนิด: "เมนูแถบข้าง", group: "ซื้อ", ours: "core/receive", stock: "เพิ่มเข้า" },
+      { id: "returnpo", menu: "คืนสินค้าผู้ขาย", ชนิด: "เมนูแถบข้าง", group: "ซื้อ", ours: "—", stock: "ตัดออก" },
+      { id: "transfer", menu: "โอนย้ายสินค้า", ชนิด: "เมนูแถบข้าง", group: "คลัง", ours: "core/transfers", stock: "ย้ายคลัง ยอดรวมเท่าเดิม" },
+      { id: "product", menu: "สินค้า", ชนิด: "เมนูแถบข้าง", group: "คลัง", ours: "core/stock" },
+      { id: "bundle", menu: "สินค้าชุด", ชนิด: "เมนูแถบข้าง", group: "คลัง", ours: "core/bundles" },
+      { id: "warehouse", menu: "คลัง/สาขา", ชนิด: "เมนูแถบข้าง", group: "ตั้งค่า", ours: "core/branches" },
+      { id: "contact", menu: "ลูกค้า/คู่ค้า", ชนิด: "เมนูแถบข้าง", group: "ผู้ติดต่อ", ours: "core/customers" },
+      { id: "document", menu: "เอกสารบัญชี", ชนิด: "เมนูแถบข้าง", group: "เอกสาร", ours: "core/accounting-docs" },
+      { id: "channel", menu: "ช่องทางขาย (Shopee/Lazada/TikTok)", group: "เชื่อมต่อ", ชนิด: "ยังไม่ยืนยันว่าเป็นเมนู", ours: "core/channels" },
+      { id: "social", menu: "แชท (social.zortout.com)", group: "เชื่อมต่อ", ชนิด: "คนละเว็บ", ours: "core/chat" },
+      { id: "pos", menu: "ขายหน้าร้าน POS", ชนิด: "เมนูแถบข้าง", group: "ขาย", ours: "core/pos" },
+      { id: "peak", menu: "PEAK (นอก ZORT)", group: "ปลายทาง", ชนิด: "นอก ZORT", ours: "core/peak" },
     ],
     edges: [
       { from: "channel", to: "order", label: "ดึงออเดอร์เข้า", basis: "code" },
@@ -240,11 +267,15 @@ selfCheck.ok = selfCheck.problems.length === 0;
 out.selfCheck = selfCheck;
 if (!selfCheck.ok) for (const p of selfCheck.problems) console.warn(`gen-zort-arch ⚠️ ${p}`);
 
-writeFileSync(
+/* 🔴 20 ก.ย. 2569 — เดิมเขียนตรงด้วย `writeFileSync` ⇒ ไฟล์ถูกเขียนทุก build
+   เพราะข้างในมีช่องเวลา 2 ช่อง (`generatedAt` · `selfCheck.at`) ⇒ git ไม่สะอาด
+   ⇒ อีกบัญชี `pull` ไม่ได้ (ดู `build-artifacts-block-other-account` ในความจำ)
+   📏 วัดจริง: build ทั้งรอบเปลี่ยนไฟล์ **ตัวนี้ตัวเดียว** จากตัวสร้าง 19 ตัวที่เขียนตรง
+      ⇒ "เขียนตรง" ไม่ใช่เกณฑ์ตัดสิน · เกณฑ์คือ **ผลลัพธ์มีเวลาอยู่ข้างในไหม** */
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   join(root, "netlify/lib/zort-arch-data.mjs"),
   "// สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**\n" +
   "// แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต\n" +
   `export const ZORT_ARCH = ${JSON.stringify(out, null, 2)};\n`,
-  "utf8"
 );
-console.log(`gen-zort-arch: เส้นที่เรียกจริง ${callList.length} · โมดูล ${out.modules.length} · งานตามเวลาแตะ ZORT ${jobs.filter((j) => j.zort).length}/${jobs.length}`);
+console.log(`gen-zort-arch: ${ผลเขียน} · เส้นที่เรียกจริง ${callList.length} · โมดูล ${out.modules.length} · งานตามเวลาแตะ ZORT ${jobs.filter((j) => j.zort).length}/${jobs.length}`);

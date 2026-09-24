@@ -195,7 +195,11 @@ for (const name of lists) {
     else {
       /* คำตอบที่เป็น error ของท่อเอง (ขาดพารามิเตอร์ ฯลฯ) **ห้ามเก็บคีย์**
          ไม่งั้นสารบัญจะมี error/hint/accepts ปนเข้ามาเป็น "ช่องที่เส้นนี้คืน" */
-        const เป็นError = r.data && typeof r.data === "object" && ("error" in r.data || "skip" in r.data);
+        /* 🔴 19 ก.ย. 2569 ค่ำ: เดิมเช็ค `"skip" in r.data` = **การมีคีย์** ไม่ใช่ค่า
+           พอ `?list=stock` เริ่มส่ง `skip: null` เสมอ (ทำให้ skip เป็นช่องทางการตามที่ฝั่งจอขอ)
+           ตัวนี้จะอ่าน **ทุกคำตอบที่สำเร็จ** ว่าเป็น error ⇒ ไฟล์ที่จอใช้จะว่างเปล่าแบบเงียบ ๆ
+           🔑 เจอเพราะกวาดหา `"skip" in` ก่อนลงมือ — ถ้าไม่กวาดก็จะพังพร้อม deploy เดียวกัน */
+        const เป็นError = r.data && typeof r.data === "object" && (!!r.data.error || !!r.data.skip);
       บันทึก.เก็บคีย์ = !เป็นError;
       if (เป็นError) บันทึก.ท่อตอบ = String(r.data.error ?? r.data.skip).slice(0, 80);
       else {

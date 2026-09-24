@@ -40,7 +40,18 @@ export default async function handler() {
         const เสีย = (o) => !!o?.error || (!o?.skip && o?.complete === false);
         return เสีย(x?.z1) || เสีย(x?.z2) ? "failed" : "ok";
       },
-      อธิบาย: (x) => `z1 fetched ${x?.z1?.fetched ?? "?"} · z2 fetched ${x?.z2?.fetched ?? "?"}`,
+      /* 🔴 เดิมสมุดได้แค่ `fetched` — ส่วนเหตุของความล้ม (error · ไม่ครบ · id ชนข้ามร้าน)
+         ถูกคิดไว้ด้านล่างแล้วใช้ **ส่ง Telegram เท่านั้น** ⇒ สมุดชี้ตัวไม่ได้
+         🔑 "วัดได้แล้วทิ้งระหว่างทาง" (ฝั่งจอตั้งชื่อ 19 ก.ย. ค่ำ) ⇒ ต่อท่อให้ถึงสมุดด้วย */
+      อธิบาย: (x) => {
+        const เหตุ = (o, ชื่อ) =>
+          o?.error ? `${ชื่อ} ล้ม: ${o.error}`
+            : o?.skip ? null
+              : o?.complete === false ? `${ชื่อ} ไม่ครบ: ได้ ${o.fetched} จาก ${o.zortTotal}` : null;
+        const ปัญหา = [เหตุ(x?.z1, "z1"), เหตุ(x?.z2, "z2")].filter(Boolean);
+        return `z1 fetched ${x?.z1?.fetched ?? "?"} · z2 fetched ${x?.z2?.fetched ?? "?"}` +
+          (ปัญหา.length ? ` · ${ปัญหา.join(" | ").slice(0, 200)}` : "");
+      },
     });
     r = t.ผลลัพธ์.z1;
     rz2 = t.ผลลัพธ์.z2;

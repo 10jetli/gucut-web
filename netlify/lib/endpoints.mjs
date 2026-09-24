@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-09-19T07:48:03.032Z";
+export const generatedAt = "2026-09-20T04:09:03.450Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -39,6 +39,7 @@ export const paramRoutes = [
  "addquotation",
  "addreturn",
  "addsale",
+ "appliedkeys",
  "arch",
  "archiveslips",
  "backup",
@@ -58,6 +59,7 @@ export const paramRoutes = [
  "daily",
  "dbinfo",
  "deleteproduct",
+ "deploys",
  "doccoverage",
  "dupsku",
  "endpoints",
@@ -141,6 +143,8 @@ export const paramRoutes = [
  "uploadtoken",
  "usage",
  "warehousevalues",
+ "warnkeys",
+ "zortarch",
  "zortarchived",
  "zortbundle",
  "zortclaims",
@@ -173,12 +177,15 @@ export const routeMethod = {
  "pushsweep": "write",
  "pushledgerbackfill": "write",
  "skuaudit": "readonly",
- "sweeptiming": "readonly",
+ "sweeptiming": "write",
  "jobtiming": "readonly",
  "pushstate": "unknown",
  "dupsku": "unknown",
  "endpoints": "readonly",
  "crontable": "unknown",
+ "deploys": "readonly",
+ "appliedkeys": "readonly",
+ "warnkeys": "readonly",
  "pushstuck": "readonly",
  "stockpushlog": "unknown",
  "stockpushguards": "unknown",
@@ -224,6 +231,7 @@ export const routeMethod = {
  "addreturn": "write",
  "quotedit": "write",
  "zortclaims": "unknown",
+ "zortarch": "unknown",
  "zortnoapi": "unknown",
  "zortwebhook": "unknown",
  "doccoverage": "readonly",

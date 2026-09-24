@@ -10,7 +10,7 @@ import { build } from "esbuild";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";   /* 🔴 เดิมมีแต่ pathToFileURL ⇒ ตอนผมแก้ `.pathname` เป็น fileURLToPath ตัวเช็ค "มี node:url แล้วไหม" ของผมตอบว่ามี ⇒ **ไม่เติมชื่อที่ขาด** ⇒ build ตกเงียบ (แก้ 19 ก.ย. เย็น) */
 
 const tmp = mkdtempSync(join(tmpdir(), "audit-"));
 const out = join(tmp, "audit.mjs");
@@ -20,7 +20,8 @@ await build({
   platform: "node",
   format: "esm",
   outfile: out,
-  alias: { "@": new URL("../src", import.meta.url).pathname },
+  // ⚠️ `.pathname` เข้ารหัส %xx ⇒ ใช้ fileURLToPath (แก้ 19 ก.ย. 2569)
+    alias: { "@": fileURLToPath(new URL("../src", import.meta.url)) },
   loader: { ".json": "json" },
   logLevel: "silent",
 });

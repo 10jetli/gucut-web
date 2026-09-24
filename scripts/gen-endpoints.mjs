@@ -17,6 +17,7 @@
  * ⚠️ อ่านไม่เจอสักชื่อ = การอ่านพัง ไม่ใช่ "ไม่มีเส้น" ⇒ โยน error ให้ build ตก ห้ามเขียนไฟล์ว่าง
  */
 import { readFileSync, writeFileSync } from "node:fs";
+import { เขียนถ้าเนื้อเปลี่ยน } from "./lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -147,7 +148,7 @@ if (!ชื่อ.size) {
 }
 
 const เรียง = [...ชื่อ].sort();
-writeFileSync(
+const ผลเขียน = เขียนถ้าเนื้อเปลี่ยน(
   ปลายทาง,
   "// ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ\n" +
   "// ที่มาของรายชื่อ: `get(\"list\") === \"…\"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)\n" +
