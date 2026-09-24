@@ -15,6 +15,7 @@
 //    2. ของเก่าที่เคยกวาดไว้ ถ้า ZORT ล่ม
 //    3. สต็อกที่แช่ไว้ในไฟล์ตอน build ถ้าไม่เคยกวาดสำเร็จเลย
 import { liveStock } from "../lib/zort-stock.mjs";
+import { licensedStock } from "../lib/licensed-stock.mjs";
 
 export default async function handler(req, context) {
   const origin = new URL(req.url).origin;
@@ -34,7 +35,11 @@ export default async function handler(req, context) {
   const products = [];
   for (const p of list) {
     const live = map?.[p.sku];
-    const st = live ? live[0] : p.st;          // ไม่มีข้อมูลสด → ใช้ค่าที่แช่ไว้
+    /* ของในทะเบียนใบอนุญาต — ทะเบียนชนะทั้ง ZORT และค่าที่แช่ไว้ (25 ก.ย. 2569)
+       ไม่ใส่ตรงนี้ = บอก ChatGPT/Gemini ว่าเลื่อย 7 รุ่น "หมด" ทั้งที่ทะเบียนมีของ 24 เครื่อง
+       (บรรทัดถัดไปกรอง `st > 0` ทิ้ง ⇒ หายจากฟีดไปทั้งรุ่น) */
+    const lic = licensedStock(p.sku);
+    const st = lic !== null ? lic : live ? live[0] : p.st;  // ไม่มีข้อมูลสด → ใช้ค่าที่แช่ไว้
     const price = live && live[1] > 0 ? live[1] : p.p;
     if (!(st > 0)) continue;                    // ของหมดไม่ต้องบอก AI ให้ไปแนะนำลูกค้า
     products.push({

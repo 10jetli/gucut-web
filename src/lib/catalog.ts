@@ -6,6 +6,7 @@ import soldMap from "@/data/sold.json";
 import type { Product, Collection } from "./types";
 import { reviewSummary } from "./reviews";
 import { toLocal } from "./local-images";
+import { licensedStock } from "./licensed-stock";
 
 // ยอดขายจริงรวมทุกช่องทาง (Shopee/Lazada/TikTok/หน้าร้าน) — เจ้าของร้านกรอกเองที่
 // src/data/sold.json รูปแบบ { "<handle ของสินค้า>": 22300 }
@@ -23,6 +24,11 @@ export const products = (raw as unknown as Product[]).map((p) => {
     imgs: p.imgs.map((u) => toLocal(u) as string),
     v: p.v.map((v) => (v.i ? { ...v, i: toLocal(v.i) } : v)),
   };
+  // ของที่อยู่ในทะเบียนใบอนุญาต — ใช้จำนวนจากทะเบียน ไม่ใช่เลขที่แช่มาจาก ZORT
+  // ⚠️ ต้องทับตรงนี้ เพราะ `sellable()` กับป้าย "สินค้าหมด" บนการ์ดอ่านจาก `st` ตอน build
+  //    ไม่ได้รอ /api/stock (การ์ดในหน้ารวมไม่ยิงถามสต็อกสดรายใบ)
+  const lic = licensedStock(p.sku);
+  if (lic !== null) out.st = lic;
   if (n) out.sold = n;
   return rv ? { ...out, rv } : out;
 });
