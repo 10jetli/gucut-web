@@ -35,3 +35,25 @@ export function licensedStock(sku: string | null | undefined): number | null {
   const n = LICENSED[String(sku).trim()];
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
+
+/** ชื่อรุ่นในช่องเลือกรุ่นของ `/permit/` → รหัสสินค้า (คีย์ที่ขึ้นต้นด้วย `_` เป็นคำอธิบาย ไม่ใช่ข้อมูล) */
+const รุ่นเป็นรหัส: Record<string, string> = Object.fromEntries(
+  Object.entries(
+    (data as { "รุ่นเลื่อย→รหัสสินค้า"?: Record<string, string> })["รุ่นเลื่อย→รหัสสินค้า"] ?? {}
+  ).filter(([k, v]) => !k.startsWith("_") && typeof v === "string")
+);
+
+/**
+ * จำนวนคงเหลือตามทะเบียนของ "รุ่น" ที่เลือกในหน้า `/permit/`
+ *
+ * 🔑 เจ้าของร้านสั่ง 25 ก.ย. 2569: "ตัวไหนหมดตรงขออนุญาตก็เป็นเทาอ่อนเลือกไม่ได้"
+ * ⚠️ รุ่นที่ **ไม่เคยนำเข้าเลย** (F038 · F090 · F880) ไม่มีในตารางจับคู่ ⇒ คืน `0` ไม่ใช่ `null`
+ *    เพราะคำถามที่นี่คือ "ยังสั่งได้ไหม" ซึ่งตอบว่าไม่ได้เหมือนกันทั้งของหมดและของที่ไม่เคยมี
+ *    (ต่างจาก `licensedStock()` ที่ `null` แปลว่า "ไปถาม ZORT ต่อ" — คนละคำถาม อย่าเอามาปนกัน)
+ */
+export function permitModelStock(model: string | null | undefined): number {
+  if (!model) return 0;
+  const sku = รุ่นเป็นรหัส[String(model).trim()];
+  if (!sku) return 0;
+  return licensedStock(sku) ?? 0;
+}

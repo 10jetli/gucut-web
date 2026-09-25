@@ -33,6 +33,7 @@ import {
   BAR_SIZES, CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
   DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, STAGE_AT_STEP, stageDone,
   officeMapUrl, officeSiteUrl, officePhone } from "@/lib/permit";
+import { permitModelStock } from "@/lib/licensed-stock";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { BRAND, SHOP } from "@/lib/shop";
 import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
@@ -1567,9 +1568,25 @@ export default function PermitView() {
             >
               <option value="">— เลือกรุ่น —</option>
               <optgroup label="ต้องขอใบอนุญาต">
-                {PERMIT_MODELS.map((m) => (
-                  <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
-                ))}
+                {/* เจ้าของร้านสั่ง 25 ก.ย. 2569 "ตัวไหนหมดตรงขออนุญาตก็เป็นเทาอ่อนเลือกไม่ได้"
+                    ⚠️ ต้องเขียนว่า "หมดชั่วคราว" กำกับด้วย — ช่องที่เทาเฉย ๆ โดยไม่บอกเหตุผล
+                       ลูกค้าจะนึกว่าเว็บเสีย แล้วโทรมาถามแทนที่จะเลือกรุ่นอื่น
+                    🔑 จำนวนมาจาก **ทะเบียนใบอนุญาต** ไม่ใช่ ZORT (ZORT ไม่รู้จักรหัสเลื่อย
+                       ครึ่งหนึ่ง และอีกครึ่งเป็น 0 ทั้งที่มีของ — ดู licensed-stock.mjs) */}
+                {PERMIT_MODELS.map((m) => {
+                  const เหลือ = permitModelStock(m.model);
+                  return (
+                    <option
+                      key={m.model}
+                      value={m.model}
+                      disabled={เหลือ <= 0}
+                      className={เหลือ <= 0 ? "text-steel-400" : undefined}
+                    >
+                      {m.brand} {m.model}
+                      {เหลือ <= 0 ? " — หมดชั่วคราว" : ""}
+                    </option>
+                  );
+                })}
               </optgroup>
               <optgroup label="ไม่ต้องขอใบอนุญาต">
                 {EXEMPT_MODELS.map((m) => (
