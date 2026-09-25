@@ -58,6 +58,32 @@ export function licensedStock(sku: string | null | undefined): number | null {
   return typeof n === "number" && Number.isFinite(n) ? n : null;
 }
 
+/**
+ * ตัวเลือกบาร์สำหรับหน้า `/permit/` — **ยี่ห้อ + ขนาด** (ท่านประธานสั่ง 25 ก.ย. 2569)
+ *
+ * 🔴 **ห้ามเอายี่ห้อไปใส่ในช่องที่ลงฟอร์ม ลซ.๑** — ช่องนั้นคือ "ความยาวแผ่นบังคับโซ่ (นิ้ว)"
+ *    ต้องเป็นตัวเลขล้วน (`lz1pdf.ts:165`) ใส่ยี่ห้อลงไป = เอกสารราชการผิด
+ *    ⇒ ยี่ห้อเก็บแยกไว้บอกร้านว่าจะส่งอันไหน ไม่ได้ไปอยู่บนกระดาษ
+ *
+ * ⚠️ 12 นิ้วไม่มีในทะเบียน (ซื้อขายได้โดยไม่ต้องมี ลซ.๒) ⇒ คืน `เหลือ: null`
+ *    = "ไม่รู้จำนวนจากทะเบียน" ไม่ใช่ "หมด" — คนละความหมาย ห้ามยุบเป็น 0
+ */
+export function barOptions(): { ยี่ห้อ: string; ขนาด: number; เหลือ: number | null }[] {
+  const ก้อน = data as unknown as Record<string, Record<string, unknown> | undefined>;
+  const ยอด = ก้อน["บาร์ตามขนาดและยี่ห้อ"] ?? {};
+  const out: { ยี่ห้อ: string; ขนาด: number; เหลือ: number | null }[] = [];
+  for (const ยี่ห้อ of ["NEWWAVE", "KINGKONG"]) {
+    out.push({ ยี่ห้อ, ขนาด: 12, เหลือ: null }); // ไม่ต้องขึ้นทะเบียน
+    for (const [k, v] of Object.entries(ยอด)) {
+      if (k.startsWith("_") || typeof v !== "number") continue;
+      const m = /^(\S+)\s+(\d+)$/.exec(k);
+      if (!m || m[1] !== ยี่ห้อ) continue;
+      out.push({ ยี่ห้อ, ขนาด: Number(m[2]), เหลือ: v });
+    }
+  }
+  return out.sort((a, b) => a.ยี่ห้อ.localeCompare(b.ยี่ห้อ) || a.ขนาด - b.ขนาด);
+}
+
 /** ชื่อรุ่นในช่องเลือกรุ่นของ `/permit/` → รหัสสินค้า (คีย์ที่ขึ้นต้นด้วย `_` เป็นคำอธิบาย ไม่ใช่ข้อมูล) */
 const รุ่นเป็นรหัส: Record<string, string> = Object.fromEntries(
   Object.entries(
