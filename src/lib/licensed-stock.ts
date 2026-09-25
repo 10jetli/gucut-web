@@ -23,8 +23,11 @@ type Map_ = Record<string, number>;
  *    เป็นไปตามที่เจ้าของร้านเลือก เพราะทะเบียนบันทึกแค่ "ความยาวนิ้ว" แยกละเอียดกว่านี้ไม่ได้
  */
 function กางบาร์(): Map_ {
-  const ยอด = (data as { "บาร์ตามขนาดและยี่ห้อ"?: Map_ })["บาร์ตามขนาดและยี่ห้อ"] ?? {};
-  const จับคู่ = (data as { "บาร์ตัวเลือก→ขนาดยี่ห้อ"?: Record<string, string> })["บาร์ตัวเลือก→ขนาดยี่ห้อ"] ?? {};
+  // ⚠️ ต้องผ่าน `unknown` ก่อน — ในออบเจกต์มีทั้งตัวเลข (จำนวน) และสตริง (คีย์ `_` ที่เป็น
+  //    คำอธิบาย) ⇒ ชนิดจริงไม่ใช่ Record<string, number> · แปลงตรง ๆ แล้ว tsc ตีตกทั้ง build
+  const ก้อน = data as unknown as Record<string, Record<string, unknown> | undefined>;
+  const ยอด = ก้อน["บาร์ตามขนาดและยี่ห้อ"] ?? {};
+  const จับคู่ = ก้อน["บาร์ตัวเลือก→ขนาดยี่ห้อ"] ?? {};
   const out: Map_ = {};
   for (const [k, ช่อง] of Object.entries(จับคู่)) {
     if (k.startsWith("_") || typeof ช่อง !== "string") continue; // คีย์ `_` เป็นคำอธิบาย ไม่ใช่ข้อมูล
