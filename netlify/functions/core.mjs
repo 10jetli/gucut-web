@@ -433,6 +433,10 @@ async function route(req, context) {
         offset: url.searchParams.get("offset"),
       }));
     }
+    if (req.method === "DELETE" && url.searchParams.get("registrylot")) {
+      const { registryDeleteLot } = await import("../lib/core-registry.mjs");
+      return json(await registryDeleteLot(url.searchParams.get("registrylot")));
+    }
     if (req.method === "POST" && url.searchParams.get("registryimport")) {
       const body = await req.json().catch(() => null);
       if (!body || !Array.isArray(body.rows)) return json({ error: "ต้องส่ง {rows:[...]}" }, 400);

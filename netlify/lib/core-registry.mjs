@@ -94,10 +94,26 @@ export async function registrySummary() {
     `SELECT kind, spec, model, COUNT(*) AS total,
             SUM(CASE WHEN sold_at IS NULL OR sold_at = '' THEN 1 ELSE 0 END) AS left_
        FROM registry GROUP BY kind, spec, model ORDER BY kind, spec, model`) || [];
-  const out = [];
+  /* 🔑 **ต้องรวมกลุ่มแบบเดียวกับที่เว็บนับ ไม่งั้นเทียบ "ส่วนย่อย" กับ "ยอดรวม"**
+     ทะเบียนแยกบาร์ 28" เป็นสองล็อต (`NEWWAVE` 9 แผ่น · `NEWWAVE/8800 SUPER-S` 10 แผ่น)
+     แต่เว็บมีตัวเลือกเดียวที่ถือของทั้ง 19 แผ่น ⇒ ไม่ยุบยี่ห้อก่อน จะขึ้น "ไม่ตรง" ทั้งที่ตรง
+     (เจอของจริง 25 ก.ย. 2569 — ขึ้นไม่ตรง 4 รายการ ทั้งที่ยอดรวมถูกทุกตัว)
+     ⇒ ตัดส่วนขยายหลัง `/` ทิ้ง เหลือแค่ตระกูลยี่ห้อ (NEWWAVE · KINGKONG) */
+  const ตระกูล = (v) => String(v || "").split("/")[0].trim();
+  const รวมกลุ่ม = new Map();
   for (const x of แถว) {
+    const ชื่อ = x.kind === "saw" ? String(x.model || "")
+                                  : `${ตระกูล(x.spec)} ${String(x.model || "").trim()}`.trim();
+    const คีย์ = `${x.kind}|${ชื่อ}`;
+    const เดิม = รวมกลุ่ม.get(คีย์) || { kind: x.kind, ชื่อ, total: 0, left_: 0 };
+    เดิม.total += Number(x.total || 0);
+    เดิม.left_ += Number(x.left_ || 0);
+    รวมกลุ่ม.set(คีย์, เดิม);
+  }
+  const out = [];
+  for (const x of [...รวมกลุ่ม.values()].sort((a, b) => (a.kind + a.ชื่อ).localeCompare(b.kind + b.ชื่อ, "th"))) {
     const เหลือ = Number(x.left_ || 0);
-    const ชื่อ = x.kind === "saw" ? String(x.model || "") : `${x.spec || ""} ${x.model || ""}`.trim();
+    const ชื่อ = x.ชื่อ;
     const รหัส = x.kind === "saw"
       ? (เลื่อยเป็นรหัส[ชื่อ] ? [เลื่อยเป็นรหัส[ชื่อ]] : [])
       : (บาร์เป็นรหัส[ชื่อ] || []);
@@ -123,6 +139,20 @@ export async function registrySummary() {
     ยังไม่ได้จับคู่: out.filter((x) => x.ตรงกัน === null).length,
     รายการ: out,
   };
+}
+
+/**
+ * ลบทั้งล็อต — ใช้ล้างของทดสอบ หรือล็อตที่ถูกยกเลิก
+ * ⚠️ ต้องระบุเลขล็อตเจาะจงเสมอ **ไม่มีทางลบทั้งตารางด้วยคำสั่งเดียว** โดยตั้งใจ
+ *    (เอกสารตามกฎหมาย — ลบพลาดแล้วต้องนำเข้าใหม่จากชีต ซึ่งรู้ตัวช้า)
+ */
+export async function registryDeleteLot(lot) {
+  if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
+  const n = Number(lot);
+  if (!Number.isInteger(n)) return { ok: false, error: "ต้องระบุเลขล็อตเป็นจำนวนเต็ม" };
+  const ก่อน = await coreQuery(`SELECT COUNT(*) AS n FROM registry WHERE lot = ?`, [n]) || [];
+  await coreQuery(`DELETE FROM registry WHERE lot = ?`, [n]);
+  return { ok: true, lot: n, ลบไป: Number(ก่อน[0]?.n || 0) };
 }
 
 /** รายการซีเรียลของรุ่น/ขนาดหนึ่ง — ไว้ดูว่าใบไหนขายแล้ว ใบไหนยังอยู่ */
