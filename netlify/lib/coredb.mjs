@@ -208,6 +208,19 @@ export async function coreInit() {
     `CREATE TABLE IF NOT EXISTS stock_snapshots (
       day TEXT NOT NULL, sku TEXT NOT NULL, name TEXT, qty REAL, price REAL,
       PRIMARY KEY (day, sku))`,
+    /* ทะเบียนบัญชีรับ-จำหน่ายเลื่อยโซ่ยนต์ (25 ก.ย. 2569)
+       🔑 **กุญแจต้องมี `lot` ห้ามใช้ซีเรียลเดี่ยว ๆ** — ทะเบียนเลื่อย (ลซ.7/1) กับ
+          ทะเบียนบาร์ (ลซ.7/2) ใช้เลขซีเรียลชุดเดียวกัน · ของจริง `45-7-67-00021`
+          เป็นทั้ง NEWWAVE F660 และ บาร์ KINGKONG 25" ⇒ ทับกันแล้วกู้ไม่ได้
+       🔴 มีชื่อลูกค้า · เลขใบ ลซ.๒ · จังหวัด ⇒ ห้ามส่งออกหน้าร้าน */
+    `CREATE TABLE IF NOT EXISTS registry (
+       lot INTEGER NOT NULL, kind TEXT NOT NULL, serial TEXT NOT NULL,
+       seq INTEGER, license TEXT, spec TEXT, model TEXT, received TEXT,
+       sold_at TEXT, buyer TEXT, lz2 TEXT, lz2_date TEXT, province TEXT,
+       updated_at TEXT DEFAULT (datetime('now')),
+       PRIMARY KEY (lot, serial))`,
+    `CREATE INDEX IF NOT EXISTS idx_reg_kind_model ON registry(kind, model)`,
+    `CREATE INDEX IF NOT EXISTS idx_reg_sold ON registry(sold_at)`,
     `CREATE TABLE IF NOT EXISTS recon_log (
       day TEXT PRIMARY KEY, zort_orders INTEGER, zort_amount REAL,
       core_orders INTEGER, core_amount REAL, diff_notes TEXT,
