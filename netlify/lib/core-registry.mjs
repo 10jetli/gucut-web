@@ -33,9 +33,13 @@ export async function registryImport(rows) {
   for (const lot of lots) await coreQuery(`DELETE FROM registry WHERE lot = ?`, [lot]);
 
   let เขียน = 0;
-  // ยัดทีละ 40 แถวต่อคำสั่ง — D1 จำกัดจำนวนพารามิเตอร์ต่อคำสั่ง และคำขอมีเพดานเวลา
-  for (let i = 0; i < rows.length; i += 40) {
-    const ชุด = rows.slice(i, i + 40);
+  /* ⚠️ **D1 รับพารามิเตอร์ได้ 100 ตัวต่อคำสั่ง** — แถวละ 13 ช่อง ⇒ ได้สูงสุด 7 แถว/คำสั่ง
+     เขียน 40 แถวแล้วตอบ HTTP 500 (เจอของจริง 25 ก.ย. 2569) · คำนวณจาก 13 ไม่ใช่ฝังเลข
+     เพื่อว่าวันที่เพิ่มคอลัมน์ ขนาดชุดจะลดตามเอง ไม่ใช่ไปพังเงียบ ๆ */
+  const ช่องต่อแถว = 13;
+  const ต่อชุด = Math.max(1, Math.floor(100 / ช่องต่อแถว));
+  for (let i = 0; i < rows.length; i += ต่อชุด) {
+    const ชุด = rows.slice(i, i + ต่อชุด);
     const ช่อง = ชุด.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
     const ค่า = [];
     for (const r of ชุด) {
