@@ -109,6 +109,21 @@ async function รุ่นของโค้ด() {
   return รุ่นที่รัน;
 }
 
+/** คอลัมน์ที่ตารางมีจริง — `null` = ถามไม่ได้ (ไม่ใช่ "ไม่มีคอลัมน์") [[three-states-not-two]]
+ *  ⚠️ อ่านครั้งเดียวต่ออายุอินสแตนซ์ · ตั้ง `คอลัมน์ล่าสุด = null` เพื่อบังคับอ่านใหม่หลัง ALTER */
+let คอลัมน์ล่าสุด = null;
+export async function คอลัมน์ที่มีจริง() {
+  if (คอลัมน์ล่าสุด) return คอลัมน์ล่าสุด;
+  try {
+    const r = await coreQuery(`PRAGMA table_info(${ตารางสมุดงาน})`);
+    const แถว = Array.isArray(r) ? r : (r?.results ?? []);
+    const ชื่อ = แถว.map((x) => x?.name).filter((x) => typeof x === "string");
+    if (!ชื่อ.length) return null;          // ตารางยังไม่มี/ตอบว่าง ⇒ ยังไม่รู้
+    คอลัมน์ล่าสุด = new Set(ชื่อ);
+    return คอลัมน์ล่าสุด;
+  } catch { return null; }
+}
+
 /** จดหนึ่งแถว — คืน `"ok"` หรือข้อความเหตุที่จดไม่ได้ (ไม่โยน error ออกไปหางานจริง) */
 export async function จดเวลางาน({ งาน, ms, ผล, note = null, ผลย่อย = null, ผู้เรียก = "ไม่รู้", เมื่อ = new Date() }) {
   const แถว = แถวที่จะจด({ งาน, ms, ผล, note, เมื่อ });
@@ -121,25 +136,84 @@ export async function จดเวลางาน({ งาน, ms, ผล, note 
   const sql = `INSERT OR REPLACE INTO ${ตารางสมุดงาน} (job, at, ms, outcome, note) VALUES (?, ?, ?, ?, ?)`;
   /* 🔴 **เขียนชุดเต็มก่อน · คอลัมน์ยังไม่มี ⇒ ALTER แล้วลองใหม่ · ยังไม่ได้ ⇒ ถอยไปชุดเดิม**
      ⇒ ⇒ **ห้ามให้การเพิ่มคอลัมน์ทำให้ "จดเวลาไม่ได้เลย"** — เสียคำอธิบายดีกว่าเสียทั้งแถว */
+  /* 🔴🔴 **แก้ 26 ก.ย. 2569 — สมุดหยุดรับแถวไป 6 วันเพราะตะแกรงข้อความผิด**
+     ของเดิมตัดสินว่า "คอลัมน์ยังไม่มี" ด้วย `/no such column/i`
+     ⇒ **แต่ SQLite/D1 ใช้คำนั้นกับ `SELECT` เท่านั้น** · ตอน `INSERT` มันตอบว่า
+        `table job_run_log has no column named caller`   ⇐ **ไม่มีคำว่า "no such column"**
+     ⇒ ⇒ เงื่อนไขไม่ตรง ⇒ `throw` ⇒ ไม่มีทางถอยไปเขียนชุดเดิม ⇒ **ไม่มีแถวถูกเขียนเลย**
+        (วัดจริงด้วย node:sqlite วันนี้: INSERT ⇒ "table t has no column named b" ·
+         SELECT ⇒ "no such column: b" — **สองข้อความคนละคำ**)
+     🔑 คลาส: **ตัดสินสภาพจากข้อความ error ของคนอื่น** — ข้อความไม่ใช่สัญญา เปลี่ยนได้
+        และรอบนี้มันไม่ได้เปลี่ยน **เราอ่านผิดคำตั้งแต่แรก** ⇒ ตะแกรงที่ไม่เคยถูกทดสอบ
+     ✅ ท่าที่ถูก: **ถามตารางว่ามีคอลัมน์อะไร** แล้วประกอบ INSERT จากของที่มีจริง
+        ⇒ ไม่ต้องเดาถ้อยคำของใคร · ใช้ได้กับคอลัมน์ที่จะเพิ่มในอนาคตด้วย */
   const เขียน = async () => {
-    try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok"; }
+    const คอลัมน์ = await คอลัมน์ที่มีจริง();
+    if (คอลัมน์) {
+      const ทั้งหมด = ["job", "at", "ms", "outcome", "note", "sub_ok", "sub_fail", "caller", "build"];
+      const ขาด = ทั้งหมด.filter((c) => !คอลัมน์.has(c));
+      if (ขาด.length) {
+        /* มีคอลัมน์ขาด ⇒ ลองเติม (ล้มก็ไม่เป็นไร เดี๋ยวเขียนเฉพาะที่มี) */
+        for (const a of ALTER_ผลย่อย) await coreQuery(a).catch(() => null);
+        คอลัมน์ล่าสุด = null;                      // บังคับให้อ่านคอลัมน์ใหม่รอบหน้า
+        const หลังเติม = await คอลัมน์ที่มีจริง();
+        if (หลังเติม) for (const c of หลังเติม) คอลัมน์.add(c);
+      }
+      const ใช้ = ทั้งหมด.map((c, i) => [c, แถวเต็ม[i]]).filter(([c]) => คอลัมน์.has(c));
+      if (ใช้.length >= 5) {
+        const sqlประกอบ = `INSERT OR REPLACE INTO ${ตารางสมุดงาน} (${ใช้.map(([c]) => c).join(", ")}) ` +
+          `VALUES (${ใช้.map(() => "?").join(", ")})`;
+        /* 🔴 **แคชคอลัมน์ค้างได้** (ตารางถูกแก้จากที่อื่น · อินสแตนซ์อยู่ยาว)
+           ⇒ ถ้าเขียนด้วยรายชื่อที่แคชไว้แล้วล้ม **ห้ามโยนทิ้ง** — ล้างแคชแล้วตกไปทางถอย
+           🔑 เทสของด่านนี้จับข้อนี้ได้เอง: เคส "PRAGMA ถามไม่ได้" เคยได้ศูนย์แถว
+              เพราะแคชจากเคสก่อนหน้าบอกว่ามี caller ทั้งที่ตารางไม่มี */
+        try {
+          await coreQuery(sqlประกอบ, ใช้.map(([, v]) => v));
+          const ขาดจริง = ทั้งหมด.filter((c) => !คอลัมน์.has(c));
+          return ขาดจริง.length ? `ok (ไม่มีคอลัมน์: ${ขาดจริง.join(",")})` : "ok";
+        } catch { คอลัมน์ล่าสุด = null; /* ตกไปทางถอยข้างล่าง */ }
+      }
+    }
+    /* อ่านคอลัมน์ไม่ได้ (D1 ไม่รองรับ PRAGMA หรือเส้นล้ม) ⇒ ทางถอยแบบเดิม
+       ⚠️ **ทางถอยต้องประกาศตัว** — คืนข้อความบอกว่าเขียนแบบไม่รู้คอลัมน์ [[fallbacks-must-announce]] */
+    try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok (ไม่รู้คอลัมน์ — เขียนชุดเต็มสำเร็จ)"; }
     catch (e) {
-      if (!/no such column/i.test(String(e?.message ?? e))) throw e;
+      const m = String(e?.message ?? e);
+      if (!/no such column|has no column named/i.test(m)) throw e;
       for (const a of ALTER_ผลย่อย) await coreQuery(a).catch(() => null);
-      try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok"; }
-      catch { await coreQuery(sql, แถว); return "ok (ไม่มีผลย่อย — คอลัมน์ยังไม่มี)"; }
+      try { await coreQuery(sqlเต็ม, แถวเต็ม); return "ok (เติมคอลัมน์แล้วเขียนได้)"; }
+      catch { await coreQuery(sql, แถว); return "ok (เขียนชุดพื้นฐาน — คอลัมน์ใหม่ยังไม่มี)"; }
     }
   };
+  /* 🔴 **เหตุที่จดไม่ได้ ต้องไปอยู่ในที่ที่ GET อ่านได้** (เพิ่ม 26 ก.ย. 2569 · ข้อเสนอฝั่งจอ)
+     เดิมเหตุถูกส่งกลับเป็นข้อความ ⇒ ผู้เรียก `console.log` ⇒ ไปอยู่ใน **Netlify function log**
+     ซึ่ง **ไม่มีเส้น API ให้อ่าน** (ฝั่งจอยืนยันแล้ว: `/log` ตอบ 404)
+     ⇒ ⇒ 6 วันที่หาเหตุไม่เจอ **ไม่ใช่เพราะไม่มีข้อมูล แต่เพราะข้อมูลอยู่ในที่ที่เราเข้าไม่ถึง**
+     🔑 คลาส: **ของที่บันทึกไว้ในที่ที่คนที่ต้องใช้เข้าไม่ถึง = ยังไม่ได้บันทึก**
+     🚫 ตัวจดเหตุเองต้องพังไม่ได้ (best-effort) — มันอยู่บนทางเดินของทุกงานตามเวลา */
+  const จดเหตุ = async (เหตุ) => {
+    try {
+      await coreQuery(
+        `INSERT INTO core_meta (k,v,at) VALUES ('job_log_error', ?, datetime('now'))
+         ON CONFLICT(k) DO UPDATE SET v = excluded.v, at = excluded.at`,
+        [JSON.stringify({ งาน, เหตุ: String(เหตุ).slice(0, 300), เมื่อ: new Date().toISOString() })]
+      );
+    } catch { /* ปล่อยลอย-ตั้งใจ: จดเหตุไม่ได้ ห้ามทำให้งานจริงล้ม */ }
+  };
   try {
-    return await เขียน();
+    const ผลจด = await เขียน();
+    if (!String(ผลจด).startsWith("ok")) await จดเหตุ(ผลจด);
+    return ผลจด;
   } catch (e) {
     const msg = String(e?.message ?? e);
-    if (!ยังไม่มีตาราง.test(msg)) return `จดไม่ได้: ${msg.slice(0, 200)}`;
+    if (!ยังไม่มีตาราง.test(msg)) { await จดเหตุ(msg); return `จดไม่ได้: ${msg.slice(0, 200)}`; }
     try {
       await coreQuery(DDL);
       return await เขียน();
     } catch (e2) {
-      return `จดไม่ได้ (สร้างตารางแล้วยังล้ม): ${String(e2?.message ?? e2).slice(0, 200)}`;
+      const เหตุ2 = `จดไม่ได้ (สร้างตารางแล้วยังล้ม): ${String(e2?.message ?? e2).slice(0, 200)}`;
+      await จดเหตุ(เหตุ2);
+      return เหตุ2;
     }
   }
 }
@@ -450,6 +524,24 @@ export async function อ่านเวลางาน({ ชั่วโมง�
     ok: อ่านไม่ได้ ? undefined : true,
     inconclusive: อ่านไม่ได้ ? true : undefined,
     "อ่านสมุดไม่ได้": อ่านไม่ได้,
+    /* 🆕 **ตอบสองคำถามที่เราเดากันทั้งคืนของ 26 ก.ย. 2569 — ให้ตอบจากคำตอบเดียวนี้ตลอดไป**
+       ① "คอลัมน์ที่ ALTER ลงไปแล้วหรือยัง"  ⇒ `คอลัมน์จริงของตาราง` (ถามตารางตรง ๆ)
+       ② "ทำไมสมุดไม่มีแถวใหม่"              ⇒ `เหตุที่จดไม่ได้ล่าสุด` (จาก core_meta)
+       🔑 เหตุเดิมถูกเขียนลง Netlify function log ซึ่ง **ไม่มีเส้น API ให้อ่าน**
+          ⇒ ของที่บันทึกไว้ในที่ที่คนที่ต้องใช้เข้าไม่ถึง = ยังไม่ได้บันทึก
+       🚫 อ่านไม่ได้ ⇒ `null` = "ถามไม่ได้" **ไม่ใช่ "ไม่มี"** [[three-states-not-two]] */
+    "คอลัมน์จริงของตาราง": await (async () => {
+      try { const c = await คอลัมน์ที่มีจริง(); return c ? [...c] : null; } catch { return null; }
+    })(),
+    "เหตุที่จดไม่ได้ล่าสุด": await (async () => {
+      try {
+        const r = await coreQuery(`SELECT v, at FROM core_meta WHERE k = 'job_log_error'`);
+        const แถว = (Array.isArray(r) ? r : (r?.results ?? []))[0];
+        if (!แถว) return null;          /* ไม่มีแถว = ไม่เคยล้ม (หรือยังไม่เคยจด) */
+        let เนื้อ = null; try { เนื้อ = JSON.parse(แถว.v); } catch { เนื้อ = { ดิบ: แถว.v }; }
+        return { ...เนื้อ, "จดไว้เมื่อ(UTC)": แถว.at };
+      } catch { return null; }
+    })(),
     "ชั่วโมงย้อนหลัง": ชม,
     /* 🪟 ประกาศตัวเมื่อค่าที่ขอมา **ไม่ใช่ค่าที่ใช้** — `null` = ใช้ค่าที่ขอตรง ๆ
        (ก่อนมีช่องนี้ `hours=0.5` คืนผลของ 24 ชม. โดยไม่มีอะไรบอก ⇒ อ่านเป็นการค้นพบที่เป็นเท็จได้) */
