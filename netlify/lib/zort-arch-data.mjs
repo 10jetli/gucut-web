@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-09-20T16:54:24.165Z",
+  "generatedAt": "2026-09-26T14:01:15.267Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -533,6 +533,7 @@ export const ZORT_ARCH = {
     "carriers.mjs",
     "core-freshness.mjs",
     "core-orders.mjs",
+    "core-registry.mjs",
     "core-returns.mjs",
     "core-stock.mjs",
     "coredb.mjs",
@@ -540,6 +541,7 @@ export const ZORT_ARCH = {
     "endpoints.mjs",
     "env-report.mjs",
     "lazada.mjs",
+    "licensed-stock.mjs",
     "list-filters-measured.mjs",
     "marketplace-listings.mjs",
     "mkp-finance-probe.mjs",
@@ -828,7 +830,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-09-20T16:54:24.166Z",
+    "at": "2026-09-26T14:01:15.268Z",
     "problems": [],
     "ok": true
   }
