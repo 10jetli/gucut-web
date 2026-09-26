@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-09-20T16:54:23.880Z";
+export const generatedAt = "2026-09-25T06:43:42.328Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -39,7 +39,6 @@ export const paramRoutes = [
  "addquotation",
  "addreturn",
  "addsale",
- "adminlog",
  "appliedkeys",
  "arch",
  "archiveslips",
@@ -96,6 +95,8 @@ export const paramRoutes = [
  "quotation",
  "quotedit",
  "recon",
+ "registry",
+ "registryrows",
  "reorder",
  "resettransfers",
  "restore",
@@ -173,6 +174,8 @@ export const paramRoutes = [
 // 🚫 **unknown ไม่ใช่ readonly** — ห้ามยิงสำรวจเส้น unknown โดยไม่อ่านซอร์สก่อน
 //    (ฝั่งจอเกือบยิง `saledel` ซึ่งลบใบขายจริง เพราะแยกกองด้วยคำนำหน้าชื่อ 19 ก.ย. 2569)
 export const routeMethod = {
+ "registry": "unknown",
+ "registryrows": "write",
  "d1move": "unknown",
  "stockpushlive": "write",
  "pushsweep": "write",
@@ -180,7 +183,6 @@ export const routeMethod = {
  "skuaudit": "readonly",
  "sweeptiming": "write",
  "jobtiming": "readonly",
- "adminlog": "readonly",
  "pushstate": "unknown",
  "dupsku": "unknown",
  "endpoints": "readonly",

@@ -30,9 +30,10 @@ import {
   ageFromBirth, formatThaiId, parseIdCard, parseThaiAddress, thaiDateLabel, validThaiId,
 } from "@/lib/idcard";
 import {
-  BAR_SIZES, CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
+  CASE_STAGES, ENGINE_TYPE, EXEMPT_MODELS, PERMIT_MODELS, PERMIT_STEPS,
   DOC_MAILING, PROCESS_STEPS, REGISTRAR_OFFICE, REQUIRED_DOCS, STAGE_AT_STEP, stageDone,
   officeMapUrl, officeSiteUrl, officePhone } from "@/lib/permit";
+import { permitModelStock, barOptions } from "@/lib/licensed-stock";
 import { cachedUser, fetchMe, type User } from "@/lib/account";
 import { BRAND, SHOP } from "@/lib/shop";
 import { PROVINCES, amphoesOf, findPostcode, fixThaiAddress, tambonsOf } from "@/lib/postcode";
@@ -177,6 +178,11 @@ export default function PermitView() {
   const [d, setD] = useState<Lz1Data>(blank);
   const [modelName, setModelName] = useState("");
   const [bar, setBar] = useState("");
+  /* ยี่ห้อบาร์ — ท่านประธานสั่ง 25 ก.ย. 2569 "บาร์ต้องมียี่ห้อด้วย ยี่ห้อ ขนาด"
+     🔴 **แยกจาก `bar` โดยตั้งใจ** — `bar` ถูกพิมพ์ลงช่อง "ความยาวแผ่นบังคับโซ่ (นิ้ว)"
+        ในฟอร์ม ลซ.๑ (lz1pdf.ts:165) ซึ่งต้องเป็นตัวเลขล้วน
+        ยัดยี่ห้อรวมลงไป = เอกสารราชการผิด ⇒ ยี่ห้อไว้บอกร้านว่าจะส่งอันไหนเท่านั้น */
+  const [barBrand, setBarBrand] = useState("");
   const [qty, setQty] = useState("1");
   // ⚠️ จำนวนบาร์แยกจากจำนวนเครื่อง (เจ้าของร้านสั่ง 25 ส.ค. 2569 "เลือกจำนวนได้ ทั้ง 2")
   //    ลูกค้าซื้อเครื่อง ๑ ตัวแต่เอาบาร์ ๒ แผ่นได้ เป็นเรื่องปกติของร้าน
@@ -253,7 +259,7 @@ export default function PermitView() {
       //    ถ้าเอาค่าในเครื่องตัวเองมาทับ จะพิมพ์ได้เอกสารของคนอื่นผิดคน
       // ลิงก์สั้น (#p=) ต้องไปแลกข้อมูลจากเซิร์ฟเวอร์ จึงเป็น async
       // ลิงก์ยาวแบบเก่า (#d=) ก็ผ่านทางเดียวกัน — เปิดได้ตลอดไป
-      void readAnyShareLink<{ d: Lz1Data; m: string; b: string; q: string; bq?: string }
+      void readAnyShareLink<{ d: Lz1Data; m: string; b: string; bb?: string; q: string; bq?: string }
         | { env: 1; senderName: string; senderAddress: string; senderPhone: string }>()
         .then((res) => {
           if (!res) return;
@@ -268,6 +274,8 @@ export default function PermitView() {
           setD({ ...blank(), ...shared.d, qualified: true });
           if (shared.m) setModelName(shared.m);
           if (shared.b) setBar(shared.b);
+          // ยี่ห้อบาร์ — ลิงก์เก่าที่ยังไม่มีช่องนี้เปิดได้ปกติ แค่ไม่โชว์ยี่ห้อ
+          if (shared.bb) setBarBrand(shared.bb);
           if (shared.bq) setBarQty(shared.bq);
           if (shared.q) setQty(shared.q);
           // คนเปิดลิงก์คือ "คนช่วยพิมพ์" (ร้านถ่ายเอกสาร) — ขึ้นการ์ดพิมพ์ทันทีบนสุด
@@ -316,7 +324,7 @@ export default function PermitView() {
         bar, qty: qty || "1",
       }],
     }));
-  }, [picked, bar, qty]);
+  }, [picked, bar, barBrand, qty]);
 
   // ---------------------------------------------------------------- ถ่ายบัตร
   //
@@ -982,7 +990,7 @@ export default function PermitView() {
         credentials: "same-origin",
         body: JSON.stringify({
           saw: modelName
-            ? `${modelName} ${qty || "1"} เครื่อง${bar ? ` · บาร์ ${bar} นิ้ว ${barQty || "1"} แผ่น` : ""}`
+            ? `${modelName} ${qty || "1"} เครื่อง${bar ? ` · บาร์ ${barBrand} ${bar} นิ้ว ${barQty || "1"} แผ่น` : ""}`
             : "",
           province: useProvince,
           images,
@@ -1001,7 +1009,7 @@ export default function PermitView() {
       setLz2Busy(false);
     }
     // ⚠️ qty กับ barQty ต้องอยู่ในรายการนี้ด้วย ไม่งั้นร้านได้จำนวนเก่าติดไปกับใบ ลซ.๒
-  }, [me?.phone, modelName, bar, qty, barQty, useProvince]);
+  }, [me?.phone, modelName, bar, barBrand, qty, barQty, useProvince]);
 
   // เบอร์โทรดึงจากบัญชีที่ล็อกอินให้เอง — เจ้าของร้านสั่ง 27 ส.ค. 2569
   // (หน้านี้บังคับล็อกอินอยู่แล้ว และบัญชีผูกกับเบอร์เป็นหลัก)
@@ -1159,13 +1167,13 @@ export default function PermitView() {
   // ขอลิงก์สั้นของข้อมูลชุดปัจจุบัน — สร้างครั้งเดียวต่อข้อมูลหนึ่งชุด
   // สร้างไม่สำเร็จได้ลิงก์ยาวแทน (จัดการใน makeShortLink) ลูกค้าไม่มีวันติดตัน
   const getShareLink = useCallback(async () => {
-    const payload = { d, m: modelName, b: bar, q: qty, bq: barQty };
+    const payload = { d, m: modelName, b: bar, bb: barBrand, q: qty, bq: barQty };
     const key = JSON.stringify(payload);
     if (shortLinkRef.current?.key === key) return shortLinkRef.current.link;
     const link = await makeShortLink(payload);
     shortLinkRef.current = { key, link };
     return link;
-  }, [d, modelName, bar, qty, barQty]);
+  }, [d, modelName, bar, barBrand, qty, barQty]);
 
   return (
     <>
@@ -1567,9 +1575,25 @@ export default function PermitView() {
             >
               <option value="">— เลือกรุ่น —</option>
               <optgroup label="ต้องขอใบอนุญาต">
-                {PERMIT_MODELS.map((m) => (
-                  <option key={m.model} value={m.model}>{m.brand} {m.model}</option>
-                ))}
+                {/* เจ้าของร้านสั่ง 25 ก.ย. 2569 "ตัวไหนหมดตรงขออนุญาตก็เป็นเทาอ่อนเลือกไม่ได้"
+                    ⚠️ ต้องเขียนว่า "หมดชั่วคราว" กำกับด้วย — ช่องที่เทาเฉย ๆ โดยไม่บอกเหตุผล
+                       ลูกค้าจะนึกว่าเว็บเสีย แล้วโทรมาถามแทนที่จะเลือกรุ่นอื่น
+                    🔑 จำนวนมาจาก **ทะเบียนใบอนุญาต** ไม่ใช่ ZORT (ZORT ไม่รู้จักรหัสเลื่อย
+                       ครึ่งหนึ่ง และอีกครึ่งเป็น 0 ทั้งที่มีของ — ดู licensed-stock.mjs) */}
+                {PERMIT_MODELS.map((m) => {
+                  const เหลือ = permitModelStock(m.model);
+                  return (
+                    <option
+                      key={m.model}
+                      value={m.model}
+                      disabled={เหลือ <= 0}
+                      className={เหลือ <= 0 ? "text-steel-400" : undefined}
+                    >
+                      {m.brand} {m.model}
+                      {เหลือ <= 0 ? " — หมดชั่วคราว" : ""}
+                    </option>
+                  );
+                })}
               </optgroup>
               <optgroup label="ไม่ต้องขอใบอนุญาต">
                 {EXEMPT_MODELS.map((m) => (
@@ -1581,13 +1605,29 @@ export default function PermitView() {
           <label>
             <span className="mb-1 block text-[12px] text-ink-300">ขนาดบาร์</span>
             <select
-              value={bar}
-              onChange={(e) => setBar(e.target.value)}
+              value={bar ? `${barBrand}|${bar}` : ""}
+              onChange={(e) => {
+                const [ยี่ห้อ, ขนาด] = e.target.value.split("|");
+                setBarBrand(ขนาด ? ยี่ห้อ : "");
+                setBar(ขนาด || "");
+              }}
               className="w-full rounded-sm border border-steel-600 px-3 py-2.5 text-[14px]"
             >
               {/* ⚠️ เว้นว่างได้จริง เจ้าของร้านบอกว่า "ลูกค้าบางคนก็ซื้อแต่เครื่อง" */}
               <option value="">ไม่ระบุ (ซื้อแต่เครื่อง)</option>
-              {BAR_SIZES.map((b) => <option key={b} value={b}>{b} นิ้ว</option>)}
+              {/* ยี่ห้อ + ขนาด (ท่านประธานสั่ง 25 ก.ย. 2569 "บาร์ต้องมียี่ห้อด้วย")
+                  ค่าที่เก็บเป็น "ยี่ห้อ|ขนาด" แล้วแยกตอนใช้ — **ช่องที่ลงฟอร์ม ลซ.๑ ได้แค่ตัวเลข**
+                  ⚠️ ขนาดที่หมดขึ้นเทาเลือกไม่ได้ · 12 นิ้วไม่มีในทะเบียน (ไม่ต้องขอ ลซ.๒)
+                     จึงไม่รู้จำนวน ⇒ ไม่เทา แต่ไม่บอกเลข (ไม่รู้ ≠ หมด) */}
+              {barOptions().map((o) => {
+                const ว่าง = o.เหลือ !== null && o.เหลือ <= 0;
+                return (
+                  <option key={`${o.ยี่ห้อ}|${o.ขนาด}`} value={`${o.ยี่ห้อ}|${o.ขนาด}`} disabled={ว่าง}>
+                    {o.ยี่ห้อ} {o.ขนาด} นิ้ว
+                    {o.ขนาด === 12 ? " (ไม่ต้องขอทะเบียน)" : ว่าง ? " — หมดชั่วคราว" : ""}
+                  </option>
+                );
+              })}
             </select>
           </label>
         </div>
@@ -1631,7 +1671,7 @@ export default function PermitView() {
                 <p className="mt-0.5 text-[11.5px] leading-relaxed text-ink-300">
                   ระบบจะกรอกให้: {ENGINE_TYPE}
                   {picked.hp !== null && <> · {picked.hp} แรงม้า</>}
-                  {bar && <> · บาร์ {bar} นิ้ว {barQty || "1"} แผ่น</>}
+                  {bar && <> · บาร์ {barBrand} {bar} นิ้ว {barQty || "1"} แผ่น</>}
                 </p>
                 {SAW_IMG[picked.model as keyof typeof SAW_IMG]?.handle && (
                   <Link

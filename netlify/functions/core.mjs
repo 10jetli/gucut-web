@@ -445,6 +445,36 @@ async function route(req, context) {
        ?d1move=plan|create|schema|copy|verify — **ห้ามข้ามขั้น** ดูลำดับใน lib/d1move.mjs
        ⚠️ ไม่มีคำสั่งไหนแตะฐานเดิมเลย · สับสวิตช์ทำด้วยการเปลี่ยน env เท่านั้น ไม่ได้อยู่ในโค้ด
        ⚠️ copy เรียกซ้ำได้ `done:false` = ยังไม่ครบ **ไม่ใช่ล้มเหลว** */
+    /* ── ทะเบียนบัญชีรับ-จำหน่าย (25 ก.ย. 2569) ──
+       ท่านประธานสั่ง "ทำจอในเมนู JET" + "ตัด zort ออกได้เลย มันทำไม่ได้"
+       ⇒ จอนี้เทียบ **ทะเบียน vs เว็บ** สองทาง ไม่มี ZORT
+       🔴 ข้อมูลมีชื่อลูกค้า · เลขใบ ลซ.๒ · จังหวัด ⇒ อยู่หลัง adminGate เท่านั้น
+          เส้นสรุป (`?registry=1`) ไม่คืนชื่อลูกค้าเลย · ชื่อออกทาง `?registryrows=1` ซึ่งต้องขอเจาะจง */
+    if (url.searchParams.get("registry")) {
+      const { registrySummary } = await import("../lib/core-registry.mjs");
+      return json(await registrySummary());
+    }
+    if (url.searchParams.get("registryrows")) {
+      const { registryRows } = await import("../lib/core-registry.mjs");
+      return json(await registryRows({
+        kind: url.searchParams.get("kind"),
+        model: url.searchParams.get("model"),
+        soldOnly: url.searchParams.get("sold") === "1",
+        limit: url.searchParams.get("limit"),
+        offset: url.searchParams.get("offset"),
+      }));
+    }
+    if (req.method === "DELETE" && url.searchParams.get("registrylot")) {
+      const { registryDeleteLot } = await import("../lib/core-registry.mjs");
+      return json(await registryDeleteLot(url.searchParams.get("registrylot")));
+    }
+    if (req.method === "POST" && url.searchParams.get("registryimport")) {
+      const body = await req.json().catch(() => null);
+      if (!body || !Array.isArray(body.rows)) return json({ error: "ต้องส่ง {rows:[...]}" }, 400);
+      const { registryImport } = await import("../lib/core-registry.mjs");
+      return json(await registryImport(body.rows));
+    }
+
     if (url.searchParams.get("d1move")) {
       const step = String(url.searchParams.get("d1move"));
       const m = await import("../lib/d1move.mjs");

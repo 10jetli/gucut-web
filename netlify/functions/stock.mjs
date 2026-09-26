@@ -6,6 +6,8 @@
 //      **ไม่มี p โดยตั้งใจ** — ราคาเว็บกับ ZORT ยังไม่ตรงกัน 100 รหัส รอเจ้าของร้านตัดสิน
 // cache ที่ edge 3 นาที — ลูกค้าคนถัดไปได้คำตอบทันทีไม่ต้องรอ ZORT
 
+import { licensedStock } from "../lib/licensed-stock.mjs";
+
 const ZORT = "https://open-api.zortout.com/v4/Product/GetProducts";
 
 export default async function handler(req) {
@@ -15,9 +17,18 @@ export default async function handler(req) {
     return json({ error: "sku required" }, 400, 60);
   }
 
+  /* ── ของในทะเบียนใบอนุญาต: จำนวนมาจากทะเบียน ไม่ใช่ ZORT ── (25 ก.ย. 2569)
+     เจ้าของร้านสั่ง "เปิดขายที่เว็บ ไม่ได้ใช้สต๊อค zort" (เลื่อย) + "บาร์ด้วย"
+     วัดจริง: รหัสเลื่อยทั้ง 9 รุ่น ZORT ตอบ found:false · รหัสบาร์ ZORT รู้จักแต่ `02984` ติดลบ -3
+     ⚠️ **ยังถาม ZORT ต่อเพื่อเอา "ราคา" เหมือนเดิม** ทับเฉพาะ `st` เท่านั้น
+        ถ้าลัดกลับตรงนี้เลย ราคาที่ลูกค้าเห็นจะเปลี่ยนเป็นค่าในไฟล์สินค้าทันที
+        (NW 8800: ZORT 18,000 · ไฟล์ 20,000) — การแตะราคาเป็นเรื่องของเจ้าของร้าน ไม่ใช่ผลพลอยได้ */
+  const lic = licensedStock(sku);
+
   const { ZORT_STORENAME, ZORT_APIKEY, ZORT_APISECRET } = process.env;
   if (!ZORT_STORENAME || !ZORT_APIKEY || !ZORT_APISECRET) {
-    // ยังไม่ได้ตั้งค่า env vars ใน Netlify
+    // ยังไม่ได้ตั้งค่า env vars ใน Netlify — ของในทะเบียนยังตอบได้ ไม่ต้องพึ่ง ZORT
+    if (lic !== null) return json({ found: true, st: lic, src: "licensed" }, 200, 180);
     return json({ error: "not configured" }, 503, 0);
   }
 
@@ -32,9 +43,14 @@ export default async function handler(req) {
       signal: AbortSignal.timeout(8000),
     });
   } catch {
+    // ZORT ล่มก็ยังขายของในทะเบียนได้ — จำนวนไม่ได้อยู่ที่ ZORT ตั้งแต่ต้น
+    if (lic !== null) return json({ found: true, st: lic, src: "licensed" }, 200, 180);
     return json({ error: "zort unreachable" }, 502, 0);
   }
-  if (!res.ok) return json({ error: "zort " + res.status }, 502, 0);
+  if (!res.ok) {
+    if (lic !== null) return json({ found: true, st: lic, src: "licensed" }, 200, 180);
+    return json({ error: "zort " + res.status }, 502, 0);
+  }
 
   const data = await res.json().catch(() => ({}));
   const skuLower = sku.toLowerCase();
@@ -110,11 +126,15 @@ export default async function handler(req) {
     } catch {
       /* ถามชุดไม่ได้ก็ตอบ not found เหมือนเดิม — ห้ามล้ม */
     }
+    // ZORT ไม่รู้จัก แต่ทะเบียนรู้ — เป็นทางปกติของรหัสเลื่อยทั้ง 9 รุ่น ไม่ใช่ความผิดพลาด
+    if (lic !== null) return json({ found: true, st: lic, src: "licensed" }, 200, 180);
     return json({ found: false }, 200, 300);
   }
 
   const st = toNum(hit.availablestock ?? hit.stock);
   const p = toNum(hit.sellprice ?? hit.price);
+  // ทะเบียนชนะ ZORT เรื่องจำนวนเสมอ — แต่ราคายังเป็นของ ZORT เหมือนเดิม
+  if (lic !== null) return json({ found: true, st: lic, p, src: "licensed" }, 200, 180);
   return json({ found: true, st, p }, 200, 180);
 }
 

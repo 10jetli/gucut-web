@@ -10,6 +10,7 @@
 // ⚠️ ไม่มี GTIN (สินค้าโรงงานเราเอง) จึงส่ง brand + mpn(=SKU) ตามเกณฑ์ Google
 //    "ต้องมี 2 ใน 3 ของ gtin/mpn/brand" — ห้ามใส่ gtin มั่วเด็ดขาด โดนแบนฟีดได้
 import { liveStock } from "../lib/zort-stock.mjs";
+import { licensedStock } from "../lib/licensed-stock.mjs";
 
 const esc = (s) =>
   String(s ?? "")
@@ -36,7 +37,15 @@ export default async function handler(req) {
   for (const p of list) {
     if (!p?.sku || !p?.t || !p?.img || !p?.h) continue;
     const live = map?.[p.sku];
-    const st = live ? live[0] : p.st;
+    /* ของในทะเบียนใบอนุญาต — ทะเบียนชนะ ZORT เสมอ
+       เจ้าของร้านสั่ง 25 ก.ย. 2569: **"ไม่เชื่อ zort ให้อิงตาม google ชีท"**
+       🔴 ที่นี่คือฟีดที่ **จ่ายเงินซื้อโฆษณา** — ผิดแล้วเจ็บสองทาง
+          ของหมดแต่ยังโฆษณา = จ่ายค่าคลิกให้คนที่ซื้อไม่ได้ · Google ตัดสิทธิ์บัญชีได้
+          ของมีแต่ไม่โฆษณา  = เสียยอดขายเงียบ ๆ ไม่มีอะไรฟ้อง
+       ⚠️ พิสูจน์แล้วว่า ZORT ผิดจริงกับกลุ่มนี้ — มีซีเรียลที่ ZORT ว่ายังมีของ
+          แต่ทะเบียนบอกขายไปแล้ว (F660 45-7-67-00017 · F250 …00002 · F361 …00005) */
+    const lic = licensedStock(p.sku);
+    const st = lic !== null ? lic : live ? live[0] : p.st;
     const price = live && live[1] > 0 ? live[1] : p.p;
     if (!(st > 0) || !(price > 0)) continue; // ของหมด/ไม่มีราคา ไม่เอาเข้าฟีดโฆษณา
 
