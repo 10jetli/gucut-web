@@ -19,6 +19,13 @@ import { getStore } from "@netlify/blobs";
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
 import { findByPin } from "./attendance.mjs";
+//
+// 🔴 **ห้ามเขียน NUL เป็นไบต์จริงในไฟล์นี้อีก** (แก้ 26 ก.ย. 2569)
+//    เดิมคีย์รวมเขียนโดยฝัง NUL เป็นไบต์จริงในเทมเพลตสตริง ⇒ ไฟล์มี 4 ไบต์ที่เป็นศูนย์
+//    ⇒ `file` บอกว่า "data" · **`grep` ถือว่าเป็นไบนารีแล้วเงียบทั้งไฟล์ (rc=1 ไม่พิมพ์อะไร)**
+//    ⇒ ⇒ ทุกการกวาดด้วย grep ที่ผ่านมา **ข้ามไฟล์นี้ทั้งไฟล์โดยไม่มีใครรู้** (50KB · 10 export)
+//    🔑 คลาส: **เครื่องมือที่ข้ามของเงียบ ๆ รายงานว่า "ไม่พบ"** ⇒ "ไม่เจอ" ไม่เท่ากับ "ไม่มี"
+//    ✅ ใช้ escape `\u0000` แทน — ตัวอักษรที่ได้เหมือนกันเป๊ะ แต่ไฟล์เป็นข้อความล้วน
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const photoStore = () => getStore({ name: "gucut-returns", consistency: "strong" });
@@ -165,13 +172,13 @@ async function fireMoves(items, ref) {
   const rows = items.flatMap((it) => moveRowsFor(it, ref));
   if (!rows.length) return new Map();
 
-  const keyOf = (r) => `${r.reason} ${r.sku}`;
+  const keyOf = (r) => `${r.reason}\u0000${r.sku}`;
   const skus = [...new Set(rows.map((r) => r.sku))].map(esc).join(",");
   const seen = async () => {
     const got = await coreQuery(
       `SELECT reason, sku FROM stock_moves WHERE ref = ${esc(ref)} AND sku IN (${skus})`
     );
-    return new Set(got.map((r) => `${r.reason} ${r.sku}`));
+    return new Set(got.map((r) => `${r.reason}\u0000${r.sku}`));
   };
 
   const before = await seen();
@@ -359,7 +366,7 @@ export async function receiveReturn(body, staff) {
     if (!sku && !unmatched) continue;
     const name = String(it?.name ?? "").trim();
     // ของไม่มีรหัส (ใบ unmatched) แยกบรรทัดตามชื่อ — รวมกันไม่ได้ คนละชิ้นกัน
-    const key = sku || ` ${name} ${merged.size}`;
+    const key = sku || `\u0000${name}\u0000${merged.size}`;
     const prev = merged.get(key);
     if (prev) prev.qty += qty;
     else merged.set(key, { sku, name, qty });
