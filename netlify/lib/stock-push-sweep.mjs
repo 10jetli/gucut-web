@@ -832,8 +832,18 @@ export async function สถานะดันสต็อก() {
   /* 📊 แยกรายช่องทาง (เพิ่ม 17 ก.ย. 2569 ตอนมีตัวกวาดสามเจ้า)
      ⚠️ ช่องบนสุด (lastSweep · counts) **รวมทุกเจ้า** — พอ Shopee กวาดซ้อม lastSweep จะเป็นรอบซ้อมของ Shopee
         ทั้งที่ Lazada ยิงจริงอยู่ ⇒ จอต้องอ่าน byChannel · ช่องบนสุดคงไว้ให้จอรุ่นเก่า */
+  /* 🔴 **ต้องส่ง `fired` ออกไปด้วย — ไม่งั้นเลขบนจอปิดบัญชีไม่ลง** (27 ก.ย. 2569)
+     ฝั่งจอถามมาว่า: รอบล่าสุด `planned 44` แต่ `pushed 0 + rejected 0 + skipped 43 = 43` ⇒ **หายไป 1**
+     คำตอบ: `planned` กับ `skipped` **ไม่ใช่สองส่วนของก้อนเดียวกัน**
+       · `skipped` = แถวที่ **ไม่เคยเข้าแผน** (`แถว.length - p.push.length`)
+       · โซ่ที่ปิดบัญชีได้จริงคือ  planned = fired + notFiredThisRound
+                                 fired   = pushed + rejected + **notSent**
+     `fired` มีในตารางและถูกเขียนทุกรอบอยู่แล้ว **แต่ไม่ได้อยู่ใน SELECT นี้**
+     ⇒ จอจึงไม่มีทางอธิบายส่วนที่หายไปได้เลย และ `notSent` หาได้จาก `fired - pushed - rejected`
+     🔑 คลาสเดียวกับที่ไฟล์นี้เคยเจอมาแล้ว (ดูคอมเมนต์ "ตัวเลขทิศลง — ต้องส่งออกมา"):
+        **คำนวณไว้แล้วแต่ไม่ได้ส่งออก = จอมองไม่เห็น แล้วคนโทษข้อมูล** */
   const รอบล่าสุดราย = await coreQuery(
-    `SELECT l.at, l.channel, l.mode, l.planned, l.pushed, l.rejected, l.skipped, l.ms, l.note
+    `SELECT l.at, l.channel, l.mode, l.planned, l.fired, l.pushed, l.rejected, l.skipped, l.ms, l.note
      FROM push_sweep_log l
      JOIN (SELECT channel, MAX(at) AS at FROM push_sweep_log GROUP BY channel) m ON m.channel = l.channel AND m.at = l.at`
   );
