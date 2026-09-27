@@ -20,6 +20,7 @@
 //    รหัสที่ถูกข้ามทุกรอบมาสามวันจะไม่โผล่ใน log เลยสักบรรทัด ⇒ **หายเงียบสนิท**
 //    สมุดสถานะเก็บรายรหัส ⇒ ของที่ถูกข้ามมีตัวตน และขึ้นแดงได้
 
+import { ชนิดที่ไม่ได้ส่ง } from "./not-sent-kinds.mjs";   // ไฟล์ค่าล้วน — ไม่ลากกราฟโมดูลเข้ามา
 import { coreQuery, coreReady } from "./coredb.mjs";
 
 /** งบเวลาต่อรอบ — Netlify ให้ฟังก์ชันตอบได้ 26 วินาที (ตามเวลา ~30) เผื่อขอบไว้ */
@@ -143,7 +144,17 @@ async function สร้างตาราง() {
      ⚠️ ใช้ ALTER ทีละคอลัมน์ในกล่อง try — ตารางเก่ามีอยู่แล้ว `CREATE IF NOT EXISTS` จึงไม่เพิ่มให้
         ⚠️ **แถวเก่าจะเป็น NULL ตลอดไป** (ไม่มีทางย้อนไปวัด) ⇒ ตัวอ่านต้องแยก
            "ไม่มีข้อมูล" ออกจาก "ศูนย์" ให้ได้ [[new-columns-need-backfill]] */
-  for (const c of ["plan_ms INTEGER", "fire_ms INTEGER", "write_ms INTEGER"]) {
+  /* 🔴 **สองช่องที่ทำให้ "ปิดบัญชี" เป็นไปได้จริง** (เพิ่ม 27 ก.ย. 2569 · ฝั่งจอถามแล้วผมตอบผิดรอบหนึ่ง)
+     โซ่ที่ถูกคือ  planned = fired + not_sent + not_fired
+                  fired   = pushed + rejected   (เป๊ะเสมอ — ทุกแถวที่เข้า fire ได้ผลกลับมาหมด)
+     ⇒ ⇒ ผมเคยบอกฝั่งจอว่า `notSent = fired − pushed − rejected` ซึ่ง **ผิด**
+         สูตรนั้นได้ 0 ตลอดกาล = เลขที่ดูสมเหตุสมผลแต่ไม่ได้วัดอะไรเลย
+     · `not_sent`  = ถูกคัดออก **ก่อน** ยิง (`เตรียมยิง()` มี `notSentKind`: stale_plan · needs_human · ด่านอื่น)
+     · `not_fired` = ยกไปรอบหน้าเพราะงบเวลา (`รวม.ไม่ได้ยิง`)
+     🔑 ก่อนมีสองช่องนี้ **ไม่มีใครปิดบัญชีจากสมุดได้ ไม่ว่าจอจะเขียนสูตรสวยแค่ไหน**
+     ⚠️ แถวเก่าเป็น NULL ตลอดไป ⇒ ตัวอ่านต้องแยก "ไม่มีข้อมูล" ออกจาก "ศูนย์" [[new-columns-need-backfill]] */
+  for (const c of ["plan_ms INTEGER", "fire_ms INTEGER", "write_ms INTEGER",
+                   "not_sent INTEGER", "not_fired INTEGER"]) {
     try { await coreQuery(`ALTER TABLE push_sweep_log ADD COLUMN ${c}`); } catch { /* มีอยู่แล้ว = ปกติ */ }
   }
 }
@@ -615,8 +626,8 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   const ms = Date.now() - เริ่ม;
 
   await coreQuery(
-    `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note,plan_ms,fire_ms,write_ms)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note,plan_ms,fire_ms,write_ms,not_sent,not_fired)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(at) DO NOTHING`,
     [
       now, platform, ยิงจริง ? "live" : "dry",
@@ -632,6 +643,9 @@ export async function กวาดดันสต็อก({ platform = "lazada"
       ขั้น.แผน_ms ?? null,
       ขั้น.ยิง_ms ?? null,
       ขั้น.เขียนสมุด_ms ?? null,
+      /* ⚠️ `?? null` เหมือนกัน — รอบที่ไม่ได้ยิงเลย ไม่รู้ว่ามีกี่ตัวถูกคัดออก ⇒ ห้ามเป็น 0 */
+      ผลยิง ? (ผลยิง.notSent ?? null) : null,
+      ผลยิง ? (ผลยิง.ไม่ได้ยิง ?? null) : null,
     ]
   );
 
@@ -843,7 +857,8 @@ export async function สถานะดันสต็อก() {
      🔑 คลาสเดียวกับที่ไฟล์นี้เคยเจอมาแล้ว (ดูคอมเมนต์ "ตัวเลขทิศลง — ต้องส่งออกมา"):
         **คำนวณไว้แล้วแต่ไม่ได้ส่งออก = จอมองไม่เห็น แล้วคนโทษข้อมูล** */
   const รอบล่าสุดราย = await coreQuery(
-    `SELECT l.at, l.channel, l.mode, l.planned, l.fired, l.pushed, l.rejected, l.skipped, l.ms, l.note
+    `SELECT l.at, l.channel, l.mode, l.planned, l.fired, l.pushed, l.rejected, l.skipped,
+            l.not_sent, l.not_fired, l.ms, l.note
      FROM push_sweep_log l
      JOIN (SELECT channel, MAX(at) AS at FROM push_sweep_log GROUP BY channel) m ON m.channel = l.channel AND m.at = l.at`
   );
@@ -859,6 +874,10 @@ export async function สถานะดันสต็อก() {
      FROM push_state GROUP BY channel`
   );
   const byChannel = {};
+  /* 📤 **ส่งรายชื่อชนิด "ไม่ได้ส่ง" ไปกับคำตอบเสมอ** (ฝั่งจอขอ 27 ก.ย. 2569)
+     เหตุ: วันที่เราเพิ่มชนิดที่ 7 จอที่มีรายชื่อฝังไว้เองจะขึ้น **ค่าดิบ** ให้คนอ่านเงียบ ๆ
+     ⇒ จอเทียบกับรายชื่อที่ท่อส่งมาในคำตอบเดียวกัน ⇒ เจอชนิดที่ไม่รู้จัก = รู้ทันที
+     🔑 กติกา: **ชุดค่าที่จอต้องแปล ต้องเดินทางมากับข้อมูล ไม่ใช่ถูกคัดลอกไปไว้ที่จอ** */
   for (const ch of ช่องทางทั้งหมด) {
     const { channel: _c, ...counts } = นับราย.find((r) => r.channel === ch) || {};
     byChannel[ch] = {
@@ -923,6 +942,7 @@ export async function สถานะดันสต็อก() {
        แถบนั้นต้องวัดจาก `ยืนยันล่าสุด` เท่านั้น — สวิตช์เปิดค้างไว้แล้วระบบตายไปสามวัน
        ก็ยังเขียวตลอดกาล ซึ่งคือโรคที่สมุดนี้สร้างมาเพื่อกำจัด */
     lastSweep: รอบล่าสุด || null,
+    ชนิดที่ไม่ได้ส่ง,          // ชุดปิด — จอเอาไปตรวจว่าเจอชนิดที่ไม่รู้จักไหม
     counts: นับ || null,
     stuck: ค้างนาน,
     /* 🔔 กองที่ควรทำให้จอขึ้น **เหลือง** (ไม่ใช่แดง — ระบบยังทำงาน แต่มีของที่ไม่เคยถูกดัน)

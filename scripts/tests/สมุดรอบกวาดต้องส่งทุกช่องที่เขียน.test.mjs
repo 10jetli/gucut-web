@@ -16,16 +16,41 @@ const ต้นฉบับ = await readFile(new URL("../../netlify/lib/stock-pu
 /** ช่องที่ตัวเขียนจดลงสมุด — อ่านจาก INSERT ของจริง ไม่ใช่รายชื่อที่พิมพ์มือ
  *  (พิมพ์มือ = ด่านจะค้างวันที่ใครเพิ่มคอลัมน์ แล้วเขียวทั้งที่ของใหม่ไม่ถูกส่ง) */
 const ที่เขียน = (() => {
-  const m = ต้นฉบับ.match(/INSERT INTO push_sweep_log \(([^)]+)\)/);
-  assert.ok(m, "หา INSERT INTO push_sweep_log ไม่เจอ — ด่านนี้ต้องแดง ไม่ใช่ผ่านเงียบ");
-  return m[1].split(",").map((x) => x.trim()).filter(Boolean);
+  /* 🔴 **ต้องกวาด `INSERT` ทุกจุด ไม่ใช่จุดแรก** (แก้ 27 ก.ย. 2569 — ด่านนี้เองเคยอ่านผิดจุด)
+     ไฟล์นี้มี INSERT สองที่: รอบ `fast-skip` (10 คอลัมน์) และรอบเต็ม (15 คอลัมน์)
+     `.match()` คืนจุดแรก ⇒ ด่านอ่านแต่รอบ fast-skip ⇒ คอลัมน์ใหม่ของรอบเต็ม **หลุดทั้งคู่**
+     ⇒ ⇒ ด่านยังเขียวเพราะ 10 คอลัมน์นั้นเป็นสับเซตของ SELECT อยู่แล้ว
+     🔑 คลาส: **ตัวตรวจที่อ่านตัวอย่างเดียวจากของที่มีหลายตัว** — เขียวจากที่ไม่ได้ดู */
+  const ทั้งหมด = [...ต้นฉบับ.matchAll(/INSERT INTO push_sweep_log \(([^)]+)\)/g)];
+  assert.ok(ทั้งหมด.length >= 2,
+    `ต้องเจอ INSERT ทุกจุด (คาด ≥ 2) · เจอ ${ทั้งหมด.length} — ถ้าโครงไฟล์เปลี่ยน ด่านนี้ต้องแดง ไม่ใช่ผ่านเงียบ`);
+  const ชื่อ = new Set();
+  for (const m of ทั้งหมด) for (const c of m[1].split(",")) { const x = c.trim(); if (x) ชื่อ.add(x); }
+  return [...ชื่อ];
 })();
 
-/** ช่องที่ถูกส่งให้จอ — อ่านจาก SELECT ที่สร้าง lastSweep */
+/** ช่องที่ถูกส่งให้จอจาก SELECT ที่สร้าง `lastSweep` */
 const ที่ส่ง = (() => {
   const m = ต้นฉบับ.match(/SELECT (l\.at[^`]*?)\n\s*FROM push_sweep_log l/s);
   assert.ok(m, "หา SELECT ที่สร้าง lastSweep ไม่เจอ");
   return m[1].split(",").map((x) => x.trim().replace(/^l\./, "")).filter(Boolean);
+})();
+
+/** 🔑 **ขอบเขตของด่านนี้ (แก้ 27 ก.ย. 2569 — ครั้งแรกผมเขียนกฎกว้างเกิน)**
+ *  กฎที่ถูกคือ *ทุกช่องที่จดต้องอ่านได้จากเส้นใดเส้นหนึ่ง* — ไม่ใช่ *ต้องอยู่ใน `lastSweep`*
+ *  `plan_ms` / `fire_ms` / `write_ms` ถูกอ่านที่เส้น `?sweeptiming=1` ซึ่งเป็นที่ที่ถูกของมัน
+ *  ⇒ กฎที่กว้างเกินไปจะแดงกับของที่ถูกอยู่แล้ว แล้วคนจะปิดด่านทั้งตัว [[rules-need-scope]]
+ *  ⇒ จึงเทียบกับ **ทุกช่องที่ถูกอ่านที่ใดก็ได้ในไฟล์นี้** */
+const ที่อ่านได้ทุกเส้น = (() => {
+  const ชื่อ = new Set(ที่ส่ง);
+  for (const m of ต้นฉบับ.matchAll(/(?:MAX|MIN|SUM|AVG)\((\w+)\)/g)) ชื่อ.add(m[1]);
+  for (const m of ต้นฉบับ.matchAll(/SELECT ([^`]*?)FROM push_sweep_log/gs)) {
+    for (const c of m[1].split(",")) {
+      const x = c.trim().replace(/^l\./, "").split(/\s+AS\s+/i)[0].trim();
+      if (/^\w+$/.test(x)) ชื่อ.add(x);
+    }
+  }
+  return ชื่อ;
 })();
 
 test("✅ ตัวปลูกอ่านเจอทั้งสองฝั่งจริง (ถ้าอ่านไม่เจอ ด่านจะเขียวลวง)", () => {
@@ -33,8 +58,8 @@ test("✅ ตัวปลูกอ่านเจอทั้งสองฝั�
   assert.ok(ที่ส่ง.length >= 8, `ช่องที่ส่งต้อง ≥ 8 · ได้ ${ที่ส่ง.length}: ${ที่ส่ง}`);
 });
 
-test("🔴 ทุกช่องที่จดลงสมุด ต้องถูกส่งให้จอ — ห้ามจดแล้วเงียบ", () => {
-  const ขาด = ที่เขียน.filter((c) => !ที่ส่ง.includes(c));
+test("🔴 ทุกช่องที่จดลงสมุด ต้องอ่านได้จากเส้นใดเส้นหนึ่ง — ห้ามจดแล้วเงียบ", () => {
+  const ขาด = ที่เขียน.filter((c) => !ที่อ่านได้ทุกเส้น.has(c));
   assert.deepEqual(ขาด, [],
     `ช่องที่ถูกจดแต่ไม่ถูกส่ง: ${ขาด.join(", ")} ⇒ จอปิดบัญชีไม่ลง ` +
     "(เพิ่มใน SELECT ที่สร้าง lastSweep)");
@@ -43,4 +68,21 @@ test("🔴 ทุกช่องที่จดลงสมุด ต้อง�
 test("🔑 `fired` ต้องอยู่ทั้งสองฝั่ง — มันคือช่องที่ทำให้ planned/pushed/rejected ปิดกันได้", () => {
   assert.ok(ที่เขียน.includes("fired"), "ตัวเขียนต้องจด fired");
   assert.ok(ที่ส่ง.includes("fired"), "ตัวอ่านต้องส่ง fired ให้จอ");
+});
+
+test("🔑 `not_sent` / `not_fired` ต้องมีทั้งใน INSERT และ SELECT — เป็นสองช่องที่ทำให้ปิดบัญชีได้จริง", () => {
+  for (const c of ["not_sent", "not_fired"]) {
+    assert.ok(ที่เขียน.includes(c), `ตัวเขียนต้องจด ${c}`);
+    assert.ok(ที่ส่ง.includes(c), `ตัวอ่านต้องส่ง ${c} ให้จอ`);
+  }
+});
+
+test("🚫 ทุกจุดที่ INSERT ต้องมีจำนวน ? เท่ากับจำนวนคอลัมน์", () => {
+  const จุด = [...ต้นฉบับ.matchAll(/INSERT INTO push_sweep_log \(([^)]+)\)\s*\n\s*VALUES \(([^)]+)\)/g)];
+  assert.ok(จุด.length >= 2, `ต้องเจอคู่ (คอลัมน์, VALUES) ทุกจุด · เจอ ${จุด.length}`);
+  for (const [i, m] of จุด.entries()) {
+    const cols = m[1].split(",").filter((x) => x.trim()).length;
+    const qs = m[2].split(",").filter((x) => x.trim() === "?").length;
+    assert.equal(qs, cols, `INSERT จุดที่ ${i + 1}: คอลัมน์ ${cols} แต่มี ? ${qs} ตัว`);
+  }
 });

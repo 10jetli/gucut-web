@@ -28,6 +28,8 @@ export function แบ่งก้อน(arr, n) {
 }
 
 /** คิดแผน (หรือใช้แผนที่ตัวกวาดเพิ่งคิด) แล้วคัดแถวที่ยิงได้ — คืน { fire, skipped, ที่มาแผน } หรือ { error } */
+export { ชนิดที่ไม่ได้ส่ง, ชนิดที่ไม่ได้ส่งทั้งหมด } from "./not-sent-kinds.mjs";
+
 export async function เตรียมยิง(platform, body, { แผนที่คิดแล้ว = null } = {}, ตรวจที่อยู่) {
   const wantSkus = Array.isArray(body?.skus) ? [...new Set(body.skus.map((s) => String(s).trim()).filter(Boolean))] : [];
   if (!wantSkus.length) return { error: "ต้องระบุ skus เป็นรายการชัดเจน — ไม่มีโหมดยิงทั้งหมด" };
