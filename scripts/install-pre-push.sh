@@ -1,4 +1,14 @@
 #!/bin/bash
+# 🔴 **ไฟล์ log ต้องแยกต่อรีโป** (27 ก.ย. 2569 · ฝั่งจอจับได้)
+# เดิมทั้งสองรีโปเขียน `/tmp/prepush-build.log` **พาธเดียวกัน**
+# ⇒ วันที่ hook สองตัวรันพร้อมกัน ไฟล์ทับกัน ⇒ ฝั่งจอเปิดอ่านเพื่อหาเหตุ
+#    แล้วเจอ build ของ storefront (มี `out/` · `check-leaks 6080 ไฟล์`)
+#    ⇒ **ข้อความอธิบายเหตุของ hook ชี้ไปที่งานของคนอื่น**
+# 🔑 คลาส: เครื่องมือสองตัวที่เขียนไฟล์ชั่วคราวพาธเดียวกัน **จะทำลายหลักฐานของกันและกัน
+#    เฉพาะตอนที่เราต้องการมันที่สุด — คือตอนล้มพร้อมกัน** และไม่มีอะไรฟ้อง เพราะไม่มีใครพัง
+LOGDIR="/tmp/prepush-$(basename "$(git rev-parse --show-toplevel)")"
+mkdir -p "$LOGDIR"
+
 # ติดตั้งด่านก่อน push ลง .git/hooks/pre-push
 #
 # 🔴 ทำไมต้องมีไฟล์นี้ใน repo (สร้าง 19 ก.ย. 2569)
@@ -82,13 +92,13 @@ N="$(pick_node)" || {
 }
 
 echo "   node ที่ใช้ทดสอบ: $("$N" -v)"
-if ! "$N" --experimental-test-module-mocks --test scripts/tests/*.test.mjs > /tmp/prepush-test.log 2>&1; then
+if ! "$N" --experimental-test-module-mocks --test scripts/tests/*.test.mjs > "$LOGDIR"/test.log 2>&1; then
   echo "❌ ชุดทดสอบไม่ผ่าน — ไม่ push"
-  grep -E "^# (tests|pass|fail)|^not ok" /tmp/prepush-test.log | head -12
-  echo "   (ผลเต็มที่ /tmp/prepush-test.log)"
+  grep -E "^# (tests|pass|fail)|^not ok" "$LOGDIR"/test.log | head -12
+  echo "   (ผลเต็มที่ "$LOGDIR"/test.log)"
   exit 1
 fi
-grep -E "^# (tests|pass|fail)" /tmp/prepush-test.log | sed 's/^/   /'
+grep -E "^# (tests|pass|fail)" "$LOGDIR"/test.log | sed 's/^/   /'
 
 # 🔴 **"ด่านพัง" กับ "ด่านเจอของผิด" ต้องไม่รายงานเหมือนกัน** (คุณส้มจับได้ 19 ก.ย. 2569)
 #    รีโปที่ **ไม่มีไฟล์นี้** (gucut-next) ⇒ node ตอบ MODULE_NOT_FOUND ⇒ เงื่อนไขเป็นจริง
@@ -97,10 +107,10 @@ grep -E "^# (tests|pass|fail)" /tmp/prepush-test.log | sed 's/^/   /'
 #    ⇒ สามทาง: ไม่มีไฟล์ = ข้าม **แต่พิมพ์ออกมาทุกครั้ง** (ไม่มีด่าน ≠ ผ่านด่าน)
 if [ ! -f scripts/check-floating.mjs ]; then
   echo "   ⬜ ข้าม: รีโปนี้ไม่มี scripts/check-floating.mjs (ช่องว่าง ไม่ใช่ผลผ่าน)"
-elif ! node scripts/check-floating.mjs > /tmp/prepush-float.log 2>&1; then
+elif ! node scripts/check-floating.mjs > "$LOGDIR"/float.log 2>&1; then
   echo "❌ ไม่ผ่านด่าน promise ปล่อยลอย — ไม่ push"
   echo "   ⚠️ ถ้าข้อความข้างล่างไม่ได้พูดถึง promise เลย แปลว่า **ตัวด่านเองพัง** ไม่ใช่โค้ดผิด"
-  tail -5 /tmp/prepush-float.log
+  tail -5 "$LOGDIR"/float.log
   exit 1
 fi
 
@@ -115,7 +125,7 @@ fi
 # 🚫 **ไม่มีทางข้ามเฉพาะ build** โดยตั้งใจ — ทางออกฉุกเฉินมีทางเดียวคือ SKIP_PREPUSH=1 ทั้งด่าน
 #    (ทางข้ามเฉพาะจุดจะกลายเป็นค่าเริ่มต้นภายในสัปดาห์เดียว)
 echo "🏗️  build เต็ม (ครอบด่านใน prebuild ทั้งหมด) — ใช้เวลาสักครู่"
-if ! npm run build > /tmp/prepush-build.log 2>&1; then
+if ! npm run build > "$LOGDIR"/build.log 2>&1; then
   echo "❌ build ไม่ผ่าน — ไม่ push"
   # 🔑 **ท้ายล็อกคือที่ที่สาเหตุอยู่เสมอ** (ด่านที่ตกหยุดตรงนั้นพอดี — ข้อของฝั่งจอ 19 ก.ย.)
   #    ห้าม grep หาคำว่า error/🔴 เพราะเคสที่ "ผ่าน" ก็พิมพ์คำพวกนั้นเป็นหัวข้อได้
@@ -125,8 +135,8 @@ if ! npm run build > /tmp/prepush-build.log 2>&1; then
   #      ⇒ ถ้าด่านที่ตกพิมพ์สาเหตุสั้น ๆ หน้าต่าง 12 บรรทัดจะถูกเสียงของด่านก่อนหน้ากินไปเกือบหมด
   #    ⇒ ขยายเป็น 25 บรรทัด (ถูกมาก) · และพิมพ์ที่อยู่ล็อกเต็มไว้เสมอเป็นทางถอย
   #    🚫 **ห้ามแก้เป็น grep หาบรรทัดที่ดูเหมือน error** — นั่นคือกับดักที่ฝั่งจอเพิ่งถอนออก
-  tail -25 /tmp/prepush-build.log | sed 's/^/   /'
-  echo "   (ผลเต็มที่ /tmp/prepush-build.log)"
+  tail -25 "$LOGDIR"/build.log | sed 's/^/   /'
+  echo "   (ผลเต็มที่ "$LOGDIR"/build.log)"
   exit 1
 fi
 echo "   ✅ build ผ่าน"
