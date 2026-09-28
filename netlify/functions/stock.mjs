@@ -133,9 +133,16 @@ export default async function handler(req) {
 
   const st = toNum(hit.availablestock ?? hit.stock);
   const p = toNum(hit.sellprice ?? hit.price);
+  /* 🔑 **ทุกคำตอบที่บอกว่า `found: true` ต้องบอกด้วยว่าเลขมาจากไหน** (28 ก.ย. 2569 · ใบ t_mul1ost0)
+     เส้นนี้มีทางออก 12 ทาง และ **ห้าทางตอบ `found:true`** ⇒ ก่อนหน้านี้สองทางสุดท้าย
+     (ของที่ ZORT รู้จัก) ไม่ติดที่มาเลย ⇒ "มาจาก ZORT" เป็นความหมายโดยปริยาย
+     ⇒ ประตูใหม่ที่ตอบ `found:true` โดยไม่บอกที่มา จะกลืนไปกับสองทางนี้ **ไม่มีใครเห็น**
+     ⇒ ติด `src` ให้ครบทุกทาง ⇒ ด่านบังคับได้ว่า "ทุกประตูที่บอกว่าเจอ ต้องประกาศที่มา"
+     ⚠️ **เพิ่มช่องอย่างเดียว ไม่เปลี่ยนของเดิม** — `useLiveStock.ts:58` อ่านแค่ `found`/`st`/`p`
+        (กติกา prepare-to-receive: ฝั่งรับไม่ต้องแก้พร้อมกัน) */
   // ทะเบียนชนะ ZORT เรื่องจำนวนเสมอ — แต่ราคายังเป็นของ ZORT เหมือนเดิม
   if (lic !== null) return json({ found: true, st: lic, p, src: "licensed" }, 200, 180);
-  return json({ found: true, st, p }, 200, 180);
+  return json({ found: true, st, p, src: "zort" }, 200, 180);
 }
 
 export const config = { path: "/api/stock" };
