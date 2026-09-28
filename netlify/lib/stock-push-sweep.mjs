@@ -21,6 +21,7 @@
 //    สมุดสถานะเก็บรายรหัส ⇒ ของที่ถูกข้ามมีตัวตน และขึ้นแดงได้
 
 import { ชนิดที่ไม่ได้ส่ง, ชนิดการข้าม, พจนานุกรมของช่อง } from "./not-sent-kinds.mjs";   // ไฟล์ค่าล้วน — ไม่ลากกราฟโมดูลเข้ามา
+import { ตรวจสมการรอบกวาด } from "./sweep-invariant.mjs";                          // ไฟล์คิดล้วน — ไม่ลากกราฟโมดูลเข้ามา
 import { coreQuery, coreReady } from "./coredb.mjs";
 
 /** งบเวลาต่อรอบ — Netlify ให้ฟังก์ชันตอบได้ 26 วินาที (ตามเวลา ~30) เผื่อขอบไว้ */
@@ -625,6 +626,15 @@ export async function กวาดดันสต็อก({ platform = "lazada"
   ขั้น.เขียนสมุด_ms = Date.now() - เริ่มเขียน;
   const ms = Date.now() - เริ่ม;
 
+  /* 🔒 คิดสมการปิดของรอบนี้ **ก่อน** เขียนสมุด — ไม่ลงแล้วต้องติดไปทั้งในสมุดและในคำตอบ
+     ห้ามเป็นแค่คอมเมนต์: สูตรที่เขียนไว้เฉย ๆ เคยผิดมาแล้วโดยไม่มีอะไรจับได้ */
+  const สมการ = ตรวจสมการรอบกวาด({
+    planned: p.push.length,
+    fired: ผลยิง ? (ผลยิง.fired ?? null) : null,
+    not_sent: ผลยิง ? (ผลยิง.notSent ?? null) : null,
+    not_fired: ผลยิง ? (ผลยิง.ไม่ได้ยิง ?? null) : null,
+  });
+
   await coreQuery(
     `INSERT INTO push_sweep_log (at,channel,mode,planned,fired,pushed,rejected,skipped,ms,note,plan_ms,fire_ms,write_ms,not_sent,not_fired)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -637,7 +647,10 @@ export async function กวาดดันสต็อก({ platform = "lazada"
       ผลยิง ? (ผลยิง.rejected ?? 0) : 0,
       แถว.length - p.push.length,
       ms,
-      ผลยิง?.error ? String(ผลยิง.error).slice(0, 200) : null,
+      /* note = ที่เดียวที่สมุดเก็บข้อความ ⇒ ต้องรวมทั้ง error ของตัวยิง **และ** สมการไม่ลง
+         เขียนทับกันไม่ได้ ไม่งั้นรอบที่ทั้งสองเกิดพร้อมกันจะเหลือเรื่องเดียว */
+      [ผลยิง?.error ? String(ผลยิง.error) : null, สมการ.ตรวจได้ && !สมการ.ลง ? สมการ["⚠️ สมการไม่ลง"] : null]
+        .filter(Boolean).join(" | ").slice(0, 400) || null,
       /* ⚠️ `?? null` ไม่ใช่ `?? 0` — ขั้นที่ไม่ได้ทำในรอบนั้น (เช่นไม่ได้ยิง) ต้องเป็น **ไม่มีข้อมูล**
          ไม่ใช่ "ใช้เวลา 0 ms" ซึ่งจะทำให้ค่ากลางเพี้ยนต่ำลงโดยไม่มีใครรู้ */
       ขั้น.แผน_ms ?? null,
@@ -651,6 +664,9 @@ export async function กวาดดันสต็อก({ platform = "lazada"
 
   return {
     ok: true, inconclusive: false,
+    /* 🔑 สมการปิดของรอบนี้ — `ตรวจได้:false` แปลว่า **พิสูจน์ไม่ได้** ไม่ใช่ "ไม่ผ่าน"
+       (จอต้องไม่ขึ้นแดงจากรอบที่ไม่ได้ยิงเลย) */
+    สมการรอบนี้: สมการ,
     platform,
     at: now,
     mode: ยิงจริง ? "ยิงจริง" : "ซ้อม — ยังไม่เขียนอะไรกลับแพลตฟอร์ม",
