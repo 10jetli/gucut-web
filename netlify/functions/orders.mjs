@@ -386,9 +386,24 @@ export default async function handler(req, context) {
     }
 
     if (url.searchParams.get("sweep") === "1") {
+      /* 🔴 **กิ่งล้มเคยตอบ HTTP 200 พร้อม `{error}`** (แก้ 28 ก.ย. 2569 · ใบ t_mul1ost0)
+         ⇒ รูปเดียวกับบั๊ก B08 เป๊ะ: "ล้มเหลว" ถูกเสิร์ฟด้วยรหัสของ "สำเร็จ"
+         ⇒ ตัวเรียกอัตโนมัติ (หรือคนที่ดูแต่รหัส) อ่านว่ากวาดเสร็จแล้ว ทั้งที่ไม่ได้กวาดเลย
+         ⚠️ เส้นนี้คือเส้นที่ **ไล่เก็บเงินที่ลูกค้าจ่ายแล้วแต่ระบบยังไม่รู้** ⇒ เงียบผิดแปลว่าเงินค้าง
+         ✅ ล้ม ⇒ 502 + บอกเหตุ · สำเร็จ ⇒ ประกาศ `ok: true` ตรง ๆ (ของเดิมไม่มีคีย์ให้ตัดสินเลย) */
       const { sweepBeamOrders } = await import("../lib/beam-sweep.mjs");
-      const r = await sweepBeamOrders().catch((e) => ({ error: String(e?.message || e) }));
-      return json(r);
+      let r;
+      try {
+        r = await sweepBeamOrders();
+      } catch (e) {
+        return json({
+          ok: false,
+          error: "กวาดออเดอร์ Beam ไม่สำเร็จ",
+          เหตุ: String(e?.message || e).slice(0, 200),
+          "⚠️ อ่านยังไง": "ไม่ได้แปลว่าไม่มีออเดอร์ค้าง — แปลว่า **ยังไม่ได้ตรวจ** ⇒ สั่งซ้ำได้",
+        }, 502);
+      }
+      return json({ ok: true, ...r });
     }
 
     const id = clean(url.searchParams.get("id") || "", 40);
