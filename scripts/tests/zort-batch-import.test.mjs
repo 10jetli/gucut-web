@@ -20,7 +20,9 @@ const { zortBatch } = await import('../../netlify/lib/zort-write.mjs');
 const rows = {
   sale: { ref: 'IS-1', items: [{ sku: '00313', name: 'หัวเทียน', qty: 2, price: 45 }] },
   po: { ref: 'IP-1', vendor: 'โรงงาน', items: [{ sku: '00313', qty: 10, price: 12 }] },
-  product: { ref: 'IPR-1', sku: 'NEW-1', name: 'สินค้าใหม่', price: 100 },
+  /* 📸 เติม `รูป` 28 ก.ย. 2569 — กติกา "สินค้าใหม่ต้องมีรูป" ตีกลับการสร้างที่ไม่ส่งรูป
+     ⚠️ เคสนี้ยืนยันเรื่อง "ใช้ตัวเขียนเดิม · ซ้อมไม่ยิงเน็ต" ไม่ได้ยืนยันเรื่องรูป ⇒ ค่าที่ตรวจไม่เปลี่ยน */
+  product: { ref: 'IPR-1', sku: 'NEW-1', name: 'สินค้าใหม่', price: 100, 'รูป': 'ถ่ายแล้ว (เทส)' },
   contact: { ref: 'IC-1', code: 'CUS-1', name: 'ร้านทดสอบ' },
 };
 

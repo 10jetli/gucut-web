@@ -1,3 +1,7 @@
+/* 📸 **หมายเหตุ 28 ก.ย. 2569**: ทุกเคสในไฟล์นี้เติมช่อง `รูป` เพราะกติกา
+ * "สินค้าใหม่ต้องมีรูป" (ท่านประธานอนุมัติ) ตีกลับการสร้างสินค้าที่ไม่ส่งรูป
+ * ⚠️ **ค่าที่เคสเหล่านี้ยืนยันไม่เปลี่ยนเลย** — เติมเพื่อให้ผ่านประตู ไม่ใช่เพื่อให้เทสผ่าน
+ *    กติการูปมีด่านของตัวเองที่ `scripts/tests/สินค้าใหม่ต้องมีรูป.test.mjs` */
 // รัน: node --experimental-test-module-mocks --test scripts/tests/zort-add-product.test.mjs
 // งานกระดาน t_mu0tx2wj: เพิ่มสินค้า → Product/AddProduct · ชนิดข้อมูลตามเอกสาร ZORT API V4 ทางการ (ZORT ปลอม ไม่ยิงเน็ตจริง)
 // ⚠️ เอกสารกำหนด sellprice · purchaseprice · weight · width · length · height เป็น **String** (ไม่ใช่ตัวเลข)
@@ -21,7 +25,7 @@ const base = { ref: 'P-1', sku: 'NEW-001', name: 'สินค้าใหม่
 
 test('ชนิดข้อมูลตามเอกสาร: ราคา/ขนาดเป็น String · vat เป็นเลข 0-3 · ช่องว่างไม่ส่ง · ไม่ยิงเน็ต', async () => {
   calls = [];
-  const r = await zortAddProduct({ ...base, price: 1500, cost: 980.5, unit: 'ชิ้น', barcode: '885000', category: 'อะไหล่',
+  const r = await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, price: 1500, cost: 980.5, unit: 'ชิ้น', barcode: '885000', category: 'อะไหล่',
     description: 'ทดสอบ', weight: 850, width: 10, length: 20, height: 5, vat: 1, purchaseVat: 2, tags: ['ใหม่', ' ', 'โซ่'] });
   assert.equal(r.dryRun, true);
   assert.deepEqual(r.willSend, {
@@ -35,28 +39,28 @@ test('ชนิดข้อมูลตามเอกสาร: ราคา/�
 });
 
 test('🔴 ไม่ส่งสต็อกตั้งต้นเด็ดขาด — สต็อกต้องเกิดจากเอกสาร (ใบซื้อ/ปรับยอด) ไม่ใช่ตอนสร้างสินค้า', async () => {
-  const r = await zortAddProduct({ ...base, stock: 50 });
+  const r = await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, stock: 50 });
   assert.equal(r.willSend.stock, undefined);
   assert.match(r.warnings?.join(' ') ?? '', /สต็อก/);
 });
 
 test('ด่าน: ไม่มี ref/sku/name · ราคาไม่ใช่ตัวเลข/ติดลบ · vat นอกช่วงเอกสาร (ขาย 0-3 · ซื้อ 0-2)', async () => {
-  assert.match((await zortAddProduct({ ...base, ref: '' })).error, /ref/);
-  assert.match((await zortAddProduct({ ...base, sku: '' })).error, /sku/);
-  assert.match((await zortAddProduct({ ...base, price: 'abc' })).error, /price/);
-  assert.match((await zortAddProduct({ ...base, cost: -1 })).error, /cost/);
-  assert.match((await zortAddProduct({ ...base, vat: 4 })).error, /vat/);
-  assert.match((await zortAddProduct({ ...base, purchaseVat: 3 })).error, /purchaseVat/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, ref: '' })).error, /ref/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, sku: '' })).error, /sku/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, price: 'abc' })).error, /price/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, cost: -1 })).error, /cost/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, vat: 4 })).error, /vat/);
+  assert.match((await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, purchaseVat: 3 })).error, /purchaseVat/);
 });
 
 test('ยืนยันจริง: ยิง Product/AddProduct ครั้งเดียว ส่งราคาเป็น String · กดซ้ำไม่ยิงซ้ำ', async () => {
   calls = [];
-  const r = await zortAddProduct({ ...base, ref: 'P-REAL', price: 10, confirm: true });
+  const r = await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, ref: 'P-REAL', price: 10, confirm: true });
   assert.equal(r.added, true);
   assert.equal(calls.length, 1);
   assert.match(calls[0].url, /\/Product\/AddProduct$/);
   assert.equal(JSON.parse(calls[0].body).sellprice, '10');
-  const again = await zortAddProduct({ ...base, ref: 'P-REAL', price: 10, confirm: true });
+  const again = await zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ...base, ref: 'P-REAL', price: 10, confirm: true });
   assert.equal(again.duplicate, true);
   assert.equal(calls.length, 1);
 });

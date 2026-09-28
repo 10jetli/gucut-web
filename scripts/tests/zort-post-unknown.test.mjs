@@ -1,3 +1,7 @@
+/* 📸 **หมายเหตุ 28 ก.ย. 2569**: ทุกเคสในไฟล์นี้เติมช่อง `รูป` เพราะกติกา
+ * "สินค้าใหม่ต้องมีรูป" (ท่านประธานอนุมัติ) ตีกลับการสร้างสินค้าที่ไม่ส่งรูป
+ * ⚠️ **ค่าที่เคสเหล่านี้ยืนยันไม่เปลี่ยนเลย** — เติมเพื่อให้ผ่านประตู ไม่ใช่เพื่อให้เทสผ่าน
+ *    กติการูปมีด่านของตัวเองที่ `scripts/tests/สินค้าใหม่ต้องมีรูป.test.mjs` */
 import { mock, test } from "node:test";
 import assert from "node:assert/strict";
 
@@ -23,7 +27,7 @@ const { zortAddProduct } = await import("../../netlify/lib/zort-write.mjs");
 const call = (status, body) =>
   withFetch(
     async () => ({ ok: status < 400, status, json: async () => { if (body === null) throw new Error("not json"); return body; } }),
-    () => zortAddProduct({ ref: "t1", sku: "A1", name: "ทดสอบ", confirm: true })
+    () => zortAddProduct({ "รูป": "ถ่ายแล้ว (เทส)", ref: "t1", sku: "A1", name: "ทดสอบ", confirm: true })
   );
 
 test("ZORT ตอบ 500 เป็น HTML ⇒ unknown:true + zortDown:true (ห้ามบอกว่าไม่สำเร็จ)", async () => {
