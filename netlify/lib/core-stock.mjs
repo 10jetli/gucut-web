@@ -32,6 +32,7 @@
       เปลี่ยนความหมายของชื่อเดิม = จอเก่าตีความผิดเงียบ ๆ ⇒ เพิ่มฟิลด์ใหม่ที่มีความหมายเดียว
    ⚠️ `shown` ถือเป็นของเลิกใช้ **ของใหม่ห้ามอ่าน** ให้ใช้ matched/returned เท่านั้น */
 
+import { licensedStock } from "./licensed-stock.mjs";   // ทะเบียนทับ ZORT โดยตั้งใจ (30 รหัส)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { freshnessOf } from "./core-freshness.mjs";
 import { contains } from "./sql-contains.mjs";
@@ -611,6 +612,23 @@ export async function listStock(o = {}) {
       imagePath: r.imagePath === null || r.imagePath === undefined ? null : String(r.imagePath),
       // รูปย่อในถังเรา (ชื่อไฟล์ใต้ video.gucut.com/i/<128|256|384|640>/) — ส่งเฉพาะที่ย่อจากรูป ZORT ปัจจุบัน
       imageFile: r.imageFile ? String(r.imageFile) : null,
+      /* 🔑 **ที่มาของเลขพร้อมขาย** (ใบ t_mul363qv · ท่านประธานติ๊กสั่ง 28 ก.ย. 2569)
+         แถวนี้มาจาก **ภาพถ่ายสต็อกในคลังเงา** (กระจกของ ZORT) — ไม่ใช่ค่าสดจาก ZORT
+         แต่มีของอยู่กลุ่มหนึ่งที่ **ทะเบียนใบอนุญาตทับ ZORT โดยตั้งใจ** (เจ้าของร้านสั่ง 25 ก.ย. 2569:
+         "ไม่เชื่อ zort ให้อิงตาม google ชีท") ⇒ เลื่อยกับบาร์ 30 รหัสนับเป็นเลขซีเรียล
+         ⇒ จอที่เอาเลขนี้ไปเทียบกับ ZORT จะเห็นไม่ตรงแล้ว **สรุปว่าระบบเพี้ยน** ทั้งที่ตั้งใจ
+         ⇒ ส่งที่มาไปด้วยทุกแถว ⇒ จอเขียนได้ตรง ๆ ว่าเลขนี้มาจากไหน
+         ⚠️ **เพิ่มช่องอย่างเดียว** ของเดิมไม่เปลี่ยนค่า (prepare-to-receive)
+         ⚠️ และช่องนี้บอก **แหล่งของตัวเลข** ไม่ได้บอกว่าเลขถูกหรือผิด */
+      src: licensedStock(r.sku) !== null ? "licensed" : "mirror",
+      ...(licensedStock(r.sku) !== null
+        ? {
+            srcNote:
+              "ทะเบียนใบอนุญาตทับ ZORT โดยตั้งใจ — เลื่อย/บาร์นับเป็นเลขซีเรียล " +
+              "⇒ ไม่ตรงกับ ZORT เป็นเรื่องปกติ ห้ามอ่านว่าระบบเพี้ยน",
+            ทะเบียนว่า: licensedStock(r.sku),
+          }
+        : {}),
       service: num(r.ptype) === 1,
       active: r.active === null || r.active === undefined ? null : num(r.active) === 1,
       // ⚠️ **ต้องหยิบตรงนี้ ไม่ใช่ไปแปะไว้บนแถวดิบ** — แถวถูกแปลงเป็นวัตถุใหม่ตรงนี้
