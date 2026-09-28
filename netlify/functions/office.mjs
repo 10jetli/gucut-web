@@ -89,7 +89,7 @@ export default async function handler(req, context) {
        ⚠️ งานที่จบแล้ว **ติ๊ก done ไม่ลบแถว** — เจ้าของร้านต้องเห็นว่าอะไรเพิ่งเสร็จไป
           จอค่อยตัดสินใจเองว่าโชว์ของเสร็จกี่วันแล้วค่อยซ่อน */
     if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady ||
-        body?.taskBlock || body?.taskUnblock || body?.taskSchedule) {
+        body?.taskBlock || body?.taskUnblock || body?.taskSchedule || body?.taskOwner) {
       const s = store();
       const KEY = "office/tasks";
       /* 🔴 B02 (แก้ 14 ก.ย. 2569): ทุกคำสั่งในกลุ่มนี้ **เขียน office/tasks ทับทั้งก้อน**
@@ -124,9 +124,34 @@ export default async function handler(req, context) {
         return json({ ok: true, id });
       }
       const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady ||
-                      body.taskBlock || body.taskUnblock || body.taskSchedule, 40);
+                      body.taskBlock || body.taskUnblock || body.taskSchedule || body.taskOwner, 40);
       const row = list.find((x) => x.id === id);
       if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
+      /* ── 🔁 ยกงานให้คนอื่น (เพิ่ม 28 ก.ย. 2569 · ท่านประธานสั่งยก 4 ใบของ codex ให้คุณส้ม) ──
+         🔴 **ก่อนมีคำสั่งนี้ กระดานเปลี่ยนเจ้าของงานไม่ได้เลย** — มีแต่ เพิ่ม/ปิด/ทิ้ง/ถอน/ติดธง
+            ⇒ ทางเดียวที่ทำได้คือ **ทิ้งใบเก่าแล้วสร้างใหม่** ซึ่ง
+               · เสียอายุงาน (ใบที่ค้าง 14 วันจะกลายเป็นใบใหม่เอี่ยม ⇒ **ความเร่งด่วนหายไปเงียบ ๆ**)
+               · เสีย id ที่ถูกอ้างในจดหมาย/สมุดส่งงานไปแล้ว ⇒ ตามประวัติไม่ได้
+            🔑 คลาส: **ของที่ทำไม่ได้ จะถูกทำด้วยวิธีที่ทำลายข้อมูลแทน** ถ้าไม่มีใครเพิ่มคำสั่งให้
+         ⚠️ ตรวจชื่อเจ้าของด้วยชุดเดียวกับ `taskAdd` — ส่งชื่อที่ไม่รู้จัก **ต้อง 400 ห้ามเงียบ**
+            (ไม่งั้นงานหายไปอยู่กลุ่มที่ไม่มีใครดู โดยหน้าตาเหมือนสำเร็จ)
+         📌 จดผู้ยกและเวลาไว้ในตัวงาน ⇒ ตอบได้ว่า "ใบนี้เคยเป็นของใคร" ไม่ใช่แค่ "ตอนนี้ของใคร" */
+      if (body.taskOwner) {
+        const o = text(body.owner, 20);
+        if (!o || !OWNERS.has(o)) {
+          return json({ error: `owner ต้องเป็นหนึ่งใน ${[...OWNERS].join(" / ")}`, ได้รับ: body.owner ?? null }, 400);
+        }
+        const t = list.find((x) => x.id === id);
+        if (!t) return json({ error: "ไม่พบงานนี้", id }, 404);
+        if (t.done) return json({ error: "งานปิดแล้ว — ยกให้คนอื่นไม่ได้", id }, 400);
+        const เดิม = t.owner ?? null;
+        if (เดิม === o) return json({ ok: true, ไม่เปลี่ยน: true, id, owner: o });
+        t.owner = o;
+        t.ownerWas = เดิม;
+        t.ownerMovedAt = Date.now();
+        await s.setJSON(KEY, list);
+        return json({ ok: true, id, จาก: เดิม, เป็น: o, "อายุงานเดิม_วัน": Math.floor((Date.now() - (t.at ?? Date.now())) / 86400000) });
+      }
       if (body.taskDone) {
         /* 🔒 ปิดงานต้องแสดงผลงาน — ท่านประธานสั่ง 14 ก.ย. 2569
            เหตุจริง: งาน 3 ใบ ("กดทุกจุดลึก ๆ" · "ยิงทุก endpoint" · "เทียบเมนูทั้งแผง")
