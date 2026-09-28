@@ -262,7 +262,8 @@ export async function shopeeUnlistedStock() {
   /* ⚠️ ไล่หน้าไม่ครบ ⇒ ตัวนับทุกตัวต่ำกว่าจริง **ห้ามส่งเลขออกไปเหมือนผลสมบูรณ์** */
   if (cov.sawAll === false)
     return { skip: `ไล่รายการ UNLIST ไม่ครบ (ได้ ${cov.ids?.length ?? "?"} จากที่ Shopee ประกาศ ${cov.declared})` };
-  const checkedAt = await recipeCheckedAt();
+  const ตรวจสูตร = await recipeCheckedAt();
+  const checkedAt = ตรวจสูตร.at;   // คงรูปเดิม (string|null) ให้ผู้อ่านเดิม
   return {
     /* 📅 **สามช่องนี้เป็น "วันไทย" ทุกช่อง** (ชื่อมี TH กำกับ) — จอเอาไปคิดอายุได้ตรง ๆ ไม่ต้องแปลง
        `stockDay` เดิมยังส่งไว้เพื่อไม่ให้จอรุ่นเก่าพัง (ค่าเท่ากับ stockDayTH อยู่แล้ว) */
@@ -272,6 +273,9 @@ export async function shopeeUnlistedStock() {
     recipeCheckedDayTH: thaiDayFromUtc(checkedAt),  // ตรวจสูตรกับ ZORT ล่าสุด (แปลงจาก UTC แล้ว)
     recipeAt,
     recipeCheckedAt: checkedAt, // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · recipeAt = สูตรเปลี่ยนล่าสุด (UTC)
+    /* null แปลว่าอะไร — "ยังไม่เคยตรวจ" กับ "อ่านไม่ได้" พาไปคนละทางแก้ (ใบ t_mul8dqjv ข้อ ②) */
+    recipeCheckedAtWhy: checkedAt ? null
+      : ตรวจสูตร.เหตุ ? `อ่านไม่ได้: ${ตรวจสูตร.เหตุ}` : "ยังไม่เคยตรวจสูตรกับ ZORT เลย",
     /* 🔑 **รอบที่คาดหวังต้องมาคู่กับเวลาที่ส่งไปเสมอ** (เพิ่ม 19 ก.ย. 2569)
         เส้นนี้ส่ง `recipeCheckedAt` เหมือน `list=bundles` **แต่เดิมไม่ส่งรอบที่คาดหวัง**
         ⇒ จอที่อ่านเส้นนี้ต้องเดาเกณฑ์เอง ⇒ คลาสเดิมที่ทำให้เกณฑ์ 6 ชม.ไปโผล่ในโค้ดจอ
@@ -457,7 +461,13 @@ export async function shopeeMissingSkus() {
     computed: computed.length,
     agreeWithShopee: agree, // คำนวณแล้วตรงกับที่ Shopee โชว์อยู่จริง
     recipeAt, // ⚠️ สูตรเปลี่ยนล่าสุด — ไม่ใช่เวลาตรวจ (สูตรที่ไม่เปลี่ยนจะเก่าตลอดไป)
-    recipeCheckedAt: await recipeCheckedAt(), // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · null = ไม่รู้
+    ...(await (async () => {
+      const r = await recipeCheckedAt();   // ตรวจสูตรกับ ZORT ล่าสุด (UTC) · null = ไม่รู้
+      return {
+        recipeCheckedAt: r.at,
+        recipeCheckedAtWhy: r.at ? null : r.เหตุ ? `อ่านไม่ได้: ${r.เหตุ}` : "ยังไม่เคยตรวจสูตรกับ ZORT เลย",
+      };
+    })()),
     rows: out,
   };
 }

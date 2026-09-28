@@ -1558,7 +1558,7 @@ async function ยอดกระจกใบคืน(store, กรอง = nul
     }
     const metaKey = store === "z2" ? "sync_returns_z2" : "sync_returns";
     const [meta] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = ?`, [metaKey]).catch(() => []);
-    return {
+    return { เหตุ: null, totals: {
       count: num(t?.c), amount: Number(t?.s) || 0,
       countExcludingVoided: num(t?.c_live), amountExcludingVoided: Number(t?.s_live) || 0,
       syncedAtUtc: meta?.at ?? null, syncComplete: meta ? meta.v === "complete" : null,
@@ -1574,9 +1574,14 @@ async function ยอดกระจกใบคืน(store, กรอง = nul
       /* 🕘 freshness อยู่ใต้ mirrorTotals โดยตั้งใจ — ทางสด rows/total มาจาก ZORT สด
          เวลานี้พูดถึงกระจกเท่านั้น (ป้ายขอบเขตต้องอยู่ติดกับตัวเลขที่มันกำกับ) */
       freshness: await freshnessOf(coreQuery, { table: "return_orders_v2", metaKey }),
-    };
-  } catch {
-    return null;
+    } };
+  } catch (e) {
+    /* 🔴 28 ก.ย. 2569 (ใบ t_mul8dqjv ข้อ ③) — เดิม `catch { return null }` **กลืนเหตุทิ้ง**
+       ข้างในเขียนไว้แล้วว่า `null = อ่านกระจกไม่ได้ ไม่ใช่ไม่มีใบ` ซึ่งถูก
+       แต่ไม่มีอะไรบอกว่า **อ่านไม่ได้เพราะอะไร** ⇒ คนไล่ปัญหาต้องเดา (ตารางหาย? D1 ล่ม? SQL ผิด?)
+       ✅ คงรูปเดิมของ `mirrorTotals` ไว้เป๊ะ ๆ (null เมื่ออ่านไม่ได้) แล้วพาเหตุออกไปเป็นคีย์พี่น้อง
+          ⇒ จอที่ยังไม่รู้จักคีย์ใหม่ทำงานเหมือนเดิมทุกประการ (เพิ่มอย่างเดียว ไม่แก้ของเดิม) */
+    return { เหตุ: String(e?.message ?? e).slice(0, 200), totals: null };
   }
 }
 
@@ -1634,7 +1639,7 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
         (ถอดคีย์ที่ปลายทางใช้ = จอพังเงียบ ๆ · เพิ่มอย่างเดียวปลอดภัยเสมอ) */
   /* ส่ง **เงื่อนไขชุดเดียวกับที่ดึงแถว** เข้าไป ⇒ byStatusFiltered ตรงกับสิ่งที่คนเห็นบนจอ
      (ไม่ส่ง = จอได้ตัวเลขของทั้งร้าน แล้วแท็บจะบอก 5 ทั้งที่กดแล้วได้ 0 แถว) */
-  const mirrorTotals = await ยอดกระจกใบคืน(store, { where, args });
+  const { totals: mirrorTotals, เหตุ: mirrorTotalsError } = await ยอดกระจกใบคืน(store, { where, args });
   return {
     total,
     page: p,
@@ -1650,6 +1655,9 @@ async function searchReturnOrdersMirror(limit, page, needle, store = "z1", range
     /* `statusValuesFrom` ย้ายไปอยู่ที่ระดับเส้นใน core.mjs แล้ว — ที่นี่ไม่ต้องส่ง
        (ส่งสองที่ = สองแหล่งความจริง วันหนึ่งข้อความสองอันจะไม่ตรงกัน) */
     mirrorTotals,
+    /* มีคีย์นี้เมื่อ `mirrorTotals` เป็น null เพราะ **อ่านกระจกไม่ได้** (ไม่ใช่ "ไม่มีใบ")
+       ไม่มีคีย์ = ไม่มีอะไรผิดรอบนี้ ⇒ จอเช็คว่า "มีคีย์ไหม" ได้ตรง ๆ */
+    ...(mirrorTotalsError ? { mirrorTotalsError } : {}),
     syncedAtUtc: meta?.at ?? null,
     syncComplete: meta ? meta.v === "complete" : null,
     rows: (Array.isArray(rows) ? rows : []).map((r) => ({
@@ -1712,10 +1720,13 @@ export async function listReturnOrders(limit = 50, page = 1, q = "", store = "z1
   /* 🔑 ใช้ฟังก์ชันร่วมกับทางค้นในกระจก — **ห้ามลอกโค้ดกลับมาวางซ้ำที่นี่**
      เดิมทางนี้คิดเอง ทางกระจกไม่คิดเลย ⇒ เส้นเดียวส่งคีย์ไม่เหมือนกันสองทาง
      (สารบัญช่องที่แต่ละเส้นคืนจับได้ 19 ก.ย. 2569 · เหตุผลเต็มที่หัว ยอดกระจกใบคืน) */
-  const mirrorTotals = await ยอดกระจกใบคืน(store);
+  const { totals: mirrorTotals, เหตุ: mirrorTotalsError } = await ยอดกระจกใบคืน(store);
   return {
     total: num(data?.count),
     mirrorTotals,
+    /* มีคีย์นี้เมื่อ `mirrorTotals` เป็น null เพราะ **อ่านกระจกไม่ได้** (ไม่ใช่ "ไม่มีใบ")
+       ไม่มีคีย์ = ไม่มีอะไรผิดรอบนี้ ⇒ จอเช็คว่า "มีคีย์ไหม" ได้ตรง ๆ */
+    ...(mirrorTotalsError ? { mirrorTotalsError } : {}),
     page: p,
     /* 🔴 **ต้องบอก limit ที่ใช้จริง** — ไม่บอก ⇒ ตัวช่วยไล่หน้าไม่เติม nextOffset/nextPage
        ⇒ ปลายทางเห็นคำตอบไม่มีคีย์ไล่หน้า **แยกไม่ออกจาก "ท่อรุ่นเก่า"** ⇒ ต้องเดา

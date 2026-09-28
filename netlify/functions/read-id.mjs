@@ -128,20 +128,35 @@ async function keepScan(b64, turn, zone, outcome, context) {
   } catch { /* เก็บไม่ได้ต้องไม่กระทบลูกค้า */ }
 }
 
-/** กันยิงรัว — หนึ่งคีย์ต่อ IP เก็บเวลาที่ยิง */
+/** กันยิงรัว — หนึ่งคีย์ต่อ IP เก็บเวลาที่ยิง
+ *
+ * 🔑 **คืนสามสถานะ ไม่ใช่สองสถานะ** (แก้ 28 ก.ย. 2569 · ใบ t_mul8dqjv ข้อ ①)
+ *   · `{เกิน:true}`                  ยิงถี่เกิน ⇒ ตีกลับ 429
+ *   · `{เกิน:false, ตรวจได้:true}`   ตรวจแล้วยังไม่เกิน ⇒ ไปต่อ
+ *   · `{เกิน:false, ตรวจได้:false}`  **อ่านที่เก็บไม่ได้ ⇒ ยังไม่ได้ตรวจเลย**
+ *
+ * ⚠️ ของเดิมคืน `false` ทั้งสองกรณีท้าย ⇒ ที่เก็บล่ม = ด่านหายไปเงียบ ๆ
+ *    และเส้นนี้ **เสียเครดิต Netlify จริงต่อการเรียกหนึ่งครั้ง** ⇒ ล่มทั้งคืน = เผาเครดิตได้ทั้งคืน
+ * ✅ ทิศ "ปล่อยผ่าน" ยังถูกอยู่ (ลูกค้าถ่ายบัตรไม่ได้เพราะที่เก็บล่ม แย่กว่า)
+ *    ที่เปลี่ยนคือ **ต้องไม่เงียบ** — ผู้เรียกจดลง `gucut-live` ให้ `/admin/status/` เห็น
+ */
 async function overLimit(ip) {
   try {
     const s = getStore({ name: "gucut-coupon", consistency: "strong" });
     const key = `rl/readid/${ip}`;
     const now = Date.now();
-    const hits = ((await s.get(key, { type: "json" }).catch(() => null)) || [])
-      .filter((t) => now - t < WINDOW_MS);
-    if (hits.length >= MAX_PER_IP) return true;
+    const เก่า = await s.get(key, { type: "json" });
+    /* ⚠️ `get` ที่คืน null = **ยังไม่มีคีย์นี้** (ปกติ) ต่างจาก `get` ที่ throw = อ่านไม่ได้
+       ของเดิมมี `.catch(() => null)` คร่อมอยู่ ⇒ สองอย่างนี้กลายเป็นอย่างเดียวกัน
+       ⇒ ถอด catch ออกให้ error ตกไปถึง catch นอกซึ่งเป็นตัวที่รู้ว่า "ตรวจไม่ได้" */
+    const hits = (Array.isArray(เก่า) ? เก่า : []).filter((t) => now - t < WINDOW_MS);
+    if (hits.length >= MAX_PER_IP) return { เกิน: true, ตรวจได้: true };
     hits.push(now);
-    await s.setJSON(key, hits).catch(() => {});
-    return false;
-  } catch {
-    return false;   // ตัวนับพังต้องไม่ทำให้ลูกค้าใช้งานไม่ได้
+    /* เขียนไม่สำเร็จ = นับรอบนี้ไม่ติด ⇒ ยังถือว่า "ตรวจไม่ได้" เพราะรอบหน้าจะนับไม่ครบ */
+    await s.setJSON(key, hits);
+    return { เกิน: false, ตรวจได้: true };
+  } catch (e) {
+    return { เกิน: false, ตรวจได้: false, เหตุ: String(e?.message ?? e).slice(0, 160) };
   }
 }
 
@@ -297,8 +312,17 @@ export default async function handler(req, context) {
   }
 
   const ip = req.headers.get("x-nf-client-connection-ip") || "unknown";
-  if (await overLimit(ip)) {
+  const ด่าน = await overLimit(ip);
+  if (ด่าน.เกิน) {
     return json({ error: "ถ่ายบัตรถี่เกินไป พักสัก 10 นาทีแล้วลองใหม่" }, 429);
+  }
+  if (!ด่าน.ตรวจได้) {
+    /* 🔴 ด่านกันยิงรัวอ่านที่เก็บไม่ได้ ⇒ **ปล่อยผ่าน** (ลูกค้าต้องใช้งานได้) แต่ **ห้ามเงียบ**
+       เส้นนี้เสียเครดิตจริงต่อการเรียกหนึ่งครั้ง ⇒ ล่มทั้งคืนโดยไม่มีใครรู้ = เผาเครดิตได้ทั้งคืน
+       🚫 และห้ามบอกเรื่องนี้กลับไปในคำตอบ — เท่ากับประกาศว่า "ตอนนี้ด่านล่ม" ให้คนยิงรู้
+          ⇒ เห็นได้ทางเดียวคือหลังร้าน (`/admin/status/`) */
+    const { จดด่านล่ม } = await import("../lib/ด่านล่ม.mjs");
+    await จดด่านล่ม("read-id", ด่าน.เหตุ, context);
   }
 
   let body;

@@ -66,18 +66,23 @@ const nowIso = () => new Date().toISOString();
 const store = () => getStore({ name: "gucut-permits", consistency: "strong" });
 const clean = (v, max) => String(v ?? "").trim().slice(0, max);
 
+/** กันยิงรัว — **คืนสามสถานะ** (แก้ 28 ก.ย. 2569 · ใบ t_mul8dqjv ข้อ ① · รูปเดียวกับ read-id.mjs)
+ *  ของเดิมคืน `false` ทั้ง "ยังไม่เกิน" และ "อ่านที่เก็บไม่ได้" ⇒ ที่เก็บล่ม = ด่านหายเงียบ ๆ
+ *  ⚠️ เส้นนี้ไม่เสียเครดิตต่อการเรียกเหมือน `/api/read-id` แต่เป็น **คลาสเดียวกัน**
+ *     และเป็นเส้นที่รับรูปใบ ลซ.๒ (มีชื่อ · เลขบัตร · ที่อยู่) ⇒ ด่านหายเงียบก็ยังเป็นเรื่อง */
 async function overLimit(s, ip) {
   try {
     const key = `rl/${ip}`;
     const now = Date.now();
-    const hits = ((await s.get(key, { type: "json" }).catch(() => null)) || [])
-      .filter((t) => now - t < WINDOW_MS);
-    if (hits.length >= MAX_PER_IP) return true;
+    /* ถอด `.catch(() => null)` ออก — มันทำให้ "ยังไม่มีคีย์นี้" (ปกติ) กับ "อ่านไม่ได้" กลายเป็นอย่างเดียวกัน */
+    const เก่า = await s.get(key, { type: "json" });
+    const hits = (Array.isArray(เก่า) ? เก่า : []).filter((t) => now - t < WINDOW_MS);
+    if (hits.length >= MAX_PER_IP) return { เกิน: true, ตรวจได้: true };
     hits.push(now);
-    await s.setJSON(key, hits).catch(() => {});
-    return false;
-  } catch {
-    return false;   // ตัวนับพังต้องไม่ทำให้ลูกค้าใช้งานไม่ได้
+    await s.setJSON(key, hits);
+    return { เกิน: false, ตรวจได้: true };
+  } catch (e) {
+    return { เกิน: false, ตรวจได้: false, เหตุ: String(e?.message ?? e).slice(0, 160) };
   }
 }
 
@@ -139,8 +144,15 @@ export default async function handler(req, context) {
     if (mine) return json({ item: rec });
 
     const ip = req.headers.get("x-nf-client-connection-ip") || "unknown";
-    if (await overLimit(s, ip)) {
+    const ด่าน = await overLimit(s, ip);
+    if (ด่าน.เกิน) {
       return json({ error: "ทำรายการถี่เกินไป พักสัก 10 นาทีแล้วลองใหม่" }, 429);
+    }
+    if (!ด่าน.ตรวจได้) {
+      /* ปล่อยผ่าน (ลูกค้าต้องส่งใบได้) แต่ห้ามเงียบ — เห็นได้ที่ `/admin/status/` เท่านั้น
+         🚫 ห้ามบอกกลับไปในคำตอบว่าด่านล่ม */
+      const { จดด่านล่ม } = await import("../lib/ด่านล่ม.mjs");
+      await จดด่านล่ม("permit-doc", ด่าน.เหตุ, context);
     }
 
     let body;

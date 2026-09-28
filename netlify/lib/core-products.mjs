@@ -400,13 +400,24 @@ export async function syncBundles() {
   return { ok: true, fetched: rows.length, written: changed.length, skipped: rows.length - changed.length };
 }
 
-/** เวลาที่ซิงก์สต็อกสินค้าเป็นชุดครบรอบล่าสุด (UTC) · ยังไม่เคย/อ่านไม่ได้ = null (= ไม่รู้ ห้ามโชว์ว่าสด) */
+/** เวลาที่ซิงก์สต็อกสินค้าเป็นชุดครบรอบล่าสุด (UTC)
+ *
+ * 🔴 28 ก.ย. 2569 (ใบ t_mul8dqjv ข้อ ②) — เดิมคืน `null` ทั้งสองกรณี:
+ *    **"ยังไม่เคยซิงก์"** (ตารางว่าง — ปกติของระบบใหม่) กับ **"อ่านไม่ได้"** (ตารางหาย / D1 ล่ม)
+ *    ⇒ ทั้งคู่แปลว่า "ห้ามโชว์ว่าสด" ซึ่งถูก — แต่ **ทางแก้ต่างกันคนละเรื่อง**:
+ *      อันแรก = ไปสั่งซิงก์ · อันที่สอง = ไปดูฐานข้อมูล
+ *    ⇒ คนที่เห็นแต่ "ไม่รู้" จะไปสั่งซิงก์ซ้ำ ๆ ทั้งที่ของเสียอยู่ที่การอ่าน
+ * @returns `{at: string|null, ยังไม่เคย: boolean, เหตุ: string|null}`
+ *   · `{at:"...", ยังไม่เคย:false, เหตุ:null}` เคยซิงก์แล้ว
+ *   · `{at:null, ยังไม่เคย:true,  เหตุ:null}` **อ่านได้ และตารางบอกว่ายังไม่เคยซิงก์**
+ *   · `{at:null, ยังไม่เคย:false, เหตุ:"..."}` **อ่านไม่ได้ ⇒ ยังไม่รู้เลยว่าเคยซิงก์ไหม**
+ */
 export async function bundleStockSyncedAt() {
   try {
     const [r] = await coreQuery(`SELECT at FROM sync_marks WHERE name = 'bundles_stock'`);
-    return r?.at ? String(r.at) : null;
-  } catch {
-    return null;
+    return { at: r?.at ? String(r.at) : null, ยังไม่เคย: !r?.at, เหตุ: null };
+  } catch (e) {
+    return { at: null, ยังไม่เคย: false, เหตุ: String(e?.message ?? e).slice(0, 160) };
   }
 }
 
@@ -582,7 +593,14 @@ export async function listBundles(o = {}) {
     applied: { only: onlyRaw || null, q: q || null },
     appliedScope: "only กรองเฉพาะรายการที่ส่งกลับ (rows) — total/active/inactive เป็นยอดทั้งกอง ไม่ถูกกรอง",
     recipeAt,
-    recipeCheckedAt: await recipeCheckedAt(),
+    ...(await (async () => {
+      const r = await recipeCheckedAt();
+      /* คีย์เดิมคงรูปเดิม (string|null) · คีย์พี่น้องบอกว่า null แปลว่าอะไร — เพิ่มอย่างเดียว */
+      return {
+        recipeCheckedAt: r.at,
+        recipeCheckedAtWhy: r.at ? null : r.เหตุ ? `อ่านไม่ได้: ${r.เหตุ}` : "ยังไม่เคยตรวจสูตรกับ ZORT เลย",
+      };
+    })()),
     /* 🔑 **ท่อบอกรอบเวลาที่คาดหวังไปเลย — จอต้องไม่ฝังเลขเกณฑ์เอง** (เพิ่ม 19 ก.ย. 2569)
         ที่มา: เรื่องเดียวกันมีสี่ตัวเลขที่ขัดกันเอง
           cron ของท่อ = วันละครั้ง · desc ของท่อ = ทุกครึ่ง ชม. ·
@@ -594,7 +612,13 @@ export async function listBundles(o = {}) {
         ⚠️ ส่ง null ถ้าอ่าน cron ไม่ได้ ⇒ จอต้องขึ้น "ยังไม่รู้รอบ" **ห้ามเดาเป็นค่าอื่น** */
     ...(await รอบที่คาดหวัง("bundle-recipe-sync")),
     // ⚠️ คงเหลือ/พร้อมขายของชุดเป็นค่าที่ซิงก์มา ไม่ใช่ค่าสด — จอต้องโชว์อายุเทียบกับรอบที่คาดหวัง
-    stockSyncedAt: await bundleStockSyncedAt(),
+    ...(await (async () => {
+      const r = await bundleStockSyncedAt();
+      return {
+        stockSyncedAt: r.at,
+        stockSyncedAtWhy: r.at ? null : r.เหตุ ? `อ่านไม่ได้: ${r.เหตุ}` : "ยังไม่เคยซิงก์สต็อกสินค้าชุดเลย",
+      };
+    })()),
     /* 🔑 **สต็อกชุดกับสูตรชุดเป็นคนละงานแล้ว (19 ก.ย. 2569) ⇒ คนละรอบ ⇒ ต้องส่งสองเกณฑ์**
         เดิมงานเดียวทำทั้งสองอย่าง ⇒ จอมีเกณฑ์เดียวก็พอ
         ตอนนี้: สต็อก = ชั่วโมงละครั้ง (`bundle-stock-sync`) · สูตร = วันละครั้ง (`bundle-recipe-sync`)
@@ -663,11 +687,13 @@ async function readRecipe(h, id) {
 
 
 export async function recipeCheckedAt() {
+  /* 🔴 28 ก.ย. 2569 (ใบ t_mul8dqjv ข้อ ②) — แยก "ยังไม่เคยตรวจ" ออกจาก "อ่านไม่ได้"
+     ดูเหตุผลเต็มที่หัว `bundleStockSyncedAt()` · รูปค่าที่คืนเหมือนกันเป๊ะ */
   try {
     const [r] = await coreQuery(`SELECT MAX(checked_at) AS last FROM bundle_recipe_state WHERE status = 'ok'`);
-    return r?.last ? String(r.last) : null;
-  } catch {
-    return null;
+    return { at: r?.last ? String(r.last) : null, ยังไม่เคย: !r?.last, เหตุ: null };
+  } catch (e) {
+    return { at: null, ยังไม่เคย: false, เหตุ: String(e?.message ?? e).slice(0, 160) };
   }
 }
 
