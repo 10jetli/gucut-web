@@ -17,7 +17,14 @@ const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 /* ⚠️ ค่าว่างจากข้างนอกต้องเป็น null ไม่ใช่ 0 — Number(null) = 0 ⇒ "ZORT ไม่ส่งมา" กลายเป็น "เหลือ 0" เงียบ ๆ
    (เจอ 14 ก.ย. 2569 ใบด่วน t_mu1dfbz2: ชุด 00073-11.8-NW จอ ZORT พร้อมขาย -10 แต่คลังเงาได้ 0) */
-const numOrNull = (v) => (v === null || v === undefined || v === "" || !Number.isFinite(Number(v)) ? null : Number(v));
+/* 🔴 **ช่องว่างล้วนต้องเป็น "ไม่รู้" ไม่ใช่ 0** (เจอ 28 ก.ย. 2569 ตอนเขียนด่านของสเปกฝั่งจอ ข้อ 3)
+   รุ่นก่อนเทียบ `v === ""` เท่านั้น ⇒ ZORT ส่ง `" "` มา ⇒ `Number(" ")` เป็น **0 และ finite**
+   ⇒ ได้ `0` ซึ่งแปลว่า **"ของหมด"** ⇒ จอปิดการขายชุดที่ยังขายได้ · ไม่มีอะไรฟ้องเลย
+   🔑 `core-orders.mjs:175` มีรุ่นที่ `String(v).trim()` อยู่แล้ว — **สำเนาที่สองเพี้ยนกว่าตัวแรก**
+      (คลาส: สองสำเนาของกติกาเดียวกันเพี้ยนแยกกันเสมอ · ในโปรเจกต์นี้มี numOrNull **3 สำเนา**
+       ⇒ ยังไม่รวมเป็นตัวเดียวเพราะอยู่คนละชั้นและ zort-write ใช้กติกาต่างจริง — จดไว้เป็นงานค้าง) */
+const numOrNull = (v) =>
+  v === null || v === undefined || String(v).trim() === "" || !Number.isFinite(Number(v)) ? null : Number(v);
 const sameNum = (a, b) => (a === null || a === undefined ? b === null : b !== null && Number(a) === b);
 const BASE = "https://open-api.zortout.com/v4";
 const PAGE = 200;
@@ -328,7 +335,7 @@ export async function syncBundles() {
     const data = res?.ok ? await res.json().catch(() => null) : null;
     /* 🔒 หน้าไหนถามไม่สำเร็จ = หยุดทั้งรอบ (เดิมกลืนเป็น [] แล้ว break ⇒ ได้ครึ่งเดียวแต่จดเหมือนครบ) */
     if (!Array.isArray(data?.list)) {
-      return { ok: false, error: `ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
+      return { ok: false, งาน: "syncBundles", error: `[syncBundles] ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
     }
     all.push(...data.list);
     if (data.list.length < 200) break;
@@ -680,7 +687,7 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH, deadlineMs = REC
     }).catch(() => null);
     const data = res?.ok ? await res.json().catch(() => null) : null;
     if (!Array.isArray(data?.list)) {
-      return { ok: false, error: `ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
+      return { ok: false, งาน: "syncBundleRecipes", error: `[syncBundleRecipes] ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไรเลย (สูตรชุด)` };
     }
     for (const b of data.list) {
       const sku = String(b?.sku ?? "").trim().slice(0, 200)  // 🔴 ตัดที่ 200 ให้เท่ากับตัวซิงก์สินค้า — ตัด 60 ทำคีย์ไม่ตรงกับตารางอื่น (เจอ 18 ก.ย. 2569);

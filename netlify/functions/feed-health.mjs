@@ -36,9 +36,26 @@ export default async function handler(req, context) {
 
   const { map, at, stale, partial } = await liveStock();
   if (!map) {
+    /* 🔴 **อ่าน ZORT ไม่ได้ ≠ ZORT ไม่มีของ** (แก้ 28 ก.ย. 2569 · สเปกฝั่งจอ ข้อ 9)
+       ของเดิมตอบ `inZort: 0` · `missing: []` · `notInZort: []` ⇒ อ่านบนจอได้ว่า
+       **"ZORT มีสินค้า 0 ตัว และไม่มีอะไรตกหล่นเลย"** ซึ่งเป็นข่าวดีปลอมสองข้อในคำตอบเดียว
+       ⇒ `0` คือ "วัดได้ว่าศูนย์" · `[]` คือ "ตรวจแล้วไม่มี" · ทั้งคู่เป็นคำอ้างที่เรายังไม่มีสิทธิ์พูด
+       ✅ ใช้ `null` ทั้งสามคำถามตามกติกา "แยกสามสถานะ" ที่ตกลงกับฝั่งจอ
+          และ `stockLive` เป็น `null` ด้วย — `false` แปลว่า "ใช้ของเก่าอยู่" ซึ่งคนละเรื่องกับ "ไม่รู้" */
     return json({
-      stockLive: false, partial: !!partial, at: null,
-      onSite: list.length, inZort: 0, missing: [], notInZort: [], error: "ดึงข้อมูลจาก ZORT ไม่ได้",
+      stockLive: null,
+      stockSource: "unreadable",
+      partial: !!partial,
+      at: null,
+      onSite: list.length,          // ← ข้อนี้รู้จริง (มาจากไฟล์ของเว็บเอง) จึงคงเป็นตัวเลข
+      inZort: null,
+      matched: null,
+      missingCount: null,
+      missing: null,
+      notInZortCount: null,
+      notInZort: null,
+      error: "ดึงข้อมูลจาก ZORT ไม่ได้",
+      "⚠️ อ่านยังไง": "ช่องที่เป็น null = **ยังไม่รู้** ไม่ใช่ศูนย์ · ห้ามเอาไปวาดกราฟหรือสรุปว่าไม่มีของตกหล่น",
     });
   }
 
@@ -54,6 +71,9 @@ export default async function handler(req, context) {
 
   return json({
     stockLive: !stale,
+    /* ทางปกติบอกที่มาด้วยเสมอ ⇒ จอแยก live / cached / unreadable ได้จากช่องเดียว
+       (คีย์เดียวกับที่ /products.json ใช้ — ห้ามให้สองฟีดเรียกสถานะเดียวกันคนละชื่อ) */
+    stockSource: stale ? "cached" : "live",
     partial: !!partial,
     at: at ? new Date(at).toISOString() : null,
     onSite: list.length,
