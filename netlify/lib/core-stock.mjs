@@ -32,6 +32,7 @@
       เปลี่ยนความหมายของชื่อเดิม = จอเก่าตีความผิดเงียบ ๆ ⇒ เพิ่มฟิลด์ใหม่ที่มีความหมายเดียว
    ⚠️ `shown` ถือเป็นของเลิกใช้ **ของใหม่ห้ามอ่าน** ให้ใช้ matched/returned เท่านั้น */
 
+import { บีบเลข, ก้อนการบีบ } from "./บีบค่า.mjs";   // บีบค่าแล้วบอกเหตุ (ฝั่งจอขอ 28 ก.ย. 2569)
 import { licensedStock } from "./licensed-stock.mjs";   // ทะเบียนทับ ZORT โดยตั้งใจ (30 รหัส)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { freshnessOf } from "./core-freshness.mjs";
@@ -236,10 +237,17 @@ export async function listStock(o = {}) {
     return { error: `channel ต้องเป็นหนึ่งใน ${CHANNELS.join(" / ")}` };
   }
 
-  const soldDays = Math.max(1, Math.min(90, num(o.soldDays) || 30));
+  /* 🗜️ บีบค่าที่เกินขอบ **แล้วบอกเหตุกลับไป** — `applied` บอกได้แค่ "ใช้ค่าอะไร"
+     ไม่ได้บอกว่า "ทำไมไม่ใช่ค่าที่คุณส่งมา" ⇒ จอต้องเดาเหตุเอง ⇒ เกิดคำอธิบายชุดที่สอง
+     (ฝั่งจอขอรูป `{ asked, used, why }` · 28 ก.ย. 2569 หลังเจอบั๊กจอ /import ของเขาเอง) */
+  const bSold = บีบเลข("soldDays", o.soldDays, { ต่ำสุด: 1, สูงสุด: 90, ปริยาย: 30, หน่วย: "วัน" });
+  const bLimit = บีบเลข("limit", o.limit, { ต่ำสุด: 1, สูงสุด: 200, ปริยาย: 50, หน่วย: "แถว" });
+  const bOffset = บีบเลข("offset", o.offset, { ต่ำสุด: 0, สูงสุด: 1e9, ปริยาย: 0, หน่วย: "แถว" });
+  const soldDays = bSold.ใช้;
   const sinceMod = `-${soldDays} days`;
-  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
-  const offset = Math.max(0, num(o.offset));
+  const limit = bLimit.ใช้;
+  const offset = bOffset.ใช้;
+  const การบีบ = ก้อนการบีบ({ soldDays: bSold.บันทึก, limit: bLimit.บันทึก, offset: bOffset.บันทึก });
   const q = String(o.q ?? "").trim().slice(0, 60);
   /* 🔴 **ค่า sort ที่ไม่รู้จัก เคยกลายเป็น "เรียงตาม qty" เงียบ ๆ** (ฝั่งจอจับได้ 18 ก.ย. 2569
       ยิงเทียบทีละค่า: name · price · buy · available และค่ามั่ว ให้ลำดับเหมือน qty เป๊ะทุกตัว
@@ -530,6 +538,23 @@ export async function listStock(o = {}) {
         ⚠️ ใช้ชื่อ `applied` ตามที่เส้นอื่นใช้ ห้ามคิดชื่อใหม่ · `sortApplied`/`sortIgnored` คงไว้
            (สองตัวนั้นตอบคำถามต่างกัน: เรียงอย่างไร ≠ กรองด้วยอะไร) */
     applied: { q: q || null, only: only ? String(o.only) : null, kind: kind ? String(o.kind) : null, channel: channel || null, limit, offset },
+    ...(การบีบ ?? {}),
+    /* 🏷️ **แผนที่ป้ายของช่อง `src`** — ส่งมาที่เดียว ไม่ใช่ติดไปทุกแถว (2,674 แถว)
+       🔑 ฝั่งจอขอ: แถว `mirror` ไม่มีคำอธิบาย ⇒ คนแพ็กของเห็นคำว่า "mirror" ซึ่งไม่บอกอะไรเขา
+          และเขาไม่แปลเองตามที่ตกลงกัน (กันคำแปลสองชุดในระบบ) ⇒ ท่อส่งคำแปลมาเอง
+       ⚠️ ป้ายบอก **แหล่งของตัวเลข** ไม่ได้บอกว่าเลขถูกหรือผิด */
+    srcLabels: {
+      mirror: {
+        ป้าย: "จากกระจก ZORT",
+        อธิบาย: "ตัวเลขนี้มาจากภาพถ่ายคลังเงาที่คัดจาก ZORT ⇒ ตรงกับ ZORT ตามรอบซิงก์ล่าสุด",
+      },
+      licensed: {
+        ป้าย: "จากทะเบียนใบอนุญาต",
+        อธิบาย:
+          "ทะเบียนใบอนุญาตทับ ZORT โดยตั้งใจ — เลื่อย/บาร์นับเป็นเลขซีเรียล " +
+          "⇒ ไม่ตรงกับ ZORT เป็นเรื่องปกติ ห้ามอ่านว่าระบบเพี้ยน",
+      },
+    },
     appliedNote:
       "ค่าที่เซิร์ฟเวอร์ใช้กรองจริง (null = ไม่ได้กรองด้วยช่องนั้น) · " +
       "จำนวนแถวในคำตอบนี้เป็นยอด **ของค่าเหล่านี้** ไม่ใช่ทั้งคลัง ⇒ มีค่าไม่เป็น null ต้องเขียนขอบเขตกำกับเลข",
@@ -671,9 +696,16 @@ export async function stockReconLog(days = 14) {
  */
 export async function listDeadStock(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const days = Math.max(1, Math.min(3650, num(o.days) || 90));
-  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
-  const offset = Math.max(0, num(o.offset));
+  /* 🗜️ บีบพร้อมบอกเหตุ — เหตุผลเดียวกับ listStock (ดูหัวไฟล์ `บีบค่า.mjs`)
+     🔑 **ต้องทำให้ครบทุกเส้นที่จอใช้ชิ้นส่วนกลางอ่าน** — ถ้าเส้นเดียวรายงาน อีกสองเส้นเงียบ
+        จอจะอ่านความเงียบว่า "ไม่มีการบีบ" ⇒ กลายเป็นคลาสเดิมที่เรากำลังแก้อยู่พอดี */
+  const dDays = บีบเลข("days", o.days, { ต่ำสุด: 1, สูงสุด: 3650, ปริยาย: 90, หน่วย: "วัน" });
+  const dLimit = บีบเลข("limit", o.limit, { ต่ำสุด: 1, สูงสุด: 200, ปริยาย: 50, หน่วย: "แถว" });
+  const dOffset = บีบเลข("offset", o.offset, { ต่ำสุด: 0, สูงสุด: 1e9, ปริยาย: 0, หน่วย: "แถว" });
+  const days = dDays.ใช้;
+  const limit = dLimit.ใช้;
+  const offset = dOffset.ใช้;
+  const การบีบ = ก้อนการบีบ({ days: dDays.บันทึก, limit: dLimit.บันทึก, offset: dOffset.บันทึก });
 
   /* ⚠️ **ยิงพร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
       สองตัวนี้ไม่เกี่ยวกัน — "วันถ่ายสต็อกล่าสุด" กับ "ช่วงวันที่มีออเดอร์"
@@ -727,7 +759,7 @@ export async function listDeadStock(o = {}) {
           ⇒ ถ้าท่อเมินเงียบ จอจะโชว์ผลที่ "ดูเหมือนกรองแล้ว" ทั้งที่ไม่ได้กรอง (เจอกับ q ของเส้นนี้มาแล้ว)
        🔑 ต่างจาก `supportedFilters` ที่บอกว่า **รับอะไรได้** — `applied` บอกว่า **รอบนี้ใช้ค่าอะไรจริง**
           ⇒ ค่าที่ส่งคือค่า **หลังบีบขอบแล้ว** (days/limit ถูก clamp) ⇒ จอเห็นว่าค่าที่ขอถูกปรับหรือไม่ */
-    applied: { days, limit, offset },    day,
+    applied: { days, limit, offset },    ...(การบีบ ?? {}),    day,
     days,
     cut, // ขายครั้งสุดท้ายก่อนวันนี้ = ถือว่าจม
     total: num(sum?.c),
@@ -782,7 +814,8 @@ export async function stockCard(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const sku = String(o.sku ?? "").trim().slice(0, 60);
   if (!sku) return { error: "ต้องระบุ sku" };
-  const limit = Math.max(1, Math.min(500, num(o.limit) || 50));
+  const cLimit = บีบเลข("limit", o.limit, { ต่ำสุด: 1, สูงสุด: 500, ปริยาย: 50, หน่วย: "แถว" });
+  const limit = cLimit.ใช้;
   const offsetIn = Math.max(0, Math.floor(num(o.offset)));
   const DATE = /^\d{4}-\d{2}-\d{2}$/;
   const from = String(o.from ?? "").trim();
@@ -913,6 +946,7 @@ export async function stockCard(o = {}) {
     sku,
     // ⚠️ สะท้อน **ค่าที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา — ฝั่งจอใช้เป็นด่านจริง ห้ามถอด
     applied: { sku, kind, limit, offset, from: from || null, to: to || null },
+    ...(ก้อนการบีบ({ limit: cLimit.บันทึก }) ?? {}),
     ...(depthCapped ? { depthCapped: true, offsetRequested: offsetIn, maxDepth: STOCKCARD_MAX_DEPTH } : {}),
     total, // จำนวนจริงทั้งหมดในตัวกรองนี้ (ไม่ใช่จำนวนที่แสดง)
     shown, // ⚠️ เลิกใช้ — ที่เส้นนี้มันหมายถึง "ที่ส่งกลับจริง" ซึ่งคนละความหมายกับ list=stock
@@ -971,11 +1005,22 @@ export async function stockCard(o = {}) {
  */
 export async function channelGaps(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
-  const quiet = Math.max(7, Math.min(365, num(o.quietDays) || 45)); // เงียบกี่วันถึงนับว่าหาย
-  const look = Math.max(30, Math.min(730, num(o.lookbackDays) || 365)); // ดูอดีตย้อนไปแค่ไหน
-  const minSold = Math.max(1, num(o.minSold) || 5); // เคยขายอย่างน้อยกี่ชิ้นถึงถือว่า "เคยขายได้"
-  const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
-  const offset = Math.max(0, num(o.offset));
+  /* 🗜️ บีบพร้อมบอกเหตุ — เส้นนี้ถูกจอใช้ตัดสินว่า "สินค้าตัวไหนหายจากช่องทาง"
+     ⇒ ถ้าคนตั้งเกณฑ์ 500 วันแล้วท่อบีบเหลือ 365 เงียบ ๆ เขาจะอ่านผลว่าเป็นเกณฑ์ที่เขาตั้ง */
+  const gQuiet = บีบเลข("quietDays", o.quietDays, { ต่ำสุด: 7, สูงสุด: 365, ปริยาย: 45, หน่วย: "วัน" });
+  const gLook = บีบเลข("lookbackDays", o.lookbackDays, { ต่ำสุด: 30, สูงสุด: 730, ปริยาย: 365, หน่วย: "วัน" });
+  const gMin = บีบเลข("minSold", o.minSold, { ต่ำสุด: 1, สูงสุด: 1e6, ปริยาย: 5, หน่วย: "ชิ้น" });
+  const gLimit = บีบเลข("limit", o.limit, { ต่ำสุด: 1, สูงสุด: 200, ปริยาย: 50, หน่วย: "แถว" });
+  const gOffset = บีบเลข("offset", o.offset, { ต่ำสุด: 0, สูงสุด: 1e9, ปริยาย: 0, หน่วย: "แถว" });
+  const quiet = gQuiet.ใช้;      // เงียบกี่วันถึงนับว่าหาย
+  const look = gLook.ใช้;        // ดูอดีตย้อนไปแค่ไหน
+  const minSold = gMin.ใช้;      // เคยขายอย่างน้อยกี่ชิ้นถึงถือว่า "เคยขายได้"
+  const limit = gLimit.ใช้;
+  const offset = gOffset.ใช้;
+  const การบีบ = ก้อนการบีบ({
+    quietDays: gQuiet.บันทึก, lookbackDays: gLook.บันทึก, minSold: gMin.บันทึก,
+    limit: gLimit.บันทึก, offset: gOffset.บันทึก,
+  });
 
   /* ⚠️ **ช่องทางที่เลิกใช้แล้ว = สัญญาณลวง 100%** (ฝั่งจอจับได้ 4 ก.ย. 2569)
       Shopify ปิดถาวรไปแล้ว 28 ส.ค. ⇒ "เงียบ" เป็นเรื่องปกติที่สุด
@@ -1085,6 +1130,7 @@ export async function channelGaps(o = {}) {
     },
     unknownChannels: [...new Set(tagged.filter((r) => r.channelKind === "other").map((r) => r.channel))],
     applied: { quietDays: quiet, lookbackDays: look, minSold, limit, offset },
+    ...(การบีบ ?? {}),
     note: enough
       ? "สินค้าที่เคยขายได้บนช่องทางนั้น แต่เงียบสนิทช่วงหลัง ทั้งที่ยังมีของในคลัง"
       : `ตอบไม่ได้ — มีประวัติออเดอร์ตั้งแต่ ${historyFrom || "ยังไม่มีเลย"} ซึ่งสั้นกว่าช่วง ${look} วันที่ถาม`,
