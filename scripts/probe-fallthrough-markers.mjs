@@ -51,7 +51,18 @@ for (const s of เส้น) {
   try {
     r = await fetch(u, { headers: { "x-admin-key": คีย์ } });
     เนื้อ = await r.text();
-    try { d = JSON.parse(เนื้อ); } catch {}
+    /* 🔴 28 ก.ย. 2569 (ใบ t_muacc3nw) — เดิม `catch {}` ปล่อย `d` เป็น null เงียบ ๆ
+       ⇒ `มีป้าย` เป็น false · ถ้า status < 400 ด้วย เส้นนั้นจะถูกนับเป็น **"ตกไปคำตอบตั้งต้นเงียบ ๆ"**
+       ⚠️ นี่คือ **แดงลวง** ไม่ใช่เขียวลวง: "อ่านคำตอบไม่ออก" ถูกรายงานเป็น "ท่อทำผิด"
+          ⇒ คนอ่านไปแก้เส้นที่ยังดีอยู่ (แดงลวงแพงกว่าเขียวลวง เพราะมีคนลงมือตาม)
+       ✅ ไฟล์นี้มีถัง `ตัดสินไม่ได้` อยู่แล้ว — ส่งเข้าถังนั้นให้ถูกที่ */
+    try { d = JSON.parse(เนื้อ); } catch (e) {
+      ผล.push({
+        s, status: r.status, ไบต์: เนื้อ.length,
+        ตัดสินไม่ได้: `ตอบ ${r.status} แต่อ่านเป็น JSON ไม่ได้: ${String(e?.message || e).slice(0, 60)}`,
+      });
+      continue;
+    }
   } catch (e) { ผล.push({ s, ตัดสินไม่ได้: String(e?.message || e).slice(0, 80) }); continue; }
   const มีป้าย = d && typeof d === "object" && d.fallthrough === true;
   const ปฏิเสธ = r.status >= 400;
