@@ -1660,6 +1660,32 @@ async function route(req, context) {
       const r = await ล้างคำเท็จในlast_error();
       return okJson(r, r?.inconclusive ? 503 : 200);
     }
+    /* ── 🥽 คิวคำสั่งจากแว่น → Hermes บน g1 (28 ก.ย. 2569) ────────────────────
+       GET  ?hermesq=claim            g1 ขอใบถัดไป (หยิบแล้วติดธงทันที)
+       GET  ?hermesq=list[&limit=]    ส่องคิวให้คนดู
+       POST ?hermesq=1  {cmd, who}    ฝากคำสั่งเข้าคิว (ฝั่งแว่น)
+       POST ?hermesq=1  {id, ผล}      g1 ปิดใบพร้อมผลย่อ
+       🔴 **เหตุที่ต้องมีเส้นนี้**: ตัวรับบน g1 เรียก `?hermesq` มาตั้งแต่ 06:02 วันนี้
+          แต่ท่อไม่เคยมีเส้นนี้ ⇒ ตกไปที่คำตอบหน้าแรกพร้อม **HTTP 200**
+          ⇒ ตัวรับอ่าน `งาน` ไม่เจอ แล้ว **เงียบเหมือนไม่มีงาน ตลอดกาล**
+       🔑 แยก "ฝาก" กับ "ปิด" ด้วย **การมีฟิลด์ `id`** ไม่ใช่ด้วยพารามิเตอร์คนละตัว
+          เพราะตัวรับที่เขียนไว้แล้วยิง `?hermesq=1` ทั้งสองกรณี ⇒ **สัญญาถูกกำหนดโดยฝั่งที่เขียนก่อน** */
+    if (url.searchParams.has("hermesq")) {
+      const โหมด = String(url.searchParams.get("hermesq") ?? "").trim();
+      const { ขอใบถัดไป, ปิดใบ, ฝากงานแว่น, ส่องคิว } = await import("../lib/hermes-queue.mjs");
+      if (req.method === "GET") {
+        if (โหมด === "claim") return json(await ขอใบถัดไป());
+        if (โหมด === "list") return json(await ส่องคิว({ limit: url.searchParams.get("limit") }));
+        return json({ error: "GET รับได้เฉพาะ ?hermesq=claim หรือ ?hermesq=list", ได้รับ: โหมด }, 400);
+      }
+      if (req.method !== "POST") return json({ error: "ต้องเป็น GET (claim/list) หรือ POST (ฝาก/ปิด)" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== "object") return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      /* มี id ⇒ ปิดใบ · ไม่มี id ⇒ ฝากใบใหม่ */
+      const r = body.id ? await ปิดใบ({ id: body.id, ผล: body["ผล"] ?? body.result })
+                        : await ฝากงานแว่น({ cmd: body.cmd ?? body["คำสั่ง"], who: body.who });
+      return json(r, r.error ? 400 : 200);
+    }
     if (url.searchParams.get("move")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);
