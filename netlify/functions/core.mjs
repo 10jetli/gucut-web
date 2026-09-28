@@ -1715,11 +1715,21 @@ async function route(req, context) {
         r?.error || r?.skip ? 400 : 200);
 
       if (url.searchParams.get("list") === "returns-inbox") {
-        return out(await R.listReturnsInbox({
+        const ผล = await R.listReturnsInbox({
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
-        }));
+        });
+        /* 📣 `applied` ต้องติดไปแม้ตอนตีกลับ (error/skip) — จอต้องรู้ว่าท่อ **เห็น** ค่าที่ส่งมา
+           ไม่งั้นเวลาเส้นนี้ตอบ ok:false จอจะเดาว่าตัวกรองไม่ถูกอ่าน */
+        return out({
+          ...ผล,
+          applied: {
+            q: url.searchParams.get("q") || null,
+            limit: url.searchParams.get("limit"),
+            offset: url.searchParams.get("offset"),
+          },
+        });
       }
       if (url.searchParams.get("returnphoto")) {
         const img = await R.getReturnPhoto(
@@ -2462,7 +2472,10 @@ async function route(req, context) {
       const r = await shopeeMissingSkus();
       const limRaw = url.searchParams.get("limit");
       const offRaw = url.searchParams.get("offset");
-      if (!Array.isArray(r?.rows) || (limRaw === null && offRaw === null)) return okJson(r);
+      /* 📣 `applied` ต้องมา **ทุกทางออก** — ทางที่ไม่ตัดก็ต้องบอกว่าพิจารณา limit/offset แล้ว
+         ไม่งั้นจอแยกไม่ออกระหว่าง "ท่อไม่รับค่านี้" กับ "ท่อรุ่นเก่ายังไม่ส่งคีย์นี้" */
+      if (!Array.isArray(r?.rows) || (limRaw === null && offRaw === null))
+        return okJson({ ...r, applied: { limit: null, offset: null } });
       const limit = limRaw === null ? r.rows.length : Math.max(1, Math.min(5000, parseInt(limRaw, 10) || 0));
       const offset = Math.max(0, parseInt(offRaw ?? "0", 10) || 0);
       const หน้า = r.rows.slice(offset, offset + limit);
@@ -2470,6 +2483,7 @@ async function route(req, context) {
         ...r,
         rows: หน้า,
         sliced: { limit, offset, returned: หน้า.length, totalRows: r.rows.length },
+        applied: { limit, offset },
         slicedNote:
           "ส่ง limit/offset มา ⇒ ท่อตัดให้เฉพาะรอบนี้ · `total` ยังเป็นของทั้งชุด ⇒ " +
           "ห้ามเทียบ rows.length กับ total ตอนตัด (ใช้ sliced.totalRows แทน) · " +
@@ -2947,6 +2961,13 @@ async function route(req, context) {
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
         })),
+        /* 📣 ค่าที่ **ส่งเข้าไป** ไม่ใช่ค่าที่ตัวอ่านใช้จริงหลังบีบขอบ
+           ⇒ ตัวเลขที่บีบแล้วอยู่ใน `sliced`/`paging` ของ listMoves เหมือนเดิม */
+        applied: {
+          sku: url.searchParams.get("sku") || null,
+          limit: url.searchParams.get("limit"),
+          offset: url.searchParams.get("offset"),
+        },
       });
     }
     if (url.searchParams.get("sync")) {
@@ -4396,6 +4417,22 @@ async function route(req, context) {
           includeCancelled: ธงยกเลิก,
           warehouses: p.get("warehouses"),
         })),
+        /* 📣 `applied` ของเส้นนี้ต้องยาวเท่ากับรายการข้างบน — เส้นนี้รับตัวกรองชุดเดียวกับ list=orders
+           🔑 คิดจากค่าที่อ่านมาจริง ไม่ใช่รายชื่อที่พิมพ์ไว้ ⇒ วันไหนเพิ่มตัวกรองแล้วลืมแก้ที่นี่
+              ช่องใหม่จะไม่โผล่ใน applied ⇒ ฝั่งจอจับได้เองว่าท่อยังไม่รับ (ไม่ต้องรอเราบอก) */
+        applied: Object.fromEntries(
+          [
+            ["from", p.get("from")], ["to", p.get("to")], ["channel", p.get("channel")],
+            ["store", p.get("store")], ["status", p.get("status")], ["q", p.get("q")],
+            ["payStatus", p.get("paystatus")], ["cod", p.get("cod")], ["product", p.get("product")],
+            ["shipChannel", p.get("shipchannel")], ["shipFrom", p.get("shipfrom")],
+            ["shipTo", p.get("shipto")], ["amountMin", p.get("amountmin")],
+            ["amountMax", p.get("amountmax")], ["number", p.get("number")],
+            ["customer", p.get("customer")], ["tag", p.get("tag")],
+            ["createUser", p.get("createuser")], ["warehouse", p.get("warehouse")],
+            ["warehouses", p.get("warehouses")], ["includeCancelled", ธงยกเลิก],
+          ].map(([k, v]) => [k, v ?? null])
+        ),
       });
     }
 

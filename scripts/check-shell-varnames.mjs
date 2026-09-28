@@ -71,6 +71,29 @@ for (const d of รายชื่อนอก) {
     continue;
   }
   for (const f of หาไฟล์sh(d, 1)) นอกรีโป.add(f);
+  /* 🔴 **สคริปต์นอกรีโปไม่จำเป็นต้องลงท้าย .sh** (28 ก.ย. 2569)
+     วัดจริงใน ~/bin + ~/claude-shared: ไฟล์ที่มี shebang เชลล์ **42** ไฟล์ · ลงท้าย .sh แค่ **28**
+     ⇒ ด่านนี้มองไม่เห็น 14 ไฟล์ · ในนั้นมีของที่ใช้จริง 4 ตัว (`pass` `qr` `newpath` `font`)
+     🔑 คลาส: **ตะแกรงที่คัดด้วยนามสกุล มองไม่เห็นไฟล์ที่ทำงานเหมือนกันแต่ไม่มีนามสกุล**
+        และผลคือ "ไม่เจอ" ซึ่งอ่านเหมือน "สะอาด"
+     ⚠️ ข้าม `.bak*` และสำเนาลงวันที่ — ของที่เลิกใช้แล้วทำให้ด่านดังใส่ของที่ไม่มีใครรัน
+        แล้วปลายทางคือคนปิดด่าน (กติกา: แดงลวงแพงกว่าที่คิด) */
+  try {
+    for (const e of readdirSync(d, { withFileTypes: true })) {
+      if (!e.isFile() || e.name.startsWith(".")) continue;
+      if (e.name.endsWith(".sh")) continue;                 // จับไปแล้วข้างบน
+      if (/\.bak\d*$|ก่อนกู้เอง|เลิกใช้แล้ว/.test(e.name)) continue;
+      const f = join(d, e.name);
+      try {
+        const หัว = readFileSync(f, "utf8").slice(0, 80);
+        if (/^#!.*\b(bash|sh|zsh)\b/.test(หัว)) นอกรีโป.add(f);
+      } catch (err) {
+        อ่านไม่ได้.push(`${f} — ${String(err?.message || err).slice(0, 70)}`);
+      }
+    }
+  } catch (e) {
+    อ่านไม่ได้.push(`${d} (ไล่ไฟล์ไม่มีนามสกุล) — ${String(e?.message || e).slice(0, 70)}`);
+  }
 }
 
 const ปัญหา = [];

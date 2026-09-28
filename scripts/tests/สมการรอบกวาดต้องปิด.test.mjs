@@ -15,14 +15,14 @@ import { readFile } from "node:fs/promises";
 import { ตรวจสมการรอบกวาด } from "../../netlify/lib/sweep-invariant.mjs";
 
 test("✅ รอบที่ลงพอดี ⇒ ตรวจได้ + ลง", () => {
-  const r = ตรวจสมการรอบกวาด({ planned: 10, fired: 6, not_sent: 3, not_fired: 1 });
+  const r = ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 10, fired: 6, not_sent: 3, not_fired: 1 });
   assert.equal(r.ตรวจได้, true, `ค่าครบต้องตรวจได้ · ได้ ${JSON.stringify(r)}`);
   assert.equal(r.ลง, true, `10 = 6+3+1 ต้องลง · ได้ ${JSON.stringify(r)}`);
   assert.ok(!("⚠️ สมการไม่ลง" in r), "รอบที่ลงห้ามมีข้อความเตือน");
 });
 
 test("🧪 ตัวควบคุมลบ: เกินไป 1 ตัว ⇒ ต้องไม่ลง และข้อความต้องบอกตัวเลขทั้งสี่", () => {
-  const r = ตรวจสมการรอบกวาด({ planned: 10, fired: 6, not_sent: 3, not_fired: 0 });
+  const r = ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 10, fired: 6, not_sent: 3, not_fired: 0 });
   assert.equal(r.ลง, false, "9 ≠ 10 ต้องไม่ลง");
   assert.equal(r.ต่างกัน, 1, `ต้องบอกว่าต่างกันเท่าไร · ได้ ${JSON.stringify(r)}`);
   const ข = r["⚠️ สมการไม่ลง"];
@@ -31,13 +31,13 @@ test("🧪 ตัวควบคุมลบ: เกินไป 1 ตัว ⇒
 });
 
 test("🔴 `skipped` ห้ามเข้าสมการ — ส่งมาก็ต้องไม่เปลี่ยนผล (กันนับซ้ำ)", () => {
-  const ไม่มี = ตรวจสมการรอบกวาด({ planned: 10, fired: 6, not_sent: 3, not_fired: 1 });
-  const มี = ตรวจสมการรอบกวาด({ planned: 10, fired: 6, not_sent: 3, not_fired: 1, skipped: 99 });
+  const ไม่มี = ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 10, fired: 6, not_sent: 3, not_fired: 1 });
+  const มี = ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 10, fired: 6, not_sent: 3, not_fired: 1, skipped: 99 });
   assert.deepEqual(มี, ไม่มี, "ใส่ skipped แล้วผลเปลี่ยน = มีคนเอา skipped เข้าสมการ (นับซ้ำ)");
 });
 
 test("⚪ รอบที่ไม่ได้ยิงเลย ⇒ `ตรวจได้:false` และ **ต้องไม่มีคีย์ `ลง`**", () => {
-  const r = ตรวจสมการรอบกวาด({ planned: 4, fired: null, not_sent: null, not_fired: null });
+  const r = ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 4, fired: null, not_sent: null, not_fired: null });
   assert.equal(r.ตรวจได้, false);
   assert.ok(!("ลง" in r), `"พิสูจน์ไม่ได้" ห้ามมีคีย์ ลง — ไม่งั้นจอจะอ่านว่าไม่ผ่าน · ได้ ${JSON.stringify(r)}`);
   assert.match(r.เหตุ, /fired/, "ต้องบอกว่าขาดค่าอะไร");
@@ -46,8 +46,24 @@ test("⚪ รอบที่ไม่ได้ยิงเลย ⇒ `ตรว�
 
 test("⚪ ค่าที่ไม่ใช่เลข (undefined · NaN · สตริง) ต้องนับเป็น 'ไม่รู้' ไม่ใช่ 0", () => {
   for (const เสีย of [undefined, NaN, "6", null])
-    assert.equal(ตรวจสมการรอบกวาด({ planned: 10, fired: เสีย, not_sent: 3, not_fired: 1 }).ตรวจได้,
+    assert.equal(ตรวจสมการรอบกวาด({ ยิงแล้ว: true, planned: 10, fired: เสีย, not_sent: 3, not_fired: 1 }).ตรวจได้,
       false, `fired = ${String(เสีย)} ต้องถือว่าไม่รู้ ไม่ใช่ 0 (0 จะทำให้สมการไม่ลงแบบเข้าใจผิด)`);
+});
+
+test("🔴🔴 รูที่ฝั่งจอเจอ: ไม่ได้ยิงเลยแต่ตัวเลขเป็น 0 ทุกช่อง ⇒ **ห้ามบอกว่าลง**", () => {
+  /* ปลูกแบบที่ฝั่งจอปลูก: ตัวเรียกเปลี่ยน `?? null` เป็น `?? 0` ⇒ 0 = 0+0+0 */
+  const r = ตรวจสมการรอบกวาด({ ยิงแล้ว: false, planned: 0, fired: 0, not_sent: 0, not_fired: 0 });
+  assert.equal(r.ตรวจได้, false, "ไม่ได้ยิง ⇒ ต้องสรุปไม่ได้ ไม่ว่าตัวเลขจะลงหรือไม่");
+  assert.ok(!("ลง" in r), `ห้ามมีคีย์ ลง · ได้ ${JSON.stringify(r)}`);
+  assert.match(r.เหตุ, /ไม่ได้ยิง/, "ต้องบอกเหตุว่าเพราะไม่ได้ยิง");
+});
+
+test("🔴 ผู้เรียกที่ลืมส่ง `ยิงแล้ว` ⇒ สรุปไม่ได้ (fail closed) ไม่ใช่ผ่าน", () => {
+  for (const ค่า of [undefined, null, 1, "true"]) {
+    const r = ตรวจสมการรอบกวาด({ ยิงแล้ว: ค่า, planned: 10, fired: 6, not_sent: 3, not_fired: 1 });
+    assert.equal(r.ตรวจได้, false, `ยิงแล้ว = ${String(ค่า)} ต้องถือว่าไม่รู้`);
+    assert.ok(!("ลง" in r), `ยิงแล้ว = ${String(ค่า)} ห้ามมีคีย์ ลง`);
+  }
 });
 
 /* ── ตัวกวาดต้องเรียกใช้จริง ไม่ใช่มีฟังก์ชันทิ้งไว้ ──
@@ -58,6 +74,11 @@ test("ตัวกวาดต้อง import และเรียก `ตร�
   assert.match(sweep, /import \{ ตรวจสมการรอบกวาด \} from "\.\/sweep-invariant\.mjs"/,
     "ตัวกวาดยังไม่ import ตัวคิดสมการ");
   assert.match(sweep, /ตรวจสมการรอบกวาด\(\{/, "import มาแล้วแต่ไม่ได้เรียก = เท่ากับไม่มี");
+  /* 🔴 ต้องส่ง `ยิงแล้ว` ด้วย ไม่งั้นตัวคิดจะตอบ "สรุปไม่ได้" ทุกรอบ (fail closed ⇒ ด่านตายเงียบ) */
+  const i = sweep.indexOf("ตรวจสมการรอบกวาด({");
+  const ก้อน = sweep.slice(i, i + 700);
+  assert.match(ก้อน, /ยิงแล้ว:\s*!!ผลยิง/,
+    "ตัวกวาดต้องส่ง `ยิงแล้ว: !!ผลยิง` — ส่งเป็นตัวเลขหรือไม่ส่ง = ตัวคิดสรุปไม่ได้ตลอดกาล");
 });
 
 test("ผลสมการต้องออกไปถึงจอ (`สมการรอบนี้`) และลงสมุด (`note`)", () => {
