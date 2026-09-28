@@ -9,6 +9,7 @@ import { isRealDay } from "./param-guard.mjs";
 //
 // endpoint ที่ใช้ได้จริง: /v4/PurchaseOrder/GetPurchaseOrders
 // (ลองมาแล้ว 404: Purchase/GetPurchases · Purchase/GetPurchaseList · Buy/GetBuys)
+import { รวมแถว, เลขหรือไม่รู้ } from "./รวมเลข.mjs";   // ตัวรวมกลาง — บอกจำนวนแถวที่ไม่รู้ค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
@@ -1737,7 +1738,26 @@ export async function getPurchaseDetail(number, store = "z1") {
   /* ⚠️ **ยอดรวมของบรรทัด ≠ ยอดหัวใบเสมอไป** — หัวใบมีส่วนลด/ค่าส่ง/ภาษีที่กระจกไม่ได้เก็บ
      ⇒ ส่งทั้งสองค่าไปให้จอ **ห้ามเลือกให้ค่าเดียว** และห้ามคิดว่าต่างกัน = ข้อมูลผิด
      (คลาสเดียวกับใบเสนอราคาที่ท่อจงใจส่งช่องเงินทุกช่อง ไม่ตีความแทน) */
-  const lineTotal = lines.reduce((a, l) => a + (Number(l.qty) || 0) * (Number(l.price) || 0), 0);
+  /* 🧮 **ผลรวมบรรทัดต้องบอกด้วยว่ามีกี่บรรทัดที่ไม่รู้ค่า** (ใบ t_mukv5yxw · 28 ก.ย. 2569)
+     เดิม `(Number(l.qty) || 0) * (Number(l.price) || 0)` ⇒ บรรทัดที่จำนวนหรือราคาว่าง
+     คูณกันได้ **0** แล้วบวกเข้ายอดเงียบ ๆ ⇒ `lineTotal` ต่ำกว่าความจริงโดยไม่มีอะไรฟ้อง
+     ⇒ และเส้นนี้เป็นเส้นที่จอเอาไปเทียบกับ `amount` ของหัวใบ ⇒ **ต่างกันแล้วโทษหัวใบผิด**
+     🔑 ไม่ลบ `lineTotal` ของเดิมทิ้ง — ปลายทางอ่านชื่อนี้อยู่ ⇒ เพิ่มอย่างเดียว [[prepare-to-receive]] */
+  const รวมบรรทัด = รวมแถว(
+    lines,
+    (l) => {
+      /* 🔴 **ต้องใช้ `เลขหรือไม่รู้` ทั้งสองช่อง ห้ามเขียนเงื่อนไขเอง** — ผมเขียนเองรอบแรกแล้วพลาดทันที:
+         `Number(null)` เป็น **0 และ finite** และ `String(null).trim()` เป็น `"null"` ไม่ใช่ค่าว่าง
+         ⇒ บรรทัดที่ราคาเป็น `null` ผ่านเป็น 0 บาท ⇒ กลับไปเป็นบั๊กเดิมที่ไฟล์นี้เกิดมาแก้
+         🔑 นี่คือเหตุผลทั้งข้อของการมีตัวกลาง: เงื่อนไขที่เขียนเองจะพลาดคนละแบบทุกครั้ง */
+      const q = เลขหรือไม่รู้(l.qty);
+      const pr = เลขหรือไม่รู้(l.price);
+      /* บรรทัดนับว่า "รู้ค่า" ต่อเมื่อรู้ **ทั้งสองช่อง** — รู้จำนวนแต่ไม่รู้ราคา คิดยอดไม่ได้ */
+      return q === null || pr === null ? null : q * pr;
+    },
+    { ชื่อ: "ผลรวมบรรทัดใบสั่งซื้อ" }
+  );
+  const lineTotal = รวมบรรทัด.ผลรวม;
   return {
     store: st,
     id: String(head.id),
@@ -1749,7 +1769,15 @@ export async function getPurchaseDetail(number, store = "z1") {
     warehouse: head.warehouse || null,
     note: head.note || null,
     amount: Number(head.amount) || 0,     // ยอดหัวใบตามที่ ZORT ให้มา
-    lineTotal,                            // ผลรวมบรรทัด (คิดเอง)
+    lineTotal,                            // ผลรวมบรรทัด (คิดเอง) — เป็น null ถ้าไม่มีบรรทัดไหนรู้ค่าเลย
+    /* 🧮 ความครบของ `lineTotal` — จอต้องไม่เอายอดบางส่วนไปเทียบกับ `amount` แล้วสรุปว่าข้อมูลผิด */
+    lineTotalความครบ: {
+      แถวทั้งหมด: รวมบรรทัด.แถวทั้งหมด,
+      นับได้: รวมบรรทัด.นับได้,
+      ไม่รู้ค่า: รวมบรรทัด.ไม่รู้ค่า,
+      ครบ: รวมบรรทัด.ครบ,
+      ...(รวมบรรทัด["⚠️ ยอดนี้ไม่ครบ"] ? { "⚠️ ยอดนี้ไม่ครบ": รวมบรรทัด["⚠️ ยอดนี้ไม่ครบ"] } : {}),
+    },
     lines,
     updatedAt: head.updated_at || null,
     source: "กระจกคลังเงา (ไม่ได้ยิง ZORT สด)",
