@@ -330,10 +330,16 @@ export default async function handler(req, context) {
         (!o.zortSyncAt || Date.now() - o.zortSyncAt > SYNC_MS),
     );
     if (need.length) {
-      const { zortGetOrder } = await import("../lib/zort-order.mjs");
+      const { zortGetOrderResult } = await import("../lib/zort-order.mjs");
       await Promise.all(need.slice(0, 6).map(async (o) => {
-        const z = await zortGetOrder(o.id);
+        const ผล = await zortGetOrderResult(o.id);
+        /* 🔴 28 ก.ย. 2569 (ใบ t_muacc3nw) — เดิมจด `o.zortSyncAt = Date.now()` **ก่อนรู้ผล**
+           ⇒ ถาม ZORT ไม่สำเร็จก็ถูกจดว่า "ซิงก์แล้วเมื่อกี้" แล้ว `need` ข้ามใบนี้ไปอีก 10 นาที
+           ⇒ ZORT ล่มช่วงสั้น ๆ = ใบนั้นหยุดถามทั้งที่ยังไม่เคยถามได้เลย (ความล้มเหลวกลายเป็นตราว่าสำเร็จ)
+           ✅ จดเวลาเฉพาะเมื่อ **ถามได้จริง** — ถามไม่ได้ ปล่อยค่าเดิมไว้ให้รอบหน้าถามซ้ำทันที */
+        if (!ผล.ถามได้) return;
         o.zortSyncAt = Date.now();
+        const z = ผล.ใบ;
         if (z) {
           if (z.trackingno) {
             o.tracking = { no: z.trackingno, channel: z.shippingchannel || "", at: z.shippingdate || "" };
@@ -380,9 +386,20 @@ export default async function handler(req, context) {
     // ดู netlify/functions/beam-sweep.mjs ซึ่งไม่มี URL ให้เรียกเพราะมี schedule)
     // ดูข้อมูลดิบจาก ZORT ของออเดอร์หนึ่งใบ — ไว้ไล่ mapping สถานะ (ฝั่งร้านเท่านั้น)
     if (url.searchParams.get("zort")) {
-      const { zortGetOrder } = await import("../lib/zort-order.mjs");
-      const z = await zortGetOrder(url.searchParams.get("zort"));
-      return json({ zort: z });
+      /* 🔴 28 ก.ย. 2569 (ใบ t_muacc3nw) — เดิมตอบ `{zort:null}` ทั้งตอน "ZORT ไม่มีใบนี้"
+         และตอน "ถาม ZORT ไม่ได้" ⇒ คนที่เอาเส้นนี้ไปไล่ mapping สถานะสรุปผิดได้ทันที
+         (เส้นนี้มีไว้ตอบคำถาม "ZORT เห็นใบนี้ว่าอะไร" ⇒ คำตอบ "ไม่รู้" ต้องไม่หน้าตาเหมือน "ไม่มี") */
+      const { zortGetOrderResult } = await import("../lib/zort-order.mjs");
+      const ผล = await zortGetOrderResult(url.searchParams.get("zort"));
+      if (!ผล.ถามได้)
+        return json({
+          asked: false, zort: null, error: ผล.เหตุ,
+          "⚠️ อ่านยังไง": "**ยังไม่ได้ถาม/ถามไม่สำเร็จ** ไม่ใช่ ZORT ไม่มีใบนี้ ⇒ สั่งซ้ำได้",
+        }, 502);
+      return json({
+        asked: true, zort: ผล.ใบ,
+        ...(ผล.ใบ ? {} : { "⚠️ อ่านยังไง": "ถาม ZORT สำเร็จแล้ว และ **ZORT ยืนยันว่าไม่มีใบเลขนี้**" }),
+      });
     }
 
     if (url.searchParams.get("sweep") === "1") {

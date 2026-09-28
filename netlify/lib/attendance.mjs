@@ -340,13 +340,25 @@ export async function savePhoto(date, id, kind, dataUrl) {
   }
 }
 
-/** อ่านรูปกลับมา — คืน null ถ้าไม่มี */
+/** อ่านรูปกลับมา — **แยกสามสถานะ ไม่ใช่สองสถานะ**
+ *
+ * 🔴 ที่มา 28 ก.ย. 2569 (ใบ t_muacc3nw) — ของเดิมคืน `null` ทั้งตอน "ไม่มีรูป"
+ *    และตอน "อ่านที่เก็บไม่ได้" ⇒ หน้าหลังร้านขึ้น **"ไม่พบรูป"** เหมือนกันทั้งสองกรณี
+ *    ⚠️ กรณีนี้ไม่ใช่แค่ข้อมูลเพี้ยน — รูปตอนลงเวลามีไว้กัน "ฝากเพื่อนกดให้"
+ *       ⇒ "ไม่พบรูป" ที่ผิดพลาด ทำให้เจ้าของร้าน **สงสัยพนักงานที่มาทำงานจริง**
+ *       ⇒ ความล้มเหลวของการอ่าน ถูกแปลเป็นคำกล่าวหาคน
+ *
+ * @returns {Promise<{อ่านได้: true, รูป: {data:ArrayBuffer,type:string}|null} | {อ่านได้: false, เหตุ: string}>}
+ *   · `{อ่านได้:true, รูป:{...}}` มีรูป
+ *   · `{อ่านได้:true, รูป:null}`  ที่เก็บตอบแล้วว่า **ไม่มีรูปใบนี้** ⇒ พูดได้ว่า "ไม่มีรูป"
+ *   · `{อ่านได้:false, เหตุ}`     **อ่านที่เก็บไม่ได้** ⇒ ห้ามพูดว่าไม่มีรูป
+ */
 export async function getPhoto(date, id, kind) {
   try {
     const r = await store().getWithMetadata(photoKey(date, id, kind), { type: "arrayBuffer" });
-    if (!r?.data) return null;
-    return { data: r.data, type: String(r.metadata?.type || "image/jpeg") };
-  } catch {
-    return null;
+    if (!r?.data) return { อ่านได้: true, รูป: null };
+    return { อ่านได้: true, รูป: { data: r.data, type: String(r.metadata?.type || "image/jpeg") } };
+  } catch (e) {
+    return { อ่านได้: false, เหตุ: String(e?.message || e).slice(0, 160) };
   }
 }

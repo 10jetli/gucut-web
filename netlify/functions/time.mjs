@@ -174,9 +174,18 @@ export default async function handler(req, context) {
   // ดูรูปตอนลงเวลา — ต้องผ่านด่านรหัสหลังร้านแล้วเท่านั้น
   if (req.method === "GET" && url.searchParams.get("photo")) {
     const [date, id, kind] = String(url.searchParams.get("photo")).split("/");
-    const p = date && id && (kind === "in" || kind === "out")
-      ? await getPhoto(date, id, kind)
-      : null;
+    if (!(date && id && (kind === "in" || kind === "out")))
+      return json({ error: "รูปแบบคำขอไม่ถูก — ต้องเป็น <วันที่>/<รหัสพนักงาน>/<in|out>" }, 400);
+    const ผล = await getPhoto(date, id, kind);
+    /* 🔴 28 ก.ย. 2569 (ใบ t_muacc3nw) — เดิม "อ่านที่เก็บไม่ได้" กับ "ไม่มีรูป" ตอบ 404 "ไม่พบรูป" เหมือนกัน
+       ⇒ เจ้าของร้านอ่านว่าพนักงานลงเวลาโดยไม่มีรูป = สงสัยคนที่มาทำงานจริง
+       ✅ อ่านไม่ได้ ⇒ 502 บอกตรง ๆ ว่า **ยังไม่รู้** · ไม่มีรูปจริง ⇒ 404 เหมือนเดิม */
+    if (!ผล.อ่านได้)
+      return json({
+        error: "อ่านที่เก็บรูปไม่ได้", เหตุ: ผล.เหตุ,
+        "⚠️ อ่านยังไง": "**ไม่ได้แปลว่าพนักงานไม่มีรูป** แปลว่าระบบยังอ่านไม่ได้ ⇒ ลองใหม่อีกครั้ง",
+      }, 502);
+    const p = ผล.รูป;
     if (!p) return json({ error: "ไม่พบรูป" }, 404);
     return new Response(p.data, {
       headers: {
