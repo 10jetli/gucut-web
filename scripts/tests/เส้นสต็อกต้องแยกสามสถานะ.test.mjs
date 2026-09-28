@@ -24,7 +24,7 @@ import { readFile } from "node:fs/promises";
 import { ตัดคอมเมนต์ } from "../_strip-comments.mjs";
 /* 🔑 ตัวช่วยปลูก "ในโค้ดเท่านั้น" ย้ายไปอยู่ที่ `_src.mjs` แล้ว — **แหล่งเดียว**
    เหตุ: ด่านอีก 6 ตัวในสเปกต้องใช้ท่าเดียวกัน · สองสำเนาของกติกาเดียวกันเพี้ยนแยกกันเสมอ */
-import { ปลูกในโค้ด as ปลูกกลาง } from "./_src.mjs";
+import { ปลูกในโค้ด as ปลูกกลาง, โหลดผ่านไหม } from "./_src.mjs";
 
 const ไฟล์ = new URL("../../netlify/functions/stock.mjs", import.meta.url);
 const src = await readFile(ไฟล์, "utf8");
@@ -110,12 +110,6 @@ import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-function โหลดผ่านไหม(s, ชื่อ) {
-  const f = join(mkdtempSync(join(tmpdir(), "ปลูก-")), `${ชื่อ}.mjs`);
-  writeFileSync(f, s);
-  execFileSync(process.execPath, ["--check", f]); // โยนถ้าไฟล์พัง
-  return true;
-}
 
 test("🧪 ตัวควบคุม ② ปลูก `p` ให้ชุดสินค้า ⇒ ด่านต้องจับได้", () => {
   const { ปลูก, บรรทัด } = ปลูกในโค้ด(src, 'kind: "bundle", priceFrom: "web"', 'kind: "bundle", p: 1, priceFrom: "web"');
