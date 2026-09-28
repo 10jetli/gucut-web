@@ -102,8 +102,13 @@ export default function ProductDetail({
       {/* ราคา */}
       <section className="bg-steel-800 px-3 py-3">
         <div className="flex items-baseline gap-2">
+          {/* 🔑 ราคา: ใช้ราคาสดถ้ามี ไม่มีก็ใช้ราคาเว็บ
+              ห้ามกลับไปเขียนแบบเดิมที่หยิบ live.p ตรง ๆ โดยไม่มีทางถอย
+              เพราะ live.p เป็น null ได้ (ของมีทะเบียนตอบมาแต่สต็อก ไม่มีราคา)
+              แล้ว Price จะเรียก toLocaleString บน null ทั้งหน้าสินค้าตาย
+              เจอของจริง 28 ก.ย. 2569 เลื่อย F660 F440 F288 F361 พังทั้ง 4 หน้า */}
           <Price
-            value={live && p.pmax <= p.p ? live.p : p.p}
+            value={live?.p != null && p.pmax <= p.p ? live.p : p.p}
             className="font-heading text-2xl font-bold text-safety"
           />
           {p.c && p.c > p.p && (
@@ -276,7 +281,8 @@ export default function ProductDetail({
               <span className="text-[11px] font-medium opacity-90">
                 {needsPermitProduct ? "จองไว้ก่อน" : "ซื้อเลย"}
               </span>
-              <Price value={live && p.pmax <= p.p ? live.p : p.p} className="text-[17px] font-bold" />
+              {/* กติกาเดียวกับราคาด้านบน — live.p ต้องไม่ null และสินค้าต้องไม่ใช่ราคาช่วง */}
+              <Price value={live?.p != null && p.pmax <= p.p ? live.p : p.p} className="text-[17px] font-bold" />
             </>
           )}
         </button>

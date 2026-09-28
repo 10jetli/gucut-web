@@ -6,7 +6,20 @@ import { useEffect, useState } from "react";
 
 export interface LiveStock {
   st: number; // สต็อกพร้อมขายจริง
-  p: number;  // ราคาขายปัจจุบัน
+  /**
+   * ราคาขายปัจจุบัน — **เป็น null ได้** เมื่อต้นทางไม่ส่งราคามา
+   *
+   * 🔴 ของจริง 28 ก.ย. 2569: สินค้าที่มีทะเบียน (เลื่อย F660/F440/F288/F361)
+   *    ดึงสต็อกจาก **คลังทะเบียน** ซึ่งตอบมาแค่ `{found, st, src:"licensed"}` — ไม่มี `p`
+   *    เดิมชนิดข้อมูลเขียนว่า `p: number` แต่ค่าจริงเป็น `undefined`
+   *    ⇒ `tsc` มองไม่เห็นเลย เพราะ JSON จาก fetch เป็น `any`
+   *    ⇒ `<Price>` เรียก `value.toLocaleString()` บน undefined → **ทั้งหน้าสินค้าตาย**
+   *    ลูกค้าเห็นหน้า "มีปัญหาชั่วคราว" แทนเลื่อยราคา 14,000–17,000 บาท 4 รุ่น
+   *
+   * 🔑 บทเรียน: ชนิดข้อมูลที่ประกาศไว้ **ไม่ใช่การตรวจ** ถ้าค่ามาจากนอกบ้าน
+   *    ต้องตรวจตอนรับเข้าเสมอ — และตรงนี้คือจุดรับเข้า
+   */
+  p: number | null;
 }
 
 export interface LiveOptions {
@@ -54,8 +67,13 @@ export function useLiveStock(
     fetch(`/api/stock?sku=${encodeURIComponent(key)}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => {
+        // 🔑 จุดรับเข้าจากนอกบ้าน — ตรวจทีละช่อง ห้ามเชื่อว่ามีครบตามชนิดข้อมูล
+        //    `d.p` หายได้จริง (ของมีทะเบียนตอบมาแค่ st) ⇒ แปลงเป็น null ตั้งแต่ตรงนี้
+        //    ไม่ปล่อย undefined ไหลเข้าไปให้ปลายทางไปพังเอาเอง
         const v: LiveStock | null =
-          d && d.found && typeof d.st === "number" ? { st: d.st, p: d.p } : null;
+          d && d.found && typeof d.st === "number"
+            ? { st: d.st, p: typeof d.p === "number" && Number.isFinite(d.p) ? d.p : null }
+            : null;
         memo.set(key, v);
         if (alive) setLive(v);
       })
@@ -79,10 +97,15 @@ export function useLiveStock(
   }
 
   // กันหน่วยไม่ตรงกัน: ราคาสดต่างจากราคาเว็บมากผิดปกติ → ไม่ใช้ตัวเลขสด
-  if (refPrice && refPrice > 0) {
+  // ⚠️ ต้องเช็ค `live.p !== null` ก่อน — ไม่งั้น `null / refPrice` = 0 (ผ่านด่านไปแบบเงียบ)
+  //    และถ้าเป็น undefined จะได้ NaN ซึ่ง **NaN > 2.5 กับ NaN < 0.4 เป็นเท็จทั้งคู่**
+  //    ⇒ ด่านนี้เคยปล่อยผ่านทุกครั้งที่ไม่มีราคา ทั้งที่หน้าที่มันคือดักเคสราคาผิดปกติ
+  if (live.p !== null && refPrice && refPrice > 0) {
     const ratio = live.p / refPrice;
     if (ratio > 2.5 || ratio < 0.4) return null;
   }
 
-  return { st: Math.max(0, Math.floor(live.st)), p: live.p };
+  // ไม่มีราคาสด ⇒ คืนราคาเว็บไปแทน (สต็อกยังสดอยู่ ใช้ได้)
+  // ห้ามคืน null เฉย ๆ เพราะจะทำให้ "เช็คคลังแล้ว" หายไปทั้งที่สต็อกสดจริง
+  return { st: Math.max(0, Math.floor(live.st)), p: live.p ?? refPrice ?? null };
 }
