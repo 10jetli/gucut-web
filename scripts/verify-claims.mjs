@@ -443,10 +443,16 @@ const STOREFRONT = [
       const วิธีวัด = {
         "เส้น list= ที่ส่ง applied": async () => {
           const { lists } = await import("../netlify/lib/endpoints.mjs");
+          /* 🔴 **เดิมยิงทุกเส้นด้วย `&limit=1` เปล่า ๆ** ⇒ เส้นที่บังคับพารามิเตอร์ (เช่น `stockcard`
+             ต้องมี `sku`) ตอบ error ⇒ ไม่มีคีย์ `applied` ⇒ นับต่ำกว่าความจริง 1 เส้น
+             ⇒ วันที่ 28 ก.ย. 2569 ตัวนี้นับได้ 23 ขณะที่หมุดวัดได้ 24 ⇒ **ด่านแดงโดยท่อไม่ได้ผิด**
+             🔑 เป็นบั๊กตัวเดียวกับที่แก้ในหมุดไปแล้วเมื่อเช้า **แต่อยู่ในสำเนาที่สอง**
+                ⇒ ทั้งสองตัวอ่านตารางกลางตัวเดียวกันแล้ว (`netlify/lib/list-required-params.mjs`) */
+          const { คิวรีที่บังคับ } = await import("../netlify/lib/list-required-params.mjs");
           let นับ = 0;
           let ยิงไม่ได้ = 0;
           for (const ชื่อ of lists) {
-            const r = await get(`list=${encodeURIComponent(ชื่อ)}&limit=1`);
+            const r = await get(`list=${encodeURIComponent(ชื่อ)}&limit=1${คิวรีที่บังคับ(ชื่อ)}`);
             if (!r.body || typeof r.body !== "object") { ยิงไม่ได้ += 1; continue; }
             const ap = r.body.applied;
             if (ap && typeof ap === "object" && !Array.isArray(ap)) นับ += 1;
