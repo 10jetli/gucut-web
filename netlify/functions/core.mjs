@@ -2361,7 +2361,10 @@ async function route(req, context) {
     }
     // คลังสินค้าทั้งหมด (รวมโกดัง) — คนละอย่างกับ list=branches ที่เป็นสาขาขายหน้าร้าน
     if (url.searchParams.get("list") === "warehouses") {
-      return okJson(await listWarehouses());
+      /* 📣 `applied: {}` = **พิจารณาแล้วว่าไม่มีพารามิเตอร์ใดมีผล** (เพิ่ม 28 ก.ย. 2569)
+         🔑 ต่างจาก "ไม่มีคีย์ applied" ซึ่งแปลว่า **ยังไม่รู้ว่าท่อพิจารณาอะไร**
+            ⇒ ฝั่งจอต้องแยกสองอย่างนี้ได้ · เส้นนี้คืนรายชื่อคลังทั้งชุดเสมอ */
+      return okJson({ ...(await listWarehouses()), applied: {} });
     }
     // จอหมวดหมู่แบบ ZORT — หมวดจริง 42 หมวดจากทะเบียนสินค้า
     /* 🔴 **เส้นนี้ไม่รับ q และ `total` ตอบคนละคำถามกับ rows** (ฝั่งจอจับได้ 18 ก.ย. 2569
@@ -2384,6 +2387,9 @@ async function route(req, context) {
       );
       return okJson({
         ...r,
+        /* 📣 `applied: {}` — เส้นนี้ไม่มีพารามิเตอร์ใดมีผล (q/offset/page ถูกประกาศใน `ignored`)
+           🔑 มีคีย์ = "พิจารณาแล้วว่าไม่มีอะไรมีผล" · ไม่มีคีย์ = "ยังไม่รู้" ⇒ จอต้องแยกสองอย่างนี้ */
+        applied: {},
         returnsAll: true,
         returnsAllNote: "เส้นนี้คืนหมวดทั้งชุดในคำขอเดียว ไม่แบ่งหน้า ⇒ ไม่มี nextOffset/nextPage ให้ไล่ · ปลายทางกรอง/ค้นในเครื่องได้เลย",
         ...(qc || Object.keys(ignoredPaging).length ? { ignored: { ...(qc ? { q: qc } : {}), ...ignoredPaging } } : {}),
@@ -2393,14 +2399,15 @@ async function route(req, context) {
       });
     }
     if (url.searchParams.get("list") === "poscats") {
-      return okJson(await posCats());
+      /* 📣 `applied: {}` — คืนหมวดของเครื่องคิดเงินทั้งชุด ไม่รับตัวกรอง (ดูหมายเหตุที่ warehouses) */
+      return okJson({ ...(await posCats()), applied: {} });
     }
     if (url.searchParams.get("list") === "branches") {
       /* 🔑 แนบ `ที่มาของรายชื่อ` ทุกครั้ง — ทางถอยต้องประกาศตัว ไม่ใช่ให้จอเดา (20 ก.ย. 2569)
          จอฝั่ง gucut-next อ่าน "ดึงจากเซิร์ฟเวอร์" แล้วเข้าใจว่าจำนวนสาขาเป็นข้อมูลที่ร้านตั้ง
          ⇒ ของจริงตอนนี้เป็นค่าตั้งต้นในโค้ด ⇒ ต้องบอกออกไป ไม่งั้นทั้งสองฝั่งเชื่อผิดพร้อมกัน */
       const { ที่มาของรายชื่อสาขา } = await import("../lib/pos.mjs");
-      return json({ ok: true, branches: branches(), "ที่มาของรายชื่อ": ที่มาของรายชื่อสาขา() });
+      return json({ ok: true, branches: branches(), applied: {}, "ที่มาของรายชื่อ": ที่มาของรายชื่อสาขา() });
     }
     if (url.searchParams.get("poslookup") !== null && url.searchParams.get("poslookup") !== undefined) {
       return okJson({
