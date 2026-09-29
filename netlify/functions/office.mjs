@@ -89,7 +89,8 @@ export default async function handler(req, context) {
        ⚠️ งานที่จบแล้ว **ติ๊ก done ไม่ลบแถว** — เจ้าของร้านต้องเห็นว่าอะไรเพิ่งเสร็จไป
           จอค่อยตัดสินใจเองว่าโชว์ของเสร็จกี่วันแล้วค่อยซ่อน */
     if (body?.taskAdd || body?.taskDone || body?.taskDrop || body?.taskUndo || body?.taskReady ||
-        body?.taskBlock || body?.taskUnblock || body?.taskSchedule || body?.taskOwner) {
+        body?.taskBlock || body?.taskUnblock || body?.taskSchedule || body?.taskOwner ||
+        body?.taskNote) {
       const s = store();
       const KEY = "office/tasks";
       /* 🔴 B02 (แก้ 14 ก.ย. 2569): ทุกคำสั่งในกลุ่มนี้ **เขียน office/tasks ทับทั้งก้อน**
@@ -124,7 +125,8 @@ export default async function handler(req, context) {
         return json({ ok: true, id });
       }
       const id = text(body.taskDone || body.taskDrop || body.taskUndo || body.taskReady ||
-                      body.taskBlock || body.taskUnblock || body.taskSchedule || body.taskOwner, 40);
+                      body.taskBlock || body.taskUnblock || body.taskSchedule || body.taskOwner ||
+                      body.taskNote, 40);
       const row = list.find((x) => x.id === id);
       if (!row) return json({ error: `ไม่พบงาน ${id}` }, 404);
       /* ── 🔁 ยกงานให้คนอื่น (เพิ่ม 28 ก.ย. 2569 · ท่านประธานสั่งยก 4 ใบของ codex ให้คุณส้ม) ──
@@ -136,6 +138,41 @@ export default async function handler(req, context) {
          ⚠️ ตรวจชื่อเจ้าของด้วยชุดเดียวกับ `taskAdd` — ส่งชื่อที่ไม่รู้จัก **ต้อง 400 ห้ามเงียบ**
             (ไม่งั้นงานหายไปอยู่กลุ่มที่ไม่มีใครดู โดยหน้าตาเหมือนสำเร็จ)
          📌 จดผู้ยกและเวลาไว้ในตัวงาน ⇒ ตอบได้ว่า "ใบนี้เคยเป็นของใคร" ไม่ใช่แค่ "ตอนนี้ของใคร" */
+      /* ── 📝 จดความคืบหน้าลงใบ (เพิ่ม 30 ก.ย. 2569) ──────────────────────────────
+         🔴 **ก่อนมีคำสั่งนี้ กระดานแก้โน้ตของใบไม่ได้เลย** — มีแต่ เพิ่ม/ปิด/ทิ้ง/ถอน/ติดธง/เลื่อน/ยกเจ้าของ
+            ⇒ ทางเดียวที่ทำได้คือ **ทิ้งใบเก่าแล้วสร้างใหม่** ⇒ เสียอายุงาน + เสีย id ที่ถูกอ้างในจดหมายไปแล้ว
+            🔑 คลาสเดิมของไฟล์นี้ (ดูคอมเมนต์ `taskOwner`): **ของที่ทำไม่ได้ จะถูกทำด้วยวิธีที่ทำลายข้อมูลแทน**
+            ⇒ ฝั่งจอเจอกับตัวเองแล้ว **เลือกไม่ทำ** และรายงานมาทางจดหมายแทน — ถูกแล้ว
+         🔒 **ต่อท้ายเท่านั้น ไม่เขียนทับ** + เวลาไทยต่อบรรทัด
+            เขียนทับได้ = ความคืบหน้ารอบก่อนหายโดยไม่มีใครรู้ว่าหาย (ข้อที่ฝั่งจอกำชับ)
+         ⚠️ **มีเพดาน และเมื่อตัดต้องบอกในคำตอบว่าตัดไปกี่บรรทัด**
+            เหตุ: โน้ตอยู่ในก้อนที่กระดานอ่านทุกครั้ง ⇒ โตไม่จำกัด = ทุกคนจ่ายค่าอ่าน
+            แต่ **ตัดเงียบ = ความคืบหน้าหายเงียบ** ซึ่งคือสิ่งที่กติกาข้างบนห้ามไว้ */
+      if (body.taskNote) {
+        const ข้อความ = text(body.note, 300);
+        if (!ข้อความ) {
+          return json({
+            error: "taskNote ต้องมี note (ข้อความที่จะต่อท้าย)",
+            hint: '{"taskNote":"t_xxx","note":"วัดแล้ว 19→4 แต่ตัวตรวจผลบวกแดง ⇒ ยังไม่ปิด"}',
+          }, 400);
+        }
+        const t = list.find((x) => x.id === id);
+        if (!t) return json({ error: "ไม่พบงานนี้", id }, 404);
+        const ไทย = new Date(Date.now() + 7 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+        const บรรทัด = `${ไทย} ${ข้อความ}`;
+        const เดิม = String(t.note || "").split("\n").filter(Boolean);
+        เดิม.push(บรรทัด);
+        const เพดาน = 8;
+        const ตัดไป = Math.max(0, เดิม.length - เพดาน);
+        t.note = เดิม.slice(-เพดาน).join("\n");
+        t.noteAt = Date.now();
+        await s.setJSON(KEY, list);
+        return json({
+          ok: true, id, เพิ่มบรรทัด: บรรทัด, บรรทัดทั้งหมด: เดิม.length - ตัดไป,
+          ...(ตัดไป ? { ตัดบรรทัดเก่าออก: ตัดไป,
+            "⚠️ อ่านยังไง": `โน้ตเก็บได้ ${เพดาน} บรรทัดล่าสุด · ตัดของเก่าออก ${ตัดไป} บรรทัดในรอบนี้ ⇒ ของที่ตัดไปหายถาวร` } : {}),
+        });
+      }
       if (body.taskOwner) {
         const o = text(body.owner, 20);
         if (!o || !OWNERS.has(o)) {
@@ -278,7 +315,8 @@ export default async function handler(req, context) {
     if (!agent)
       return json({
         error: "ไม่พบคำสั่งที่รู้จักใน body",
-        คำสั่งที่รับ: ["taskAdd", "taskReady", "taskDone", "taskUndo", "taskDrop", "taskBlock"],
+        คำสั่งที่รับ: ["taskAdd", "taskReady", "taskDone", "taskUndo", "taskDrop",
+                       "taskBlock", "taskUnblock", "taskSchedule", "taskOwner", "taskNote"],
         หมายเหตุ: "ถ้าตั้งใจส่งชีพจร agent ต้องมีคีย์ agent · ชื่อคำสั่งเป็นตัวพิมพ์เล็กใหญ่ตามนี้เป๊ะ",
         ownerที่รับ: [...OWNERS],
       }, 400);
