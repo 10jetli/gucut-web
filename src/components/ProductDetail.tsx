@@ -14,6 +14,8 @@ import Price from "@/components/Price";
 import ProductVideoFloat from "./ProductVideoFloat";
 import { PERMIT_MODELS } from "@/lib/permit";
 import ProductTopBar from "./ProductTopBar";
+import MallBadge from "./MallBadge";
+import TrustRow from "./TrustRow";
 import { videoForProduct } from "@/lib/videos";
 import { track } from "@/lib/track";
 
@@ -120,7 +122,18 @@ export default function ProductDetail({
             </>
           )}
         </div>
-        <h1 className="mt-2 text-[15px] leading-snug text-[#1a1a1a]">{p.t}</h1>
+        {/* 🏷️ ป้าย Mall — ท่านประธานสั่ง 30 ก.ย. 2569
+            ติดทุกสินค้าโดยตั้งใจ: ร้านนี้เป็น **ตัวแทนจำหน่ายแต่เพียงผู้เดียว**
+            (หนังสือแต่งตั้งอยู่ที่ `DISTRIBUTORSHIPS` ใน src/lib/licenses.ts)
+            ⇒ ทุกชิ้นที่ขายที่นี่มาจากร้านทางการเหมือนกันหมด ไม่มีของฝากขาย
+            🚫 ไม่แยกตามยี่ห้อด้วยการค้นคำในชื่อสินค้า — ข้อมูลสินค้าไม่มีฟิลด์ยี่ห้อ
+               และการเดาประเภทจากชื่อคือคลาสบั๊กที่ทีมเคยเจ็บมาแล้ว */}
+        <h1 className="mt-2 text-[15px] leading-snug text-[#1a1a1a]">
+          <MallBadge className="mr-1.5 translate-y-[-1px]" />
+          {p.t}
+        </h1>
+        {/* 🛡️ แถวรับรอง — ท่านประธานสั่ง 30 ก.ย. 2569 (ต้นแบบ LazMall) */}
+        <TrustRow className="mt-1.5" />
         {p.rv && (
           <a href="#reviews" className="mt-2 flex items-center gap-1.5 text-xs">
             <Stars value={p.rv.a} size={13} />
@@ -132,8 +145,12 @@ export default function ProductDetail({
           </a>
         )}
         <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-steel-300">
+          {/* 🔴 ท่านประธานสั่ง 30 ก.ย. 2569: ไม่โชว์จำนวนคงเหลือ ให้เขียนแค่ "มีสินค้า"
+              ⚠️ ต้องผูกกับ shownStock จริงเสมอ — ของหมดแล้วเขียนว่ามีสินค้า
+                 = ลูกค้าสั่งของที่ไม่มี แล้วร้านต้องไปยกเลิกทีหลัง
+              🔑 ใช้เกณฑ์เดียวกับปุ่มซื้อ (shownStock <= 0) จะได้ไม่มีวันขัดกันเอง */}
           <span>
-            คงเหลือ {shownStock.toLocaleString("th-TH")} ชิ้น
+            {shownStock > 0 ? "มีสินค้า" : "สินค้าหมด"}
             {live && <span className="ml-1 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
           </span>
           {p.sku && <span>SKU {p.sku}</span>}

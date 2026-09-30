@@ -99,7 +99,9 @@ export default function VariantSheet({
           <div className="min-w-0 flex-1 pt-1">
             <p className="font-heading text-xl font-semibold text-safety">{formatPrice(price)}</p>
             <p className="mt-1 text-xs text-steel-300">
-              คงเหลือ {stock.toLocaleString("th-TH")} ชิ้น
+              {/* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวน · ผูกกับ stock จริงเสมอ
+                  ⚠️ ตัวเลือกที่หมดต้องยังขึ้น "สินค้าหมด" ไม่งั้นลูกค้าเลือกของที่ไม่มี */}
+              {stock > 0 ? "มีสินค้า" : "สินค้าหมด"}
               {live && <span className="ml-1.5 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
             </p>
             {sel && <p className="mt-0.5 truncate text-xs text-steel-300">SKU {sel.k}</p>}

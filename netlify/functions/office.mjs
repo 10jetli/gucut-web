@@ -24,6 +24,7 @@
 //    ค่าที่คิดจากเวลาปัจจุบันจะเก่าเงียบ ๆ ทันทีที่ถูกแคช — จอคิดเองจากสองเลขนี้
 //    และไม่ต้องเชื่อนาฬิกาเครื่องคนดูด้วย
 import { getStore } from "@netlify/blobs";
+import { เวลาสั้นไทย } from "../lib/thaiday.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
 
 const store = () => getStore({ name: "gucut-coupon", consistency: "strong" });
@@ -158,7 +159,7 @@ export default async function handler(req, context) {
         }
         const t = list.find((x) => x.id === id);
         if (!t) return json({ error: "ไม่พบงานนี้", id }, 404);
-        const ไทย = new Date(Date.now() + 7 * 3600e3).toISOString().slice(5, 16).replace("T", " ");
+        const ไทย = เวลาสั้นไทย();
         const บรรทัด = `${ไทย} ${ข้อความ}`;
         const เดิม = String(t.note || "").split("\n").filter(Boolean);
         เดิม.push(บรรทัด);

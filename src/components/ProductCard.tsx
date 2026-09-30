@@ -94,7 +94,7 @@ export default function ProductCard({
             {p.sold
               ? `ขายได้ ${compactCount(p.sold)} ชิ้น`
               : p.st > 0
-                ? `คงเหลือ ${compactCount(p.st)} ชิ้น`
+                ? "มีสินค้า"          /* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวน ตามคำสั่งท่านประธาน */
                 : "สินค้าหมด"}
           </span>
         </p>

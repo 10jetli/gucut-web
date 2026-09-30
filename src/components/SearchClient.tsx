@@ -194,7 +194,8 @@ export default function SearchClient() {
                     </p>
                   ) : (
                     <p className="mt-0.5 text-[11px] text-steel-300">
-                      {e.s > 0 ? `คงเหลือ ${e.s.toLocaleString("th-TH")}` : "สินค้าหมด"}
+                      {/* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวนคงเหลือ ตามคำสั่งท่านประธาน */}
+                      {e.s > 0 ? "มีสินค้า" : "สินค้าหมด"}
                     </p>
                   )}
                 </div>
