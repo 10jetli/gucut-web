@@ -14,6 +14,7 @@
 //    ถ้าวันหนึ่งมีคนจะเพิ่มเส้น "โอนจริง" ให้ถามท่านประธานก่อนเสมอ
 //    และต้องมีขั้นยืนยันของมนุษย์คั่นอยู่ด้วยทุกกรณี
 import { adminGate } from "../lib/admin-gate.mjs";
+import { วันนี้ไทย } from "../lib/thaiday.mjs";
 import {
   buildMonth, readPay, saveAdj, savePay, slipText, toBaht, transferCsv,
 } from "../lib/payroll.mjs";
@@ -24,8 +25,13 @@ const json = (o, s = 200) =>
     headers: { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" },
   });
 
-const เดือนนี้ = () =>
-  new Date(Date.now() + 7 * 3600 * 1000).toISOString().slice(0, 7);   // เดือนแบบไทย
+/* ⏰ เดือนแบบไทย `yyyy-mm` — **ใช้แหล่งกลาง ห้ามบวก 7 เอง**
+   🔴 ใบนี้เดิมเขียน `Date.now() + 7 * 3600 * 1000` เอง ⇒ ชนเพดานด่าน
+      `check-thai-offset-copies` (46 > 45) ⇒ **push ถูกตีกลับทั้งใบ** (2 ต.ค. 2569)
+   🔑 เหตุที่กองนี้มีเพดาน: บั๊ก `orderdate` เคยเกิดในไฟล์ที่ **มีตัวบวก 7 ของตัวเองอยู่แล้ว**
+   ✅ แหล่งกลาง `วันนี้ไทย()` ให้ `yyyy-mm-dd` อยู่แล้ว ⇒ ตัด 7 ตัวแรกได้ตรง ๆ
+      พิสูจน์ว่าผลเท่ากันก่อนแก้ (รวมรอยต่อเดือน UTC 31 ส.ค. 18:00 = ไทย 1 ก.ย. ⇒ ได้ `2026-09` ทั้งคู่) */
+const เดือนนี้ = () => วันนี้ไทย().slice(0, 7);
 
 /** แปลงสตางค์เป็นบาทให้ฝั่งจอ — จอไม่ต้องรู้เรื่องสตางค์ */
 const แต่งแถว = (r) => ({
