@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { addToCart, setBuyNow } from "@/lib/cart";
 import { teethOf, useLiveStock } from "@/lib/useLiveStock";
 import { formatPrice, type Product, type Variant } from "@/lib/types";
+import { สถานะจากค่า, สถานะของตัวเลือก, ขึ้นป้ายหมดได้ } from "@/lib/stock-state";
 import Portal from "./Portal";
 import ChainSizeFinder from "./ChainSizeFinder";
 import { track } from "@/lib/track";
@@ -48,6 +49,11 @@ export default function VariantSheet({
 
   const price = live?.p ?? (sel ? sel.p : product.p);
   const stock = live?.st ?? (sel ? sel.s : product.st);
+  /* 🔴 สามสถานะ — `ไม่รู้` ห้ามกลายเป็น "หมด" (2 ต.ค. 2569 · ท่านประธานถ่ายจอมาเอง)
+     รู้เมื่อ: `/api/stock` ตอบแล้ว (`live`) **หรือ** ค่าที่อบตอน build ยืนยันว่ารู้
+     ไม่รู้เมื่อ: ยังไม่ตอบ และค่าที่อบมาก็เป็น "ไม่รู้" ⇒ ปุ่มต้องยังกดได้ */
+  const รู้สต็อก = live ? true : (sel ? sel.sKnown !== false : product.stKnown);
+  const สถานะ = สถานะจากค่า(รู้สต็อก ? stock : null);
   const img = sel?.i ?? product.img;
   const max = Math.max(1, stock);
 
@@ -101,7 +107,7 @@ export default function VariantSheet({
             <p className="mt-1 text-xs text-steel-300">
               {/* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวน · ผูกกับ stock จริงเสมอ
                   ⚠️ ตัวเลือกที่หมดต้องยังขึ้น "สินค้าหมด" ไม่งั้นลูกค้าเลือกของที่ไม่มี */}
-              {stock > 0 ? "มีสินค้า" : "สินค้าหมด"}
+              {สถานะ === "ไม่รู้" ? "" : สถานะ === "มีของ" ? "มีสินค้า" : "สินค้าหมด"}
               {live && <span className="ml-1.5 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
             </p>
             {sel && <p className="mt-0.5 truncate text-xs text-steel-300">SKU {sel.k}</p>}
@@ -137,7 +143,7 @@ export default function VariantSheet({
             <p className="mb-2 text-sm text-[#1a1a1a]">{product.opt ?? "ตัวเลือก"}</p>
             <div className="flex flex-wrap gap-2">
               {product.v.map((v) => {
-                const out = v.s <= 0;
+                const out = ขึ้นป้ายหมดได้(สถานะของตัวเลือก(v));   /* ตัวเลือกที่ยังไม่รู้สต็อก ห้ามขีดฆ่า (เจอจริง 25 ก.ย. 2569) */
                 /* ⚠️ **ห้ามเขียน `sel?.t === v.t` เฉย ๆ** — `?.` ฝั่งซ้ายกันแค่ "sel เป็น null"
                    ไม่ได้กัน "สองฝั่งเป็น undefined เท่ากันพอดี" ซึ่ง `undefined === undefined`
                    เป็นจริง ⇒ ยังไม่ได้เลือกอะไร + ตัวเลือกนั้นไม่มีชื่อ = ขึ้นว่า "เลือกอยู่"
@@ -194,10 +200,10 @@ export default function VariantSheet({
         <div className="px-3 pt-2">
           <button
             onClick={confirm}
-            disabled={(hasVariants && !sel) || stock <= 0}
+            disabled={(hasVariants && !sel) || ขึ้นป้ายหมดได้(สถานะ)}
             className="w-full rounded-lg bg-safety py-3 font-heading text-base font-semibold text-white disabled:bg-steel-700 disabled:text-steel-300"
           >
-            {stock <= 0
+            {ขึ้นป้ายหมดได้(สถานะ)
               ? "สินค้าหมด"
               : hasVariants && !sel
                 ? `กรุณาเลือก${product.opt ?? "ตัวเลือก"}`

@@ -18,6 +18,7 @@ import MallBadge from "./MallBadge";
 import TrustRow from "./TrustRow";
 import { videoForProduct } from "@/lib/videos";
 import { track } from "@/lib/track";
+import { สถานะจากค่า, ขึ้นป้ายหมดได้ } from "@/lib/stock-state";
 
 // หน้าสินค้าแบบ Shopee / TikTok Shop
 // สไลด์รูป → ราคา+ป้ายลด → ตัวเลือก → สเปก → คำอธิบาย → แถบซื้อติดล่างจอ
@@ -58,6 +59,10 @@ export default function ProductDetail({
     perUnit: teethOf(p.v[0]?.t),
   });
   const shownStock = live?.st ?? p.st;
+  /* 🔴 สามสถานะ (2 ต.ค. 2569) — `ไม่รู้` ห้ามกลายเป็น "หมด"
+     รู้เมื่อ: `/api/stock` ตอบแล้ว **หรือ** ค่าที่อบตอน build ยืนยันว่ารู้
+     ⚠️ ของเดิมใช้ `shownStock <= 0` ทั้งสามจุดในไฟล์นี้ ⇒ 232 หน้าขึ้นว่าหมดทั้งที่ไม่รู้ */
+  const สถานะที่โชว์ = สถานะจากค่า(live ? shownStock : (p.stKnown ? p.st : null));
 
   return (
     <main className="pb-24">
@@ -150,7 +155,7 @@ export default function ProductDetail({
                  = ลูกค้าสั่งของที่ไม่มี แล้วร้านต้องไปยกเลิกทีหลัง
               🔑 ใช้เกณฑ์เดียวกับปุ่มซื้อ (shownStock <= 0) จะได้ไม่มีวันขัดกันเอง */}
           <span>
-            {shownStock > 0 ? "มีสินค้า" : "สินค้าหมด"}
+            {สถานะที่โชว์ === "ไม่รู้" ? "" : สถานะที่โชว์ === "มีของ" ? "มีสินค้า" : "สินค้าหมด"}
             {live && <span className="ml-1 text-[10px] text-[#1f9254]">● เช็คคลังแล้ว</span>}
           </span>
           {p.sku && <span>SKU {p.sku}</span>}
@@ -275,7 +280,7 @@ export default function ProductDetail({
         </button>
         <button
           onClick={() => setSheet("cart")}
-          disabled={shownStock <= 0}
+          disabled={ขึ้นป้ายหมดได้(สถานะที่โชว์)}
           className="flex w-[80px] shrink-0 flex-col items-center justify-center gap-0.5 border-r border-steel-700 py-1.5 text-safety disabled:text-steel-600"
         >
           <svg viewBox="0 0 24 24" className="h-[22px] w-[22px] fill-none stroke-current stroke-[1.7]">
@@ -288,10 +293,10 @@ export default function ProductDetail({
         </button>
         <button
           onClick={() => setSheet("buy")}
-          disabled={shownStock <= 0}
+          disabled={ขึ้นป้ายหมดได้(สถานะที่โชว์)}
           className="flex flex-1 flex-col items-center justify-center bg-safety py-2 font-heading leading-tight text-white disabled:bg-steel-700 disabled:text-steel-300"
         >
-          {shownStock <= 0 ? (
+          {ขึ้นป้ายหมดได้(สถานะที่โชว์) ? (
             <span className="text-sm font-semibold">สินค้าหมด</span>
           ) : (
             <>

@@ -8,9 +8,15 @@ import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 import Stars from "./Stars";
 import { compactCount, formatPrice } from "@/lib/types";
+import { สถานะจากค่า, ขึ้นป้ายหมดได้ } from "@/lib/stock-state";
+
+/** รายการในดัชนีค้นหา — `sk === false` คือ "ยังไม่รู้สต็อก" ⇒ ห้ามอ่านว่าหมด */
+const สถานะของรายการ = (e: { s: number; sk?: boolean }) => สถานะจากค่า(e.sk === false ? null : e.s);
 
 interface Entry {
   h: string; t: string; k: string; p: number; m: number; s: number; n: number;
+  /** `false` = ยังไม่รู้สต็อก ⇒ **ห้ามขึ้นว่าหมด** (ไม่มีช่อง = รู้) */
+  sk?: boolean;
   c?: number; i?: string; r?: [number, number]; vk?: string; f?: string;
   // เตรียมไว้ล่วงหน้าตอนโหลด — ค้นเร็วขึ้นมาก
   lt?: string; lk?: string; lvk?: string; lf?: string;
@@ -81,7 +87,7 @@ export default function SearchClient() {
         sc += t;
       }
       if (!ok) continue;
-      if (e.s > 0) sc += 30;                                    // มีของ ขึ้นก่อน
+      if (สถานะของรายการ(e) === "มีของ") sc += 30;                                    // มีของ ขึ้นก่อน
       if (e.i) sc += 20;                                        // มีรูป ขึ้นก่อน
       if (e.r) sc += Math.min(e.r[1], 500) / 10;                // รีวิวเยอะ ขึ้นก่อน
       out.push({ e, sc });
@@ -170,7 +176,7 @@ export default function SearchClient() {
                   ) : (
                     <div className="flex h-full items-center justify-center text-xs text-steel-600">ไม่มีรูป</div>
                   )}
-                  {e.s <= 0 && (
+                  {ขึ้นป้ายหมดได้(สถานะของรายการ(e)) && (
                     <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm font-semibold text-white">สินค้าหมด</span>
                   )}
                   {e.n > 1 && (
@@ -195,7 +201,7 @@ export default function SearchClient() {
                   ) : (
                     <p className="mt-0.5 text-[11px] text-steel-300">
                       {/* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวนคงเหลือ ตามคำสั่งท่านประธาน */}
-                      {e.s > 0 ? "มีสินค้า" : "สินค้าหมด"}
+                      {สถานะของรายการ(e) === "ไม่รู้" ? "" : สถานะของรายการ(e) === "มีของ" ? "มีสินค้า" : "สินค้าหมด"}
                     </p>
                   )}
                 </div>

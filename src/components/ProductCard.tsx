@@ -3,6 +3,7 @@ import Link from "next/link";
 import Stars from "./Stars";
 import { compactCount, discountPercent, type Product } from "@/lib/types";
 import Price from "@/components/Price";
+import { สถานะของสินค้า, ขึ้นป้ายหมดได้ } from "@/lib/stock-state";
 
 // การ์ดสินค้าแบบ Shopee/TikTok Shop — รูปสี่เหลี่ยมจัตุรัส ป้าย %ลด ราคาส้ม สต็อกจริง
 //
@@ -50,7 +51,10 @@ export default function ProductCard({
             -{off}%
           </span>
         )}
-        {p.st <= 0 && (
+        {/* 🔴 ป้ายนี้ขึ้นได้เฉพาะ "หมดจริง" — ของที่ยังไม่รู้สต็อกห้ามขึ้น
+            (2 ต.ค. 2569 ท่านประธานถ่ายจอมา: 00313 ขึ้นหมดทั้งที่ ZORT มี 641 ชิ้น)
+            คำสั่งท่าน: "ถ้าหมดก็บอกสินค้าหมด สีมืด ๆ แต่ต้องหมดจริง ๆ นะ ไม่ใช่โกหก" */}
+        {ขึ้นป้ายหมดได้(สถานะของสินค้า(p)) && (
           <span className="absolute inset-0 flex items-center justify-center bg-black/60 text-sm font-semibold text-white">
             สินค้าหมด
           </span>
@@ -93,9 +97,13 @@ export default function ProductCard({
           <span className="truncate">
             {p.sold
               ? `ขายได้ ${compactCount(p.sold)} ชิ้น`
-              : p.st > 0
-                ? "มีสินค้า"          /* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวน ตามคำสั่งท่านประธาน */
-                : "สินค้าหมด"}
+              /* 🔴 สามสถานะ: `ไม่รู้` ⇒ **ไม่พูดอะไรเลย** ห้ามเดาว่ามีหรือหมด
+                 (เขียนว่า "มีสินค้า" ตอนไม่รู้ ก็เป็นคำโกหกคนละทิศ) */
+              : สถานะของสินค้า(p) === "ไม่รู้"
+                ? ""
+                : สถานะของสินค้า(p) === "มีของ"
+                  ? "มีสินค้า"        /* 🔴 30 ก.ย. 2569 — ไม่โชว์จำนวน ตามคำสั่งท่านประธาน */
+                  : "สินค้าหมด"}
           </span>
         </p>
       </div>

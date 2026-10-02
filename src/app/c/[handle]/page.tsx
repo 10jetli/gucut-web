@@ -6,6 +6,7 @@ import { notFound } from "next/navigation";
 import ProductCard from "@/components/ProductCard";
 import { collections, getCollection, inCollection } from "@/lib/catalog";
 import { breadcrumbLd, itemListLd, ldScript } from "@/lib/seo";
+import { ยังขายได้, สถานะของสินค้า } from "@/lib/stock-state";
 
 export const dynamicParams = false;
 
@@ -32,7 +33,7 @@ export default async function CollectionPage({ params }: { params: Promise<{ han
   if (!c) notFound();
 
   const items = inCollection(handle).slice().sort((a, b) => {
-    const rank = (x: typeof a) => (x.img && x.st > 0 ? 0 : x.img ? 1 : 2);
+    const rank = (x: typeof a) => (x.img && ยังขายได้(สถานะของสินค้า(x)) ? 0 : x.img ? 1 : 2);
     return rank(a) - rank(b) || b.st - a.st;
   });
 

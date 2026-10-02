@@ -8,6 +8,7 @@ import { products, getProduct, getCollection, inCollection, sellable } from "@/l
 import { reviewItems } from "@/lib/reviews";
 import ProductSpecs from "@/components/ProductSpecs";
 import { detailOf, attrsOf } from "@/lib/details";
+import { availabilityของ, สถานะของสินค้า } from "@/lib/stock-state";
 
 export const dynamicParams = false;
 
@@ -66,7 +67,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
       lowPrice: p.p,
       highPrice: p.pmax,
       offerCount: Math.max(1, p.v.length),
-      availability: p.st > 0 ? "https://schema.org/InStock" : "https://schema.org/OutOfStock",
+      availability: availabilityของ(สถานะของสินค้า(p)),   /* ไม่รู้ ⇒ LimitedAvailability ห้ามบอก Google ว่าหมด */
       seller: { "@type": "Organization", name: BRAND.name },
     },
     // ดาวใต้ลิงก์ในผลค้นหา Google — ใช้คะแนนจริงจาก Shopee/Lazada/TikTok

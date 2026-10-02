@@ -23,6 +23,21 @@ function pick(url) {
   return url;
 }
 
+
+/* 🔴 ของสดจาก ZORT ที่อบไว้ (2 ต.ค. 2569) — ดัชนีค้นหาเคยใช้ `p.st` ที่แช่ไว้ตั้งแต่ 15 ส.ค.
+   ⇒ ผลค้นหาขึ้น "สินค้าหมด" ทั้งที่มีของ เหมือนการ์ดในหน้ารวม (ท่านประธานถ่ายจอมาเอง)
+   🔑 กติกาเดียวกับ `src/lib/live-stock-baked.ts` — **ไม่รู้ ห้ามกลายเป็น 0**
+      (มีเทส `scripts/tests/สองฝั่งอ่านสต็อกสดเหมือนกัน.test.mjs` ผูกสองฝั่งไว้) */
+const ของสด = (() => {
+  try { return JSON.parse(readFileSync(join(root, "src/data/stock-live.json"), "utf8")).map ?? {}; }
+  catch { return {}; }
+})();
+const สต็อกสดของ = (sku) => {
+  if (!sku) return null;
+  const n = ของสด[String(sku).trim()];
+  return typeof n === "number" && Number.isFinite(n) ? n : null;
+};
+
 const items = products.map((p) => {
   const e = {
     h: p.h,                 // handle → ลิงก์
@@ -30,9 +45,11 @@ const items = products.map((p) => {
     k: p.sku || "",         // SKU หลัก
     p: p.p,                 // ราคาต่ำสุด
     m: p.pmax,              // ราคาสูงสุด
-    s: p.st,                // สต็อกรวม
+    s: สต็อกสดของ(p.sku) ?? p.st,   // สต็อกรวม — ของสดก่อน · ไม่มีของสด ⇒ ใช้ค่าแช่แต่ติดธง sk:false
     n: p.v.length,          // จำนวนตัวเลือก
   };
+  /* ธง "ไม่รู้สต็อก" — ใส่เฉพาะตอนไม่รู้ เพื่อให้ไฟล์ดัชนีไม่โตขึ้นทั้งก้อน */
+  if (สต็อกสดของ(p.sku) === null) e.sk = false;
   if (p.c && p.c > p.p) e.c = p.c;                       // ราคาก่อนลด (ถ้ามี)
   const src = pick(p.img);
   if (src) e.i = src.startsWith(BASE) ? src.slice(BASE.length) : src;

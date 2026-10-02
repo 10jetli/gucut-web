@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { teethOf } from "@/lib/useLiveStock";
 import type { Variant } from "@/lib/types";
+import { สถานะของตัวเลือก } from "@/lib/stock-state";
 
 /* ตัวหาขนาดโซ่ให้ตรงกับบาร์ — แก้ปัญหา "คืนโซ่" ที่เจ้าของร้านบอกว่าเป็นปัญหาใหญ่ (5 ก.ย. 2569)
  *
@@ -273,7 +274,7 @@ export default function ChainSizeFinder({
                 ข้อต่อตาม {dlNum} ตัว ⇒ ขนาดที่ตรงคือ
               </p>
               <p className="mt-0.5 text-sm font-semibold text-[#1a1a1a]">{hit.v.t}</p>
-              {hit.v.s > 0 ? (
+              {สถานะของตัวเลือก(hit.v) !== "หมดจริง" ? (
                 <button
                   type="button"
                   onClick={() => onPick(hit.v)}

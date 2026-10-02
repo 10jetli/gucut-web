@@ -6,6 +6,7 @@ import { products, collections } from "@/lib/catalog";
 // ⚠️ ห้ามเขียนจำนวนเป็นเลขตายตัวตรงนี้ — โตทุกครั้งที่นำเข้าสินค้าใหม่ แล้วคอมเมนต์จะโกหกเงียบ ๆ
 // พร้อมใช้ทันทีที่ย้ายไป gucut.com — แค่เปลี่ยน NEXT_PUBLIC_SITE_URL (ดู src/lib/site.ts)
 import { SITE_URL as BASE } from "@/lib/site";
+import { ยังขายได้, สถานะของสินค้า } from "@/lib/stock-state";
 
 export const dynamic = "force-static";
 
@@ -52,7 +53,7 @@ export default function sitemap(): MetadataRoute.Sitemap {
     url: `${BASE}/products/${encodeURIComponent(p.h)}/`,
     lastModified: now,
     changeFrequency: "weekly" as const,
-    priority: p.img && p.st > 0 ? 0.7 : 0.3,
+    priority: p.img && ยังขายได้(สถานะของสินค้า(p)) ? 0.7 : 0.3,
   }));
 
   // หน้ารีวิวทั้งหมด — เนื้อหาจากผู้ซื้อจริง Google ชอบ
