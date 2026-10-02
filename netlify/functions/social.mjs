@@ -19,6 +19,7 @@
 import { getStore } from "@netlify/blobs";
 import { addView, readViews } from "../lib/views.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { เลือก } from "../lib/jev.mjs";
 
 const MAX_TEXT = 300;
 const MAX_NAME = 40;
@@ -190,7 +191,28 @@ export default async function handler(req, context) {
       await s.setJSON("counts", counts);
     }
 
-    await tell(`💬 คอมเมนต์ใหม่ในคลิป\n${name}: ${text}\nคลิป ${id}`);
+    /* 🤖 ให้ Jev ดูว่าน่าจะเป็นสแปมไหม — **เสนอเท่านั้น ไม่ลบ**
+       ⚠️ คอมเมนต์ถูกบันทึกไปแล้วข้างบน ⇒ ขั้นนี้พังได้โดยไม่กระทบลูกค้า
+       ⚠️ ต้อง await (กติกาเหล็ก: Netlify แช่แข็งฟังก์ชันทันทีที่ตอบ) */
+    let ธง = "";
+    try {
+      const ผล = await เลือก({
+        เรื่อง: "คอมเมนต์ใต้คลิปขายเลื่อยยนต์นี้ควรลบไหม",
+        เกณฑ์: "ลบเฉพาะโฆษณาของคนอื่น ขายของไม่เกี่ยว หลอกลวง หรือหยาบคาย · "
+             + "คำติชมสินค้าหรือบ่นเรื่องบริการให้เก็บไว้เสมอ",
+        ตัวเลือก: ["ลบ", "เก็บ"],
+        ข้อมูล: text,
+      });
+      if (ผล.เลือก === "ลบ") {
+        ธง = "ลบ";
+        c.flag = "ลบ";                       // ติดไว้ให้หน้าหลังร้านเห็น
+        const ที่แก้ = next.map((x) => (x.i === c.i ? c : x));
+        await s.setJSON(`cmt/${id}`, ที่แก้);
+      }
+    } catch { /* AI ล่ม = ไม่มีธง · คอมเมนต์ยังอยู่ครบ ห้ามให้ขั้นนี้ล้มทั้งคำขอ */ }
+
+    await tell(`💬 คอมเมนต์ใหม่ในคลิป\n${name}: ${text}\nคลิป ${id}`
+      + (ธง ? "\n\n🤖 Jev ว่าน่าจะเป็นสแปม — ลบได้ที่ /admin/comments/" : ""));
     return json({ ok: true, comment: c, comments: next });
   }
 
