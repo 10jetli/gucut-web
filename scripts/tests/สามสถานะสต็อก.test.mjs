@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* สถานะสต็อกมีสามสถานะ ไม่ใช่สอง — ตรึงกติกาที่ `src/lib/stock-state.ts`
+/* สถานะสต็อกมีสามสถานะ ไม่ใช่สอง — ตรึงกติกาที่ `src/lib/stock-state-core.js` (แอปเรียกผ่าน `stock-state.ts`)
  *
  * 🔴 ที่มา 2 ต.ค. 2569 — ท่านประธานถ่ายจอมาเอง:
  *    การ์ด `00313 หัวเทียน NEWWAVE` ขึ้น "สินค้าหมด" ทั้งที่ ZORT มี 641 ชิ้น
@@ -17,7 +17,7 @@ import { readFileSync } from "node:fs";
 import {
   สถานะจากค่า, สถานะของสินค้า, สถานะของตัวเลือก,
   ขึ้นป้ายหมดได้, ยังขายได้, availabilityของ,
-} from "../../src/lib/stock-state.ts";
+} from "../../src/lib/stock-state-core.js";
 
 test("แกนกลาง: ไม่รู้ ห้ามกลายเป็นศูนย์", () => {
   for (const v of [null, undefined, NaN, Number.POSITIVE_INFINITY]) {
