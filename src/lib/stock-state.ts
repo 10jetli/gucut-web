@@ -19,7 +19,7 @@
 //    เพราะ Netlify build ด้วย Node 20 ซึ่งโหลด `.ts` จากเทสไม่ได้ (อ่านเหตุเต็มในไฟล์นั้น)
 //    ⇒ แอปเรียกผ่านไฟล์นี้ · เทสเรียก core ตรง ๆ · **โค้ดชิ้นเดียวกันทั้งสองทาง**
 
-export type { StockState } from "./stock-state-core.js";
+export type { StockState } from "./stock-state-core.mjs";
 
 export {
   สถานะจากค่า,
@@ -28,4 +28,5 @@ export {
   ขึ้นป้ายหมดได้,
   ยังขายได้,
   availabilityของ,
-} from "./stock-state-core.js";
+  รวมสถานะ,
+} from "./stock-state-core.mjs";
