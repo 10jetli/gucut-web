@@ -126,19 +126,39 @@ echo "🚦 ด่านก่อน push — กัน build พังไม่�
 # ── หา node ที่รันชุดทดสอบได้ (ต้อง >= 20.18 เพราะ --experimental-test-module-mocks) ──
 # ⚠️ เครื่อง CEO เป็น node 20.15 ซึ่งรันไม่ได้ ⇒ **เคยมองไม่เห็นผลทดสอบจริงมาตลอด**
 #    ของที่รันไม่ได้ ห้ามถือว่า "ผ่าน" (กฎ three-states-not-two)
+#
+# 🔑 เพิ่ม 3 ต.ค. 2569 — **เลือกรุ่นให้ตรงกับรุ่นที่ build ใช้ ไม่ใช่รุ่นไหนก็ได้ที่ใหม่พอ**
+#    ของจริงที่กัด 2 ต.ค.: เครื่องนี้รัน v22 · Netlify ตรึง NODE_VERSION=20 ⇒ เทสผ่านครบในเครื่อง
+#    แล้ว build ตกที่ Netlify (เทส import `.ts` ซึ่ง 20 โหลดไม่ได้) ⇒ **เขียวที่นี่ไม่ได้พิสูจน์เขียวที่นั่น**
+#    ด่าน check-test-ts-imports.mjs จับ "คลาส .ts" ได้แล้ว แต่ของที่เป็น "ฟีเจอร์มีแค่ใน 22"
+#    ไม่มีอะไรจับ ⇒ ทางที่วัดจริงคือ **รันด้วยเมเจอร์ที่ build ใช้**
+#    🚫 หา**เมเจอร์ที่ตรงไม่เจอ = ไม่ตีกลับ** แค่ประกาศให้รู้ว่าผลรอบนี้วัดคนละรุ่นกับ build
+#       (ตีกลับ = เครื่องที่ไม่มี node 20 push ไม่ได้เลย ⇒ แดงลวงทุกวัน ⇒ คนไปใช้ SKIP_PREPUSH)
+build_major() {
+  sed -n 's/.*NODE_VERSION[[:space:]]*=[[:space:]]*"\([0-9]*\).*/\1/p' netlify.toml 2>/dev/null | head -1
+}
 pick_node() {
-  for c in "$NODE_FOR_TESTS" node /opt/homebrew/bin/node /usr/local/bin/node \
+  exact=""; newenough=""
+  # 🔑 คนตั้ง NODE_FOR_TESTS มาเอง = ตั้งใจเลือกรุ่นนั้น ⇒ **ชนะการเลือกอัตโนมัติเสมอ**
+  #    (ไม่งั้นข้อความที่เราบอกให้เขาตั้ง จะถูกเมินเงียบ ๆ = ปุ่มหลอก)
+  if [ -n "$NODE_FOR_TESTS" ] && "$NODE_FOR_TESTS" -p 1 >/dev/null 2>&1; then
+    echo "$NODE_FOR_TESTS"; return 0
+  fi
+  for c in node /opt/homebrew/bin/node /usr/local/bin/node \
            "$HOME"/.nvm/versions/node/*/bin/node /private/tmp/claude-*/*/*/scratchpad/nodenew/bin/node; do
     [ -x "$c" ] || command -v "$c" >/dev/null 2>&1 || continue
     v=$("$c" -p "process.versions.node" 2>/dev/null) || continue
     maj=${v%%.*}; rest=${v#*.}; min=${rest%%.*}
-    if [ "${maj:-0}" -gt 20 ] || { [ "${maj:-0}" -eq 20 ] && [ "${min:-0}" -ge 18 ]; }; then
-      echo "$c"; return 0
-    fi
+    [ "${maj:-0}" -gt 20 ] || { [ "${maj:-0}" -eq 20 ] && [ "${min:-0}" -ge 18 ]; } || continue
+    [ -n "$newenough" ] || newenough="$c"
+    if [ -n "$MAJ_BUILD" ] && [ "${maj:-0}" = "$MAJ_BUILD" ] && [ -z "$exact" ]; then exact="$c"; fi
   done
+  if [ -n "$exact" ]; then echo "$exact"; return 0; fi
+  [ -n "$newenough" ] && { echo "$newenough"; return 0; }
   return 1
 }
 NODE_FOR_TESTS="${NODE_FOR_TESTS:-}"
+MAJ_BUILD="$(build_major)"
 N="$(pick_node)" || {
   echo "❌ ไม่พบ node ที่รันชุดทดสอบได้ (ต้อง >= 20.18)"
   echo "   ของที่รันไม่ได้ ห้ามถือว่าผ่าน — ติดตั้ง node ใหม่ หรือตั้ง NODE_FOR_TESTS=/path/to/node"
@@ -146,7 +166,17 @@ N="$(pick_node)" || {
   exit 1
 }
 
-echo "   node ที่ใช้ทดสอบ: $("$N" -v)"
+MAJ_RUN="$("$N" -p "process.versions.node" 2>/dev/null)"; MAJ_RUN="${MAJ_RUN%%.*}"
+if [ -z "$MAJ_BUILD" ]; then
+  echo "   ⚠️ อ่าน NODE_VERSION จาก netlify.toml **ไม่ได้** ⇒ ไม่รู้ว่า build ใช้รุ่นไหน (ไม่รู้ ≠ ตรงกัน)"
+  echo "      node ที่ใช้ทดสอบ: $("$N" -v)"
+elif [ "$MAJ_RUN" = "$MAJ_BUILD" ]; then
+  echo "   node ที่ใช้ทดสอบ: $("$N" -v) — **ตรงเมเจอร์กับที่ build ใช้ ($MAJ_BUILD)**"
+else
+  echo "   ⚠️ node ที่ใช้ทดสอบ: $("$N" -v) แต่ **build ใช้เมเจอร์ $MAJ_BUILD**"
+  echo "      ⇒ ผลเขียวรอบนี้ **ไม่ได้พิสูจน์ว่า build ผ่าน** (ของที่มีแค่ใน $MAJ_RUN จะตกที่ Netlify)"
+  echo "      ⇒ ลงรุ่น $MAJ_BUILD ไว้ในเครื่อง หรือ NODE_FOR_TESTS=/path/to/node$MAJ_BUILD git push"
+fi
 if ! "$N" --experimental-test-module-mocks --test scripts/tests/*.test.mjs > "$LOGDIR"/test.log 2>&1; then
   echo "❌ ชุดทดสอบไม่ผ่าน — ไม่ push"
   grep -E "^# (tests|pass|fail)|^not ok" "$LOGDIR"/test.log | head -12
