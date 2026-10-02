@@ -16,6 +16,7 @@ import { getStore } from "@netlify/blobs";
 import { createHash } from "node:crypto";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { r2Ready, r2Put, fetchBinary } from "../lib/r2.mjs";
+import { เลือก } from "../lib/jev.mjs";
 
 const STORE = "gucut-reviews";
 const PLATFORMS = new Set(["shopee", "lazada", "tiktok"]);
@@ -235,7 +236,23 @@ export default async function handler(req, context) {
       }
     }
 
-    const rec = { ...r, video, ingestedAt: new Date().toISOString() };
+    /* 🤖 ให้ Jev ดูว่าเป็นรีวิวจริงหรือสแปม — **ติดธงเท่านั้น ไม่ทิ้ง**
+       🔴 ห้ามลบรีวิวเด็ดขาด (ท่านประธานสั่งย้ำ 3 ครั้ง) · เก็บไว้ครบ แล้วให้ตัวรวมตอน build ข้ามเอง
+       ⚠️ AI ล่ม = ไม่มีธง = ทำงานเหมือนเดิมทุกประการ */
+    let jev = "";
+    try {
+      const ผล = await เลือก({
+        เรื่อง: "รีวิวสินค้าชิ้นนี้เป็นรีวิวจริงจากคนซื้อ หรือเป็นสแปม/ข้อความปลอม",
+        เกณฑ์: "สแปม = โฆษณาของคนอื่น · ข้อความไร้ความหมาย · ก๊อปซ้ำ ๆ · ชวนไปเว็บอื่น · "
+             + "รีวิวจริง = พูดถึงสินค้าหรือการใช้งาน แม้จะสั้นหรือสะกดผิดก็ตาม "
+             + "ถ้าไม่แน่ใจให้ถือว่าเป็นรีวิวจริง",
+        ตัวเลือก: ["จริง", "สแปม"],
+        ข้อมูล: `★${r.rating} ${String(r.text || "").slice(0, 600)}`,
+      });
+      if (ผล.เลือก === "สแปม") jev = "สแปม";
+    } catch { /* ปล่อยผ่าน — รีวิวยังเข้าคิวครบ */ }
+
+    const rec = { ...r, video, ingestedAt: new Date().toISOString(), ...(jev ? { jev } : {}) };
     await store.setJSON(key, rec);
     added++;
     if (samples.length < 3) samples.push(`${r.platform}/${r.handle} ★${r.rating}${video ? " 🎬" : ""}`);

@@ -42,7 +42,15 @@ async function pending() {
       const got = await Promise.all(chunk.map((b) => store.get(b.key, { type: "json" }).catch(() => null)));
       out.push(...got.filter(Boolean));
     }
-    return out;
+    /* 🤖 ข้ามใบที่ Jev ติดธงว่าสแปม — **ข้าม ไม่ใช่ลบ** ของยังอยู่ใน Blobs ครบ
+       🔴 แตะเฉพาะรีวิวใหม่ที่ยังไม่เคยเข้าเว็บ ⇒ ยอดเดิม 11,304 ไม่ถูกแตะ
+       ⚠️ พิมพ์จำนวนที่ข้ามทุกครั้ง — ตัวกรองที่ทำงานเงียบ คือตัวที่วันหนึ่งกรองผิดแล้วไม่มีใครรู้ */
+    const ก่อนกรอง = out.length;
+    const เหลือ = out.filter((r) => r?.jev !== "สแปม");
+    if (ก่อนกรอง !== เหลือ.length) {
+      console.log(`merge-pending-reviews: Jev ชี้ว่าเป็นสแปม ${ก่อนกรอง - เหลือ.length} ใบ — ข้ามไม่รวมเข้าเว็บ (ของยังอยู่ในคิว)`);
+    }
+    return เหลือ;
   } catch (e) {
     console.log(`merge-pending-reviews: อ่าน Blobs ไม่ได้ (${e?.message || e}) — ข้ามรอบนี้`);
     return null;

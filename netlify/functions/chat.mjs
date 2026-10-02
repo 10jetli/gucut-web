@@ -18,6 +18,7 @@
 import { getStore } from "@netlify/blobs";
 import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { เลือก } from "../lib/jev.mjs";
 
 const MAX_TEXT = 2000;
 const MAX_MSGS = 300;
@@ -117,10 +118,24 @@ export default async function handler(req, context) {
     if (!asAdmin) {
       const who = t.name || "ลูกค้า";
       const about = t.product?.t ? `\n📦 ${t.product.t}` : "";
+      /* 🤖 ให้ Jev จัดลำดับความด่วน — ติดป้ายในข้อความแจ้งเตือนเท่านั้น
+         ไม่เปลี่ยนลำดับจริง ไม่ซ่อนใคร · ทุกข้อความยังถึงร้านเหมือนเดิม
+         ⚠️ AI ล่ม = ไม่มีป้าย = เหมือนก่อนมี Jev ทุกประการ */
+      let ด่วน = "";
+      try {
+        const ผล = await เลือก({
+          เรื่อง: "ข้อความลูกค้านี้ต้องรีบตอบแค่ไหน",
+          เกณฑ์: "ด่วน = จะซื้อเดี๋ยวนี้ · โอนเงินแล้ว · ของยังไม่ถึง · ของเสีย/เคลม · โกรธ · "
+               + "ทั่วไป = ถามราคา ถามสเปก ทักทาย",
+          ตัวเลือก: ["ด่วน", "ทั่วไป"],
+          ข้อมูล: text,
+        });
+        if (ผล.เลือก === "ด่วน") ด่วน = "🔥 ";
+      } catch { /* ไม่มีป้าย — ข้อความยังส่งถึงร้านครบ */ }
       const { TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID } = process.env;
       if (TELEGRAM_BOT_TOKEN && TELEGRAM_CHAT_ID) {
         // ท้ายข้อความมี #รหัสห้อง — แอดมินกด Reply แล้วบอทจะรู้ว่าตอบใคร
-        const body = `💬 ${who}${about}\n\n${text}\n\n↩️ กด Reply ข้อความนี้เพื่อตอบลูกค้า\n#${id}`;
+        const body = `${ด่วน}💬 ${who}${about}\n\n${text}\n\n↩️ กด Reply ข้อความนี้เพื่อตอบลูกค้า\n#${id}`;
         later(
           fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`, {
             method: "POST",
