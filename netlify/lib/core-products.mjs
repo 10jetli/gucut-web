@@ -12,6 +12,7 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
 import { markSync, freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
+import { ตรวจชนเพดาน } from "./zort-pages.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -327,6 +328,7 @@ export async function syncBundles() {
   );
 
   const all = [];
+  let ถึงหน้าสุดท้ายจริง = false;
   for (let page = 1; page <= 10; page++) {
     const res = await fetch(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, {
       headers: h,
@@ -338,8 +340,16 @@ export async function syncBundles() {
       return { ok: false, งาน: "syncBundles", error: `[syncBundles] ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
     }
     all.push(...data.list);
-    if (data.list.length < 200) break;
+    /* 🔑 B22 — จดหลักฐานว่า 'หมดจริง' ไม่ใช่แค่ break (ลูปนี้ออกได้สองทาง) */
+    if (data.list.length < 200) { ถึงหน้าสุดท้ายจริง = true; break; }
   }
+  /* 🔴 B22 ข้อที่สอง — ลูปนี้ออกได้สองทาง และของเดิมออกทั้งสองทางเงียบเหมือนกัน
+     ① หน้าสั้น = หมดจริง  ② **ชนเพดาน 10 หน้า (2,000 ชุด)** = ยังมีต่อแต่เราหยุดเอง
+     ร้านมี 360 ชุด ⇒ **ยังไม่เคยยิง** แต่เป็นรูเดียวกับ B20 ⇒ ปิดพร้อมกันทั้งคลาส */
+  const เกินเพดานชุด = ตรวจชนเพดาน({
+    ถึงหน้าสุดท้ายจริง, เพดานหน้า: 10, ต่อหน้า: 200, ชื่อ: "syncBundles",
+  });
+  if (เกินเพดานชุด) return { ok: false, งาน: "syncBundles", error: เกินเพดานชุด.message };
   if (!all.length) return { ok: false, error: "ZORT คืนรายชื่อชุดว่าง — รอบนี้ไม่เขียนอะไร" };
 
   const rows = [];

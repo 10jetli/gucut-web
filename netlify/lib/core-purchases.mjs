@@ -15,6 +15,7 @@ import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
 import { thaiDayFromUtc } from "./thaiday.mjs";
 import { markSync, freshnessOf } from "./core-freshness.mjs";
+import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -88,17 +89,25 @@ export async function syncPurchases(opt = {}) {
   if (!h) return { skip: `ยังไม่ได้ตั้งรหัส ZORT ของร้าน ${store}` };
   await ensureTables();
 
+  /* 🔴 **B22 (แก้ 4 ต.ค. 2569)** — ของเดิมกลืนหน้าที่อ่านไม่ได้เป็น `[]` แล้ว `break`
+     ⇒ หน้าแรกเต็ม 100 ใบ แล้วหน้าสองล้ม ⇒ ได้แค่ 100 ใบ **แต่จดเหมือนครบ**
+     ⇒ หน้าใบสั่งซื้อไม่เห็นรายการใหม่ และผลซิงก์ดูสำเร็จ (คลาส exhausted-is-not-complete)
+     ⇒ กติกาอยู่ที่ `netlify/lib/zort-pages.mjs` ที่เดียว — สามตัวที่ไล่หน้าเคยพลาดเหมือนกันทั้งสาม */
   const all = [];
-  for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`${BASE}/PurchaseOrder/GetPurchaseOrders?limit=100&page=${page}`, {
-      headers: h,
-      signal: AbortSignal.timeout(15000),
-    }).catch(() => null);
-    const data = res?.ok ? await res.json().catch(() => null) : null;
-    const list = Array.isArray(data?.list) ? data.list : [];
+  const เพดานหน้า = 10;
+  let ถึงหน้าสุดท้ายจริง = false;
+  for (let page = 1; page <= เพดานหน้า; page++) {
+    const list = await อ่านหน้าZort(
+      `${BASE}/PurchaseOrder/GetPurchaseOrders?limit=100&page=${page}`,
+      h, { หน้า: page, ชื่อ: `syncPurchases ${store}` },
+    );
     all.push(...list);
-    if (list.length < 100) break;
+    if (list.length < 100) { ถึงหน้าสุดท้ายจริง = true; break; }
   }
+  const เกินเพดาน = ตรวจชนเพดาน({
+    ถึงหน้าสุดท้ายจริง, เพดานหน้า, ต่อหน้า: 100, ชื่อ: `syncPurchases ${store}`,
+  });
+  if (เกินเพดาน) throw เกินเพดาน;
   if (!all.length) return { store, error: "ดึงใบสั่งซื้อจาก ZORT ไม่ได้" };
 
   const rows = all
@@ -441,12 +450,11 @@ export async function syncTransfers(days = 90, opt = {}) {
   let nextPage = null;
   // ⚠️ หยุดเมื่อเจอใบที่เก่ากว่าช่วงที่ขอ — ZORT เรียงใหม่ไปเก่าอยู่แล้ว
   for (let page = startPage; page < startPage + maxPages; page++) {
-    const res = await fetch(`${BASE}/Transfer/GetTransfers?limit=200&page=${page}`, {
-      headers: h,
-      signal: AbortSignal.timeout(12000),
-    }).catch(() => null);
-    const data = res?.ok ? await res.json().catch(() => null) : null;
-    const list = Array.isArray(data?.list) ? data.list : [];
+    /* 🔴 B22 — คลาสเดียวกับลูปใบสั่งซื้อข้างบน (กติกาอยู่ที่ zort-pages.mjs) */
+    const list = await อ่านหน้าZort(
+      `${BASE}/Transfer/GetTransfers?limit=200&page=${page}`,
+      h, { หน้า: page, ชื่อ: "ใบโอน", timeout: 12000 },
+    );
     if (!list.length) break;
     let hitOld = false;
     for (const t of list) {
