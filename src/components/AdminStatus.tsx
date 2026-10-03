@@ -12,7 +12,11 @@ import { useCallback, useEffect, useState } from "react";
 import { adminFetch, requireKey } from "@/lib/admin";
 
 type State = "ok" | "slow" | "warn" | "off" | "down";
-interface Row { name: string; state: State; note?: string; ms: number }
+/* 🔴 **B19 (เพิ่ม 4 ต.ค. 2569)** — `unknown` = ตัวเช็คทำงานได้ แต่ **ตอบเรื่องที่ถามไม่ได้**
+   (อ่านที่เก็บข้อมูลไม่ได้) ⇒ คนละเรื่องกับ `down` ที่แปลว่าระบบนั้นพังจริง
+   ⚠️ `undefined` = ท่อรุ่นเก่ายังไม่ส่งช่องนี้มา ⇒ ต่างจาก `false` ที่แปลว่า "ประเมินได้ครบ"
+      ⇒ ห้ามเขียน `unknown ?? false` แล้วถือว่าเท่ากัน */
+interface Row { name: string; state: State; note?: string; ms: number; unknown?: boolean }
 
 const LOOK: Record<State, { label: string; cls: string; dot: string }> = {
   ok:   { label: "ระบบปกติ",     cls: "text-[#12a150]", dot: "bg-[#12a150]" },
@@ -104,6 +108,9 @@ export default function AdminStatus() {
   const bad = (rows ?? []).filter((r) => r.state === "down").length;
   const slow = (rows ?? []).filter((r) => r.state === "slow").length;
   const warn = (rows ?? []).filter((r) => r.state === "warn").length;
+  /* 🔴 B19: นับ "ประเมินไม่ได้" แยกจาก "พัง" — ของเดิมไม่มีทางรู้เลยว่าตัวเช็คบางตัว
+     ตอบจากข้อมูลที่อ่านไม่ได้ ⇒ ป้าย "ทุกระบบปกติ" ขึ้นได้ทั้งที่บางเรื่อง **ยังไม่รู้** */
+  const ไม่รู้ = (rows ?? []).filter((r) => r.unknown === true).length;
 
   return (
     <main className="min-h-[100dvh] bg-steel-900">
@@ -130,6 +137,9 @@ export default function AdminStatus() {
               : bad ? `มี ${bad} ระบบใช้ไม่ได้`
               : slow ? `ทำงานได้ แต่ ${slow} ระบบช้าผิดปกติ`
               : warn ? `ทำงานได้ แต่มี ${warn} เรื่องที่ควรมาดู`
+              /* 🔴 B19: ไม่มีอะไรพัง **แต่ยังมีเรื่องที่ประเมินไม่ได้** ⇒ ห้ามขึ้น "ทุกระบบปกติ"
+                 เพราะนั่นคือคำยืนยันว่าตรวจครบแล้ว ซึ่งไม่จริง */
+              : ไม่รู้ ? `ไม่มีระบบไหนพัง แต่ ${ไม่รู้} เรื่องยังประเมินไม่ได้`
               : "ทุกระบบปกติ"}
           </p>
           <p className="mt-1 text-[12px] text-ink-300">
@@ -137,6 +147,13 @@ export default function AdminStatus() {
               ? "กดปุ่มเช็คแล้วระบบจะยิงไปถามของจริงทีละตัว"
               : `เช็คของจริงเมื่อ ${at} น. · ${rows.length} ระบบ`}
           </p>
+          {/* 🔴 B19: บอกตรง ๆ ว่า "ไม่รู้" ไม่ใช่ "ไม่มีปัญหา" — คนอ่านป้ายใหญ่ก่อนอ่านรายการ */}
+          {!!ไม่รู้ && (
+            <p className="mt-2 rounded-sm bg-[#fff4e5] px-3 py-2 text-[11.5px] leading-relaxed text-[#7a4a00]">
+              ⚠️ {ไม่รู้} เรื่องที่ตัวเช็คอ่านข้อมูลไม่ได้ จึง <b>ยังไม่รู้สถานะจริง</b> —
+              ไม่ได้แปลว่าไม่มีปัญหา และไม่ได้แปลว่าพัง (ดูรายการที่มีป้าย &ldquo;ยังไม่รู้&rdquo;)
+            </p>
+          )}
           {rows === null && !busy && (
             <button
               onClick={load}
@@ -154,7 +171,15 @@ export default function AdminStatus() {
               <div key={r.name} className="flex items-center gap-3 border-b border-steel-700 px-3.5 py-3 last:border-0">
                 <span aria-hidden className={`h-2.5 w-2.5 shrink-0 rounded-full ${look.dot}`} />
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[14px] text-ink">{r.name}</span>
+                  <span className="block text-[14px] text-ink">
+                    {r.name}
+                    {/* 🔴 B19: ป้ายรายแถว — คนอ่านแถว ไม่ได้อ่านกล่องสรุปทุกครั้ง */}
+                    {r.unknown === true && (
+                      <span className="ml-1.5 rounded-sm bg-[#fff4e5] px-1.5 py-0.5 text-[10.5px] font-medium text-[#7a4a00]">
+                        ยังไม่รู้
+                      </span>
+                    )}
+                  </span>
                   {r.note && <span className="mt-0.5 block text-[11.5px] leading-snug text-ink-300">{r.note}</span>}
                 </span>
                 <span className="shrink-0 text-right">
