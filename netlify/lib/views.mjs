@@ -7,6 +7,7 @@
 //    คนเดิมดูซ้ำ = เขียนทับคีย์เดิม นับเป็น 1 เหมือนเดิม (ยอดจึงเป็น "คนดู" ไม่ใช่ "ครั้ง")
 //    ซึ่งตรงกับที่เอาไปใช้จัดอันดับมากกว่า — กันคนกดรีเฟรชปั่นยอดตัวเองด้วย
 import { getStore } from "@netlify/blobs";
+import { อ่านรายชื่อคีย์ } from "./blob-keys.mjs";
 
 const store = () => getStore({ name: "gucut-social", consistency: "eventual" });
 
@@ -38,20 +39,34 @@ export async function addView(id, vid, frac = 0) {
   await Promise.all(jobs).catch(() => {});
 }
 
-/** ยอดวิวทุกคลิป — นับคีย์อย่างเดียว ไม่ต้องอ่านเนื้อ */
+/**
+ * ยอดวิวทุกคลิป — นับคีย์อย่างเดียว ไม่ต้องอ่านเนื้อ
+ * คืน `{ views, unknown }` — **`unknown` ต้องมีในคำตอบเสมอ แม้เป็น false**
+ *
+ * 🔴 **B10 (แก้ 4 ต.ค. 2569)** — ของเดิมคืนแค่ map แล้วกลืนความผิดพลาดเป็น `{}`
+ *    ⇒ ฟีดหน้าร้านโชว์ "0 คนดู" ทุกคลิป โดยไม่มีอะไรบอกว่าอ่านไม่ได้
+ * ⚠️ ที่นี่ **ยังเสิร์ฟต่อเมื่ออ่านไม่ได้** (ไม่โยน) ตามเจตนาเดิมในหัวไฟล์ —
+ *    ฟีดคลิปของลูกค้าต้องขึ้นได้แม้ยอดวิวจะยังไม่รู้ · ของที่เปลี่ยนคือ
+ *    **มันต้องบอกว่าไม่รู้** ไม่ใช่ตอบ 0 เฉย ๆ
+ */
 export async function readViews() {
-  return countPrefix("w/");
+  try {
+    return { views: await countPrefix("w/"), unknown: false };
+  } catch {
+    return { views: {}, unknown: true };
+  }
 }
 
+/** นับคีย์ตาม prefix — **โยน** เมื่ออ่านรายชื่อคีย์ไม่ได้ (กติกากลางที่ `lib/blob-keys.mjs`)
+ *  🚫 ห้ามใส่ `.catch(() => ({}))` กลับมา — "0 เพราะอ่านไม่ได้" ต้องแยกจาก "0 เพราะไม่มีคนดู"
+ *     และที่นี่กลมกลืนเป็นพิเศษ เพราะคลิปที่ยังไม่มีคนดูจริงก็มีอยู่เป็นปกติ */
 async function countPrefix(prefix) {
+  const คีย์ = await อ่านรายชื่อคีย์(store(), prefix, "ยอดวิวคลิป");
   const out = {};
-  try {
-    const { blobs } = await store().list({ prefix });
-    for (const b of blobs) {
-      const id = b.key.split("/")[1];
-      if (id) out[id] = (out[id] || 0) + 1;
-    }
-  } catch { /* ดึงไม่ได้ก็ส่งของว่างไป ฟีดยังทำงานได้ */ }
+  for (const k of คีย์) {
+    const id = k.split("/")[1];
+    if (id) out[id] = (out[id] || 0) + 1;
+  }
   return out;
 }
 
@@ -63,10 +78,18 @@ async function countPrefix(prefix) {
  *    ห้ามเอาไปใส่ใน /api/social ที่หน้าร้านเรียกทุกครั้งที่เปิดฟีด
  */
 export async function readWatch() {
-  const [views, half, full] = await Promise.all([
-    countPrefix("w/"),
-    countPrefix("q/"),
-    countPrefix("f/"),
-  ]);
-  return { views, half, full };
+  /* 🔴 **B10 (แก้ 4 ต.ค. 2569)** — ของเดิมพึ่ง `countPrefix` ที่กลืนความผิดพลาดเป็น `{}`
+     ⇒ `list` สะดุด ⇒ ทั้งสามช่องว่าง ⇒ `clip-stats` ไม่มีคลิปให้ไล่เลย
+     ⇒ จอ `/admin/clips/` ขึ้น **"ยังไม่มีข้อมูล — ตัวเลขจะขึ้นเมื่อมีลูกค้าเข้าไปดูคลิป"**
+        ซึ่งเป็น **คำอธิบายที่ฟังขึ้นสำหรับเหตุขัดข้อง** ⇒ คนอ่านแล้วเลิกสงสัย
+     🔑 ทั้งสาม prefix พังแยกกันได้ ⇒ ต้องบอกเป็นรายช่อง ไม่ใช่ธงเดียวรวม ๆ
+        และ `unreadable` ต้องอยู่ในคำตอบ **แม้เป็นอาร์เรย์ว่าง** (กติกาเดียวกับ `blob-keys.mjs`)
+        — ไม่มีช่อง ≠ ไม่มีปัญหา · ถ้าซ่อนตอนว่าง จอจะแยก "ท่อรุ่นเก่า" ออกจาก "อ่านได้ครบ" ไม่ได้ */
+  const ช่อง = [["views", "w/"], ["half", "q/"], ["full", "f/"]];
+  const out = { views: {}, half: {}, full: {}, unreadable: [] };
+  await Promise.all(ช่อง.map(async ([ชื่อ, prefix]) => {
+    try { out[ชื่อ] = await countPrefix(prefix); }
+    catch { out.unreadable.push(ชื่อ); }
+  }));
+  return out;
 }

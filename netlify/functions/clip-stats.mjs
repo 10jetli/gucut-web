@@ -25,10 +25,16 @@ export default async function handler(req, context) {
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
   const store = getStore({ name: "gucut-social", consistency: "eventual" });
-  const [watch, counts] = await Promise.all([
-    readWatch(),
-    store.get("counts", { type: "json" }).catch(() => null).then((c) => c || {}),
-  ]);
+  /* 🔴 **B10 (แก้ 4 ต.ค. 2569)** — `counts` เดิม `.catch(() => null).then((c) => c || {})`
+     ⇒ อ่านยอดหัวใจ/คอมเมนต์ไม่ได้ ⇒ `{}` ⇒ ทุกคลิปขึ้น 0 หัวใจ 0 คอมเมนต์
+     🔑 `{}` ที่มาจาก "ไม่เคยมีใครกดหัวใจ" กับที่มาจาก "อ่านไม่ได้" **หน้าตาเหมือนกันเป๊ะ**
+        ⇒ แยกเป็นธงส่งขึ้นจอ ไม่ใช่กลืนที่นี่ */
+  let counts = {};
+  let countsUnknown = false;
+  try { counts = (await store.get("counts", { type: "json" })) || {}; }
+  catch { countsUnknown = true; }
+
+  const watch = await readWatch();
 
   const ids = new Set([
     ...Object.keys(watch.views),
@@ -49,7 +55,12 @@ export default async function handler(req, context) {
     };
   }).sort((a, b) => b.views - a.views || b.likes - a.likes);
 
-  return json({ rows });
+  /* 🔑 **ธงต้องอยู่ในคำตอบเสมอ แม้ไม่มีปัญหา** (กติกาเดียวกับ `lib/blob-keys.mjs`)
+     ไม่มีช่อง ≠ ไม่มีปัญหา — ถ้าซ่อนตอนปกติ จอจะแยก "ท่อรุ่นเก่าไม่ส่งมา" ออกจาก
+     "อ่านได้ครบ" ไม่ได้ แล้วจะกลับไปเดาเหมือนเดิม
+     ⚠️ และต้องส่งมา **ในเนื้อ JSON** ไม่ใช่พึ่งรหัสสถานะ — เส้นนี้ยังตอบ 200
+        เพราะแถวที่อ่านได้ก็ยังมีประโยชน์ · จอที่ดักแค่ `r.ok` จึงมองไม่เห็นเคสนี้เลย */
+  return json({ rows, unreadable: watch.unreadable, countsUnknown });
 }
 
 export const config = { path: "/api/clip-stats" };

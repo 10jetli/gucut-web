@@ -103,8 +103,12 @@ export default async function handler(req, context) {
       return json({ comments: list }, 200, { "cache-control": "public, max-age=0, s-maxage=15" });
     }
     // ยอดรวมทุกคลิป — แคชที่ edge 60 วิ ฟีดของลูกค้าคนถัดไปได้ทันทีไม่ต้องรอ
-    const [counts, views] = await Promise.all([readCounts(s), readViews()]);
-    return json({ counts, views }, 200, {
+    /* 🔴 **B10 (แก้ 4 ต.ค. 2569)** — `readViews()` เดิมกลืน `list` ที่สะดุดเป็น `{}`
+       ⇒ ฟีดคลิปขึ้น "0 คนดู" ทุกคลิป เหมือนไม่มีใครดูเลย
+       ⚠️ เส้นนี้ **ยังต้องเสิร์ฟต่อ** (ฟีดของลูกค้าต้องขึ้นได้) ⇒ ไม่โยน
+          แต่ต้องส่งธง `viewsUnknown` ขึ้นไปด้วย **ทุกครั้ง แม้เป็น false** */
+    const [counts, { views, unknown: viewsUnknown }] = await Promise.all([readCounts(s), readViews()]);
+    return json({ counts, views, viewsUnknown }, 200, {
       "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     });
   }

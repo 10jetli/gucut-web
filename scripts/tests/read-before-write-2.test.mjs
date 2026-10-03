@@ -23,7 +23,7 @@ let asAdmin = false;
 mock.module('@netlify/blobs', { namedExports: { getStore: () => fakeStore } });
 mock.module('../../netlify/lib/admin-gate.mjs', { namedExports: { adminGate: async () => ({ ok: asAdmin }) } });
 mock.module('../../netlify/lib/push.mjs', { namedExports: { pushToAdmins: async () => 0 } });
-mock.module('../../netlify/lib/views.mjs', { namedExports: { addView: async () => {}, readViews: async () => ({}) } });
+mock.module('../../netlify/lib/views.mjs', { namedExports: { addView: async () => {}, readViews: async () => ({ views: {}, unknown: false })   /* B10: readViews คืน { views, unknown } แล้ว */ } });
 delete process.env.TELEGRAM_BOT_TOKEN; delete process.env.TELEGRAM_CHAT_ID; delete process.env.CHAT_NOTIFY_URL;
 
 const { default: chat } = await import('../../netlify/functions/chat.mjs');
