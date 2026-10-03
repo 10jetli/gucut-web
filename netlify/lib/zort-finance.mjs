@@ -85,7 +85,13 @@ export async function zortReadList(input = {}) {
   try {
     res = await fetch(`${BASE}/${path}`, { headers, signal: AbortSignal.timeout(15000) });
   } catch (e) {
-    return { ok: false, unknown: true, kind, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message ?? e).slice(0, 120)} — ยังไม่รู้ว่ามีรายการไหม` };
+    return {
+      ok: false, unknown: true, kind,
+      /* 🔑 ฟิลด์ที่ **เครื่องอ่านได้** — ฝั่งจอขอไว้ 4 ต.ค. 2569 (ใบ t_mu1bkrdw)
+         จอต้องแยก "ZORT พังฝั่งเขา" ออกจาก "เราขอผิด" **จากเนื้อ ไม่ใช่จากรหัสสถานะ** */
+      upstream: "zort", zortCode: null, zortDesc: null, retryable: true,
+      error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message ?? e).slice(0, 120)} — ยังไม่รู้ว่ามีรายการไหม`,
+    };
   }
   const body = res.ok ? await res.json().catch(() => null) : null;
   if (!body || !Array.isArray(body.list)) {
@@ -97,6 +103,11 @@ export async function zortReadList(input = {}) {
       zortCode: body?.res?.resCode ?? body?.resCode ?? null,
       // ข้อความของ ZORT — ใช้ไล่สาเหตุ (14 ก.ย. 2569: GetMoneyTransfers ตอบ resCode 500 แต่เดิมไม่เห็นข้อความ)
       zortDesc: String(body?.res?.resDesc ?? body?.resDesc ?? "").slice(0, 160) || null,
+      /* 🔑 **ต้องมีทุกครั้งแม้ค่าปกติ** (กติกาเดียวกับ `unreadable` ใน blob-keys.mjs)
+         ไม่มีช่อง ≠ ไม่มีปัญหา ⇒ ถ้าซ่อนตอนปกติ จอจะแยก "ท่อรุ่นเก่าไม่ส่งมา"
+         ออกจาก "ไม่มีปัญหา" ไม่ได้ · `upstream` บอกว่าใครพัง ไม่ใช่เราพัง */
+      upstream: "zort",
+      retryable: true,
       error: `ZORT ไม่คืนรายการ${def.label} (HTTP ${res.status}) — ยังไม่รู้ว่ามีรายการไหม ห้ามแปลว่าว่าง`,
     };
   }
@@ -105,6 +116,12 @@ export async function zortReadList(input = {}) {
     ok: true,
     kind,
     label: def.label,
+    /* 🔑 มีฟิลด์ชุดเดียวกันในกรณีสำเร็จด้วย — **ไม่มีช่อง ≠ ไม่มีปัญหา**
+       จอเช็ค `upstreamOk === true` ได้ตรง ๆ แทนการเดาจากการไม่มีคีย์ */
+    upstream: "zort",
+    upstreamOk: true,
+    zortCode: null,
+    zortDesc: null,
     applied: { from: from || null, to: to || null, keyword: keyword || null, page, limit, ...(def.types ? { type: type || null } : {}) },
     ...(limitOk && limitIn > 500 ? { limitClamped: true, limitRequested: limitIn } : {}),
     // จำนวนทั้งหมดตามที่ ZORT บอก — ไม่มีช่องนี้ = null (ห้ามเอาจำนวนแถวหน้านี้มาแทน)
