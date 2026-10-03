@@ -1299,6 +1299,30 @@ async function route(req, context) {
        ขาเข้าจากจอ: พารามิเตอร์ใน URL ตามนี้ · ขาออกไป ZORT: Finance/GetIncomes · GetExpenses · GetMoneyTransfers · Product/GetVariations
        ⇒ {ok, kind, label, applied, count, rowKeys, rows (แถวดิบของ ZORT)} · อ่านอย่างเดียว ส่งตรงไม่เก็บลงคลังเงา
        ถาม ZORT ไม่สำเร็จ = 502 unknown (ห้ามแปลว่าว่าง) · พารามิเตอร์ผิด = 400 · ใบ t_mu1bkrdw ของ gucut2 */
+    /* GET ?probestatus=<รหัส 3 หลัก> — **เครื่องวัดว่า CDN กิน body ของรหัสนั้นไหม** (อ่านอย่างเดียว)
+       🔴 ที่มา 4 ต.ค. 2569: เส้น `?zortlist=moneytransfers` คืน `json(r, 502)` พร้อม
+          `zortCode`/`zortDesc`/`error` ครบ **แต่จอไม่เคยได้เห็น** — วัดแล้วพบว่า
+          Cloudflare แทน body ของ **5xx** ด้วยหน้าของตัวเอง (`text/plain` · ไม่มี `x-nf-request-id`)
+          ส่วน `405` body รอด 40 ไบต์ ⇒ **4xx รอด 5xx ถูกกิน**
+       🔑 แต่ฝั่งจอค้านถูก: **ห้ามเหมาจาก 405 ไปทั้งตระกูล 4xx**
+          405 เป็นรหัสที่ชั้นกลางเจอบ่อยมาก · 424 แทบไม่มีใครใช้ ⇒ อาจถูกจัดการคนละแบบ
+          ⇒ คลาส: **แถวที่บังเอิญตรง กลายเป็นใบรับรองให้ทั้งตาราง**
+       ⇒ เส้นนี้จึงมีไว้ **วัดรหัสที่จะใช้จริง ไม่ใช่รหัสที่วัดง่าย**
+       ⚠️ เก็บไว้ถาวรโดยตั้งใจ — พฤติกรรมของ CDN **เปลี่ยนได้โดยไม่มีใครบอก**
+          ⇒ วันไหนสงสัยว่า body หาย ให้ยิงเส้นนี้ก่อนเดา (คำเตือนที่วัดซ้ำได้ ไม่ใช่คำเตือนที่ค้าง) */
+    if (url.searchParams.has("probestatus")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
+      const code = Number(url.searchParams.get("probestatus"));
+      if (!Number.isInteger(code) || code < 200 || code > 599) {
+        return json({ error: "probestatus ต้องเป็นรหัส HTTP 200–599" }, 400);
+      }
+      return json({
+        probe: true,
+        "statusที่ขอ": code,
+        "ยาวพอให้นับได้": "ก".repeat(40),
+        "🔑": "ถ้าเห็นก้อนนี้ครบ = body ของรหัสนี้รอดผ่าน CDN · ถ้าได้ text/plain สั้น ๆ = ถูกกิน",
+      }, code);
+    }
     if (url.searchParams.has("zortlist")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortReadList } = await import("../lib/zort-finance.mjs");
