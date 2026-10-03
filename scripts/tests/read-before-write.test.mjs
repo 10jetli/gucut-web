@@ -29,6 +29,11 @@ mock.module('../../netlify/lib/session.mjs', { namedExports: {
   LINK_COOKIE: 'gu_link',
   clean: (v, n) => String(v ?? '').trim().slice(0, n),
   currentUser: async () => null,
+  /* B26 (4 ต.ค. 2569): auth.mjs ใช้ `currentUserState` แทน `currentUser` ที่ด่าน profile/password
+     ⚠️ mock นี้ทับ session.mjs **ทั้งโมดูล** ⇒ export ใหม่ที่ไม่ได้เติมจะกลายเป็น undefined
+        แล้วไฟล์นี้ตกทั้งไฟล์ (ซึ่งเกิดขึ้นจริงรอบนี้ — เป็นสัญญาณที่ดี ไม่ใช่สัญญาณเสีย)
+     "guest" = ยืนยันว่าไม่มีใครล็อกอิน ซึ่งตรงกับ `currentUser: async () => null` เดิม */
+  currentUserState: async () => ({ state: 'guest' }),
   json,
   killCookie: () => ({}), killShort: () => ({}),
   newSession: async () => 'tok',

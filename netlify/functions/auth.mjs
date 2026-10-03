@@ -15,7 +15,7 @@
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { claimPending } from "../lib/points.mjs";
 import {
-  LINK_COOKIE, clean, currentUser, json, killCookie, killShort, newSession,
+  LINK_COOKIE, clean, currentUserState, json, killCookie, killShort, newSession,
   normPhone, publicUser, readCookie, setCookie, store,
 } from "../lib/session.mjs";
 
@@ -45,8 +45,17 @@ export default async function handler(req) {
         pending: p ? { provider: p.provider, label: p.label, name: p.name, picture: p.picture } : null,
       });
     }
-    const me = await currentUser(req, s);
-    return json({ user: me ? publicUser(me.user) : null });
+    /* 🔴 **B26 (แก้ 4 ต.ค. 2569) — เส้นนี้คือจุดที่ลูกค้าถูกบอกว่า "ยังไม่ได้ล็อกอิน"**
+       ของเดิมใช้ `currentUser` ซึ่งยุบ "อ่านไม่ได้" เป็น null ⇒ ตอบ **200 `{user:null}`**
+       ⇒ จอแปลว่า "ถามแล้ว ไม่มีใครล็อกอิน" ⇒ `fetchMe()` ลบของที่จำไว้ทิ้ง
+          หัวเว็บกลายเป็นคนนอก · หน้าแต้มขึ้น "เข้าสู่ระบบเพื่อดูแต้ม" ให้คนที่ล็อกอินอยู่
+       🔑 จอฝั่งหน้าเว็บ **รับสามสถานะไว้แล้ว** (PointsView 6 ก.ย. 2569) —
+          ที่ยุบสามเหลือสองคือเส้นนี้ ⇒ ต้องตอบ **503** ไม่ใช่ 200 `{user:null}` */
+    const me = await currentUserState(req, s);
+    if (me.state === "unknown") {
+      return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง", unknown: true }, 503);
+    }
+    return json({ user: me.state === "user" ? publicUser(me.user) : null });
   }
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
 
@@ -99,7 +108,16 @@ export default async function handler(req) {
     const locked = await checkLock(s, phone);
     if (locked) return locked;
 
-    const u = await s.get(`u/${phone}`, { type: "json" }).catch(() => null);
+    /* 🔴 **B26 (แก้ 4 ต.ค. 2569) — อ่านบัญชีไม่ได้ ถูกแปลว่า "รหัสผิด"**
+       ของเดิม `.catch(() => null)` ⇒ Blobs สะดุด ⇒ `!u` เป็นจริง ⇒ ลงไปที่ **`addFail`**
+       ⇒ ① ลูกค้าที่กรอกรหัส**ถูก** เห็น "เบอร์หรือรหัสผ่านไม่ถูกต้อง"
+          ② **ร้ายกว่านั้น: ตัวนับครั้งที่ผิดเดินหน้า** ⇒ สะดุดครบ 8 รอบ = **บัญชีจริงถูกล็อก 15 นาที**
+       ⇒ ปัญหาที่เก็บข้อมูลกลายเป็นการลงโทษลูกค้า โดยไม่มีอะไรฟ้องเลย
+       🔑 ท่าเดียวกับ register (B12) — `get` คืน null เฉพาะ "ไม่มีคีย์" · อ่านไม่ได้ = throw
+          ⇒ ตอบ 503 **ก่อนถึง addFail** จึงไม่มีการนับครั้งที่ผิด */
+    let u;
+    try { u = await s.get(`u/${phone}`, { type: "json" }); }
+    catch { return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง" }, 503); }
     // ข้อความเดียวกันทั้งกรณีไม่มีเบอร์นี้และรหัสผิด — ไม่บอกคนนอกว่าเบอร์ไหนเป็นสมาชิก
     if (!u || !checkPw(pw, u.pass)) {
       await addFail(s, phone);
@@ -200,8 +218,17 @@ export default async function handler(req) {
   }
 
   // ---------- ที่เหลือต้องล็อกอินก่อน ----------
-  const me = await currentUser(req, s);
-  if (!me) return json({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  /* 🔴 **B26 (แก้ 4 ต.ค. 2569)** — ด่านนี้คุม `profile` กับ `password` ซึ่ง **เขียนทับ `u/<เบอร์>`**
+     ของเดิมใช้ `currentUser` ⇒ อ่านไม่ได้ = "ยังไม่ได้เข้าสู่ระบบ" 401
+     ⇒ ลูกค้าที่กำลังกดบันทึกที่อยู่/เปลี่ยนรหัส ถูกไล่ไปล็อกอินใหม่ทั้งที่ล็อกอินอยู่
+     🔑 ตรงตามกฎที่เขียนกำกับ `currentUser` ไว้: จุดที่ **ให้สิทธิ์หรือเขียนทับข้อมูล**
+        ต้องแยก `unknown` ออกมาเอง — ยังไม่ให้ผ่าน (fail-closed) แต่ต้องบอกเหตุให้ตรง */
+  const me0 = await currentUserState(req, s);
+  if (me0.state === "unknown") {
+    return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง", unknown: true }, 503);
+  }
+  if (me0.state !== "user") return json({ error: "ยังไม่ได้เข้าสู่ระบบ" }, 401);
+  const me = { user: me0.user, token: me0.token };
 
   if (action === "profile") {
     const u = me.user;
@@ -250,9 +277,18 @@ async function pendingLink(req, s) {
   return { ...p, token: tok };
 }
 
-/** กันเดารหัสรัว ๆ */
+/** กันเดารหัสรัว ๆ
+ *
+ * 🔴 **B26 ข้อที่เจอระหว่างแก้ — ไม่ได้อยู่ในใบงาน แต่เป็นคลาสเดียวกันและชี้ไปทาง fail-open**
+ *    ของเดิม: `.catch(() => null) || { fails: 0, until: 0 }`
+ *    ⇒ อ่านตัวนับไม่ได้ = **"ยังไม่เคยใส่รหัสผิด"** ⇒ `checkLock` ปล่อยผ่านทุกครั้ง
+ *    ⇒ ตัวกันเดารหัสรัว ๆ **ปิดตัวเองเงียบ ๆ ตอนระบบไม่สบาย** ซึ่งเป็นจังหวะที่มันควรทำงานที่สุด
+ *    🔑 ทิศของ "ไม่รู้" ที่นี่ต้องเป็น **ไม่ให้ผ่าน** (fail-closed) ไม่ใช่ปล่อยผ่าน
+ *       และต้องบอกว่าระบบขัดข้อง ไม่ใช่บอกว่า "ใส่รหัสผิดหลายครั้ง" (คนละเรื่อง) */
 async function checkLock(s, phone) {
-  const rl = (await s.get(`rl/${phone}`, { type: "json" }).catch(() => null)) || { fails: 0, until: 0 };
+  let rl;
+  try { rl = (await s.get(`rl/${phone}`, { type: "json" })) || { fails: 0, until: 0 }; }
+  catch { return json({ error: "ระบบสมาชิกขัดข้องชั่วคราว ลองใหม่อีกครั้ง" }, 503); }
   if (rl.until > Date.now()) {
     const min = Math.ceil((rl.until - Date.now()) / 60000);
     return json({ error: `ใส่รหัสผิดหลายครั้งเกินไป ลองใหม่ในอีก ${min} นาที` }, 429);
@@ -260,7 +296,13 @@ async function checkLock(s, phone) {
   return null;
 }
 async function addFail(s, phone) {
-  const rl = (await s.get(`rl/${phone}`, { type: "json" }).catch(() => null)) || { fails: 0, until: 0 };
+  /* 🔴 **B26 (ต่อ)** — ของเดิมอ่านพลาดแล้วใช้ `{ fails: 0 }` **แล้วเขียนทับ**
+     ⇒ คนที่ผิดมา 7 ครั้งแล้วถูกรีเซ็ตเป็น 1 ทุกครั้งที่อ่านสะดุด ⇒ ไม่มีวันครบ 8
+     ⇒ ไม่เขียนอะไรเลยดีกว่าเขียนเลขที่เราไม่ได้อ่านมา (ของเดิมในที่เก็บยังอยู่ครบ)
+     ⚠️ มาถึงบรรทัดนี้ได้แปลว่า `checkLock` เพิ่งอ่าน `rl/` สำเร็จ ⇒ พลาดที่นี่คือสะดุดสด ๆ หายาก */
+  let rl;
+  try { rl = (await s.get(`rl/${phone}`, { type: "json" })) || { fails: 0, until: 0 }; }
+  catch { return; }
   const fails = rl.fails + 1;
   await s.setJSON(`rl/${phone}`, {
     fails: fails >= MAX_FAILS ? 0 : fails,

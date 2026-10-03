@@ -45,10 +45,18 @@ async function call(body: Record<string, unknown>) {
   return d;
 }
 
-/** ถามเซิร์ฟเวอร์ว่าตอนนี้ล็อกอินเป็นใคร */
+/** ถามเซิร์ฟเวอร์ว่าตอนนี้ล็อกอินเป็นใคร
+ *
+ * 🔴 **B26 (แก้ 4 ต.ค. 2569)** — ของเดิมอ่าน `d.user` โดย **ไม่ดู `r.ok`**
+ *    ⇒ `/api/auth` ที่ตอบ 503 (ที่เก็บข้อมูลสมาชิกอ่านไม่ได้) ยังแกะ JSON ได้ปกติ
+ *    ⇒ `d.user` ไม่มี ⇒ `remember(null)` ⇒ **ลบของที่จำไว้ + ยิง user-changed**
+ *    ⇒ หัวเว็บเปลี่ยนเป็นคนนอกให้ลูกค้าเห็น ๆ ทั้งที่ cookie ยังอยู่ครบ
+ *    🔑 "ถามไม่ได้" ต้องเดินทางเดียวกับ "เน็ตหลุด" (ใช้ของที่จำไว้) —
+ *       ไม่ใช่ทางเดียวกับ "ถามแล้ว ไม่มีใครล็อกอิน" (ซึ่งต้องล้างของที่จำไว้) */
 export async function fetchMe(): Promise<User | null> {
   try {
     const r = await fetch("/api/auth", { credentials: "same-origin", cache: "no-store" });
+    if (!r.ok) return cachedUser();   // ถามไม่ได้ ≠ ไม่มีใครล็อกอิน — ห้ามล้างของที่จำไว้
     const d = await r.json();
     remember(d.user || null);
     return d.user || null;

@@ -35,8 +35,13 @@ export default function PointsView() {
     Promise.all([
       fetch("/api/points").then((r) => r.json()),
       /* ⚠️ ถามไม่ได้ ⇒ คืน null **ห้ามคืน { user: null }** เพราะนั่นแปลว่า
-         "ถามแล้ว ไม่มีใครล็อกอิน" ซึ่งเป็นคำตอบคนละอย่างกับ "ถามไม่ได้" */
-      fetch("/api/auth").then((r) => r.json()).catch(() => null),
+         "ถามแล้ว ไม่มีใครล็อกอิน" ซึ่งเป็นคำตอบคนละอย่างกับ "ถามไม่ได้"
+         🔴 **B26 (แก้ 4 ต.ค. 2569)**: เจตนาข้างบนถูกตั้งแต่ 6 ก.ย. แต่ **รูรั่วอยู่ที่ `.catch`**
+            — มันดักได้แค่ตอน fetch เองล้ม · 503 จาก `/api/auth` **แกะ JSON สำเร็จ**
+            ⇒ ได้ `{error:…}` ที่ไม่มีช่อง `user` ⇒ `!a.user` เป็นจริง
+            ⇒ จอบอกคนที่ล็อกอินอยู่ว่า "เข้าสู่ระบบเพื่อดูแต้ม" — อาการเดิมที่ตั้งใจกันไว้
+            🔑 ต้องกรอง `r.ok` ด้วย ไม่ใช่พึ่ง `.catch` อย่างเดียว */
+      fetch("/api/auth").then((r) => (r.ok ? r.json() : null)).catch(() => null),
     ])
       .then(([p, a]) => { setD(p); setNeedLogin(a ? !a.user : null); })
       .catch(() => { setFailed(true); setD(null); });

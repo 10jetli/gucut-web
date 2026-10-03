@@ -56,13 +56,56 @@ export const shortCookie = (name, value, seconds) =>
 export const killShort = (name) =>
   `${name}=; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=0`;
 
-export async function currentUser(req, s) {
+/**
+ * ตอนนี้ใครล็อกอินอยู่ — **สามสถานะ ห้ามยุบเหลือสอง**
+ *
+ *   { state:"user",  user, token }  อ่านได้ และมีคนล็อกอินอยู่จริง
+ *   { state:"guest" }               อ่านได้ และยืนยันว่า **ไม่มีใคร**ล็อกอิน
+ *   { state:"unknown", err }        **ถามไม่ได้** — ที่เก็บข้อมูลปฏิเสธการอ่าน
+ *
+ * 🔴 **B26 (แก้ 4 ต.ค. 2569)** — ของเดิมเขียน `.catch(() => null)` ทั้งสองบรรทัด
+ *    ⇒ Blobs สะดุด = `currentUser` คืน null = **"ยืนยันว่าไม่มีใครล็อกอิน"**
+ *    ⇒ ลูกค้าที่ล็อกอินอยู่ถูกจอบอกว่ายังไม่ได้ล็อกอิน · `fetchMe()` ลบของที่จำไว้
+ *      ⇒ หัวเว็บเปลี่ยนเป็นคนนอกให้เห็น ๆ **โดยไม่มีอะไรฟ้องว่าอ่านไม่ได้**
+ *
+ * 🔑 คลาส **"ไม่รู้" ห้ามกลายเป็นคำยืนยัน** — null ที่นี่ตอบคนละคำถามกับ null ของคนนอก
+ *    และจอฝั่งหน้าเว็บ **ออกแบบรับสามสถานะไว้แล้วตั้งแต่ 6 ก.ย. 2569**
+ *    (`PointsView.tsx`: "ถามไม่ได้ ⇒ คืน null ห้ามคืน { user: null }")
+ *    ⇒ ของที่พังคือ **ท่อยุบสามเหลือสอง** ไม่ใช่จอ
+ */
+export async function currentUserState(req, s) {
   const tok = readCookie(req, COOKIE);
-  if (!/^[A-Za-z0-9_-]{20,64}$/.test(tok)) return null;
-  const sess = await s.get(`s/${tok}`, { type: "json" }).catch(() => null);
-  if (!sess?.phone) return null;
-  const u = await s.get(`u/${sess.phone}`, { type: "json" }).catch(() => null);
-  return u ? { user: u, token: tok } : null;
+  if (!/^[A-Za-z0-9_-]{20,64}$/.test(tok)) return { state: "guest" };
+
+  let sess;
+  try { sess = await s.get(`s/${tok}`, { type: "json" }); }
+  catch (err) { return { state: "unknown", err }; }
+  // อ่านได้แต่ไม่มีคีย์ = session หมดอายุ/ถูกลบจริง ⇒ เป็นคนนอกจริง
+  if (!sess?.phone) return { state: "guest" };
+
+  let u;
+  try { u = await s.get(`u/${sess.phone}`, { type: "json" }); }
+  catch (err) { return { state: "unknown", err }; }
+  if (!u) return { state: "guest" };
+
+  return { state: "user", user: u, token: tok };
+}
+
+/**
+ * รูปเดิมที่คนเรียกทั้งหมดใช้อยู่ — คืน `{ user, token }` หรือ `null`
+ *
+ * ⚠️ **"อ่านไม่ได้" ถูกยุบเป็น null ตรงนี้โดยตั้งใจ** เพราะผู้เรียกที่เหลือทุกตัว
+ *    ใช้ค่านี้ไป **ให้สิทธิ์น้อยลง** เท่านั้น (ไม่ผูกแต้ม · ไม่เติมชื่อผู้ซื้อ · ไม่โชว์คูปองของฉัน)
+ *    ⇒ ยุบแล้วยังปลอดภัย (fail-closed) และไม่ต้องแก้ผู้เรียก 8 จุดพร้อมกัน
+ *
+ * 🔴 **กฎสำหรับคนเขียนโค้ดใหม่**: ถ้าจุดที่คุณเขียน **ให้สิทธิ์ · เขียนทับข้อมูล ·
+ *    หรือบอกลูกค้าว่าเขาเป็นใคร** ⇒ ห้ามใช้ตัวนี้ ให้ใช้ `currentUserState` แล้วแยก
+ *    `unknown` ออกมาตอบ 503 ไม่ใช่ปล่อยให้แปลว่า "ไม่ได้ล็อกอิน"
+ *    (ทางที่ทำแล้ว: `GET /api/auth` — ดู `functions/auth.mjs`)
+ */
+export async function currentUser(req, s) {
+  const r = await currentUserState(req, s);
+  return r.state === "user" ? { user: r.user, token: r.token } : null;
 }
 
 export async function newSession(s, phone) {
