@@ -173,7 +173,24 @@ export async function facebookInsights({ accountId, token, since, until }) {
     throw new Error(body?.error?.message || `Facebook ตอบ ${r.status}`);
   }
 
-  const rows = (body?.data || []).map((x) => {
+  /* 🔴 **B14 (แก้ 3 ต.ค. 2569) — 200 ไม่ได้แปลว่าอ่านคำตอบได้**
+     เดิมตรวจแค่ `!r.ok` ⇒ body เป็น `null` (อ่าน JSON ไม่ออก) **ผ่านด่านไป**
+     แล้ว `(body?.data || [])` ทำให้ได้ **rows = []** ⇒ จอได้ `{ok:true, rows:[]}`
+     ⇒ หน้า /admin/ads/ อ่านว่า **"ไม่มีแคมเปญ · ใช้เงิน ฿0"**
+     🔑 อันตรายกว่าหน้าว่าง เพราะ **ตัวหารของ ROAS เป็น 0 ⇒ ผลตอบแทนเป็นอนันต์**
+        และ "ไม่มีแคมเปญ" เป็นคำตอบที่สมเหตุสมผลในวันที่หยุดยิงจริง ⇒ ไม่มีใครสงสัย
+     🔑 **"ไม่รู้" ต้องไม่กลายเป็น 0** — `guard()` ใน functions/ad-stats.mjs แปลง throw
+        เป็น `{ok:false, error}` อยู่แล้ว ⇒ จอแยก "อ่านไม่ได้" จาก "ไม่มีแคมเปญจริง" ได้
+     ⚠️ ด่านนี้ตรวจ **การมีอยู่ของกล่อง** ไม่ใช่ความว่างของกล่อง
+        `data: []` = ไม่มีแคมเปญจริง ⇒ **ต้องผ่าน** (ไม่งั้นได้แดงลวงทุกวันที่หยุดยิง) */
+  if (!Array.isArray(body?.data)) {
+    throw new Error(
+      "Facebook ตอบ 200 แต่อ่านคำตอบไม่ได้ (ไม่มีช่อง data) — ถือว่า **ไม่รู้** ไม่ใช่ ฿0"
+      + " · ดู netlify/lib/adstats.mjs (facebookInsights)",
+    );
+  }
+
+  const rows = body.data.map((x) => {
     const find = (list, type) =>
       num((list || []).find((a) => a.action_type === type)?.value);
     return {

@@ -94,6 +94,22 @@ export async function googleInsights(cfg, { since, until }) {
     throw new Error(explain(g?.error?.message || g?.error?.details?.[0]?.errors?.[0]?.message || `Google ตอบ ${r.status}`));
   }
 
+  /* 🔴 **B14 (แก้ 3 ต.ค. 2569) — 200 ไม่ได้แปลว่าอ่านคำตอบได้** (คลาสเดียวกับฝั่ง Facebook)
+     เดิมตรวจแค่ `!r.ok` ⇒ body เป็น `null` ผ่านด่านไป ⇒ `chunks = [null]`
+     ⇒ `chunk?.results || []` ⇒ **rows = []** ⇒ จอได้ "ไม่มีแคมเปญ · ใช้เงิน ฿0"
+     ⇒ ตัวหารของ ROAS เป็น 0 ⇒ ผลตอบแทนเป็นอนันต์ ⇒ เร่งงบจากเลขปลอม
+     ⚠️ ตรวจแค่ว่า **อ่าน JSON ออกไหม** ไม่ตรวจรูปร่างลึกกว่านั้น
+        เพราะ searchStream อาจคืน `[]` · `[{}]` · `[{results:[...]}]` ได้ทั้งหมดเมื่อไม่มีข้อมูล
+        ⇒ ตั้งด่านลึกกว่านี้ = เสี่ยงแดงลวงในวันที่ไม่มีข้อมูลจริง ซึ่งแพงกว่า (คนจะปิดด่าน)
+     📌 ยังไม่เคยยิง API ตัวจริง (ร้านยังไม่มี developer token — ดู CLAUDE.md)
+        ⇒ รูปร่างข้างบนมาจากเอกสาร **ไม่ใช่การวัด** · วันที่ได้ token ให้ยิงจริงแล้วรัดด่านเพิ่ม */
+  if (body === null || body === undefined) {
+    throw new Error(
+      "Google ตอบ 200 แต่อ่านคำตอบไม่ได้ (JSON เสีย) — ถือว่า **ไม่รู้** ไม่ใช่ ฿0"
+      + " · ดู netlify/lib/googleads.mjs (googleInsights)",
+    );
+  }
+
   // searchStream คืนเป็น "อาเรย์ของก้อน" แต่ละก้อนมี results ของตัวเอง ต้องรวมเอง
   const chunks = Array.isArray(body) ? body : [body];
   const byName = new Map();
