@@ -139,7 +139,24 @@ export default async function handler(req, context) {
 
     const phone = me.user.phone;
     const key = `c/${phone}`;
-    let rec = await s.get(key, { type: "json" }).catch(() => null);
+    /* 🔴 **B25 (แก้ 4 ต.ค. 2569) — จุดที่ร้ายที่สุดของใบนี้**
+       ของเดิม `.catch(() => null)` แล้ว `if (!rec) rec = blank(...)`
+       ⇒ รวม **"ยังไม่เคยยื่น" (ปกติ)** กับ **"อ่านไม่ได้" (ผิดปกติ)** เป็นอย่างเดียวกัน
+       · ทาง `?mine=1` ⇒ ลูกค้าเห็นว่ายังไม่ยื่น ทั้งที่ยื่นแล้ว (อ่านอย่างเดียว ยังกู้ได้)
+       · ทาง **POST** ⇒ ใบเปล่ากลายเป็น **ฐานของสิ่งที่เขียนกลับ** ⇒ `setJSON` ทับทั้งใบ
+         ⇒ ขั้น · history · จำนวนรูป **หายถาวร** และจอขึ้นว่าบันทึกสำเร็จ
+       🔑 คลาสเดียวกับ B15 แต่แรงกว่า เพราะค่าเริ่มต้นที่นี่คือ **ใบเปล่าของลูกค้ารายนั้นเอง**
+          ⇒ ทับได้ทันทีโดยผลลัพธ์ดูสมเหตุสมผลทุกช่อง
+       ⚠️ `null` (ยังไม่เคยยื่น) ต้องยังยื่นครั้งแรกได้ ⇒ แยกสองสถานะ ไม่ยุบเป็นหนึ่ง */
+    let rec;
+    try {
+      rec = await s.get(key, { type: "json" });
+    } catch {
+      return json({
+        error: "อ่านเรื่องของคุณไม่ได้ชั่วคราว กรุณาลองใหม่อีกครั้ง",
+        เหตุ: "อ่าน Blobs ไม่ได้ — ถือว่า **ไม่รู้** ห้ามถือว่ายังไม่ยื่น",
+      }, 503);
+    }
     if (!rec) rec = blank(phone, me.user.name || "");
 
     if (mine) return json({ item: rec });
@@ -296,7 +313,14 @@ export default async function handler(req, context) {
   if (req.method === "GET") {
     const phone = url.searchParams.get("phone");
     if (phone) {
-      const rec = await s.get(`c/${phone}`, { type: "json" }).catch(() => null);
+      /* 🔴 B25 — "อ่านไม่ได้" ไม่ใช่ "ไม่มีเรื่องนี้"
+         ของเดิมตอบ 404 ทั้งสองกรณี ⇒ ร้านเข้าใจว่าลูกค้าไม่เคยยื่น แล้วไปบอกลูกค้าผิด */
+      let rec;
+      try {
+        rec = await s.get(`c/${phone}`, { type: "json" });
+      } catch {
+        return json({ error: "อ่านเรื่องนี้ไม่ได้ชั่วคราว (ไม่ใช่ว่าไม่มีเรื่อง) — ลองใหม่อีกครั้ง" }, 503);
+      }
       if (!rec) return json({ error: "ไม่พบเรื่องนี้" }, 404);
       const imgs = [];
       for (let i = 0; i < (rec.images || 0); i++) {
@@ -322,7 +346,13 @@ export default async function handler(req, context) {
     const phone = clean(body?.phone, 20);
     const stage = clean(body?.stage, 16);
     if (!STAGES.includes(stage)) return json({ error: "ขั้นไม่ถูกต้อง" }, 400);
-    const rec = await s.get(`c/${phone}`, { type: "json" }).catch(() => null);
+    /* 🔴 B25 — อ่านไม่ได้ต้องไม่กลายเป็น 404 · และต้องไม่เขียนอะไรลงไป */
+    let rec;
+    try {
+      rec = await s.get(`c/${phone}`, { type: "json" });
+    } catch {
+      return json({ error: "อ่านเรื่องนี้ไม่ได้ชั่วคราว — ยังไม่เปลี่ยนขั้นให้ ลองใหม่อีกครั้ง" }, 503);
+    }
     if (!rec) return json({ error: "ไม่พบเรื่องนี้" }, 404);
     // ร้านตั้งขั้นได้อิสระ (รวมถอยหลัง) เพราะเป็นคนแก้ให้ตอนลูกค้ากดผิด
     rec.stage = stage;
