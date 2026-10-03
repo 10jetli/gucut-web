@@ -45,6 +45,7 @@ import { pushToUser } from "./push.mjs";
 import { linePush } from "./line-push.mjs";
 import { store as usersStore } from "./session.mjs";
 import { SITE_URL } from "./site.mjs";
+import { อ่านรายชื่อคีย์ } from "./blob-keys.mjs";
 
 const DAY = 24 * 60 * 60 * 1000;
 /** รอ ๗ วันหลังยื่นก่อนเริ่มเตือน — เร็วกว่านี้ใบยังไม่ถึงมือเขา */
@@ -94,7 +95,13 @@ const NUDGE = Object.keys(MESSAGE);
 
 export async function runReminders() {
   const s = store();
-  const { blobs } = await s.list({ prefix: "c/" }).catch(() => ({ blobs: [] }));
+  /* 🔴 **B24 (แก้ 4 ต.ค. 2569)** — ของเดิมกลืน `list()` ที่ล้มเป็น `blobs: []`
+     ⇒ รอบนั้น **ไม่เตือนใครเลย** แล้วรายงานกลับว่าทำงานปกติ (pushed 0 · forShop 0)
+     ⇒ ลูกค้าที่รอใบ ลซ.๒ ไม่ได้รับการตามเตือน และไม่มีใครรู้ว่าพลาดไปรอบไหน
+     🔑 "ไม่มีใครต้องเตือน" กับ "อ่านรายชื่อไม่ได้" ให้ผลเหมือนกันเป๊ะ ⇒ ต้องแยก
+        ⇒ โยน ให้ผู้เรียกจดว่ารอบนี้ทำไม่ได้ (ดีกว่าจดว่าทำแล้ว) */
+  const คีย์ = await อ่านรายชื่อคีย์(s, "c/", "ตามเตือนทะเบียน");
+  const blobs = คีย์.map((key) => ({ key }));
 
   const pushed = [];
   const forShop = [];

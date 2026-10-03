@@ -38,6 +38,7 @@ import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { pushToAdmins } from "../lib/push.mjs";
 import { currentUser, store as usersStore } from "../lib/session.mjs";
+import { อ่านทุกแถว } from "../lib/blob-keys.mjs";
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
@@ -265,22 +266,20 @@ export default async function handler(req, context) {
   if (gate.deny) return gate.deny;
   if (!gate.ok) return json({ error: "unauthorized" }, 401);
 
+  /* 🔴 **B24 (แก้ 4 ต.ค. 2569)** — ของเดิม `.catch(() => ({ blobs: [] }))`
+     ⇒ Blobs สะดุด ⇒ 0 คีย์ ⇒ `items = []` **และ `unreadable = 0`**
+     ⇒ หน้าหลังร้านขึ้นว่า "ไม่มีงานทะเบียน" ซึ่งเป็นคำตอบที่สมเหตุสมผลในวันที่ยังไม่มีลูกค้าส่งใบ
+     ⇒ ⇒ ค่าที่ผิดกลมกลืนไปกับความจริง **ไม่มีใครสงสัย**
+     🔑 ตัวนับ `unreadable` ที่มีอยู่นับได้แค่ "แถวที่อ่านไม่ได้" **นับไม่ถึงกรณีอ่านรายชื่อคีย์ไม่ได้**
+        ⇒ ตัวนับเงียบพอดีตอนที่ควรดังที่สุด
+     🔑 และของเดิมแปะธงเป็น property บนอาร์เรย์ (`items.unreadable = n`)
+        ซึ่ง `JSON.stringify` **ทิ้ง property ของอาร์เรย์** ⇒ ธงไม่เคยถึงจอ
+        ⇒ ย้ายมาใช้ `อ่านทุกแถว()` ที่คืนออบเจกต์ `{ items, unreadable }` */
   const readAll = async () => {
-    const { blobs } = await s.list({ prefix: "c/" }).catch(() => ({ blobs: [] }));
-    const items = [];
-    let unreadable = 0;
-      /* 🔴 **แถวที่อ่านไม่ได้ต้องนับไว้ ห้ามหายเงียบ** (แก้ 6 ก.ย. 2569)
-          `.catch(() => null)` แล้ว `continue` ⇒ แถวนั้นหายจากผลลัพธ์**โดยไม่มีตัวนับบอก**
-          ⇒ ผลลัพธ์หน้าตาเหมือนครบทุกประการ · ต้องส่งจำนวนที่อ่านไม่ได้ออกไปด้วย
-          (ท่าเดียวกับที่ lib/live.mjs ทำกับ READ_CAP อยู่แล้ว) */
-    for (const b of blobs) {
-      const rec = await s.get(b.key, { type: "json" }).catch(() => null);
-      if (rec) items.push(rec); else unreadable++;
-    }
-    items.sort((a, b) => String(b.at).localeCompare(String(a.at)));
-    /* แปะไว้กับอาร์เรย์ — ผู้เรียกหยิบไปใส่คำตอบได้โดยไม่ต้องเปลี่ยนรูปที่คืน */
-    items.unreadable = unreadable;
-    return items;
+    const { items, unreadable } = await อ่านทุกแถว(s, "c/", "งานทะเบียน", {
+      เรียง: (a, b) => String(b.at).localeCompare(String(a.at)),
+    });
+    return { items, unreadable };
   };
 
   // ⚠️ สั่งตามเตือนเดี๋ยวนั้น — ต้องมีรหัสหลังร้าน (ผ่าน adminGate มาแล้วด้านบน)
@@ -309,11 +308,12 @@ export default async function handler(req, context) {
 
     if (url.searchParams.get("stat")) {
       // รอร้านทำ = ลูกค้าส่งรูปมาแล้วแต่ร้านยังไม่ได้กดว่าได้ตัวจริง
-      const items = await readAll();
-      return json({ waiting: items.filter((x) => x.stage === "lz2").length });
+      const { items, unreadable } = await readAll();
+      /* 🔑 ธงต้องไปกับคำตอบเสมอ — จอต้องแยก "รอร้านทำ 0 ใบ" ออกจาก "อ่านบางแถวไม่ได้" */
+      return json({ waiting: items.filter((x) => x.stage === "lz2").length, unreadable });
     }
 
-    return json({ items: await readAll() });
+    return json(await readAll());
   }
 
   if (req.method === "PATCH") {

@@ -10,6 +10,7 @@
 //   down    = พังจริง ต้องรีบดู
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
+import { อ่านรายชื่อคีย์ } from "../lib/blob-keys.mjs";
 
 const json = (o, s = 200) =>
   new Response(JSON.stringify(o), {
@@ -262,8 +263,18 @@ export default async function handler(req, context) {
         s.get("meta", { type: "json" }).catch(() => null),
         s.get("lastcall", { type: "json" }).catch(() => null),
       ]);
-      const { blobs } = await s.list({ prefix: "r/" }).catch(() => ({ blobs: [] }));
-      const waiting = blobs.length ? ` · รอเข้าเว็บรอบ build ถัดไป ${blobs.length} รีวิว` : "";
+      /* 🔴 **B24 (แก้ 4 ต.ค. 2569)** — ของเดิมกลืน `list()` ที่ล้มเป็น `blobs: []`
+         ⇒ ข้อความหายไปเฉย ๆ ⇒ อ่านได้ว่า "ไม่มีรีวิวค้างรอ build" ทั้งที่ **ไม่รู้**
+         ⚠️ ที่นี่ **ห้ามโยน** — หน้าสถานะต้องเสิร์ฟได้แม้ของบางชิ้นอ่านไม่ได้
+            (ต่างจาก permit-doc/permit-remind ที่มีผู้เรียกรับ error ไปจัดการ)
+         ⇒ แยกสามสถานะในข้อความ: มีของค้าง / ไม่มีของค้าง / **อ่านไม่ได้** */
+      let waiting = "";
+      try {
+        const n = (await อ่านรายชื่อคีย์(s, "r/", "คิวรีวิว")).length;
+        waiting = n ? ` · รอเข้าเว็บรอบ build ถัดไป ${n} รีวิว` : "";
+      } catch {
+        waiting = " · ⚠️ อ่านคิวรีวิวไม่ได้ (ไม่รู้ว่ามีค้างกี่ใบ — ไม่ใช่ 0)";
+      }
       const ago = (t) => {
         const h = Math.round((Date.now() - new Date(t).getTime()) / 3600000);
         return h < 1 ? "ไม่ถึงชั่วโมงที่แล้ว" : h > 48 ? `${Math.round(h / 24)} วันที่แล้ว` : `${h} ชม.ที่แล้ว`;
