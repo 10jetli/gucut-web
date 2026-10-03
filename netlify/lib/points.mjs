@@ -30,9 +30,20 @@ export async function readLoyalty() {
   }
 }
 
+/** อ่านสำหรับ "ทางเขียน" — **อ่านไม่ได้ให้โยน ห้ามคืนค่าเริ่มต้น**
+ *  🔴 B15 (เพิ่ม 3 ต.ค. 2569 · ไล่ทั้งคลาส ไม่ใช่แก้เฉพาะที่รายงาน)
+ *     `writeLoyalty` ใช้ `cur` เป็นค่าตั้งต้นของทุกช่องที่หน้าเว็บไม่ได้ส่งมา
+ *     ⇒ อ่านพลาด ⇒ `cur` เป็นค่าเริ่มต้น ⇒ **กติกาแต้มที่ร้านตั้งไว้ถูกรีเซ็ตเงียบ ๆ**
+ *       (อัตราได้แต้ม · มูลค่าต่อแต้ม · ขั้นต่ำ · เพดาน %) และหน้าจอขึ้นว่าบันทึกสำเร็จ
+ *  ⚠️ `null` = ยังไม่เคยตั้งค่า ⇒ ไม่ใช่ความผิดพลาด ยังต้องบันทึกครั้งแรกได้ */
+async function อ่านแบบเข้ม() {
+  const s = await settingsStore().get(SETTINGS_KEY, { type: "json" });
+  return { ...DEFAULTS, ...(s || {}) };
+}
+
 export async function writeLoyalty(next) {
   const s = settingsStore();
-  const cur = await readLoyalty();
+  const cur = await อ่านแบบเข้ม();
   const merged = {
     on: next.on !== false,
     earnPer: Math.max(1, Number(next.earnPer) || cur.earnPer),

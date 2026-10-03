@@ -30,21 +30,39 @@ export const DEFAULTS = {
 
 const str = (v, max = 120) => String(v ?? "").trim().slice(0, max);
 
+const รวมกับค่าเริ่มต้น = (s) => {
+  const out = structuredClone(DEFAULTS);
+  if (!s) return out;
+  // เติมช่องที่ยังไม่มีให้ครบ เผื่อเพิ่มช่องทางใหม่ทีหลัง ของเก่าจะไม่พัง
+  for (const k of Object.keys(out)) out[k] = { ...out[k], ...(s[k] || {}) };
+  return out;
+};
+
+/** ⚠️ **"ทางอ่าน"** — อ่านไม่ได้ ⇒ คืนค่าเริ่มต้น (หน้าร้านต้องเสิร์ฟได้แม้ Blobs สะดุด)
+ *  🚫 **ห้ามเอาไปใช้ในทางเขียน** ใช้ `อ่านแบบเข้ม()` แทน — ดูเหตุที่นั่น */
 export async function readMarketing() {
   try {
-    const s = await store().get(KEY, { type: "json" });
-    if (!s) return structuredClone(DEFAULTS);
-    // เติมช่องที่ยังไม่มีให้ครบ เผื่อเพิ่มช่องทางใหม่ทีหลัง ของเก่าจะไม่พัง
-    const out = structuredClone(DEFAULTS);
-    for (const k of Object.keys(out)) out[k] = { ...out[k], ...(s[k] || {}) };
-    return out;
+    return รวมกับค่าเริ่มต้น(await store().get(KEY, { type: "json" }));
   } catch {
     return structuredClone(DEFAULTS);
   }
 }
 
+/** อ่านสำหรับ "ทางเขียน" — **อ่านไม่ได้ให้โยน ห้ามคืนค่าเริ่มต้น**
+ *
+ *  🔴 **B15 (แก้ 3 ต.ค. 2569)** — `writeMarketing` เคยใช้ `readMarketing()` เพื่อเก็บค่าเดิมไว้
+ *     (หน้าเว็บส่ง token เป็น "" ตอนไม่ได้แก้ ⇒ "" = ไม่แตะของเดิม)
+ *     ⇒ Blobs สะดุดครั้งเดียวตอนกดบันทึก ⇒ `cur` เป็นค่าเริ่มต้นว่าง
+ *     ⇒ **เขียนค่าว่างทับ token ของ Meta/TikTok CAPI** แล้วหน้าจอขึ้นว่าบันทึกสำเร็จ
+ *     ⇒ ยอดขายฝั่งเซิร์ฟเวอร์หยุดส่ง ⇒ ตัวเลขโฆษณาเพี้ยนโดยไม่มีใครรู้ว่าเพราะอะไร
+ *  🔑 ท่าเดียวกับ `netlify/lib/push.mjs` (addSub/removeSub) ที่ทีมตกลงกันไว้แล้ว
+ *  ⚠️ `null` (ยังไม่เคยบันทึก) ไม่ใช่ความผิดพลาด ⇒ บันทึกครั้งแรกต้องได้ */
+async function อ่านแบบเข้ม() {
+  return รวมกับค่าเริ่มต้น(await store().get(KEY, { type: "json" }));
+}
+
 export async function writeMarketing(next) {
-  const cur = await readMarketing();
+  const cur = await อ่านแบบเข้ม();
   const pick = (k, fields) => {
     const src = next?.[k] || {};
     const o = { on: src.on === true };

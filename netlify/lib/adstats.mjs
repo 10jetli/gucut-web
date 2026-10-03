@@ -34,22 +34,42 @@ const EMPTY = {
 const KEEP_DAYS = 120;
 const MAX_ROWS = 6000;
 
-/** ค่าตั้งค่าทั้งหมด (มีโทเคน) — ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น */
+const รวมกับค่าว่าง = (v) => ({
+  fb: { ...EMPTY.fb, ...(v?.fb || {}) },
+  google: { ...EMPTY.google, ...(v?.google || {}) },
+});
+
+/** ค่าตั้งค่าทั้งหมด (มีโทเคน) — ใช้ฝั่งเซิร์ฟเวอร์เท่านั้น
+ *  ⚠️ **ตัวนี้คือ "ทางอ่าน"** — อ่านไม่ได้ ⇒ คืนค่าว่าง (จอแสดงว่ายังไม่ได้ตั้งค่าได้)
+ *  🚫 **ห้ามเอาไปใช้ในทางเขียน** ใช้ `อ่านแบบเข้ม()` แทน — ดูเหตุที่นั่น */
 export async function readConfig() {
   try {
-    const v = await store().get(KEY, { type: "json" });
-    return {
-      fb: { ...EMPTY.fb, ...(v?.fb || {}) },
-      google: { ...EMPTY.google, ...(v?.google || {}) },
-    };
+    return รวมกับค่าว่าง(await store().get(KEY, { type: "json" }));
   } catch {
     return EMPTY;
   }
 }
 
+/** อ่านสำหรับ "ทางเขียน" — **อ่านไม่ได้ให้โยน ห้ามคืนค่าว่าง**
+ *
+ *  🔴 **B15 (แก้ 3 ต.ค. 2569)** — ทุกทางเขียนในไฟล์นี้เคยใช้ `readConfig()`
+ *     เพื่อเก็บค่าเดิมไว้ (หน้าเว็บส่งโทเคนเป็น "" ตอนไม่ได้แก้ ⇒ "" = ไม่แตะของเดิม)
+ *     ⇒ Blobs สะดุดครั้งเดียวตอนกดบันทึก ⇒ `cur` เป็นค่าว่าง
+ *     ⇒ **เขียนค่าว่างทับโทเคนจริง** และหน้าจอขึ้นว่าบันทึกสำเร็จ
+ *  🔑 ที่ร้ายที่สุดคือ `ensurePushKey`: อ่านพลาด ⇒ เห็นว่า "ยังไม่มีคีย์" ⇒ **สร้างคีย์ใหม่**
+ *     ⇒ สคริปต์ใน Google Ads ที่ถือคีย์เก่ายืนยันตัวไม่ผ่านอีกเลย
+ *     ⇒ ค่าโฆษณารายวันหยุดไหลเข้าระบบ **โดยไม่มี error ให้ใครเห็น**
+ *  🔑 ท่าเดียวกับที่ `netlify/lib/push.mjs` (addSub/removeSub) ทำไว้แล้ว:
+ *     "ทางเขียนปล่อยให้ throw เมื่ออ่านไม่ได้ · คนเรียกได้ 500 ดีกว่าลบของจริง"
+ *  ⚠️ `null` (ยังไม่เคยบันทึก) **ไม่ใช่ความผิดพลาด** ⇒ ยังต้องบันทึกครั้งแรกได้
+ *     ⇒ ด่านนี้แยก "อ่านไม่ได้" ออกจาก "ยังไม่มีของ" (สองสถานะ ไม่ใช่หนึ่ง) */
+async function อ่านแบบเข้ม() {
+  return รวมกับค่าว่าง(await store().get(KEY, { type: "json" }));
+}
+
 /** บันทึกค่าตั้งค่า — โทเคนว่างแปลว่า "ไม่เปลี่ยน" ไม่ใช่ "ลบ" */
 export async function saveConfig(input) {
-  const cur = await readConfig();
+  const cur = await อ่านแบบเข้ม();
   const fb = input?.fb || {};
   const g = input?.google || {};
   // ค่าลับที่ส่งมาว่าง = "ไม่เปลี่ยน" ไม่ใช่ "ลบ" — หน้าเว็บไม่เคยได้ค่าจริงไปแสดง
@@ -218,7 +238,7 @@ export async function facebookInsights({ accountId, token, since, until }) {
 
 /** รหัสให้สคริปต์ใช้ยืนยันตัว — สร้างครั้งเดียวแล้วใช้ตลอด */
 export async function ensurePushKey() {
-  const cur = await readConfig();
+  const cur = await อ่านแบบเข้ม();
   if (cur.google.pushKey) return cur.google.pushKey;
   const key = [...crypto.getRandomValues(new Uint8Array(24))]
     .map((b) => b.toString(16).padStart(2, "0")).join("");
@@ -234,7 +254,7 @@ export async function ensurePushKey() {
  *    ถ้าบวกทับ ค่าโฆษณาจะพองขึ้นเรื่อย ๆ ทุกครั้งที่รัน แล้วไม่มีใครจับได้
  */
 export async function savePushed(input) {
-  const cur = await readConfig();
+  const cur = await อ่านแบบเข้ม();
   const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
   const rows = (Array.isArray(input) ? input : []).slice(0, MAX_ROWS).map((r) => ({
     d: String(r.date || "").slice(0, 10),
