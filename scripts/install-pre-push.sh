@@ -57,7 +57,10 @@ PREPUSH_REPO=$(basename "$(pwd)")
 PREPUSH_GATE="$HOME/claude-shared/ด่านคำสั่ง-bash.py"
 PREPUSH_WIN=$(grep -m1 '^PUSH_WINDOW' "$PREPUSH_GATE" 2>/dev/null   | grep -oE '[0-9]+' | tr '\n' ' ' | awk '{ if (NF>=4) printf "%d %d", $1*60+$2, $3*60+$4 }')
 # 🔑 อ่านไม่ออก ⇒ **"ยังไม่รู้" ไม่ใช่ "อยู่ในหน้าต่าง"** ⇒ ไม่พูดเรื่องหน้าต่างเลยรอบนั้น
-PREPUSH_MIN0=$(( $(date +%H) * 60 + $(date +%M) ))
+# 🔴 ต้องมี `10#` เสมอ — bash อ่าน "09" เป็นเลขฐานแปด แล้ว 08/09 ไม่มีในฐานแปด
+#    ⇒ value too great for base · พังเฉพาะ **ชั่วโมง 08–09** และ **นาที 08–09**
+#    เขียวทั้งวันแล้วล้มวันละไม่กี่นาที (เจอจริง 3 ต.ค. 2569 เวลา 22:09 — ล้มหลังเทส+build 6 นาที)
+PREPUSH_MIN0=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
 if [ -n "$PREPUSH_WIN" ]; then
   PREPUSH_LO=${PREPUSH_WIN%% *}; PREPUSH_HI=${PREPUSH_WIN##* }
   if [ "$PREPUSH_MIN0" -ge "$PREPUSH_LO" ] && [ "$PREPUSH_MIN0" -le "$PREPUSH_HI" ]; then
@@ -341,7 +344,7 @@ fi
 
 # ── ⏱️ จดของจริงลงบันทึก (และเตือนถ้าหน้าต่างปิดไประหว่างที่ด่านกำลังรัน) ──
 PREPUSH_ELAPSED=$(( $(date +%s) - PREPUSH_T0 ))
-PREPUSH_MIN1=$(( $(date +%H) * 60 + $(date +%M) ))
+PREPUSH_MIN1=$(( 10#$(date +%H) * 60 + 10#$(date +%M) ))
 PREPUSH_NOTE=""
 if [ "${PREPUSH_INWIN0:-}" = "1" ] && [ -n "${PREPUSH_HI:-}" ] && [ "$PREPUSH_MIN1" -gt "$PREPUSH_HI" ]; then
   PREPUSH_NOTE="เริ่มในหน้าต่าง แต่เสร็จนอกหน้าต่าง"
