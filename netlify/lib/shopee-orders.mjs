@@ -61,7 +61,24 @@ export async function syncShopeeOrders(days = 3) {
       page_size: "100",
       ...(cursor ? { cursor } : {}),
     });
-    const list = data?.response?.order_list ?? [];
+    /* 🔴 **B21 (แก้ 4 ต.ค. 2569)** — ของเดิม `?? []` กลืนทุกรูปที่ไม่มีช่อง `order_list`
+       ⇒ "อ่านไม่ครบ" กับ "ไม่มีออเดอร์" แยกไม่ออก ⇒ รายงาน `orders: 0` เหมือนสำเร็จ */
+    if (!data?.response || typeof data.response !== "object") {
+      throw new Error("Shopee ตอบสำเร็จแต่ไม่มีกล่อง response — ถือว่าอ่านไม่ครบ ไม่ใช่ไม่มีออเดอร์");
+    }
+    const list = data.response.order_list;
+    if (!Array.isArray(list)) {
+      /* ⚠️ **หน้าที่ 2 ขึ้นไป: ต้องมีช่องนี้แน่นอน** เพราะมาถึงได้เพราะหน้าก่อนบอก `more: true`
+         ⇒ ไม่มี = อ่านไม่ครบ ⇒ โยน
+         ⚠️ **หน้าแรกตั้งใจไม่รัด** — ยังไม่เคยยิง Shopee ในวันที่ร้านไม่มีออเดอร์เลย
+            เพื่อดูว่ามันคืน `{order_list: []}` หรือไม่มีช่องนี้ และเครื่องนี้ไม่มีคีย์ Shopee
+            ⇒ **วัดไม่ได้ตอนแก้** · เดาผิด = แดงลวงทุกวันที่ร้านไม่มีออเดอร์ แล้วคนจะปิดด่าน
+            (ท่าเดียวกับที่ฝั่งท่อเขียนกำกับไว้ใน B20) ⇒ ไปรัดเพิ่มวันที่มีคีย์ยิงพิสูจน์ */
+      if (page > 0) {
+        throw new Error(`Shopee หน้า ${page + 1} ไม่มีช่อง order_list ทั้งที่หน้าก่อนบอกว่ายังมีต่อ — อ่านไม่ครบ`);
+      }
+      break;
+    }
     sns.push(...list.map((o) => o.order_sn).filter(Boolean));
     if (!data?.response?.more) break;
     cursor = String(data?.response?.next_cursor ?? "");
@@ -76,7 +93,22 @@ export async function syncShopeeOrders(days = 3) {
       order_sn_list: sns.slice(i, i + 50).join(","),
       response_optional_fields: "total_amount,buyer_username,item_list",
     });
-    for (const o of data?.response?.order_list ?? []) {
+    /* 🔴 **B21 (แก้ 4 ต.ค. 2569)** — จุดนี้รัดได้เต็มที่ **โดยไม่ต้องเดาอะไรเลย**
+       เพราะเรา **ถามไปเป็นรายเลขใบ** ⇒ จำนวนที่ควรได้กลับมาคือจำนวนที่เราถาม
+       ⇒ ไม่มีช่อง `order_list` = อ่านไม่ครบแน่นอน (ไม่ใช่ "ไม่มีออเดอร์" เพราะเรารู้ว่ามี)
+       ⇒ ได้น้อยกว่าที่ถาม = ขาดบางใบ ⇒ ของเดิมเอากองที่ขาดไปเขียนทับเป็นของครบ */
+    const ก้อน = sns.slice(i, i + 50);
+    const รายละเอียด = data?.response?.order_list;
+    if (!Array.isArray(รายละเอียด)) {
+      throw new Error(`Shopee ไม่คืน order_list ทั้งที่ถามรายละเอียดไป ${ก้อน.length} ใบ — อ่านไม่ครบ`);
+    }
+    if (รายละเอียด.length < ก้อน.length) {
+      throw new Error(
+        `Shopee คืนรายละเอียด ${รายละเอียด.length} ใบ จากที่ถาม ${ก้อน.length} ใบ — ขาด `
+        + `${ก้อน.length - รายละเอียด.length} ใบ ⇒ ห้ามเอากองที่ขาดไปใช้เป็นของครบ`,
+      );
+    }
+    for (const o of รายละเอียด) {
       if (!o?.order_sn) continue;
       rows.push({
         sn: o.order_sn,

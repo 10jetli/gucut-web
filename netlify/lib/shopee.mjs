@@ -73,6 +73,12 @@ export async function loadToken() {
   return store().get("token", { type: "json" }).catch(() => null);
 }
 
+/* 🔴 **B21 ราก (แก้ 4 ต.ค. 2569)** — ของเดิม `res.json().catch(() => ({}))`
+   ⇒ คำตอบ 200 ที่แกะ JSON ไม่ออก กลายเป็น `{}` ⇒ **ไม่มีช่อง `error`** ⇒ ผ่านด่านข้างล่างไป
+   ⇒ ผู้เรียกได้ `{}` ⇒ `data?.response?.order_list ?? []` ⇒ ว่าง ⇒ รายงาน `orders: 0`
+     = **"กวาดสำเร็จ ไม่มีออเดอร์"** ซึ่งเป็นคำตอบที่สมเหตุสมผลในหลายวัน ⇒ ไม่มีใครสงสัย
+   🔑 ตัวที่ใช้ตัดสินว่า "สำเร็จไหม" (ช่อง `error`) **พังไปทางเดียวกับปัญหา**:
+      ยิ่งอ่านคำตอบไม่ออก ยิ่งดูเหมือนไม่มีความผิดพลาด */
 async function callJson(url, body) {
   const res = await fetch(url, {
     method: body ? "POST" : "GET",
@@ -80,7 +86,19 @@ async function callJson(url, body) {
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(20000),
   });
-  const data = await res.json().catch(() => ({}));
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    const หัวข้อความ = await res.text().catch(() => "");
+    throw new Error(
+      `Shopee ตอบ ${res.status} แต่แกะ JSON ไม่ได้ — ถือว่า **ไม่รู้** ห้ามอ่านว่าไม่มีออเดอร์`
+      + (หัวข้อความ ? ` · ต้นคำตอบ: ${หัวข้อความ.slice(0, 120)}` : ""),
+    );
+  }
+  if (!data || typeof data !== "object") {
+    throw new Error(`Shopee ตอบ ${res.status} เป็นค่าที่ไม่ใช่ออบเจกต์ — ถือว่าไม่รู้`);
+  }
   // Shopee ตอบ 200 เสมอ แล้วบอกความผิดพลาดในช่อง error ⇒ เช็ค error ไม่ใช่ status
   if (data?.error) throw new Error(`${data.error}: ${data.message || ""}`.trim());
   return data;

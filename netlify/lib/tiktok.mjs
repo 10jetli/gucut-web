@@ -58,9 +58,26 @@ const store = () => getStore({ name: STORE, consistency: "strong" });
 export const loadToken = () => store().get("token", { type: "json" }).catch(() => null);
 export const saveToken = (t) => store().setJSON("token", { ...t, savedAt: new Date().toISOString() });
 
+/* 🔴 **B21 ราก (แก้ 4 ต.ค. 2569)** — รูปเดียวกับฝั่ง Shopee เป๊ะ (`lib/shopee.mjs`)
+   `res.json().catch(() => ({}))` ⇒ 200 ที่แกะ JSON ไม่ออกกลายเป็น `{}`
+   ⇒ **ไม่มีช่อง `code`** ⇒ ผ่านด่านข้างล่าง ⇒ ผู้เรียกได้ `{}` ⇒ `data?.data?.orders || []`
+   ⇒ ว่าง ⇒ `next_page_token` ว่าง ⇒ ลูปจบ ⇒ รายงาน `orders: 0` เหมือนกวาดสำเร็จ
+   🔑 ตัวชี้ขาดว่า "สำเร็จไหม" พังไปทางเดียวกับปัญหา ⇒ ยิ่งพัง ยิ่งดูเรียบร้อย */
 async function callJson(url, init) {
   const res = await fetch(url, { signal: AbortSignal.timeout(20000), ...init });
-  const data = await res.json().catch(() => ({}));
+  let data;
+  try {
+    data = await res.json();
+  } catch {
+    const หัวข้อความ = await res.text().catch(() => "");
+    throw new Error(
+      `TikTok ตอบ ${res.status} แต่แกะ JSON ไม่ได้ — ถือว่า **ไม่รู้** ห้ามอ่านว่าไม่มีออเดอร์`
+      + (หัวข้อความ ? ` · ต้นคำตอบ: ${หัวข้อความ.slice(0, 120)}` : ""),
+    );
+  }
+  if (!data || typeof data !== "object") {
+    throw new Error(`TikTok ตอบ ${res.status} เป็นค่าที่ไม่ใช่ออบเจกต์ — ถือว่าไม่รู้`);
+  }
   // TikTok ตอบ 200 เสมอ แล้วบอกความผิดพลาดใน code ⇒ เช็ค code ไม่ใช่ status
   if (data?.code && data.code !== 0) throw new Error(`${data.code}: ${data.message || ""}`.trim());
   return data;

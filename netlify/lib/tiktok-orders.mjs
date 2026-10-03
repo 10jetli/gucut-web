@@ -123,6 +123,7 @@ export async function syncTiktokOrders(days = 3) {
   /* ⚠️ หลุดเพดานหน้าแล้วต้องโยน error — คืนของบางส่วนเหมือนครบ = api_orders หดเงียบ ๆ
       แล้วอ่านออกมาเป็น "ZORT กับ API ไม่ตรงกัน" (กติกาเดียวกับฝั่งสต็อก) */
   const MAX_PAGES = 20;
+  let ไม่เจอช่องorders = false;
   for (let page = 0; page <= MAX_PAGES; page++) {
     if (page === MAX_PAGES) {
       throw new Error(`ออเดอร์ TikTok ช่วงนี้เกิน ${MAX_PAGES * 100} ใบ — ต้องลด days หรือขยายเพดานหน้า`);
@@ -137,8 +138,24 @@ export async function syncTiktokOrders(days = 3) {
       },
       body: { create_time_ge: from, create_time_lt: now },
     });
-    orders.push(...(data?.data?.orders || []));
-    pageToken = String(data?.data?.next_page_token || "");
+    /* 🔴 **B21 (แก้ 4 ต.ค. 2569)** — ของเดิม `|| []` กลืนทุกรูปที่ไม่มีช่อง `orders`
+       ⇒ ว่าง ⇒ `next_page_token` ว่าง ⇒ ลูปจบ ⇒ รายงาน `orders: 0` เหมือนกวาดสำเร็จ
+       🔑 ตัวที่ใช้ปิดลูป (`next_page_token`) **พังไปทางเดียวกับปัญหา** ⇒ ยิ่งพัง ยิ่งดูว่าจบเรียบร้อย */
+    if (!data?.data || typeof data.data !== "object") {
+      throw new Error("TikTok ตอบสำเร็จแต่ไม่มีกล่อง data — ถือว่าอ่านไม่ครบ ไม่ใช่ไม่มีออเดอร์");
+    }
+    const ชุด = data.data.orders;
+    if (!Array.isArray(ชุด)) {
+      /* ⚠️ หน้าที่ 2 ขึ้นไปต้องมีช่องนี้แน่นอน (มาถึงได้เพราะหน้าก่อนให้ page_token มา) ⇒ โยน
+         ⚠️ **หน้าแรกตั้งใจไม่รัด** — ยังไม่เคยยิง TikTok ในวันที่ไม่มีออเดอร์เพื่อดูว่า
+            มันคืน `{orders: []}` หรือไม่มีช่องนี้ และเครื่องนี้ไม่มีคีย์ ⇒ วัดไม่ได้ตอนแก้
+            แต่ **ไม่ปล่อยเงียบ**: จดลง `unmapped` ซึ่งไฟล์นี้ส่งขึ้นรายงานอยู่แล้ว
+            ⇒ ได้ `orders: 0` พร้อมหมายเหตุว่าช่องไหนหาย ต่างจากของเดิมที่เงียบสนิท */
+      ไม่เจอช่องorders = true;
+      break;
+    }
+    orders.push(...ชุด);
+    pageToken = String(data.data.next_page_token || "");
     if (!pageToken) break;
   }
 
@@ -147,6 +164,8 @@ export async function syncTiktokOrders(days = 3) {
   // ⚠️ ทิ้งได้ แต่ต้องนับ — ถ้าชื่อคีย์ id ไม่ตรง จะได้ orders:0 ซึ่งแยกไม่ออกจาก "ไม่มีออเดอร์"
   const noId = orders.filter((o) => !o?.id).length;
   if (noId) unmapped.add("order.id");
+  // B21: คำตอบหน้าแรกไม่มีช่อง data.orders ⇒ ยังไม่รู้ว่ามีออเดอร์ไหม ⇒ ต้องโผล่ในรายงาน
+  if (ไม่เจอช่องorders) unmapped.add("data.orders");
   const rows = orders
     .filter((o) => o?.id)
     .map((o) => {
