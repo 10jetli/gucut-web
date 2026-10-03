@@ -3,8 +3,15 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
-const calls = { zort: 0, coupon: 0, points: 0, mop: [] };
-mock.module('../../netlify/lib/coupons.mjs', { namedExports: { markUsed: async () => { calls.coupon++; } } });
+const calls = { zort: 0, coupon: 0, couponUser: 0, points: 0, mop: [] };
+/* B18 (4 ต.ค. 2569): `markUsed` ถูกแยกเป็นสองขั้นที่ผู้เรียกติดธงแยกกัน
+   (โควตารวม / ของรายคน) เพราะรวมเป็นขั้นเดียวแล้วล้มกลางทาง ⇒ เรียกซ้ำ ⇒ นับโควตาเกิน
+   ⚠️ ม็อกนี้ทับ coupons.mjs ทั้งโมดูล ⇒ ต้องมี export ใหม่ครบ ไม่งั้นไฟล์นี้ตกทั้งไฟล์ */
+mock.module('../../netlify/lib/coupons.mjs', { namedExports: {
+  นับโควตาโค้ด: async () => { calls.coupon++; },
+  นับโค้ดรายคน: async () => { calls.couponUser++; },
+  markUsed: async () => { calls.coupon++; },
+} });
 mock.module('../../netlify/lib/points.mjs', { namedExports: { addPoints: async () => { calls.points++; } } });
 mock.module('../../netlify/lib/push.mjs', { namedExports: { pushToAdmins: async () => {}, pushToUser: async () => {} } });
 mock.module('../../netlify/lib/marketing.mjs', { namedExports: { sendPurchase: async () => {} } });

@@ -126,23 +126,46 @@ export const findCoupon = (list, code) => list.find((x) => up(x.code) === up(cod
  * บันทึกว่าโค้ดถูกใช้ไปแล้วหนึ่งครั้ง — เรียกตอนออเดอร์สำเร็จเท่านั้น
  * (ไม่ใช่ตอนลูกค้ากดลองโค้ด ไม่งั้นโควตาหมดทั้งที่ยังไม่มีใครซื้อ)
  */
-export async function markUsed(code, user, usersStore) {
+/* 🔴 **B18 (แก้ 4 ต.ค. 2569) — ตัวนี้ "เขียน" แต่เดิมอ่านด้วย `readCoupons`**
+   ซึ่งเป็นตัวที่เขียนกำกับไว้ในไฟล์นี้เองว่า **ห้ามเอาไปใช้ในทางที่จะเขียนทับ**
+   ⇒ Blobs สะดุด ⇒ `list = []` ⇒ `findCoupon` ไม่เจอ ⇒ **โควตาไม่ถูกนับ** แล้วคืนค่าเงียบ ๆ
+   ⇒ โค้ด "ใช้ได้ N ใบแรก" ถูกใช้เกินจำนวนโดยไม่มีอะไรฟ้อง
+   🔑 คลาส **กฎที่เขียนไว้ในไฟล์ ไม่ได้บังคับตัวเอง** — ต้องให้ *ชนิดของการอ่าน* บังคับ
+
+   🔴 **และต้องแยกเป็นสองฟังก์ชัน ไม่ใช่ตัวเดียว** (เทส `paid-recovery` จับให้ 4 ต.ค.)
+      ของเดิมนับสองอย่างในฟังก์ชันเดียว: โควตารวม แล้วค่อยของรายคน
+      ⇒ ถ้าโควตารวมสำเร็จแต่ของรายคนล้ม ผู้เรียกจะไม่ติดธง ⇒ **เรียกซ้ำ ⇒ นับโควตารวมสองครั้ง**
+      ⇒ แยกเป็นสองขั้น ให้ผู้เรียกติดธงทีละขั้นทันทีที่สำเร็จ
+        (กฎในไฟล์ `order-finalize.mjs` เขียนไว้แล้วว่า "ทุกขั้นที่มีผลข้างเคียงต้องบันทึกลงถังทันที") */
+
+/** นับโควตารวมของโค้ด (ช่อง `used`) — อ่าน/เขียนไม่ได้ = **โยน** */
+export async function นับโควตาโค้ด(code) {
   const s = couponStore();
-  const list = await readCoupons(s);
+  const list = await readCouponsForWrite(s);   // อ่านไม่ได้ = โยน (ไม่กลืนเป็น [])
   const c = findCoupon(list, code);
-  if (c) {
-    c.used = Number(c.used || 0) + 1;
-    await writeCoupons(s, list).catch(() => {});
-  }
-  // นับของรายคนด้วย ถ้าลูกค้าล็อกอินอยู่
-  if (user && usersStore) {
-    const key = `u/${user.phone}`;
-    const u = await usersStore.get(key, { type: "json" }).catch(() => null);
-    if (u) {
-      u.coupons = u.coupons || {};
-      const cur = u.coupons[up(code)] || {};
-      u.coupons[up(code)] = { ...cur, used: Number(cur.used || 0) + 1, at: Date.now() };
-      await usersStore.setJSON(key, u).catch(() => {});
-    }
-  }
+  // อ่านได้จริงแต่ไม่มีโค้ดนี้ในรายชื่อ (เช่นโค้ดลับจาก env ที่ไม่มีโควตา) ⇒ ไม่มีอะไรต้องนับ
+  if (!c) return;
+  c.used = Number(c.used || 0) + 1;
+  await writeCoupons(s, list);                 // เขียนไม่ได้ = โยน (เดิมกลืนเงียบ)
+}
+
+/** นับจำนวนครั้งที่ลูกค้าคนนี้ใช้โค้ดนี้ — อ่าน/เขียนไม่ได้ = **โยน**
+ *  (ใช้บังคับกติกา "คนละหนึ่งครั้ง" ⇒ ไม่นับ = ลูกค้าใช้ซ้ำได้) */
+export async function นับโค้ดรายคน(code, user, usersStore) {
+  if (!user || !usersStore) return;
+  const key = `u/${user.phone}`;
+  const u = await usersStore.get(key, { type: "json" });   // อ่านไม่ได้ = โยน
+  if (!u) return;                                          // ไม่มีบัญชีจริง (ซื้อโดยไม่ล็อกอิน)
+  u.coupons = u.coupons || {};
+  const cur = u.coupons[up(code)] || {};
+  u.coupons[up(code)] = { ...cur, used: Number(cur.used || 0) + 1, at: Date.now() };
+  await usersStore.setJSON(key, u);
+}
+
+/** รูปเดิมที่ยังมีผู้เรียกอยู่ — ทำทั้งสองขั้นต่อกัน
+ *  ⚠️ **ห้ามใช้ในทางที่จะติดธงกันทำซ้ำ** เพราะล้มกลางทางแล้วเรียกซ้ำจะนับโควตารวมเกิน
+ *     ทางนั้นให้เรียก `นับโควตาโค้ด` กับ `นับโค้ดรายคน` แยกกันแล้วติดธงทีละขั้น */
+export async function markUsed(code, user, usersStore) {
+  await นับโควตาโค้ด(code);
+  await นับโค้ดรายคน(code, user, usersStore);
 }

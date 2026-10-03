@@ -3,8 +3,14 @@
 import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
-const seen = { points: [], coupon: [] };
-mock.module('../../netlify/lib/coupons.mjs', { namedExports: { markUsed: async (code, user) => { seen.coupon.push(user?.phone ?? null); } } });
+const seen = { points: [], coupon: [], couponQuota: 0 };
+/* B18 (4 ต.ค. 2569): แยกเป็นสองขั้น — ขั้นที่รับ `user` คือ `นับโค้ดรายคน`
+   จึงเป็นขั้นที่ใบนี้ต้องเฝ้า (ตรวจว่าใช้บัญชีผู้ซื้อที่จดไว้ ไม่ใช่คุกกี้ของคำขอ) */
+mock.module('../../netlify/lib/coupons.mjs', { namedExports: {
+  นับโควตาโค้ด: async () => { seen.couponQuota++; },
+  นับโค้ดรายคน: async (code, user) => { seen.coupon.push(user?.phone ?? null); },
+  markUsed: async (code, user) => { seen.coupon.push(user?.phone ?? null); },
+} });
 mock.module('../../netlify/lib/points.mjs', { namedExports: { addPoints: async (_s, phone, n) => { seen.points.push([phone, n]); } } });
 mock.module('../../netlify/lib/push.mjs', { namedExports: { pushToAdmins: async () => {}, pushToUser: async () => {} } });
 mock.module('../../netlify/lib/marketing.mjs', { namedExports: { sendPurchase: async () => {} } });
@@ -20,7 +26,7 @@ const base = (extra) => ({
   items: [{ title: 'ของ', qty: 1, price: 430 }], ...extra,
 });
 const run = (order, buyer) => finalizeOrder({ order, store: store(), usersStore: () => ({}), buyer, zortAddOrder: async () => ({ ok: true }) });
-const reset = () => { seen.points = []; seen.coupon = []; };
+const reset = () => { seen.points = []; seen.coupon = []; seen.couponQuota = 0; };
 
 test('คนอื่นเปิดลิงก์เช็คสถานะขณะล็อกอิน ⇒ ต้องหักคนที่แลกตอนสั่ง ไม่ใช่คนเปิดลิงก์', async () => {
   reset();
@@ -43,5 +49,11 @@ test('ใบเก่าไม่มี buyerPhone ⇒ ห้ามหักจ�
   await run(o, { phone: '0999999999' });
   assert.deepEqual(seen.points, []);
   assert.equal(o.pointsPending, true);
-  assert.deepEqual(seen.coupon, [null], 'โค้ดยังนับยอดรวม แต่ไม่ผูกกับคนเปิดลิงก์');
+  /* B18 (4 ต.ค. 2569): `markUsed` ถูกแยกเป็น `นับโควตาโค้ด` + `นับโค้ดรายคน`
+     ⇒ เกณฑ์เดิม `seen.coupon === [null]` ("เรียกขั้นรายคนด้วย user = null") วัดไม่ได้แล้ว
+     ⇒ เขียนเกณฑ์ใหม่ที่ **แรงกว่าเดิม** และตรงเจตนาของใบนี้มากกว่า:
+        โควตารวมต้องถูกนับจริง 1 ครั้ง · และขั้นที่ผูกกับคน **ต้องไม่ถูกเรียกเลย**
+        (เดิมถูกเรียกด้วย null ซึ่งพึ่งว่าข้างในจะไม่ทำอะไร — ตอนนี้ไม่ต้องพึ่ง) */
+  assert.equal(seen.couponQuota, 1, 'โควตารวมของโค้ดต้องยังถูกนับ');
+  assert.deepEqual(seen.coupon, [], 'ห้ามผูกการใช้โค้ดกับคนที่มาเปิดลิงก์ยืนยัน');
 });

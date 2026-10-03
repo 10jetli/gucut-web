@@ -21,12 +21,24 @@ export const DEFAULTS = {
 
 const settingsStore = () => getStore({ name: "gucut-coupon", consistency: "strong" });
 
+/** อ่านกติกาแต้มสำหรับ **ทางแสดงผล** — คืน `{ ...กติกา, unknown }`
+ *
+ * 🔴 **B18 (แก้ 4 ต.ค. 2569)** — ของเดิมคืน `{ ...DEFAULTS }` เฉย ๆ เมื่ออ่านไม่ได้
+ *    และ `DEFAULTS.on === true` ⇒ **ร้านที่ปิดระบบแต้มไว้ (`on: false`) กลับเปิดเอง**
+ *    ⇒ ลูกค้าแลกแต้มได้ · ได้แต้มจากบิล · ส่วนลดถูกคิดจริง ในวันที่ร้านสั่งปิดไปแล้ว
+ *    🔑 ทิศของ "ไม่รู้" ในเรื่องที่มีผลกับ **เงิน** ต้องเป็น **ไม่ให้ผ่าน** ไม่ใช่ใช้ค่าเริ่มต้น
+ *
+ * ⚠️ ตัวนี้ **ยังคืนค่าเริ่มต้นอยู่** เพื่อให้จอมีอะไรวาด แต่แนบ `unknown: true` มาด้วย
+ *    ⇒ จอต้องเขียนว่า "ยังไม่รู้" ไม่ใช่โชว์กติกาที่เดาเอาเป็นความจริง
+ * 🔴 **ทางที่ให้ส่วนลด/ให้แต้ม/หักแต้ม ห้ามใช้ตัวนี้** — ใช้ `อ่านกติกาแบบเข้ม` ซึ่ง **โยน**
+ *    (ลืมเช็ค `unknown` เป็นไปได้ · ลืมจับ throw ไม่ได้)
+ */
 export async function readLoyalty() {
   try {
     const s = await settingsStore().get(SETTINGS_KEY, { type: "json" });
-    return { ...DEFAULTS, ...(s || {}) };
+    return { ...DEFAULTS, ...(s || {}), unknown: false };
   } catch {
-    return { ...DEFAULTS };
+    return { ...DEFAULTS, unknown: true };
   }
 }
 
@@ -36,10 +48,12 @@ export async function readLoyalty() {
  *     ⇒ อ่านพลาด ⇒ `cur` เป็นค่าเริ่มต้น ⇒ **กติกาแต้มที่ร้านตั้งไว้ถูกรีเซ็ตเงียบ ๆ**
  *       (อัตราได้แต้ม · มูลค่าต่อแต้ม · ขั้นต่ำ · เพดาน %) และหน้าจอขึ้นว่าบันทึกสำเร็จ
  *  ⚠️ `null` = ยังไม่เคยตั้งค่า ⇒ ไม่ใช่ความผิดพลาด ยังต้องบันทึกครั้งแรกได้ */
-async function อ่านแบบเข้ม() {
+export async function อ่านกติกาแบบเข้ม() {
   const s = await settingsStore().get(SETTINGS_KEY, { type: "json" });
   return { ...DEFAULTS, ...(s || {}) };
 }
+/** ชื่อเดิมที่ `writeLoyalty` ใช้อยู่ — ตัวเดียวกัน */
+const อ่านแบบเข้ม = อ่านกติกาแบบเข้ม;
 
 export async function writeLoyalty(next) {
   const s = settingsStore();

@@ -22,7 +22,7 @@ import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
 import { markUsed } from "../lib/coupons.mjs";
-import { addPoints, earnFrom, readLoyalty, redeemPlan } from "../lib/points.mjs";
+import { addPoints, earnFrom, redeemPlan, อ่านกติกาแบบเข้ม } from "../lib/points.mjs";
 import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
 import { shippingFor } from "../lib/shipping.mjs";
 import { sendPurchase } from "../lib/marketing.mjs";
@@ -149,9 +149,22 @@ export default async function handler(req, context) {
 
     // แลกแต้มสะสม — คิดฝั่งเซิร์ฟเวอร์เสมอ ไม่เชื่อตัวเลขจากเบราว์เซอร์
     // ต้องล็อกอินอยู่จริงถึงแลกได้ (แต้มผูกกับบัญชี)
-    const cfg = await readLoyalty();
+    /* 🔴 **B18 (แก้ 4 ต.ค. 2569)** — `cfg` ตัวนี้ตัดสิน **ยอดเงินที่ลูกค้าจ่าย**
+       ของเดิมใช้ `readLoyalty()` ซึ่งอ่านไม่ได้แล้วคืนค่าเริ่มต้นที่ `on: true`
+       ⇒ ร้านที่ปิดระบบแต้มไว้ ลูกค้ายังแลกแต้มได้ และแต้มถูกหักจริง
+       ⇒ ใช้ตัวอ่านแบบเข้มที่ **โยน** ⇒ อ่านไม่ได้ = ไม่คิดส่วนลดแต้มรอบนี้
+       ⚠️ ถ้าลูกค้า **ขอใช้แต้มมาจริง** ต้องตอบ 503 ให้เขารู้ ไม่ใช่เงียบ ๆ คิดราคาเต็ม
+          แล้วเขาจ่ายไปโดยคิดว่าได้ส่วนลด (ของเดิมไม่มีทางนี้เลย) */
+    let cfg;
+    try { cfg = await อ่านกติกาแบบเข้ม(); }
+    catch {
+      if (Number(body.usePoints) > 0) {
+        return json({ error: "ยังอ่านกติกาแต้มไม่ได้ชั่วคราว — ลองสั่งอีกครั้งในอีกสักครู่" }, 503);
+      }
+      cfg = null;   // ลูกค้าไม่ได้ขอใช้แต้ม ⇒ เดินต่อโดยไม่คิดส่วนลดแต้ม
+    }
     const buyer = await currentUser(req, usersStore()).then((r) => r?.user ?? null).catch(() => null);
-    const plan = buyer
+    const plan = (buyer && cfg)
       ? redeemPlan(body.usePoints, Number(buyer.points || 0), Math.max(0, subtotal - discount), cfg)
       : { points: 0, discount: 0 };
     const pointDiscount = plan.discount || 0;
@@ -500,8 +513,14 @@ export default async function handler(req, context) {
     // ออเดอร์ถึงมือลูกค้าแล้วค่อยให้แต้ม — ไม่ให้ตอนสั่ง เพราะยกเลิก/คืนของได้
     // ให้ครั้งเดียวต่อออเดอร์ (ธง pointsGiven) ต่อให้กดสถานะสลับไปมาก็ไม่ได้ซ้ำ
     if (status === "done" && !o.pointsGiven) {
-      const cfg = await readLoyalty();
-      const gain = earnFrom(o.subtotal ?? 0, cfg);
+      /* 🔴 **B18 (แก้ 4 ต.ค. 2569)** — ของเดิม `readLoyalty()` อ่านไม่ได้ ⇒ ค่าเริ่มต้น `on:true`
+         ⇒ **แจกแต้มให้ลูกค้าในวันที่ร้านปิดระบบแต้มไว้** (และอัตราที่ใช้ก็เป็นค่าที่เดาเอา)
+         ⇒ อ่านไม่ได้ ⇒ ข้ามรอบนี้ และ **ไม่ติดธง `pointsGiven`** ⇒ กดสถานะอีกครั้งก็ยังให้แต้มได้
+            (ท่าเดียวกับ `steps.zort` ที่แก้ไว้ 18 ก.ย.: ติดธงเฉพาะเมื่อทำสำเร็จจริง) */
+      let cfg = null;
+      try { cfg = await อ่านกติกาแบบเข้ม(); }
+      catch { o.pointsSkipped = "อ่านกติกาแต้มไม่ได้"; }
+      const gain = cfg ? earnFrom(o.subtotal ?? 0, cfg) : 0;
       if (gain > 0) {
         const phone = normPhone(o.customer?.phone);
         const after = await addPoints(usersStore(), phone, gain, `ได้จากออเดอร์ ${o.id}`, o.id).catch(() => null);

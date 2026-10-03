@@ -12,7 +12,7 @@
 // ⚠️ ต้องเรียกซ้ำได้โดยไม่เกิดผลซ้ำ (idempotent)
 //    เพราะเงินเข้าอาจถูกยืนยันสองทางพร้อมกัน (Beam ยิงมาบอก + หน้าเว็บถามเอง)
 //    ตัวกันอยู่ที่ order.done — ใครมาทีหลังเห็นธงนี้แล้วออกไปเลย
-import { markUsed } from "./coupons.mjs";
+import { นับโค้ดรายคน, นับโควตาโค้ด } from "./coupons.mjs";
 import { addPoints } from "./points.mjs";
 import { pushToAdmins, pushToUser } from "./push.mjs";
 import { sendPurchase } from "./marketing.mjs";
@@ -61,9 +61,39 @@ export async function finalizeOrder({
       หรือคนอื่นที่เปิดลิงก์เช็คสถานะ (หักผิดบัญชี) · ใบเก่าที่ไม่มี buyerPhone ⇒ ไม่หักเดา ติดธงแทน */
   const payer = order.buyerPhone ? { phone: order.buyerPhone } : null;
 
-  if (!order.steps.coupon) {
-    if (order.couponCode) await markUsed(order.couponCode, payer, usersStore()).catch(() => {});
-    order.steps.coupon = true;
+  /* 🔴 **B18 (แก้ 4 ต.ค. 2569)** — ของเดิมติดธง `steps.coupon = true` **ทุกกรณี**
+     แม้ `markUsed` จะล้ม (ห่อ `.catch(() => {})` ไว้) ⇒ โควตาโค้ดไม่ถูกนับ
+     แล้วธงกันทำซ้ำก็ติดไปแล้ว ⇒ **ไม่มีใครกลับมานับให้อีกเลย**
+     ⇒ โค้ด "ใช้ได้ N ใบแรก" ถูกใช้เกินจำนวนอย่างถาวร โดยไม่มีอะไรฟ้อง
+     🔑 คลาสเดียวกับ `steps.zort` ที่แก้ไว้ 18 ก.ย. — **ติดธงเฉพาะเมื่อทำสำเร็จจริง**
+        (บั๊กตัวเดิมอยู่ห่างจากบรรทัดที่แก้ไปแล้วแค่สิบบรรทัด)
+
+     ⚠️ **สองขั้นต้องมีธงคนละตัว** — เทส `paid-recovery` จับตอนผมรวมเป็นธงเดียว:
+        โควตารวมนับสำเร็จ แต่ของรายคนล้ม ⇒ ไม่ติดธง ⇒ เรียกซ้ำ ⇒ **นับโควตารวมสองครั้ง**
+        ⇒ ตรงตามกฎที่เขียนไว้ข้างบนไฟล์นี้: บันทึกลงถังทันทีหลังทำแต่ละขั้น */
+  if (order.couponCode) {
+    if (!order.steps.coupon) {
+      try {
+        await นับโควตาโค้ด(order.couponCode);
+        order.steps.coupon = true;
+        delete order.couponCountError;
+      } catch (e) {
+        order.couponCountError = String(e?.message || e).slice(0, 120);
+      }
+      await save();
+    }
+    if (!order.steps.couponUser && payer) {
+      try {
+        await นับโค้ดรายคน(order.couponCode, payer, usersStore());
+        order.steps.couponUser = true;
+        delete order.couponUserError;
+      } catch (e) {
+        order.couponUserError = String(e?.message || e).slice(0, 120);
+      }
+      await save();
+    }
+  } else if (!order.steps.coupon) {
+    order.steps.coupon = true;   // ไม่มีโค้ด = ไม่มีอะไรต้องนับ
     await save();
   }
 
@@ -75,8 +105,18 @@ export async function finalizeOrder({
       order.steps.points = true;
       delete order.pointsPending;
       await save();
-      await addPoints(usersStore(), payer.phone, -order.pointsUsed,
-        `ใช้แลกส่วนลด ฿${order.pointDiscount || 0}`, order.id).catch(() => {});
+      /* 🔴 **B18 (แก้ 4 ต.ค. 2569)** — `.catch(() => {})` ทำให้ "หักแต้มไม่สำเร็จ" **เงียบสนิท**
+         ⚠️ **ไม่เปลี่ยนทิศของเดิม**: ติดธงก่อนหักยังถูก (หักซ้ำแย่กว่าหักไม่ครบ ตามคอมเมนต์ข้างบน)
+            ⇒ ยังไม่ลองหักซ้ำ · แต่ต้อง **มีร่องรอยให้คนเห็น** ว่าบิลนี้ร้านให้ส่วนลดไปแล้ว
+              แต่แต้มของลูกค้าไม่ได้ถูกหัก (ร้านเสียเงินหนึ่งครั้ง และลูกค้ามีแต้มเกินจริง)
+         🔑 "เลือกไม่ลองใหม่" กับ "ไม่บอกใครเลย" เป็นสองเรื่อง — ของเดิมทำทั้งสอง */
+      try {
+        await addPoints(usersStore(), payer.phone, -order.pointsUsed,
+          `ใช้แลกส่วนลด ฿${order.pointDiscount || 0}`, order.id);
+      } catch (e) {
+        order.pointsDeductFailed = String(e?.message || e).slice(0, 120);
+        await save();
+      }
     } else {
       /* ไม่รู้ว่าเป็นบัญชีไหน (ตัวกวาดตามเวลาไม่มีคุกกี้ลูกค้า) ⇒ **ห้ามหักเดา** ติดธงให้เห็นแทน
          เดิมข้ามเงียบ ๆ · เรื่องหักผิดบัญชีเป็นงานแยก t_mtxys8je */
