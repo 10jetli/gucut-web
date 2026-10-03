@@ -46,7 +46,25 @@ export async function shopeePushLive(body, opts = {}) {
 
   const results = [];
   if (prep.fire.length) {
-    const t = await validToken().catch(() => null);
+    /* 🔑 **B28 (เติม 4 ต.ค. 2569 · ไล่ทั้งคลาส ไม่ใช่แก้เฉพาะไฟล์ในใบงาน)**
+       ทิศของที่นี่ปลอดภัยอยู่แล้ว — อ่าน token ไม่ได้ ⇒ **ปฏิเสธการยิง** (ถูกต้อง ห้ามยิงมั่ว)
+       แต่ข้อความเดิมรวม "ไม่มี token" กับ "อ่าน token ไม่ได้" เป็นประโยคเดียว
+       ⇒ คนอ่านล็อกแยกไม่ออกว่าต้องไป **กดอนุญาตใหม่** หรือไป **ดูว่า Blobs สะดุด**
+       ⇒ แยกข้อความ (ไม่เปลี่ยนพฤติกรรม) · ปลายทางยังได้ `error` เหมือนเดิม */
+    let t = null;
+    let อ่านโทเคนไม่ได้ = null;
+    try {
+      t = await validToken();
+    } catch (e) {
+      อ่านโทเคนไม่ได้ = String(e?.message || e).slice(0, 120);
+    }
+    if (อ่านโทเคนไม่ได้) {
+      return {
+        error: `อ่าน token Shopee ไม่ได้ (${อ่านโทเคนไม่ได้}) — **ไม่รู้ว่าเชื่อมอยู่หรือไม่** ไม่ได้ยิง`
+          + " ⇒ ตรวจที่เก็บ token ก่อน ไม่ใช่กดอนุญาตใหม่",
+        ...prep.ที่มาแผน,
+      };
+    }
     if (!t?.accessToken) return { error: "ไม่มี token Shopee ที่ใช้ได้ — ไม่ได้ยิง", ...prep.ที่มาแผน };
     const byItem = new Map();
     for (const r of prep.fire) (byItem.get(String(r.itemId)) || byItem.set(String(r.itemId), []).get(String(r.itemId))).push(r);
