@@ -153,10 +153,29 @@ export async function finalizeOrder({
      🔑 ติดธงก่อนส่ง ไม่ใช่หลังส่ง — ทิศของความผิดต่างกัน:
         แจ้งไม่ถึงรอบเดียว = ร้านยังเห็นใบใน /admin/orders/ อยู่ดี
         แจ้งซ้ำ 12 รอบ = ลูกค้าบล็อก LINE ร้าน เอาคืนไม่ได้ */
-  const shouldNotify = !order.steps.notified;
+  /* 🔴 **ชั้นที่สี่ของบั๊กเดียวกัน: ธงใน object กัน "การยิงพร้อมกัน" ไม่ได้** (แก้ 4 ต.ค. 2569)
+     ของจริง: ใบ GCMUSK0FH07TD (3 ต.ค. 22:36) เด้ง Telegram **สองใบในวินาทีเดียวกัน**
+     ทั้งที่ `steps.notified` ติดธงก่อนส่งอยู่แล้ว และ `zortTries: 1` ⇒ ไม่ใช่รอบส่งซ้ำ
+     ⇒ เงินเข้าทีเดียว แต่ตาข่าย Beam สามชั้นเรียกเส้นนี้ได้หมด: webhook · หน้าจอลูกค้า poll ·
+        beam-sweep ⇒ สองชั้นอ่านใบพร้อมกันตอน notified ยังเป็น false ⇒ ติดธงทั้งคู่แล้วส่งทั้งคู่
+     🔑 อ่าน-แก้-เขียนบน Blobs **ไม่ใช่อะตอมมิก** ธงในตัว object กันคนที่มาทีหลังได้อย่างเดียว
+        กันคนที่มา "พร้อมกัน" ไม่ได้เลย — คนละปัญหากับการส่งซ้ำ แม้โค้ดจะดูเหมือนกันทุกบรรทัด
+     ⇒ ใช้ `onlyIfNew` ซึ่งเป็นการจองแบบอะตอมมิกจริงที่ฝั่ง Blobs
+        คนแรกได้ modified:true · คนที่สองได้ false แล้วเงียบ
+     ⚠️ ห้ามถอยกลับไปใช้ธงใน object อย่างเดียว — มันดู "ถูก" แต่กันเคสนี้ไม่ได้
+     ⚠️ จองไม่ได้เพราะ Blobs ล่ม ⇒ ถอยไปใช้ธงเดิม (แจ้งซ้ำ ดีกว่าไม่แจ้งเลย) */
+  let shouldNotify = !order.steps.notified;
+  if (shouldNotify) {
+    try {
+      const จอง = await store.set(`notified/${order.id}`, String(Date.now()), { onlyIfNew: true });
+      if (จอง && จอง.modified === false) shouldNotify = false;   // มีคนจองไปก่อนแล้ว
+    } catch {
+      /* จองไม่ได้ = ใช้ธงเดิมตัดสินต่อ — เรื่องแจ้งเตือนต้องไม่ทำให้ออเดอร์ล้ม */
+    }
+  }
   order.steps.notified = true;
   await save();
-  if (!shouldNotify) return order;   // รอบส่งซ้ำ ZORT — เงียบ ไม่เด้งซ้ำ
+  if (!shouldNotify) return order;   // ส่งซ้ำ ZORT หรือมีคนยิงพร้อมกัน — เงียบ
 
   const jobs = [];
   const later = (p) => (context?.waitUntil ? context.waitUntil(p) : jobs.push(p));
