@@ -43,24 +43,50 @@ function creds() {
   return { storename: ZORT_STORENAME, apikey: ZORT_APIKEY, apisecret: ZORT_APISECRET };
 }
 
+/** 🔑 **ฟิลด์ที่เครื่องอ่านได้ — ต้องมีครบ "ทุกทางออก" ของ `zortReadList`**
+ *
+ * 🔴 **ที่มา 4 ต.ค. 2569** (ฝั่งจอวัดจับได้หลัง deploy `693e981`): ผมเติม
+ *    `upstream`/`zortCode`/`zortDesc` ครบทุกทาง **แต่ `upstreamOk` มาเฉพาะตอนสำเร็จ
+ *    และ `retryable` มาเฉพาะตอนล้ม** ⇒ กฎที่ผมเขียนกำกับไว้เองในคอมมิตนั้นใช้ไม่ครบ
+ *
+ * ⚠️ **ทำไมช่องที่หายบางกรณีคือบั๊ก ไม่ใช่เรื่องความเรียบร้อย** — ฝั่งจอไม่มีวิธีเขียนที่ถูกเลย:
+ *      `if (d.upstreamOk === false)` ⇒ ตอนล้มช่องไม่มี = `undefined` ⇒ **เงียบตอนที่ควรเตือนที่สุด**
+ *      `if (!d.upstreamOk)`         ⇒ ทริกกับ **ท่อรุ่นเก่า** ที่ไม่มีช่องนี้เหมือนกัน
+ *    ⇒ มีช่องครบทุกทาง จอจึงแยกได้ 3 สถานะ: `=== false` พังจริง · `=== true` ปกติ ·
+ *      `=== undefined` **ท่อรุ่นเก่า** (ไม่ใช่ "ไม่มีปัญหา")
+ *
+ * 🔑 `upstreamOk: null` = **ยังไม่ได้ถาม ZORT** (ขอผิดตั้งแต่ขาเข้า หรือยังไม่ได้ตั้งรหัส)
+ *    ต่างจาก `false` = ถามแล้วและพัง — ตอบแทนปลายทางที่ไม่เคยถูกถามไม่ได้
+ * ⚠️ **เพิ่มทางออกใหม่ต้องห่อด้วย `ตอบ()`** — ด่านในเทสยิงครบทุกทางออกจริง
+ *    (ไม่ใช่ตรวจว่ามีการเรียก `ตอบ` ในซอร์ส) ⇒ ลืมห่อแล้วเทสแดง ไม่ใช่เงียบ
+ */
+const ช่องมาตรฐาน = Object.freeze({
+  upstream: "zort",
+  upstreamOk: null,
+  retryable: false,
+  zortCode: null,
+  zortDesc: null,
+});
+const ตอบ = (r) => ({ ...ช่องมาตรฐาน, ...r });
+
 /** ขาเข้าจากจอ: { kind, from?, to?, keyword?, page?, limit?, type? } · from/to = yyyy-MM-dd (ไม่ใช้กับ variations)
  *  type = ชนิดใบ ใช้ได้เฉพาะ kind ที่มี types (ตอนนี้ transfers) · ตัวอื่นส่ง type มา = 400 ไม่เมินเงียบ */
 export async function zortReadList(input = {}) {
   const kind = String(input.kind ?? "").trim();
   const def = ZORT_LISTS[kind];
-  if (!def) return { ok: false, error: `ไม่รู้จักชนิด "${kind}" — ใช้ได้: ${Object.keys(ZORT_LISTS).join(" · ")}` };
+  if (!def) return ตอบ({ ok: false, error: `ไม่รู้จักชนิด "${kind}" — ใช้ได้: ${Object.keys(ZORT_LISTS).join(" · ")}` });
 
   const from = String(input.from ?? "").trim();
   const to = String(input.to ?? "").trim();
   for (const [name, v] of [["from", from], ["to", to]]) {
-    if (v && !DATE.test(v)) return { ok: false, error: `${name} ต้องเป็น yyyy-MM-dd (ได้ "${v.slice(0, 20)}")` };
+    if (v && !DATE.test(v)) return ตอบ({ ok: false, error: `${name} ต้องเป็น yyyy-MM-dd (ได้ "${v.slice(0, 20)}")` });
   }
-  if ((from || to) && !def.after) return { ok: false, error: `${def.label} กรองวันที่ไม่ได้ (ZORT ไม่มีพารามิเตอร์นี้)` };
-  if (from && to && from > to) return { ok: false, error: "from ต้องไม่หลัง to" };
+  if ((from || to) && !def.after) return ตอบ({ ok: false, error: `${def.label} กรองวันที่ไม่ได้ (ZORT ไม่มีพารามิเตอร์นี้)` });
+  if (from && to && from > to) return ตอบ({ ok: false, error: "from ต้องไม่หลัง to" });
   const type = String(input.type ?? "").trim();
-  if (type && !def.types) return { ok: false, error: `${def.label} ไม่มีตัวกรองชนิด (type)` };
+  if (type && !def.types) return ตอบ({ ok: false, error: `${def.label} ไม่มีตัวกรองชนิด (type)` });
   if (type && !def.types.includes(type)) {
-    return { ok: false, error: `ชนิด "${type.slice(0, 20)}" ไม่รู้จัก — ใช้ได้: ${def.types.join(" · ")}` };
+    return ตอบ({ ok: false, error: `ชนิด "${type.slice(0, 20)}" ไม่รู้จัก — ใช้ได้: ${def.types.join(" · ")}` });
   }
 
   // ⚠️ ค่าที่ขอเกินเพดาน = บีบแล้ว **บอกจอ** (limitClamped) ไม่บีบเงียบ ๆ
@@ -72,7 +98,7 @@ export async function zortReadList(input = {}) {
   const keyword = String(input.keyword ?? "").trim().slice(0, 100);
 
   const headers = creds();
-  if (!headers) return { ok: false, skip: "ยังไม่ได้ตั้งรหัส ZORT" };
+  if (!headers) return ตอบ({ ok: false, skip: "ยังไม่ได้ตั้งรหัส ZORT" });
 
   const qs = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (keyword) qs.set("keyword", keyword);
@@ -85,17 +111,17 @@ export async function zortReadList(input = {}) {
   try {
     res = await fetch(`${BASE}/${path}`, { headers, signal: AbortSignal.timeout(15000) });
   } catch (e) {
-    return {
+    return ตอบ({
       ok: false, unknown: true, kind,
       /* 🔑 ฟิลด์ที่ **เครื่องอ่านได้** — ฝั่งจอขอไว้ 4 ต.ค. 2569 (ใบ t_mu1bkrdw)
          จอต้องแยก "ZORT พังฝั่งเขา" ออกจาก "เราขอผิด" **จากเนื้อ ไม่ใช่จากรหัสสถานะ** */
-      upstream: "zort", zortCode: null, zortDesc: null, retryable: true,
+      upstream: "zort", upstreamOk: false, zortCode: null, zortDesc: null, retryable: true,
       error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message ?? e).slice(0, 120)} — ยังไม่รู้ว่ามีรายการไหม`,
-    };
+    });
   }
   const body = res.ok ? await res.json().catch(() => null) : null;
   if (!body || !Array.isArray(body.list)) {
-    return {
+    return ตอบ({
       ok: false,
       unknown: true,
       kind,
@@ -107,12 +133,13 @@ export async function zortReadList(input = {}) {
          ไม่มีช่อง ≠ ไม่มีปัญหา ⇒ ถ้าซ่อนตอนปกติ จอจะแยก "ท่อรุ่นเก่าไม่ส่งมา"
          ออกจาก "ไม่มีปัญหา" ไม่ได้ · `upstream` บอกว่าใครพัง ไม่ใช่เราพัง */
       upstream: "zort",
+      upstreamOk: false,
       retryable: true,
       error: `ZORT ไม่คืนรายการ${def.label} (HTTP ${res.status}) — ยังไม่รู้ว่ามีรายการไหม ห้ามแปลว่าว่าง`,
-    };
+    });
   }
   const count = Number(body.count);
-  return {
+  return ตอบ({
     ok: true,
     kind,
     label: def.label,
@@ -120,6 +147,7 @@ export async function zortReadList(input = {}) {
        จอเช็ค `upstreamOk === true` ได้ตรง ๆ แทนการเดาจากการไม่มีคีย์ */
     upstream: "zort",
     upstreamOk: true,
+    retryable: false,
     zortCode: null,
     zortDesc: null,
     applied: { from: from || null, to: to || null, keyword: keyword || null, page, limit, ...(def.types ? { type: type || null } : {}) },
@@ -131,5 +159,5 @@ export async function zortReadList(input = {}) {
     totalPaymentAmount: Number.isFinite(Number(body.totalPaymentAmount)) && body.totalPaymentAmount !== null && body.totalPaymentAmount !== undefined ? Number(body.totalPaymentAmount) : null,
     rowKeys: body.list[0] ? Object.keys(body.list[0]) : [],
     rows: body.list,
-  };
+  });
 }

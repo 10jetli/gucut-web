@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-09-28T03:11:06.232Z";
+export const generatedAt = "2026-10-03T18:44:16.487Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -87,6 +87,7 @@ export const paramRoutes = [
  "pending",
  "pendingsplit",
  "poslookup",
+ "probestatus",
  "productimage",
  "productlabels",
  "purchase",
@@ -218,6 +219,7 @@ export const routeMethod = {
  "zortproduct": "readonly",
  "zortpo": "readonly",
  "zortpoid": "readonly",
+ "probestatus": "readonly",
  "zortlist": "readonly",
  "archiveslips": "write",
  "slipscan": "readonly",

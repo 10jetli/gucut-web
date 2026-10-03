@@ -1851,7 +1851,14 @@ async function route(req, context) {
       return okJson(await backupStatus());
     }
     if (url.searchParams.get("backup")) {
-      return okJson(await runBackup());
+      const r = await runBackup();
+      /* 🔴 **4 ต.ค. 2569: ล้ม 10/10 ถังแต่หัวใบตอบ `ok: true` HTTP 200**
+         ⇒ จอ/งานตั้งเวลาที่เช็ค `ok` อย่างเดียวจะเห็น "สำรองสำเร็จ" ในคืนที่ไม่มีสำเนาเกิดขึ้นเลย
+         🔑 ใช้ **503** ชุดเดียวกับ `zortlist` (วัดแล้วว่า body รอด CDN · ดูคอมเมนต์ที่เส้นนั้น)
+            และติด `unknown: true` เพราะ "ไม่มีสำเนาเกิดขึ้น" = **ยังไม่รู้ว่าข้อมูลปลอดภัยไหม**
+         ⚠️ ล้ม **บางถัง** ยังตอบ 200 ตามเดิม — รอบนั้นมีสำเนาเกิดขึ้นจริงบางส่วน */
+      if (r?.totals?.ล้มทั้งหมด) return json({ ...r, ok: false, unknown: true }, 503);
+      return okJson(r);
     }
     if (url.searchParams.get("restore")) {
       const r = await restore({

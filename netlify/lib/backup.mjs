@@ -16,6 +16,7 @@
 //    ความปลอดภัยของข้อมูลไม่ได้แปลว่าเก็บทุกอย่างให้นานที่สุด
 import { getStore } from "@netlify/blobs";
 import { coreQuery, coreReady } from "./coredb.mjs";
+import { PART_RE, ป้ายหั่น, จัดกลุ่มชิ้น, ต่อกลับ, หั่นเก็บ } from "./backup-chunks.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -260,6 +261,14 @@ export async function runBackup(budgetMs = 18000) {
       keys: out.reduce((s, r) => s + num(r.keys), 0),
       bytes: out.reduce((s, r) => s + num(r.bytes), 0),
       failed: out.filter((r) => r.error).length,
+      /* 🔑 **ชื่อถังที่ล้ม ไม่ใช่แค่จำนวน** — 4 ต.ค. 2569 ล้ม 10/10 ด้วยเหตุเดียวกัน
+         (`PART_RE is not defined` — ผมลืม import ของที่เพิ่งสร้าง) และ **หัวใบตอบ `ok: true`**
+         ⇒ จำนวนอย่างเดียวไม่บอกว่าเป็นเรื่องเดียวกันทุกถังหรือคนละเรื่อง */
+      failedStores: out.filter((r) => r.error).map((r) => `${r.store}: ${r.error}`).slice(0, 20),
+      /* 🔴 **ล้มทุกถัง ≠ ล้มบางถัง** — บางถังล้มแล้วรอบนี้ยังมีประโยชน์ (ที่เหลือได้สำเนา)
+         แต่ล้มทุกถัง = **รอบนี้ไม่มีสำเนาเกิดขึ้นเลย** ⇒ ผู้เรียกต้องตอบว่าไม่สำเร็จ
+         ⚠️ ห้ามเอา `failed > 0` ไปพลิก `ok` — ถังเดียวพังต้องไม่ล้มทั้งรอบ (กติกาเดิม บรรทัด ~252) */
+      ล้มทั้งหมด: out.length > 0 && out.every((r) => Boolean(r.error)),
       // คีย์ที่ถูกข้ามทั้งรอบ (ยาวเกินเพดาน SQL) — ต้องโผล่ในสรุป ไม่ใช่ซ่อนในรายถัง
       skippedKeys: out.flatMap((r) => (r.skippedKeys ?? []).map((x) => `${r.store}/${x.key} (${x.sqlBytes} B)`)).slice(0, 20),
       // เหลือค้าง = รอบนี้หมดเวลาก่อน · รอบถัดไปเก็บต่อเอง ไม่ต้องสั่ง
@@ -325,6 +334,29 @@ export async function restore({ store, key = "", confirm = false, overwrite = fa
     `SELECT key, body, bytes, at, gone_at FROM backups WHERE store = ${esc(store)} ${where}`
   );
   if (!rows.length) return { error: "ไม่มีสำเนาของถังนี้" };
+
+  /* 🔴 **ขอคีย์เดียวที่ถูกหั่น ⇒ ต้องตามไปดึงแถวชิ้นด้วย** (เจอ 4 ต.ค. 2569 ด้วยเทสที่เรียกจุดใช้งานจริง)
+     `AND key = 'office/tasks'` คัดได้แค่ **แถวหลัก** เพราะคีย์ชิ้นคือ `office/tasks⧉ชิ้น0/8`
+     ⇒ `จัดกลุ่มชิ้น` ไม่เจอชิ้นเลย ⇒ **กู้คีย์ที่ถูกหั่นไม่ได้ตลอดกาล** (ตอบ "ไม่พบแถวชิ้นเลย")
+     🔑 ใช้ **รายชื่อคีย์ตรง ๆ** ไม่ใช่ `LIKE 'คีย์⧉ชิ้น%'` เพราะ D1 จำกัดรูปแบบ LIKE ที่ 50 ไบต์
+        และคีย์ไทยยาวเกินง่าย ๆ (ไทย 3 ไบต์/ตัว) — จำนวนชิ้นอ่านได้จากป้ายในแถวหลักอยู่แล้ว
+     ⚠️ กรณีกู้ทั้งถัง (ไม่ระบุ key) แถวชิ้นมาอยู่ในชุดแรกแล้ว ⇒ ลูปนี้ไม่ยิงอะไรเพิ่ม */
+  if (key) {
+    const ขอเพิ่ม = [];
+    for (const r of rows) {
+      const b = String(r.body ?? "");
+      if (!b.startsWith(ป้ายหั่น)) continue;
+      const n = Number(b.slice(ป้ายหั่น.length));
+      if (!Number.isInteger(n) || n < 1) continue;
+      for (let i = 0; i < n; i++) ขอเพิ่ม.push(`${r.key}⧉ชิ้น${i}/${n}`);
+    }
+    if (ขอเพิ่ม.length) {
+      const ชิ้นแถว = await coreQuery(
+        `SELECT key, body, bytes, at, gone_at FROM backups WHERE store = ${esc(store)} AND key IN (${ขอเพิ่ม.map(esc).join(",")})`
+      );
+      rows = rows.concat(ชิ้นแถว || []);
+    }
+  }
 
   const s = getStore(store);
   const { blobs } = await s.list();
