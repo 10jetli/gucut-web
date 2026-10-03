@@ -101,6 +101,7 @@ async function backupOne(cfg, deadline = Infinity) {
       ถ้าเปลี่ยนจาก "ล้มทั้งถัง" เป็น "ข้ามคีย์นั้น" โดยไม่บอกชื่อ เราจะไม่รู้ว่า
       ของที่ไม่ได้สำรองคือ **กติกาบอต** หรือแค่ **แคชตัวเลขที่สร้างใหม่ได้**) */
   const คีย์ที่ข้าม = [];
+  const หั่นแล้ว = [];
   let batch = [], batchBytes = 0;
   const flush = async () => {
     if (!batch.length) return;
@@ -162,8 +163,37 @@ async function backupOne(cfg, deadline = Infinity) {
     const แถวSQL = `(${esc(cfg.store)},${esc(key)},${esc(text)},${size},datetime('now'),NULL,${tag ? esc(tag) : "NULL"})`;
     const แถวไบต์ = Buffer.byteLength(แถวSQL, "utf8");
     if (แถวไบต์ > MAX_ONE) {
-      skipped++;
-      คีย์ที่ข้าม.push({ key, bytes: size, sqlBytes: แถวไบต์ });
+      /* 🔴 **ใบ `t_musq1h42` (4 ต.ค. 2569) — เดิมข้ามทิ้ง ตอนนี้หั่นเก็บ**
+         ของที่เคยถูกข้าม: `office/tasks` (303 KB) = **กระดานงานของทีมทั้งใบ · สร้างใหม่ไม่ได้**
+         เหตุที่ข้ามไม่ใช่บั๊กเรา: D1 จำกัด **ความยาวคำสั่ง** ⇒ แถวเดียวเก็บไม่ได้จริง
+         ⇒ หั่นเป็นหลายแถว (`netlify/lib/backup-chunks.mjs`) แล้วต่อกลับตอนกู้
+         🔑 **แถวหลักยังอยู่** และเก็บป้ายจำนวนชิ้น เพราะกลไกเดิมใช้แถวหลักตัดสิน
+            "ไม่เปลี่ยน" (bytes+etag) และ "คีย์หายจากต้นทาง" ⇒ ถ้าแถวหลักหาย จะสำรองใหม่ทุกรอบ
+         ⚠️ ชิ้นต้องถูกเขียนให้ครบ **ก่อน** เขียนแถวหลัก — ถ้าสลับลำดับแล้วรอบนั้นตายกลางทาง
+            จะเหลือแถวหลักที่บอกว่า "มี n ชิ้น" โดยไม่มีชิ้น ⇒ ตัวกู้คืนจะเจอของครึ่งใบ */
+      const ชิ้น = หั่นเก็บ(text, key);
+      for (const c of ชิ้น) {
+        const แถวชิ้น = `(${esc(cfg.store)},${esc(c.key)},${esc(c.body)},${c.body.length},datetime('now'),NULL,NULL)`;
+        const ไบต์ชิ้น = Buffer.byteLength(แถวชิ้น, "utf8");
+        if (ไบต์ชิ้น > MAX_ONE) {
+          /* กันพลาดชั้นสอง: ถ้าชิ้นยังใหญ่เกิน (เพดานเปลี่ยน/คำนวณพลาด) **ข้ามแบบดัง ๆ**
+             ห้ามเขียนของครึ่งใบลงไป */
+          skipped++;
+          คีย์ที่ข้าม.push({ key, bytes: size, sqlBytes: ไบต์ชิ้น, เหตุ: "ชิ้นที่หั่นแล้วยังใหญ่เกิน" });
+          continue;
+        }
+        if (batchBytes + ไบต์ชิ้น > SQL_ปลอดภัย) await flush();
+        batch.push(แถวชิ้น);
+        batchBytes += ไบต์ชิ้น;
+      }
+      await flush();   // ชิ้นต้องลงครบก่อนแถวหลัก
+      const ป้าย = `${ป้ายหั่น}${ชิ้น.length}`;
+      const แถวป้าย = `(${esc(cfg.store)},${esc(key)},${esc(ป้าย)},${size},datetime('now'),NULL,${tag ? esc(tag) : "NULL"})`;
+      batch.push(แถวป้าย);
+      batchBytes += Buffer.byteLength(แถวป้าย, "utf8");
+      saved++;
+      bytes += size;
+      หั่นแล้ว.push({ key, bytes: size, ชิ้น: ชิ้น.length });
       continue;
     }
     // flush **ก่อน** จะเกิน — ตรวจหลังใส่แล้วสายเกินไป (ก้อนสุดท้ายจะโตเกินเพดาน)
@@ -179,9 +209,12 @@ async function backupOne(cfg, deadline = Infinity) {
   // ⚠️ รอบที่หยุดกลางคัน (หมดเวลา) **ห้ามติดธง** เพราะยังดูไม่ครบทุกคีย์
   //    ติดธงตอนดูไม่ครบ = บอกว่าของหายทั้งที่แค่ยังไม่ได้ดู
   const live = new Set(keys);
+  /* ⚠️ **แถวชิ้นไม่ใช่คีย์ของต้นทาง** — มันเป็นของที่เราสร้างขึ้นเองเพื่อเก็บค่าใหญ่
+     ⇒ ถ้าไม่กันไว้ มันจะไม่อยู่ใน `live` แล้วถูกติดธง `gone_at` ทุกรอบ
+     ⇒ ⇒ สมุดจะรายงานว่า "ของหายจากต้นทาง" ทุกรอบ ทั้งที่ไม่มีอะไรหาย (ใบ t_musq1h42) */
   const vanished = left
     ? []
-    : [...prev.keys()].filter((k) => live.has(k) === false && !prev.get(k).gone_at);
+    : [...prev.keys()].filter((k) => !PART_RE.test(k) && live.has(k) === false && !prev.get(k).gone_at);
   for (let i = 0; i < vanished.length; i += 40) {
     const chunk = vanished.slice(i, i + 40).map(esc).join(",");
     await coreQuery(
@@ -288,7 +321,7 @@ export async function restore({ store, key = "", confirm = false, overwrite = fa
   if (!cfg) return { error: `ถัง "${store}" ไม่ได้อยู่ในรายการที่สำรองไว้` };
 
   const where = key ? `AND key = ${esc(key)}` : "";
-  const rows = await coreQuery(
+  let rows = await coreQuery(
     `SELECT key, body, bytes, at, gone_at FROM backups WHERE store = ${esc(store)} ${where}`
   );
   if (!rows.length) return { error: "ไม่มีสำเนาของถังนี้" };
@@ -296,6 +329,26 @@ export async function restore({ store, key = "", confirm = false, overwrite = fa
   const s = getStore(store);
   const { blobs } = await s.list();
   const live = new Set((blobs || []).map((b) => b.key));
+
+  /* 🔴 **ต่อชิ้นกลับ (ใบ `t_musq1h42`)** — ค่าที่ใหญ่เกินเพดานถูกเก็บเป็น
+     แถวหลัก (body = `⧉หั่น:n`) + แถวชิ้น n แถว ⇒ ตอนกู้ต้องประกอบกลับ
+     🔑 **ชิ้นไม่ครบ ⇒ ไม่เขียนคีย์นั้นเลย และรายงานออกมา**
+        ของครึ่งใบที่ดูเหมือนกู้สำเร็จ แย่กว่ากู้ไม่ได้ เพราะคนจะเอาไปใช้ต่อ */
+  const กลุ่มชิ้น = จัดกลุ่มชิ้น(rows);
+  const ต่อไม่ได้ = [];
+  for (const r of rows) {
+    if (!String(r.body ?? "").startsWith(ป้ายหั่น)) continue;
+    const g = กลุ่มชิ้น.get(r.key);
+    try {
+      if (!g) throw new Error("ไม่พบแถวชิ้นเลย");
+      r.body = ต่อกลับ(g.ชิ้น, g.ต้องมี);
+    } catch (e) {
+      ต่อไม่ได้.push({ key: r.key, why: String(e?.message || e).slice(0, 140) });
+      r.body = null;   // กันไม่ให้ถูกเขียนลงไปเป็นป้าย
+    }
+  }
+  /* แถวชิ้นต้องไม่ถูกเขียนกลับเป็นคีย์ของตัวเอง และคีย์ที่ต่อไม่ได้ต้องถูกตัดออก */
+  rows = rows.filter((r) => !PART_RE.test(String(r.key)) && r.body !== null);
 
   const missing = rows.filter((r) => !live.has(r.key));
   const exists = rows.filter((r) => live.has(r.key));
@@ -309,6 +362,8 @@ export async function restore({ store, key = "", confirm = false, overwrite = fa
       missing: missing.length,
       alreadyThere: exists.length,
       sample: plan.slice(0, 10).map((r) => ({ key: r.key, bytes: num(r.bytes), backedUpAt: r.at })),
+      /* 🔑 **ต้องมีช่องนี้เสมอแม้ว่าง** — ไม่มีช่อง ≠ ไม่มีปัญหา */
+      ต่อชิ้นไม่ได้: ต่อไม่ได้,
       note:
         "นี่คือการซ้อม ยังไม่ได้เขียนอะไรลงไป — สั่งจริงต้องส่ง confirm=1 " +
         "· ค่าเริ่มต้นเขียนเฉพาะคีย์ที่หายไปเท่านั้น ไม่ทับของที่ยังอยู่",
@@ -325,5 +380,5 @@ export async function restore({ store, key = "", confirm = false, overwrite = fa
       failed.push({ key: r.key, why: String(e?.message || e).slice(0, 120) });
     }
   }
-  return { store, written, skippedExisting: overwrite ? 0 : exists.length, failed };
+  return { store, written, skippedExisting: overwrite ? 0 : exists.length, failed, ต่อชิ้นไม่ได้: ต่อไม่ได้ };
 }
