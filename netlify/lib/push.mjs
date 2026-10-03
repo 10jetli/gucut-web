@@ -58,12 +58,27 @@ export async function pushToAdmins(payload) {
   await vapid();
   const all = await listSubs();
   if (!all.length) return 0;
+  /* 🔴 **B11 (แก้ 3 ต.ค. 2569) — เดิมคืน `all.length - dead.length` ซึ่งไม่ได้นับความสำเร็จ**
+     `dead` เพิ่มเฉพาะ 404/410 ⇒ พลาดด้วย **500 · เน็ตหลุด · VAPID ไม่ตรง** ถูกนับเป็นสำเร็จ
+     ⇒ `/api/push` ตอบ `{ok:true, sent:1}` ทั้งที่ไม่มีเครื่องไหนได้รับเลย
+     ⇒ เจ้าของร้านกดปุ่ม "ทดสอบการแจ้งเตือน" เห็นเขียว **จึงเชื่อว่าระบบพร้อม**
+       วันที่ลูกค้าทักจริงแล้วไม่เด้ง ไม่มีใครย้อนมาสงสัยปุ่มที่เคยขึ้นเขียว
+     🔑 ท่าที่ถูกอยู่ในไฟล์นี้เองห่างกันสามฟังก์ชัน: `pushToUser` นับ `ok++` จาก `.then()`
+        ⇒ คลาส: **สองฟังก์ชันรูปเดียวกันในไฟล์เดียวกัน นับคนละความหมาย**
+          `ok` = สำเร็จจริง · `all - dead` = "ทั้งหมดลบที่เรารู้ว่าตาย" (ไม่ใช่ความสำเร็จ)
+     ⚠️ **ล้มด้วยเหตุอื่นห้ามลบเครื่องทิ้ง** — 500 คือปลายทางสะดุดชั่วคราว ไม่ใช่ถอนสิทธิ์
+        ลบทิ้ง = แอดมินหายจากระบบแจ้งเตือนเพราะเน็ตกระตุกครั้งเดียว */
   const dead = [];
+  const พลาดเหตุอื่น = [];
+  let ok = 0;
   await Promise.all(
     all.map((sub) =>
-      webpush.sendNotification(sub, JSON.stringify(payload)).catch((e) => {
-        if (e?.statusCode === 404 || e?.statusCode === 410) dead.push(sub.endpoint);
-      })
+      webpush.sendNotification(sub, JSON.stringify(payload))
+        .then(() => { ok++; })
+        .catch((e) => {
+          if (e?.statusCode === 404 || e?.statusCode === 410) dead.push(sub.endpoint);
+          else พลาดเหตุอื่น.push(`${sub.endpoint.slice(-24)}:${e?.statusCode || e?.message || "?"}`);
+        })
     )
   );
   if (dead.length) {
@@ -71,7 +86,13 @@ export async function pushToAdmins(payload) {
     const left = all.filter((x) => !dead.includes(x.endpoint));
     await s.setJSON(SUBS, left);
   }
-  return all.length - dead.length;
+  /* 🔑 **เงียบไม่ได้** — ส่งไม่ถึงสักเครื่องคือเรื่องที่ต้องมีคนรู้ ไม่ใช่เลข 0 ที่ไม่มีใครดู
+     ทำได้แค่ `console` เพราะคนเรียกบางตัวไม่มีทางรายงานกลับ (เรียกแบบไม่ await) */
+  if (พลาดเหตุอื่น.length) {
+    console.warn(`[push] ส่งแอดมินไม่สำเร็จ ${พลาดเหตุอื่น.length}/${all.length} เครื่อง`
+      + ` (ไม่ลบทิ้ง เพราะไม่ใช่ 404/410): ${พลาดเหตุอื่น.join(" · ")}`);
+  }
+  return ok;
 }
 
 
