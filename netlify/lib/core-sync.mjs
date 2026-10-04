@@ -328,12 +328,26 @@ export async function syncOrders(days = 3, range = {}) {
       itemRows += rows.length;
     }
 
+    /* ━━ ตรึงต้นทุนลงบรรทัดขาย — ใบ `t_mutwbamy` ━━ (ตัวจริงอยู่ใน `ตรึงต้นทุนของใบ()` ข้างล่าง)
+       🔑 แยกเป็นฟังก์ชันที่ส่งออก เพื่อให้เทส **เรียกตัวจริงได้** ไม่ต้องอ่านซอร์สเป็นข้อความ
+          (ด่านที่อ่านซอร์สเขียวได้ตอนพฤติกรรมตาย — คอมเมนต์หลอกมันได้) */
+    const ผลตรึง = (rewriteAll || forItems.length)
+      ? await ตรึงต้นทุนของใบ(forItems, st.tag)
+      : { ตรึงต้นทุน: 0 };
+    const ตรึงต้นทุน = ผลตรึง.ตรึงต้นทุน;
+    const ตรึงต้นทุนพลาด = ผลตรึง.ตรึงต้นทุนพลาด ?? null;
+
     result.stores[st.tag] = {
       orders: orders.length,
       written: changed.length,
       skipped,
       items: itemRows,
       // บอกให้ชัดว่ารอบนี้เขียนบรรทัดใหม่ทุกใบ ไม่ใช่เฉพาะใบที่เปลี่ยน
+      /* ตรึงต้นทุนกี่บรรทัดในรอบนี้ — เลขนี้ **ต้องเป็น 0 ในรอบที่สองของวันเดียวกัน**
+         เพราะ `INSERT OR IGNORE` กันไว้แล้ว ⇒ ถ้าไม่เป็น 0 แปลว่าต้นทุน **ไม่ได้ตรึงจริง**
+         (ไม่ใช่ตัวเลขประดับ — มันคือตัวที่พิสูจน์ว่า "ตรึง" ทำงาน) */
+      ตรึงต้นทุน,
+      ...(ตรึงต้นทุนพลาด ? { ตรึงต้นทุนพลาด } : {}),
       ...(rewriteAll ? { itemsRewrittenForAll: true } : {}),
       ...(headerOnly ? { itemsHeaderOnly: true } : {}),
     };
@@ -698,4 +712,53 @@ export async function zortOrderCountForMonthAll(ym) {
     countsCancelled: true,
     source: "ZORT สด รวมทุกร้าน (ไม่ผ่านกระจก)",
   };
+}
+
+/** ตรึงต้นทุนลงบรรทัดขาย — **เขียนครั้งเดียวต่อบรรทัด** (ใบ `t_mutwbamy` · 4 ต.ค. 2569)
+ *
+ * 🔴 **ทำไมเขียนลงตารางแยก `order_item_cost`**
+ *    ตัวซิงก์ `DELETE FROM order_items WHERE order_id IN (...)` แล้วเขียนใหม่ทั้งใบทุกรอบ
+ *    ⇒ คอลัมน์ที่อยู่ในตารางนั้น **ถูกลบทุกรอบซิงก์** ⇒ ต้นทุนที่ "ตรึง" จะไม่ตรึง
+ *       มันจะถูกคิดใหม่ตามวันที่ซิงก์ ซึ่งคือสิ่งที่ใบนี้มีไว้ป้องกัน
+ * 🔑 **`INSERT OR IGNORE` เท่านั้น — ห้าม UPDATE ห้าม UPSERT**
+ *    ใบที่ปิดบัญชีไปแล้วต้องนิ่ง · กำไรของเดือนที่ปิดแล้วห้ามขยับเพราะมีคนแก้ราคาซื้อวันนี้
+ * 🔴 **รหัสที่ยังไม่รู้ต้นทุน ⇒ ไม่เขียนแถวเลย** (ไม่ใช่เขียน 0 และไม่ใช่เขียนแถว NULL)
+ *    เขียนแถวว่างไว้ = `OR IGNORE` จะกันไม่ให้เขียนตลอดกาล ⇒ วันที่รู้ต้นทุนแล้วก็เติมไม่ได้อีก
+ * 🔴 **ล้มที่นี่ห้ามล้มการซิงก์** — ออเดอร์เข้ากระจกสำคัญกว่าต้นทุน
+ *    แต่ **ห้ามเงียบ** ⇒ คืนช่อง `ตรึงต้นทุนพลาด` ให้คนเห็น (กฎ fallbacks-must-announce)
+ *
+ * @param {Array} forItems ใบที่เพิ่งเขียนบรรทัดไป (แต่ละใบมี `number` และ `list`)
+ * @param {string} tag     "z1" | "z2"
+ */
+export async function ตรึงต้นทุนของใบ(forItems, tag, deps = {}) {
+  try {
+    const { ต้นทุนรายรหัส } = deps.ต้นทุน
+      ? { ต้นทุนรายรหัส: deps.ต้นทุน }
+      : await import("./ต้นทุนรายรหัส.mjs");
+    const skus = [...new Set(
+      (forItems || []).flatMap((o) => (Array.isArray(o.list) ? o.list : []).map((it) => String(it?.sku ?? "").trim()))
+        .filter(Boolean)
+    )];
+    if (!skus.length) return { ตรึงต้นทุน: 0 };
+    const r = await ต้นทุนรายรหัส({ skus });
+    const ต้นทุน = new Map((r?.รหัส ?? []).map((x) => [String(x.sku), x]));
+    const แถว = [];
+    for (const o of forItems || []) {
+      (Array.isArray(o.list) ? o.list : []).forEach((it, idx) => {
+        const sku = String(it?.sku ?? "").trim();
+        const c = ต้นทุน.get(sku);
+        if (!sku || !c || c.ต้นทุน === null || c.ต้นทุน === undefined) return;
+        แถว.push(`(${esc(`${tag}/${o.number}`)},${idx},${esc(sku)},${num(c.ต้นทุน)},${esc(c.ที่มา)})`);
+      });
+    }
+    for (let j = 0; j < แถว.length; j += 200) {
+      await coreQuery(
+        `INSERT OR IGNORE INTO order_item_cost (order_id,line,sku,unit_cost,source)
+         VALUES ${แถว.slice(j, j + 200).join(",")}`
+      );
+    }
+    return { ตรึงต้นทุน: แถว.length };
+  } catch (e) {
+    return { ตรึงต้นทุน: 0, ตรึงต้นทุนพลาด: String(e?.message || e).slice(0, 120) };
+  }
 }

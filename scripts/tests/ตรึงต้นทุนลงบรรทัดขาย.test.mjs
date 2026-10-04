@@ -1,0 +1,87 @@
+// รัน: node --experimental-test-module-mocks --test scripts/tests/ตรึงต้นทุนลงบรรทัดขาย.test.mjs
+// ใบ t_mutwbamy — ต้นทุนของบรรทัดขายต้องถูก **ตรึงไว้ตอนขาย** ไม่ใช่คิดสดย้อนหลัง
+//
+// 🔴 เหตุ: เส้น `?cost=1` ติดป้ายเองว่า "ต้นทุน ณ วันนี้ ไม่ใช่ต้นทุนตอนที่ขายใบนั้นไป"
+//    ⇒ คิดกำไรย้อนหลังด้วยต้นทุนวันนี้ = ตัวเลขเปลี่ยนทุกวันโดยที่ใบขายไม่เปลี่ยน
+//    และถ้ามีคนแก้ราคาซื้อ **กำไรของเดือนที่ปิดบัญชีไปแล้วจะขยับตามแบบไม่มีใครรู้**
+// 🔑 เทสนี้เรียก `ตรึงต้นทุนของใบ()` **ตัวจริง** แล้วอ่านคำสั่ง SQL ที่มันพ่น
+//    (ไม่อ่านซอร์สเป็นข้อความ — ด่านที่อ่านซอร์สเขียวได้ตอนพฤติกรรมตาย และคอมเมนต์หลอกมันได้)
+import assert from 'node:assert/strict';
+import { mock, test } from 'node:test';
+
+const sql = [];
+mock.module('../../netlify/lib/coredb.mjs', {
+  namedExports: {
+    coreReady: () => true,
+    แถวจากผล: (r) => (Array.isArray(r) ? r : (r?.results ?? [])),
+    coreQuery: async (s) => { sql.push(s); return []; },
+  },
+});
+const { ตรึงต้นทุนของใบ } = await import('../../netlify/lib/core-sync.mjs');
+
+const ใบ = [{ number: 'SO-1', list: [{ sku: 'A1' }, { sku: 'A2' }] }];
+const ยิง = async (รหัส) => {
+  sql.length = 0;
+  return ตรึงต้นทุนของใบ(ใบ, 'z1', { ต้นทุน: async () => ({ ok: true, รหัส }) });
+};
+const คำสั่งเขียน = () => sql.find((s) => /INSERT .*order_item_cost/i.test(s));
+
+test('① เขียนต้นทุน + ที่มา ลงบรรทัด (order_id · line · sku)', async () => {
+  const r = await ยิง([{ sku: 'A1', ต้นทุน: 7.25, ที่มา: 'ถัวเฉลี่ยจากใบซื้อของเรา' },
+                       { sku: 'A2', ต้นทุน: 3, ที่มา: 'ราคาซื้อที่ตั้งไว้' }]);
+  assert.equal(r.ตรึงต้นทุน, 2);
+  const s = คำสั่งเขียน();
+  assert.match(s, /\(order_id,line,sku,unit_cost,source\)/);
+  assert.match(s, /'z1\/SO-1',0,'A1',7\.25,'ถัวเฉลี่ยจากใบซื้อของเรา'/);
+  assert.match(s, /'z1\/SO-1',1,'A2',3,'ราคาซื้อที่ตั้งไว้'/,
+    'ต้องเก็บ **ที่มา** ด้วย — ต้นทุนเลขเดียวกันจากสองแหล่งเชื่อถือได้ไม่เท่ากัน');
+});
+
+test('② 🔑 ต้องเป็น INSERT OR IGNORE — ห้าม UPDATE/UPSERT', async () => {
+  await ยิง([{ sku: 'A1', ต้นทุน: 7.25, ที่มา: 'x' }]);
+  const s = คำสั่งเขียน();
+  assert.match(s, /INSERT OR IGNORE INTO order_item_cost/,
+    '🔴 ไม่ใช่ OR IGNORE = ซิงก์ซ้ำจะเขียนทับ ⇒ กำไรของเดือนที่ปิดบัญชีแล้วขยับได้');
+  assert.doesNotMatch(s, /ON CONFLICT|DO UPDATE|REPLACE INTO/i,
+    '🔴 UPSERT ทำให้ใบที่ปิดบัญชีไปแล้วไม่นิ่ง');
+});
+
+test('③ 🔑 รหัสที่ยังไม่รู้ต้นทุน ⇒ **ไม่เขียนแถวเลย** (ไม่ใช่ 0 ไม่ใช่แถว NULL)', async () => {
+  const r = await ยิง([{ sku: 'A1', ต้นทุน: null, ที่มา: 'ยังไม่รู้' },
+                       { sku: 'A2', ต้นทุน: 3, ที่มา: 'ราคาซื้อที่ตั้งไว้' }]);
+  assert.equal(r.ตรึงต้นทุน, 1, 'ต้องเขียนแค่บรรทัดที่รู้ต้นทุน');
+  const s = คำสั่งเขียน();
+  assert.doesNotMatch(s, /'A1'/,
+    '🔴 เขียนแถวว่างไว้ = OR IGNORE จะกันตลอดกาล ⇒ วันที่รู้ต้นทุนแล้วก็เติมไม่ได้อีก');
+  assert.doesNotMatch(s, /,0,'A1'/);
+  assert.match(s, /'A2',3/);
+});
+
+test('④ คู่ตรงข้ามของ ③: ต้นทุน 0 ที่ต้นทางบอกว่าศูนย์จริง **ต้องเขียน**', async () => {
+  const r = await ยิง([{ sku: 'A1', ต้นทุน: 0, ที่มา: 'ราคาซื้อที่ตั้งไว้' }]);
+  assert.equal(r.ตรึงต้นทุน, 1, '🔴 ด่านกว้างเกิน — ของแถมที่ต้นทุน 0 จริงต้องตรึงได้');
+  assert.match(คำสั่งเขียน(), /'A1',0,'ราคาซื้อที่ตั้งไว้'/);
+});
+
+test('⑤ ไม่มีบรรทัดไหนมี sku ⇒ ไม่ยิงคำสั่งเขียนเลย', async () => {
+  sql.length = 0;
+  const r = await ตรึงต้นทุนของใบ([{ number: 'SO-9', list: [{}] }], 'z1',
+    { ต้นทุน: async () => ({ ok: true, รหัส: [] }) });
+  assert.equal(r.ตรึงต้นทุน, 0);
+  assert.ok(!คำสั่งเขียน(), 'ไม่มีอะไรจะเขียน ต้องไม่ยิง SQL เปล่า');
+});
+
+test('⑥ 🔴 ตัวคิดต้นทุนล้ม ต้อง **ไม่โยน** และต้องบอกว่าพลาด ไม่ใช่เงียบ', async () => {
+  sql.length = 0;
+  const r = await ตรึงต้นทุนของใบ(ใบ, 'z1',
+    { ต้นทุน: async () => { throw new Error('D1 ล่ม (ปลูก)'); } });
+  assert.equal(r.ตรึงต้นทุน, 0, 'ล้มแล้วต้องไม่ล้มการซิงก์ — ออเดอร์เข้ากระจกสำคัญกว่าต้นทุน');
+  assert.match(r.ตรึงต้นทุนพลาด, /D1 ล่ม/,
+    '🔴 กลืนเงียบ = วันข้างหน้าไม่มีต้นทุนเลยโดยไม่มีใครรู้ว่าทำไม');
+});
+
+test('⑦ 🔬 พลังแยกแยะ: ถ้าใครเปลี่ยนไปใช้ UPSERT ด่านข้อ ② ต้องแดง', () => {
+  const ปลูก = `INSERT INTO order_item_cost (...) VALUES (...) ON CONFLICT(order_id,line) DO UPDATE SET unit_cost=excluded.unit_cost`;
+  assert.doesNotMatch(ปลูก, /INSERT OR IGNORE INTO order_item_cost/, 'ตัวจับคู่ของ ② ต้องไม่ตรงกับ UPSERT');
+  assert.match(ปลูก, /DO UPDATE/, 'และตัวจับคู่ข้อห้ามต้องจับ UPSERT ได้จริง');
+});

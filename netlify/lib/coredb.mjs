@@ -223,6 +223,23 @@ export async function coreInit() {
       qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0,
       PRIMARY KEY (order_id, line))`,
     `CREATE INDEX IF NOT EXISTS idx_items_sku ON order_items(sku)`,
+    /* ━━ ต้นทุนที่ **ตรึงไว้ตอนขาย** รายบรรทัด — ใบ `t_mutwbamy` (4 ต.ค. 2569) ━━
+       🔴 **ทำไมเป็นตารางแยก ไม่ใช่คอลัมน์ใน `order_items`**
+          ตัวซิงก์ `DELETE FROM order_items WHERE order_id IN (...)` แล้วเขียนใหม่ทั้งใบทุกรอบ
+          (ออกแบบให้รันซ้ำได้) ⇒ คอลัมน์ที่อยู่ในตารางนั้น **ถูกลบทิ้งทุกรอบซิงก์**
+          ⇒ ต้นทุนที่ "ตรึง" ก็จะไม่ตรึง มันจะถูกคิดใหม่ตามวันที่ซิงก์ ซึ่งคือสิ่งที่ใบนี้มีไว้ป้องกัน
+          ⇒ แยกตารางที่ **ตัวซิงก์ไม่เคยลบ** จึงเป็นที่เดียวที่ "ตรึง" มีความหมาย
+       🔑 เขียนด้วย `INSERT OR IGNORE` เท่านั้น — **ห้าม UPDATE ห้าม UPSERT**
+          ใบที่ปิดบัญชีไปแล้วต้องนิ่ง · กำไรของเดือนที่ปิดแล้วห้ามขยับเพราะมีคนแก้ราคาซื้อวันนี้
+       ⚠️ `source` = ป้ายที่มาจาก `ที่มาต้นทุน` (แหล่งเดียว) ⇒ เก็บไว้ด้วยเพราะต้นทุนเลขเดียวกัน
+          จากสองแหล่งเชื่อถือได้ไม่เท่ากัน · ไม่เก็บที่มา = กำไรที่อ่านไม่ได้ว่าเชื่อได้แค่ไหน
+       ⚠️ บรรทัดที่ขายก่อน 4 ต.ค. 2569 จะไม่มีแถวในตารางนี้ **ตลอดกาล** — เติมย้อนหลังด้วย
+          ต้นทุนวันนี้คือการแต่งตัวเลข (กฎ new-columns-need-backfill) */
+    `CREATE TABLE IF NOT EXISTS order_item_cost (
+       order_id TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT,
+       unit_cost REAL, source TEXT, at TEXT DEFAULT (datetime('now')),
+       PRIMARY KEY (order_id, line))`,
+    `CREATE INDEX IF NOT EXISTS idx_oic_sku ON order_item_cost(sku)`,
     `CREATE TABLE IF NOT EXISTS stock_moves (
       id INTEGER PRIMARY KEY AUTOINCREMENT, sku TEXT NOT NULL, qty REAL NOT NULL,
       reason TEXT NOT NULL, ref TEXT, at TEXT DEFAULT (datetime('now')))`,
