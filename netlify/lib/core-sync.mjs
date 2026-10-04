@@ -27,6 +27,24 @@ const thaiDayOffset = (n) => ymd(new Date(thaiNow().getTime() - n * 864e5));
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+
+/* ตัวเลขจากนอกบ้าน → เลข หรือ null (ยังไม่รู้) — **ห้ามใช้ Number(x) || 0**
+   🔴 กับดักที่จับได้ด้วยเทสของตัวเอง 18 ก.ย. 2569: `Number(null)` และ `Number("")` ให้ **0**
+      และ `Number.isFinite(0)` เป็นจริง ⇒ เช็คด้วย isFinite อย่างเดียวยังปล่อย null/สตริงว่างผ่านเป็น 0
+      ⇒ ต้องตัด null · undefined · สตริงว่าง ออกก่อน แล้วจึงดูว่าเป็นเลขจริงไหม
+   0 สงวนไว้แปลว่า "ต้นทางบอกว่าศูนย์จริง" เท่านั้น */
+function numOrNull(v) {
+  if (v === null || v === undefined) return null;
+  if (typeof v === "string" && v.trim() === "") return null;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+/* 🔴 **ต้องอยู่ที่ขอบเขตโมดูล ห้ามย้ายกลับเข้าไปในฟังก์ชัน** (ย้ายออกมา 4 ต.ค. 2569)
+   ของเดิมประกาศไว้ **ข้างใน** `zortOrderCountForMonth` แต่เขียนชิดซ้ายสุด
+   ⇒ อ่านไฟล์ด้วยตาแล้วดูเหมือนอยู่ระดับโมดูล · `grep -n "^function"` ก็เห็นเหมือนกัน
+   ⇒ ผมเรียกจาก `snapshotStock()` แล้วได้ **ReferenceError: numOrNull is not defined** ตอนรันจริง
+   🔑 `tsc` และ `npm run build` ไม่เห็น (.mjs ไม่มีตาข่ายชนิดข้อมูล) · เทสที่ยิงฟังก์ชันตัวจริงเห็น
+      ⇒ คลาสเดียวกับ `PART_RE is not defined` ที่ทำให้ตัวสำรองตายเงียบทั้งระบบคืนนี้ */
 const CANCELLED = /void|cancel|ยกเลิก/i;
 
 function stores() {
@@ -421,16 +439,52 @@ export async function snapshotStock() {
   const map = cache?.map;
   if (!map || typeof map !== "object") return { skip: "ไม่มีแคช zort-stock" };
 
+  /* ━━ ราคาซื้อรายวัน (ขั้นที่ 1 ของถัวเฉลี่ยเคลื่อนที่ · ใบ t_mutopb3l) ━━
+     🔴 **ต้องอ่านจาก `products` ไม่ใช่จากแคช `zort-stock`** — แคชนั้นเก็บแค่สองช่อง
+        `[สต็อก, ราคาขาย]` (ดู zort-stock.mjs บรรทัด 101) ⇒ ไม่มีราคาซื้ออยู่ในนั้นเลย
+     ⚠️ อ่านไม่ได้ก็ต้องถ่ายภาพต่อ — ภาพที่ขาดราคาซื้อ ดีกว่าไม่มีภาพของวันนั้น
+        (ค่าที่ได้จะเป็น null ซึ่งแปลว่า "ยังไม่เคยเก็บ" ตรงตามที่คอลัมน์ประกาศไว้) */
+  const ราคาซื้อ = new Map();
+  try {
+    for (const r of (await coreQuery(
+      `SELECT sku, purchase_price FROM products WHERE purchase_price IS NOT NULL`
+    )) || []) {
+      const v = numOrNull(r?.purchase_price);
+      if (v !== null) ราคาซื้อ.set(String(r.sku), v);
+    }
+  } catch (e) {
+    /* ปล่อยผ่านโดยตั้งใจ — ดูเหตุข้างบน · จดไว้ในผลลัพธ์ให้คนเห็น ไม่กลืนเงียบ */
+    var ราคาซื้ออ่านไม่ได้ = String(e?.message || e).slice(0, 120);
+  }
+
   const entries = Object.entries(map);
   for (let i = 0; i < entries.length; i += 400) {
     const chunk = entries.slice(i, i + 400);
     await coreQuery(
-      `INSERT INTO stock_snapshots (day,sku,qty,price)
-       VALUES ${chunk.map(([sku, v]) => `(${esc(day)},${esc(sku)},${num(v?.[0])},${num(v?.[1])})`).join(",")}
-       ON CONFLICT(day,sku) DO UPDATE SET qty=excluded.qty, price=excluded.price`
+      `INSERT INTO stock_snapshots (day,sku,qty,price,purchase_price)
+       VALUES ${chunk
+         .map(([sku, v]) => {
+           const b = ราคาซื้อ.get(String(sku));
+           return `(${esc(day)},${esc(sku)},${num(v?.[0])},${num(v?.[1])},${
+             b === undefined ? "NULL" : num(b)
+           })`;
+         })
+         .join(",")}
+       ON CONFLICT(day,sku) DO UPDATE SET qty=excluded.qty, price=excluded.price,
+         /* 🔴 **COALESCE ห้ามถอด** — ถ่ายซ้ำวันเดียวกันตอนที่ products ยังไม่มีราคาซื้อ
+            (ห้ามใส่ backtick ในคอมเมนต์ก้อนนี้ — มันอยู่ใน template literal ⇒ ปิดสตริงกลางทาง
+             ผมเพิ่งเหยียบมาเมื่อกี้ และ node --check จับได้ ⇒ อย่าเอากลับมา)
+            จะเขียน NULL ทับค่าที่เก็บได้แล้วตอนเช้า = ตัวแก้ที่ทำลายของถูก
+            (ทิศที่ถูกคือ "ของจริงชนะความว่างเสมอ" ไม่ใช่ "ของใหม่ชนะของเก่าเสมอ") */
+         purchase_price=COALESCE(excluded.purchase_price, stock_snapshots.purchase_price)`
     );
   }
-  return { day, skus: entries.length };
+  return {
+    day,
+    skus: entries.length,
+    ราคาซื้อที่เก็บได้: ราคาซื้อ.size,
+    ...(ราคาซื้ออ่านไม่ได้ ? { ราคาซื้ออ่านไม่ได้ } : {}),
+  };
 }
 
 /** นับใบขายของ **เดือนเดียว** จาก ZORT ตรง ๆ — ขาที่สองของจอ "กระจกครบไหม"
@@ -479,17 +533,6 @@ export async function zortOrderCountForMonth(ym, tag = "z1", opts = {}) {
   if (!d || typeof d.count !== "number")
     return { error: "ZORT ตอบมาแต่ไม่มีช่อง count", ym, store: tag, fields: Object.keys(d ?? {}) };
 
-/* ตัวเลขจากนอกบ้าน → เลข หรือ null (ยังไม่รู้) — **ห้ามใช้ Number(x) || 0**
-   🔴 กับดักที่จับได้ด้วยเทสของตัวเอง 18 ก.ย. 2569: `Number(null)` และ `Number("")` ให้ **0**
-      และ `Number.isFinite(0)` เป็นจริง ⇒ เช็คด้วย isFinite อย่างเดียวยังปล่อย null/สตริงว่างผ่านเป็น 0
-      ⇒ ต้องตัด null · undefined · สตริงว่าง ออกก่อน แล้วจึงดูว่าเป็นเลขจริงไหม
-   0 สงวนไว้แปลว่า "ต้นทางบอกว่าศูนย์จริง" เท่านั้น */
-function numOrNull(v) {
-  if (v === null || v === undefined) return null;
-  if (typeof v === "string" && v.trim() === "") return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
 
   /* 🔍 **โหมดแยกใบยกเลิก** (18 ก.ย. 2569 · ฝั่งจอถามมา)
       ฝั่งจอวัดได้ว่า จำนวนใบต่างจากกระจก 3.5% แต่ยอดเงินต่าง 19% ⇒ ไม่ได้สัดส่วนกัน
