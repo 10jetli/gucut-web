@@ -16,6 +16,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execSync } from "node:child_process";
 import { เล่นประวัติซ้ำไหม } from "../lib/เล่นประวัติซ้ำไหม.mjs";
+import { วัดสคริปต์ยิงapi, ชื่อหมุด } from "../lib/วัดสคริปต์ยิงapi.mjs";
 import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
@@ -49,15 +50,14 @@ const วิธีวัด = {
         เขียนกำกับไว้ตรง ๆ ไม่กลบ — ถ้าวันไหนมีสคริปต์ไร้นามสกุลยิง API เรา หมุดนี้จะมองไม่เห็น
      🔑 สิ่งที่หมุดนี้มีไว้บอก (มีสคริปต์ใหม่เริ่มยิง API เรา) **ยังทำงานครบ**
         เพราะสคริปต์ใหม่ของจริงลงท้าย `.py`/`.sh` ทั้งหมดที่เคยเจอมา */
-  "ไฟล์ใน ~/bin ที่ยิง gucut.com/api/": Object.assign(() => {
-    const d = join(homedir(), "bin");
-    if (!existsSync(d)) return { วัดไม่ได้: `ไม่มีโฟลเดอร์ ${d} ⇒ วัดซ้ำไม่ได้ในเครื่องนี้` };
-    const out = execSync(
-      `grep -rl "gucut.com/api/" ${JSON.stringify(d)} 2>/dev/null | grep -E '\\.(py|sh)$' | wc -l`,
-      { encoding: "utf8" },
-    );
-    return { ค่า: Number(out.trim()) };
-  }, { นอกรีโป: true }),
+  /* 🔴 **ใบ S15 (4 ต.ค. 2569) — หมุดนี้บล็อก push จากเครื่องอื่น**
+     เหตุที่แท้จริง **ไม่ใช่** "ไม่มี `~/bin`" (เครื่องแบบนั้นข้ามพร้อมบอกเหตุอยู่แล้ว)
+     แต่เป็นเครื่องที่ **มี `~/bin` ของตัวเอง** ⇒ ตัววัดเดิมอ่าน "โฟลเดอร์มีอยู่" = "วัดได้"
+     แล้วตอบ 0 ⇒ เทียบกับหมุด 6 ⇒ ตก ⇒ **push ไม่ได้ด้วยเรื่องที่คอมมิตไม่ได้ทำ**
+     ⇒ ยกตรรกะไปไว้ `scripts/lib/วัดสคริปต์ยิงapi.mjs` เพื่อให้ **ทดสอบได้**
+       (ตอนอยู่ในไฟล์เทส มันทดสอบตัวเองไม่ได้ ⇒ พิสูจน์พลังแยกแยะไม่ได้เลย)
+     ด่านของมันเอง: `scripts/tests/หมุดเจ้าภาพสคริปต์.test.mjs` (ตัวควบคุมสองทิศ) */
+  [ชื่อหมุด]: Object.assign(() => วัดสคริปต์ยิงapi(homedir()), { นอกรีโป: true }),
 };
 
 const ไฟล์ = [];
