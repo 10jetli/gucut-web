@@ -695,6 +695,9 @@ export default async function handler(req, context) {
           (บทเรียนเดียวกับที่ตัวตรวจกระจกออเดอร์เคยเตือนผิดตอนของปกติ) */
     check("กระจกค่าธรรมเนียม Shopee (ยอดโอนสุทธิ)", async () => {
       const { coreQuery } = await import("../lib/coredb.mjs");
+      /* 🔑 เกณฑ์ "สูตรต่าง" มาจาก **แหล่งเดียว** — เดิมพิมพ์ `> 2` ไว้สามที่
+         (ช่องนี้ · สรุป · เส้นอ่านรายใบ) ⇒ แก้ที่เดียวแล้วอีกสองที่นับคนละแบบเงียบ ๆ */
+      const { เกณฑ์ต่างบาท } = await import("../lib/mkp-finance-mirror.mjs");
       const [beat] = await coreQuery(`SELECT v, at FROM core_meta WHERE k = 'mkp_fees_sync'`).catch(() => []);
       /* ไม่มีชีพจรเลย = ยังไม่เคยวิ่ง (เพิ่ง deploy) — **ไม่ใช่ของเสีย** */
       const { รอบที่คาดหวัง: รอบของงาน, รอบเป็นคำพูด: คำของงาน } = await import("../lib/core-freshness.mjs");
@@ -705,7 +708,7 @@ export default async function handler(req, context) {
       const mins = Math.round((Date.now() - Date.parse(`${String(beat.at).replace(" ", "T")}Z`)) / 60000);
       const say = mins < 60 ? `${mins} นาทีที่แล้ว` : `${Math.round(mins / 60)} ชม.ที่แล้ว`;
       const [cnt] = await coreQuery(
-        `SELECT COUNT(*) AS n, SUM(CASE WHEN ABS(formula_diff) > 2 THEN 1 ELSE 0 END) AS off
+        `SELECT COUNT(*) AS n, SUM(CASE WHEN ABS(formula_diff) > ${เกณฑ์ต่างบาท} THEN 1 ELSE 0 END) AS off
          FROM shopee_fees`
       ).catch(() => []);
       const rows = Number(cnt?.n ?? 0);
@@ -720,8 +723,8 @@ export default async function handler(req, context) {
         `งานตามเวลาเงียบไป ${say}` +
         (คำรอบ ? ` (ตั้งไว้${คำรอบ} ⇒ เกณฑ์ ${เพดานนาที} นาที = 3 รอบ)` : " (อ่านรอบไม่ออก ⇒ เกณฑ์สำรอง 180 นาที)") +
         ` · ล่าสุด: ${String(beat.v ?? "").slice(0, 80)}` };
-      if (off > 0) return { warn: true, note: `สูตรคิดยอดโอนไม่ตรง ${off} ใบจาก ${rows} ใบ (ต่างเกิน 2 บาท) — ต้องวัดสูตรใหม่กับใบจริง ห้ามปรับเลขให้ต่างเป็น 0` };
-      return { note: `วิ่งล่าสุด ${say} · ในกระจก ${rows} ใบ · สูตรตรงทุกใบ (ต่างไม่เกิน 2 บาท) · ${String(beat.v ?? "").slice(0, 60)}` };
+      if (off > 0) return { warn: true, note: `สูตรคิดยอดโอนไม่ตรง ${off} ใบจาก ${rows} ใบ (ต่างเกิน ${เกณฑ์ต่างบาท} บาท) — ดูว่าใบไหนได้ที่ /api/core?mkpfeerows=1&off=1 (เรียงจากต่างมากสุด) · ต้องวัดสูตรใหม่กับใบจริง ห้ามปรับเลขให้ต่างเป็น 0` };
+      return { note: `วิ่งล่าสุด ${say} · ในกระจก ${rows} ใบ · สูตรตรงทุกใบ (ต่างไม่เกิน ${เกณฑ์ต่างบาท} บาท) · ${String(beat.v ?? "").slice(0, 60)}` };
     }),
     /* 🛡️ **ด่านกันยิงรัวของเส้นที่เสียเงิน** (28 ก.ย. 2569 · ใบ t_mul8dqjv ข้อ ①)
        `/api/read-id` เสียเครดิต Netlify จริงต่อการเรียกหนึ่งครั้ง และด่านกันยิงรัวของมัน

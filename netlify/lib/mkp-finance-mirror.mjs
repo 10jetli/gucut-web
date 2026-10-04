@@ -29,6 +29,11 @@ import { readShopeeOrderFees } from "./mkp-finance.mjs";
 const TIME_BUDGET_MS = 17_000;   // เหลือที่ให้ตัวเรียกเขียนคำตอบ + เผื่อ D1 ข้ามแปซิฟิก (~286ms/คำขอ)
 const MAX_PER_ROUND = 40;        // กันคนยิง limit=5000 แล้วฟังก์ชันตายกลางทาง
 
+/** เกณฑ์ "สูตรต่าง" หน่วยบาท — **แหล่งเดียว**
+ *  🔑 ช่องสถานะ (`status.mjs`) · สรุป · เส้นอ่านรายใบ ต้องใช้เลขเดียวกัน
+ *     ไม่งั้นสองจอบอกคนละจำนวนเรื่องเดียวกัน แล้วไม่มีใครรู้ว่าจะเชื่อใคร */
+export const เกณฑ์ต่างบาท = 2;
+
 export async function ensureFeesTable() {
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS shopee_fees (
@@ -241,7 +246,7 @@ export async function shopeeFeesSummary(o = {}) {
             ROUND(SUM(ship_buyer),2) AS ค่าส่งที่ผู้ซื้อจ่าย,
             ROUND(SUM(formula_diff),2) AS ผลต่างสูตรรวม,
             SUM(CASE WHEN formula_diff IS NULL THEN 1 ELSE 0 END) AS ใบที่เทียบสูตรไม่ได้,
-            SUM(CASE WHEN ABS(formula_diff) > 2 THEN 1 ELSE 0 END) AS ใบที่สูตรต่างเกิน2บาท,
+            SUM(CASE WHEN ABS(formula_diff) > ${เกณฑ์ต่างบาท} THEN 1 ELSE 0 END) AS ใบที่สูตรต่างเกิน2บาท,
             ROUND(MAX(ABS(formula_diff)),2) AS ต่างมากสุด
        FROM shopee_fees WHERE day >= date('now', '+7 hours', ?)`,
     [`-${days} days`]
@@ -265,5 +270,56 @@ export async function shopeeFeesSummary(o = {}) {
     /* 🔴 ครอบไม่ครบต้องประกาศตัว — ไม่งั้นยอดรวมข้างบนถูกอ่านเป็นยอดของทุกใบ */
     ...(total > inMirror ? { "⚠️ ยอดข้างบนยังไม่ครบ": `ขาด ${total - inMirror} ใบ — ยิง ?mkpfeesync=1 ต่อจนครบก่อนเอาไปใช้` } : {}),
     "หมายเหตุ cogs": "ไม่รวมในสรุปโดยตั้งใจ — Shopee ส่งราคาขายมาในช่องชื่อต้นทุน (วัดแล้ว 50/50 ใบเท่ากันเป๊ะ)",
+  };
+}
+
+/** แถวในกระจกค่าธรรมเนียม **รายใบ** — อ่านอย่างเดียว ไม่ยิง Shopee (ใบ `t_mum2bzeg`)
+ *
+ * 🔴 **ที่มา 4 ต.ค. 2569**: ช่องสถานะขึ้นเหลืองว่า "สูตรคิดยอดโอนไม่ตรง N ใบ" มาหลายวัน
+ *    แต่ **ไม่มีทางดูได้เลยว่าใบไหน** — สรุปให้แต่ยอดรวม · ตัวซิงก์เก็บตัวอย่างแค่ 5 ใบต่อรอบ
+ *    และมันไล่จาก "40 ใบใหม่สุด" ซ้ำทุกรอบ ⇒ ใบที่ต่างซึ่งอยู่ลึกกว่านั้น **ไม่มีวันถูกหยิบมาโชว์**
+ *    ⇒ ⇒ คำเตือนที่บอกว่า "มีปัญหา" แต่ไม่บอกว่า "ที่ไหน" ทำให้งานค้างโดยไม่มีใครเริ่มได้
+ *    🔑 ตัวตรวจเขียนสั่งไว้เองว่า **"ไล่จากใบที่ `formula_diff` ใหญ่สุด"** — เส้นนี้คือสิ่งที่ทำให้ทำตามได้
+ *
+ * 🔒 **ไม่มีช่องที่เป็นข้อมูลส่วนตัวเลย** — ตารางนี้ไม่เคยเก็บชื่อผู้ซื้อ/ที่อยู่/เบอร์
+ *    (ตัวอ่านไม่ส่งมาให้ตั้งแต่ต้นทาง · ดูกติกาหัวไฟล์) ⇒ เส้นนี้จึงคืนทุกคอลัมน์ที่มีได้
+ * ⚠️ `limit` มีเพดาน และต้องคืน **จำนวนที่เข้าเงื่อนไขทั้งหมด** คู่กับ **จำนวนที่คืนมา**
+ *    ไม่คืน = คนอ่านจะคิดว่าเห็นครบทุกใบ (กฎ partial-coverage-reported-as-full)
+ */
+export async function shopeeFeeRows(o = {}) {
+  const days = Math.max(1, Math.min(400, parseInt(o.days ?? "120", 10) || 120));
+  const limit = Math.max(1, Math.min(200, parseInt(o.limit ?? "50", 10) || 50));
+  const offset = Math.max(0, parseInt(o.offset ?? "0", 10) || 0);
+  const เฉพาะที่ต่าง = !!o.off;
+  await ensureFeesTable();
+  const เงื่อนไขวัน = `day >= date('now', '+7 hours', ?)`;
+  /* 🔑 เกณฑ์ "ต่าง" ต้องเป็น **เลขเดียวกับที่ช่องสถานะใช้** (2 บาท)
+     สองที่ใช้เกณฑ์ต่างกัน = จอกับหน้าสถานะบอกคนละจำนวน เรื่องเดียวกัน (กฎ one-threshold-one-source) */
+  const เงื่อนไขต่าง = เฉพาะที่ต่าง ? ` AND ABS(formula_diff) > ${เกณฑ์ต่างบาท}` : "";
+  const [นับ] = แถวจากผล(await coreQuery(
+    `SELECT COUNT(*) AS n FROM shopee_fees WHERE ${เงื่อนไขวัน}${เงื่อนไขต่าง}`,
+    [`-${days} days`],
+  ), "นับแถวที่เข้าเงื่อนไข");
+  const rows = แถวจากผล(await coreQuery(
+    `SELECT order_sn, day, escrow, items_total, commission, service_fee, payment_fee,
+            seller_txn_fee, ship_buyer, ship_actual, ship_subsidy, ship_discount_seller,
+            voucher_shopee, voucher_seller, coins, withholding_tax, formula_diff, fields_count
+       FROM shopee_fees WHERE ${เงื่อนไขวัน}${เงื่อนไขต่าง}
+       ORDER BY ABS(COALESCE(formula_diff, 0)) DESC, day DESC LIMIT ? OFFSET ?`,
+    [`-${days} days`, limit, offset],
+  ), "อ่านแถวกระจกค่าธรรมเนียม");
+  const ทั้งหมด = Number(นับ?.n ?? 0);
+  return {
+    ok: true, platform: "shopee", grain: "order-fees",
+    ขอบเขต: `ย้อน ${days} วัน (วันไทย)` + (เฉพาะที่ต่าง ? ` · เฉพาะใบที่สูตรต่างเกิน ${เกณฑ์ต่างบาท} บาท` : " · ทุกใบในกระจก"),
+    เรียงจาก: "ค่าสัมบูรณ์ของผลต่างสูตร มากไปน้อย",
+    เข้าเงื่อนไขทั้งหมด: ทั้งหมด,
+    คืนมากี่แถว: rows.length,
+    /* ⚠️ เห็นไม่ครบต้องประกาศตัว ไม่ใช่ให้คนเดาจากการเทียบสองเลขข้างบนเอง */
+    ...(offset + rows.length < ทั้งหมด
+      ? { "⚠️ ยังไม่ครบ": `เห็น ${offset + rows.length} จาก ${ทั้งหมด} ใบ — ขอต่อด้วย &offset=${offset + rows.length}` }
+      : {}),
+    "🔒 ความเป็นส่วนตัว": "ตารางนี้ไม่เก็บชื่อผู้ซื้อ/ที่อยู่/เบอร์ ⇒ ไม่มีช่องส่วนตัวให้หลุด",
+    rows,
   };
 }

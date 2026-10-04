@@ -1179,6 +1179,21 @@ async function route(req, context) {
         refresh: url.searchParams.get("refresh") === "1",
       }));
     }
+    /* GET ?mkpfeerows=1[&days=120&off=1&limit=50&offset=0] ⇒ แถวกระจกค่าธรรมเนียม **รายใบ**
+       🔴 ใบ `t_mum2bzeg` — ช่องสถานะเตือนว่า "สูตรไม่ตรง N ใบ" มาหลายวัน
+          แต่ไม่มีทางดูได้ว่า **ใบไหน** ⇒ คำเตือนที่ไม่บอกที่อยู่ของปัญหา ไม่มีใครเริ่มงานได้
+       `off=1` = เฉพาะใบที่ต่างเกินเกณฑ์ · เรียงจากต่างมากสุด (ตามที่ตัวตรวจสั่งไว้เอง)
+       🔒 ตารางนี้ไม่เก็บข้อมูลส่วนตัวของผู้ซื้อ ⇒ คืนทุกคอลัมน์เงินได้ */
+    if (url.searchParams.get("mkpfeerows")) {
+      if (req.method !== "GET") return json({ error: "ต้องเป็น GET (อ่านอย่างเดียว)" }, 405);
+      const { shopeeFeeRows } = await import("../lib/mkp-finance-mirror.mjs");
+      return okJson(await shopeeFeeRows({
+        days: url.searchParams.get("days"),
+        limit: url.searchParams.get("limit"),
+        offset: url.searchParams.get("offset"),
+        off: url.searchParams.get("off") === "1",
+      }));
+    }
     if (url.searchParams.get("mkpfeesum")) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { shopeeFeesSummary } = await import("../lib/mkp-finance-mirror.mjs");
