@@ -10,18 +10,28 @@ import assert from 'node:assert/strict';
 import { mock, test } from 'node:test';
 
 const sql = [];
+/* D1 ปลอมที่ **จำว่าเขียนอะไรไปแล้ว** — จำเป็นเพราะตัวนับใหม่นับจากฐานก่อน-หลัง
+   ถ้า mock ตอบ COUNT เท่ากันทุกครั้ง เทสจะไม่เห็นความต่างระหว่าง "ตรึงจริง" กับ "เขียนทับ" */
+let เขียนไปแล้ว = new Set();
 mock.module('../../netlify/lib/coredb.mjs', {
   namedExports: {
     coreReady: () => true,
     แถวจากผล: (r) => (Array.isArray(r) ? r : (r?.results ?? [])),
-    coreQuery: async (s) => { sql.push(s); return []; },
+    coreQuery: async (s) => {
+      sql.push(s);
+      if (/COUNT\(\*\) AS n FROM order_item_cost/i.test(s)) return [{ n: เขียนไปแล้ว.size }];
+      if (/INSERT OR IGNORE INTO order_item_cost/i.test(s)) {
+        for (const m of s.matchAll(/\('([^']*)',(\d+),'([^']*)'/g)) เขียนไปแล้ว.add(`${m[1]}|${m[2]}`);
+      }
+      return [];
+    },
   },
 });
 const { ตรึงต้นทุนของใบ } = await import('../../netlify/lib/core-sync.mjs');
 
 const ใบ = [{ number: 'SO-1', list: [{ sku: 'A1' }, { sku: 'A2' }] }];
 const ยิง = async (รหัส) => {
-  sql.length = 0;
+  sql.length = 0; เขียนไปแล้ว = new Set();
   return ตรึงต้นทุนของใบ(ใบ, 'z1', { ต้นทุน: async () => ({ ok: true, รหัส }) });
 };
 const คำสั่งเขียน = () => sql.find((s) => /INSERT .*order_item_cost/i.test(s));
@@ -84,4 +94,29 @@ test('⑦ 🔬 พลังแยกแยะ: ถ้าใครเปลี่
   const ปลูก = `INSERT INTO order_item_cost (...) VALUES (...) ON CONFLICT(order_id,line) DO UPDATE SET unit_cost=excluded.unit_cost`;
   assert.doesNotMatch(ปลูก, /INSERT OR IGNORE INTO order_item_cost/, 'ตัวจับคู่ของ ② ต้องไม่ตรงกับ UPSERT');
   assert.match(ปลูก, /DO UPDATE/, 'และตัวจับคู่ข้อห้ามต้องจับ UPSERT ได้จริง');
+});
+
+test('⑧ 🔑 ตัวนับต้องวัด "เขียนลงจริงกี่แถว" ไม่ใช่ "ส่งไปกี่แถว" — รอบสองต้องเป็น 0', async () => {
+  /* 🔴 รุ่นแรกคืน `แถว.length` ⇒ รอบสองได้ 22 เท่าเดิมทั้งที่ OR IGNORE ไม่เขียนอะไรเลย
+     ⇒ เลขที่ถูกตั้งเป็นเกณฑ์ปิดใบ กลายเป็นเลขที่ **เปลี่ยนไม่ได้ตามความจริง**
+     ⇒ ตัววัดที่ไม่มีอำนาจแยกแยะ · เจอตอนยิงของจริงบน production 4 ต.ค. 2569 */
+  const รหัส = [{ sku: 'A1', ต้นทุน: 7.25, ที่มา: 'x' }, { sku: 'A2', ต้นทุน: 3, ที่มา: 'y' }];
+  const หนึ่ง = await ยิง(รหัส);                       // ยิงนี้รีเซ็ตฐานปลอมให้ว่าง
+  assert.equal(หนึ่ง.ตรึงต้นทุน, 2, 'รอบแรกต้องตรึงเพิ่ม 2 บรรทัด');
+  assert.equal(หนึ่ง.ส่งไปกี่บรรทัด, 2);
+  assert.equal(หนึ่ง.ตรึงไว้แล้วก่อนรอบนี้, 0);
+
+  sql.length = 0;                                       // รอบสองของชุดเดิม — **ไม่รีเซ็ตฐาน**
+  const สอง = await ตรึงต้นทุนของใบ(ใบ, 'z1', { ต้นทุน: async () => ({ ok: true, รหัส }) });
+  assert.equal(สอง.ตรึงต้นทุน, 0,
+    '🔴 รอบสองตรึงเพิ่มต้องเป็น 0 — ถ้าไม่ใช่ 0 แปลว่าต้นทุนไม่ได้ตรึงจริง');
+  assert.equal(สอง.ส่งไปกี่บรรทัด, 2,
+    'และต้องยังบอกว่าส่งไป 2 ⇒ แยก "ไม่มีอะไรให้ตรึง" ออกจาก "ตรึงไปแล้ว"');
+  assert.equal(สอง.ตรึงไว้แล้วก่อนรอบนี้, 2);
+});
+
+test('⑨ 🔬 พลังแยกแยะ: ถ้าตัวนับกลับไปใช้ "ส่งไปกี่แถว" ด่าน ⑧ ต้องแดง', () => {
+  /* ของปลอมที่คืน แถว.length เสมอ ⇒ รอบสองจะได้ 2 ไม่ใช่ 0 ⇒ assert ข้อ ⑧ แดง */
+  const ปลอม = { ตรึงต้นทุน: 2, ส่งไปกี่บรรทัด: 2, ตรึงไว้แล้วก่อนรอบนี้: 2 };
+  assert.notEqual(ปลอม.ตรึงต้นทุน, 0, 'ตัวจับคู่ของ ⑧ ต้องแยกสองกรณีนี้ออกจากกันได้จริง');
 });
