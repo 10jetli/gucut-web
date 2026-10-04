@@ -186,7 +186,10 @@ export async function listMoves({ sku = "", limit = 50, offset = 0 } = {}) {
   const off = Math.max(0, Number(offset) || 0);
   const where = sku ? `WHERE sku = ${esc(String(sku).trim())}` : "";
   const rows = await coreQuery(
-    `SELECT id, sku, qty, reason, ref, at FROM stock_moves ${where}
+    /* 🔴 **ต้องมี `unit_cost` ด้วย** (เพิ่ม 4 ต.ค. 2569) — ของเดิมเพิ่มคอลัมน์ไว้แต่ไม่มีใครอ่านได้
+       ⇒ เป็นช่องที่ **เขียนลงได้แต่อ่านกลับไม่ได้** = ข้อมูลที่ดูเหมือนถูกเก็บแต่ไม่มีผลกับอะไรเลย
+       เจอเพราะจะทำวงทดสอบ เขียน→อ่าน→ลบ แล้วพบว่าขั้น "อ่าน" ไม่มีช่องให้อ่าน */
+    `SELECT id, sku, qty, reason, ref, at, unit_cost FROM stock_moves ${where}
      ORDER BY id DESC LIMIT ${lim} OFFSET ${off}`
   );
   const total = Number(
