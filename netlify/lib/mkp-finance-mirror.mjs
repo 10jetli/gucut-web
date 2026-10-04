@@ -65,6 +65,7 @@ export async function ensureFeesTable() {
   for (const sql of [
     `ALTER TABLE shopee_fees ADD COLUMN ams_commission REAL`,
     `ALTER TABLE shopee_fees ADD COLUMN reverse_shipping_fee REAL`,
+    `ALTER TABLE shopee_fees ADD COLUMN formula_sig TEXT`,
   ]) {
     try {
       await coreQuery(sql, [], { heal: false });
@@ -77,8 +78,55 @@ export async function ensureFeesTable() {
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_sp_fees_day ON shopee_fees(day)`, [], { heal: false });
 }
 
+/* ━━ 🔑 ลายเซ็นของสูตร — ทำให้ "แถวนี้คิดด้วยสูตรรุ่นไหน" ตอบได้โดยไม่ต้องมีใครจำ ━━
+ * ใบ `t_muu5a1mv` (5 ต.ค. 2569) · ท่านประธานติ๊กสั่งเอง
+ *
+ * 🔴 **ปัญหาที่ทำให้ต้องมีสิ่งนี้ — เจอของจริง 2 คืนติด**
+ *    ตัวนับ "ใบที่ยังไม่ได้กวาดซ้ำ" เคยผูกกับ `ams_commission IS NULL`
+ *    4 ต.ค. กวาดครบ ⇒ คอลัมน์นั้นไม่เป็น NULL แล้ว · 5 ต.ค. เพิ่ม `reverse_shipping_fee`
+ *    และแก้สูตร ⇒ ของจริงค้าง 465 แถว **แต่ตัวนับยังตอบ 0**
+ *    ⇒ ลูปกวาดจะออกตั้งแต่รอบแรก แล้วรายงานว่า "ครบ · ผลต่างยังเท่าเดิม"
+ *       ⇒ ⇒ คนอ่านจะสรุปว่า **แก้สูตรไม่ได้ผล** ซึ่งตรงกันข้ามกับความจริง
+ *    (วัดได้ตอน 01:2x: ตัวนับบอก 0 · ตัวตรวจจากนอกลูปอ่านได้ 465/465 แถวที่ยังไม่มีค่า)
+ *
+ * 🔑 **ทางแก้ต้องไม่ใช่ "อย่าลืมแก้ตัวนับด้วย"** — นั่นคือย้ายปัญหาไปไว้ในความจำคน
+ *    ⇒ ลายเซ็นคิดจาก **รายชื่อช่องที่สูตรใช้จริง** แล้วเก็บลงทุกแถว
+ *      สูตรเปลี่ยนช่อง ⇒ ลายเซ็นเปลี่ยนเอง ⇒ ทุกแถวกลายเป็น "ค้าง" เองทันที
+ * ⚠️ **ทำไมไม่ใช้ `x-core-build`**: deploy ที่ไม่ได้แตะสูตรจะทำให้ทุกแถวค้างด้วย
+ *    = ยิง Shopee 466 ครั้งฟรีทุก deploy · ลายเซ็นเปลี่ยนเฉพาะตอนสูตรเปลี่ยนจริง
+ * ⚠️ **และลายเซ็นเองต้องมีด่าน** ไม่งั้นมันกลายเป็นของที่ต้องจำอัปเดตอีกตัวหนึ่ง
+ *    ⇒ เทส `ลายเซ็นสูตร-ต้องตรงกับช่องที่สูตรใช้จริง` อ่านซอร์สของ `shopeeNet` แล้วเทียบ
+ *      ถ้าไม่ตรง = เทสตก (ไม่ใช่ตัวนับเพี้ยนเงียบ)
+ */
+export const ช่องที่สูตรใช้ = Object.freeze([
+  "amsCommission", "commission", "itemsTotal", "paymentFee", "reverseShippingFee",
+  "sellerTransactionFee", "serviceFee", "shippingActual", "shippingPaidByBuyer",
+  "shippingSubsidyByShopee",
+]);
+
+/** ย่อรายชื่อช่องเป็นสตริงสั้น (FNV-1a 32 บิต) — เก็บลงคอลัมน์ได้ไม่เปลืองที่
+ *  ⚠️ **ไม่ใช่ของลับ ไม่ต้องปลอดภัย** หน้าที่เดียวคือ "เปลี่ยนเมื่อรายชื่อเปลี่ยน"
+ *  ⚠️ เรียงชื่อก่อนเสมอ ⇒ สลับลำดับบรรทัดในสูตรไม่ทำให้ทุกแถวค้างฟรี ๆ */
+export function ลายเซ็นจากช่อง(ช่อง) {
+  const ข้อความ = [...ช่อง].sort().join(",");
+  let h = 0x811c9dc5;
+  for (let i = 0; i < ข้อความ.length; i++) {
+    h ^= ข้อความ.charCodeAt(i);
+    h = Math.imul(h, 0x01000193) >>> 0;
+  }
+  return h.toString(16).padStart(8, "0");
+}
+export const ลายเซ็นสูตร = ลายเซ็นจากช่อง(ช่องที่สูตรใช้);
+/* 🔒 ลายเซ็นถูกต่อเข้า SQL ตรง ๆ ในท่อน ORDER BY (ผูกพารามิเตอร์ใน ORDER BY ไม่ได้)
+   ⇒ ตรึงไว้ว่ามันต้องเป็นเลขฐานสิบหกล้วนเท่านั้น · ไม่ใช่เพราะกลัวค่าจากคนนอก
+     (ค่านี้คิดจากโค้ดเราเอง) แต่เพราะ **ข้อจำกัดที่ไม่มีใครเขียนไว้ จะถูกละเมิดวันที่ใครเปลี่ยนตัวย่อ** */
+if (!/^[0-9a-f]{8}$/.test(ลายเซ็นสูตร)) {
+  throw new Error(`ลายเซ็นสูตรต้องเป็นเลขฐานสิบหก 8 ตัว — ได้ "${ลายเซ็นสูตร}" ⇒ ห้ามต่อเข้า SQL`);
+}
+
 /* สูตรที่วัดแล้ว — คืน null ถ้า **ช่องที่จำเป็นขาด** ห้ามแทน 0 แล้วคิดต่อ
-   (ขาดช่องแล้วแทน 0 = ได้ diff สวยงามที่ไม่ได้พิสูจน์อะไร — กฎ blank-input-invents-output) */
+   (ขาดช่องแล้วแทน 0 = ได้ diff สวยงามที่ไม่ได้พิสูจน์อะไร — กฎ blank-input-invents-output)
+   🔑 แก้ชุดช่องที่ใช้ที่นี่ ⇒ **ต้องแก้ `ช่องที่สูตรใช้` ข้างบนด้วย** และมีเทสบังคับอยู่ */
 export function shopeeNet(f) {
   const need = ["itemsTotal", "commission", "serviceFee", "paymentFee", "shippingActual"];
   if (need.some((k) => f?.[k] === null || f?.[k] === undefined)) return null;
@@ -129,7 +177,7 @@ export async function mirrorShopeeFees(o = {}) {
       LEFT JOIN shopee_fees f ON f.order_sn = o.order_sn
       WHERE o.order_date >= date('now', '+7 hours', ?)
         ${refresh ? "" : "AND f.order_sn IS NULL"}
-      ORDER BY ${refresh ? "CASE WHEN f.at IS NULL THEN 0 ELSE 1 END, f.at ASC," : ""} o.order_date DESC
+      ORDER BY ${refresh ? "CASE WHEN f.formula_sig IS NULL OR f.formula_sig <> '" + ลายเซ็นสูตร + "' THEN 0 ELSE 1 END, CASE WHEN f.at IS NULL THEN 0 ELSE 1 END, f.at ASC," : ""} o.order_date DESC
       LIMIT ?`;
   const todo = await coreQuery(sql, [`-${days} days`, limit]);
   const rows = แถวจากผล(todo, "หาใบที่ยังไม่มีค่าธรรมเนียม");
@@ -141,10 +189,15 @@ export async function mirrorShopeeFees(o = {}) {
         เอาเกณฑ์เดียวกันทั้งสองโหมด = เลขจะเป็น 0 ตลอดในโหมดกวาดซ้ำ แล้วดูเหมือนเสร็จตั้งแต่รอบแรก */
   const left = refresh
     ? await coreQuery(
+        /* 🔑 เกณฑ์ "ค้าง" ของโหมดกวาดซ้ำ = **ลายเซ็นสูตรไม่ตรงกับของปัจจุบัน**
+           ของเดิมเช็ค `ams_commission IS NULL` ⇒ พอกวาดครบรอบหนึ่งก็ตอบ 0 ตลอดกาล
+           แล้ววันที่สูตรเปลี่ยน ของจริงค้างทั้งกระจกแต่ตัวนับยังบอก 0 (เจอจริง 5 ต.ค. 2569)
+           ⇒ ตอนนี้สูตรเปลี่ยนช่อง ⇒ ลายเซ็นเปลี่ยนเอง ⇒ ทุกแถวกลายเป็นค้างทันที ไม่มีใครต้องจำ */
         `SELECT COUNT(*) AS n FROM shopee_orders o
            JOIN shopee_fees f ON f.order_sn = o.order_sn
-          WHERE o.order_date >= date('now', '+7 hours', ?) AND f.ams_commission IS NULL`,
-        [`-${days} days`]
+          WHERE o.order_date >= date('now', '+7 hours', ?)
+            AND (f.formula_sig IS NULL OR f.formula_sig <> ?)`,
+        [`-${days} days`, ลายเซ็นสูตร]
       )
     : await coreQuery(
         `SELECT COUNT(*) AS n FROM shopee_orders o
@@ -161,8 +214,10 @@ export async function mirrorShopeeFees(o = {}) {
     /* 🔑 ป้ายบอกว่าเลข "ค้างก่อนรอบนี้" ข้างบนนับอะไร — สองโหมดนับคนละอย่าง
        ไม่ติดป้าย = คนอ่านเลขเดียวกันคนละความหมายโดยไม่มีอะไรบอก */
     "ค้างก่อนรอบนี้นับอะไร": refresh
-      ? "ใบที่ยังไม่เคยกวาดด้วยสูตรที่มีค่าคอมโฆษณา (ams_commission เป็น NULL)"
+      ? `ใบที่ลายเซ็นสูตรไม่ตรงกับของปัจจุบัน (${ลายเซ็นสูตร}) — คือยังไม่ถูกคิดด้วยสูตรรุ่นนี้`
       : "ใบที่ยังไม่มีแถวในกระจกค่าธรรมเนียมเลย",
+    ลายเซ็นสูตรปัจจุบัน: ลายเซ็นสูตร,
+    ช่องที่สูตรใช้,
     โหมด: refresh ? "กวาดซ้ำ (เรียงจากใบที่ซิงก์ไว้นานสุด)" : "เติมใบที่ยังไม่มี",
     เขียนแล้ว: 0, ข้ามเพราะไม่มีก้อนรายได้: 0, ยิงไม่สำเร็จ: 0,
     truncatedByTime: false,
@@ -207,8 +262,8 @@ export async function mirrorShopeeFees(o = {}) {
       `INSERT INTO shopee_fees (order_sn, day, escrow, items_total, commission, service_fee,
          payment_fee, seller_txn_fee, ship_buyer, ship_actual, ship_subsidy, ship_discount_seller,
          voucher_shopee, voucher_seller, coins, cogs, withholding_tax, ams_commission,
-         reverse_shipping_fee, formula_diff, fields_count, at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
+         reverse_shipping_fee, formula_sig, formula_diff, fields_count, at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
        ON CONFLICT(order_sn) DO UPDATE SET
          day=excluded.day, escrow=excluded.escrow, items_total=excluded.items_total,
          commission=excluded.commission, service_fee=excluded.service_fee,
@@ -219,12 +274,13 @@ export async function mirrorShopeeFees(o = {}) {
          coins=excluded.coins, cogs=excluded.cogs, withholding_tax=excluded.withholding_tax,
          ams_commission=excluded.ams_commission,
          reverse_shipping_fee=excluded.reverse_shipping_fee,
+         formula_sig=excluded.formula_sig,
          formula_diff=excluded.formula_diff, fields_count=excluded.fields_count, at=datetime('now')`,
       [r.order_sn, r.order_date ?? null, f.escrowAmount, f.itemsTotal, f.commission, f.serviceFee,
         f.paymentFee, f.sellerTransactionFee, f.shippingPaidByBuyer, f.shippingActual,
         f.shippingSubsidyByShopee, f.shippingDiscountSeller, f.voucherByShopee, f.voucherBySeller,
         f.coinsByShopee, f.cogs, f.withholdingTax, f.amsCommission ?? null,
-        f.reverseShippingFee ?? null, diff,
+        f.reverseShippingFee ?? null, ลายเซ็นสูตร, diff,
         Array.isArray(f.fieldsSeenThisPage) ? f.fieldsSeenThisPage.length : null]
     );
     out.เขียนแล้ว += 1;
@@ -319,6 +375,9 @@ export async function shopeeFeesSummary(o = {}) {
             ROUND(SUM(ship_discount_seller),2) AS ส่วนลดค่าส่งที่ร้านออกเอง,
             ROUND(SUM(coins),2) AS เหรียญShopee,
             ROUND(SUM(reverse_shipping_fee),2) AS ค่าส่งกลับตอนคืนสินค้า,
+            -- 🔑 แถวที่ยังคิดด้วยสูตรรุ่นเก่า — เลขนี้ต้องเป็น 0 ก่อนจะเชื่อผลต่างสูตรข้างล่าง
+            --    ไม่เป็น 0 = ผลต่างที่เห็นเป็นของผสมสองสูตร **ห้ามอ่านเป็นผลของสูตรปัจจุบัน**
+            SUM(CASE WHEN formula_sig IS NULL OR formula_sig <> '${ลายเซ็นสูตร}' THEN 1 ELSE 0 END) AS แถวที่ยังคิดด้วยสูตรรุ่นเก่า,
             -- 🔴 **ป้ายนี้ผมตั้งผิดเมื่อ 4 ต.ค. แล้วแก้ 5 ต.ค.** เดิมเขียนว่า "ต้นทุนที่ Shopee รายงาน"
             --    ซึ่งโกหกบนจอเงิน: วัดแล้ว cogs == items_total **เป๊ะ 12/12 ใบ** (เคยวัด 50/50 ใบ 18 ก.ย.)
             --    ⇒ Shopee เอา **ราคาขาย** มาใส่ช่องชื่อต้นทุน (ร้านไม่ได้กรอกต้นทุนไว้ในระบบเขา)
@@ -331,10 +390,16 @@ export async function shopeeFeesSummary(o = {}) {
             ROUND(SUM(cogs),2) AS ราคาสินค้าที่Shopeeใส่ในช่องชื่อต้นทุน_ไม่ใช่ต้นทุน,
             -- ค่าคอมโฆษณา/แอฟฟิลิเอต — เพิ่ม 4 ต.ค. 2569 (อธิบายผลต่างเดิมได้ 95.2%)
             ROUND(SUM(ams_commission),2) AS ค่าคอมโฆษณา,
-            -- 🔑 แถวที่ซิงก์ก่อน 4 ต.ค. เป็น NULL ⇒ formula_diff ของแถวนั้นคิดจากสูตรเก่า
-            --    เลขนี้ต้องอยู่ในสรุป ไม่ใช่ให้คนเดา: ยังไม่เป็น 0 = ยังกวาดซ้ำไม่ครบ
-            --    (ห้ามแปล "ผลต่างยังเยอะ" เป็น "แก้สูตรไม่สำเร็จ" ขณะเลขนี้ยังไม่เป็นศูนย์)
-            SUM(CASE WHEN ams_commission IS NULL THEN 1 ELSE 0 END) AS ใบที่ยังไม่ได้กวาดซ้ำ,
+            -- 🔴 **ช่องนี้เคยคิดจาก ams_commission IS NULL — ผิดและถูกถอนแล้ว 5 ต.ค. 2569**
+            --    เหตุ: พอกวาดครบรอบหนึ่ง คอลัมน์นั้นไม่เป็น NULL แล้วทุกแถว ⇒ ตอบ 0 ตลอดกาล
+            --    แล้ววันที่สูตรเปลี่ยน ของจริงค้างทั้งกระจกแต่เลขนี้ยังบอก 0
+            --    ⇒ เลขที่ตอบได้แต่ค่าที่ปลอบใจ · ตอนนี้คิดจากลายเซ็นสูตรแบบเดียวกับช่องด้านบน
+            --      ซึ่งคิดจากลายเซ็นสูตร ⇒ เปลี่ยนเองเมื่อสูตรเปลี่ยน ไม่มีใครต้องจำ
+            --    ⚠️ ห้ามใส่ backtick ในคอมเมนต์ก้อนนี้ — อยู่ใน template literal ⇒ ปิดสตริงกลางทาง
+            --       ผมเหยียบคลาสนี้ 4 ครั้งในคืนเดียว ทุกครั้ง node --check เป็นคนจับ
+            --    ⚠️ เก็บชื่อเดิมไว้เป็นชื่อเดียวกันกับค่าใหม่ เพื่อไม่ให้จอที่อ่านชื่อนี้อยู่พัง
+            --       (ฝั่งรับเตรียมช่องไว้ก่อน — สองฝั่งไม่ต้องนัด deploy พร้อมกัน)
+            SUM(CASE WHEN formula_sig IS NULL OR formula_sig <> '${ลายเซ็นสูตร}' THEN 1 ELSE 0 END) AS ใบที่ยังไม่ได้กวาดซ้ำ,
             ROUND(SUM(formula_diff),2) AS ผลต่างสูตรรวม,
             SUM(CASE WHEN formula_diff IS NULL THEN 1 ELSE 0 END) AS ใบที่เทียบสูตรไม่ได้,
             SUM(CASE WHEN ABS(formula_diff) > ${เกณฑ์ต่างบาท} THEN 1 ELSE 0 END) AS ใบที่สูตรต่างเกิน2บาท,
@@ -402,7 +467,7 @@ export async function shopeeFeeRows(o = {}) {
             cogs,
             -- 🔴 ช่องที่เขียนลงแต่ไม่ได้ SELECT ออกมา = ช่องที่ไม่มีใครตรวจได้ (คลาสเดิมของไฟล์นี้
             --    เจอครั้งที่สามแล้ว: สรุปขาด 4 ช่อง 27 ก.ย. · unit_cost เขียนได้อ่านไม่ได้ 4 ต.ค.)
-            ams_commission, reverse_shipping_fee, formula_diff, fields_count
+            ams_commission, reverse_shipping_fee, formula_sig, formula_diff, fields_count
        FROM shopee_fees WHERE ${เงื่อนไขวัน}${เงื่อนไขต่าง}
        ORDER BY ABS(COALESCE(formula_diff, 0)) DESC, day DESC LIMIT ? OFFSET ?`,
     [`-${days} days`, limit, offset],

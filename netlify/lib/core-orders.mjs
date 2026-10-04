@@ -699,9 +699,26 @@ export async function getOrder(id) {
     [key]
   );
   if (!order) return { error: "ไม่พบใบนี้ในคลังเงา" };
+  /* ━━ ต้นทุนที่ตรึงไว้ตอนขาย — เปิดทางอ่าน 5 ต.ค. 2569 (คุณส้มขอ ใบ t_muu0gaih ข้อ 6) ━━
+     🔴 **ก่อนวันนี้ `order_item_cost` ถูก SELECT ที่เดียวในทั้งระบบ คือตัวนับภายในของ core-sync**
+        ⇒ ต้นทุนที่เราตรึงลงทุกบรรทัดตอนขาย **ไม่มีเส้นไหนส่งให้จอเลย**
+        ⇒ ⇒ จอต่อคอลัมน์กำไรรายบรรทัดไม่ได้ ทั้งที่ข้อมูลอยู่ในฐานครบ
+        🔑 คลาสเดียวกันนี้เจอ **3 ครั้งในคืนเดียว** (unit_cost ใน stock_moves · 4 คอลัมน์เงิน
+          ใน shopee_fees · ตารางนี้) — ช่องที่เขียนลงแต่ไม่มีใครอ่าน **ผ่านทุกการทดสอบฝั่งเขียน
+          โดยนิยาม** ⇒ ด่านต้องอยู่ฝั่งอ่านเสมอ
+     📐 **วิธีคิดกำไรของบรรทัด — เขียนไว้เพราะจออ่านเองไม่ออก**
+        รายได้ของบรรทัด = `amount` (ยอดรวมของบรรทัดนั้นแล้ว ไม่ต้องคูณ qty อีก)
+        ต้นทุนของบรรทัด = `unit_cost` × `qty`   ⇐ **unit_cost เป็นต่อหน่วย ไม่ใช่ต่อบรรทัด**
+        ⇒ กำไรของบรรทัด = `amount − unit_cost × qty`
+     🔴 `unit_cost: null` = **ยังไม่ได้ตรึงต้นทุนของบรรทัดนี้** (ขายก่อนวันที่ระบบเริ่มตรึง)
+        ⇒ ต้องขึ้นว่า "ยังไม่รู้ต้นทุน" **ห้ามแปลงเป็น 0** (กำไรจะกลายเป็น 100% ของราคาขาย
+          และดูเหมือนตัวเลขจริงทุกประการ) · `cost_source` บอกที่มาของเลข (zort/ใบซื้อ/ตั้งไว้) */
   const items = await coreQuery(
-    `SELECT line, sku, name, qty, amount, discount FROM order_items
-     WHERE order_id = ? ORDER BY line`,
+    `SELECT i.line, i.sku, i.name, i.qty, i.amount, i.discount,
+            c.unit_cost, c.source AS cost_source
+       FROM order_items i
+       LEFT JOIN order_item_cost c ON c.order_id = i.order_id AND c.line = i.line
+      WHERE i.order_id = ? ORDER BY i.line`,
     [key]
   );
   return { order, items };
