@@ -44,6 +44,12 @@ export async function ensureFeesTable() {
       ship_buyer REAL, ship_actual REAL, ship_subsidy REAL, ship_discount_seller REAL,
       voucher_shopee REAL, voucher_seller REAL, coins REAL,
       cogs REAL, withholding_tax REAL,
+      /* ค่าคอมมิชชันโฆษณา/แอฟฟิลิเอต — อธิบายผลต่างได้ 95.2% (ยืนยัน 91/91 ใบ 4 ต.ค. 2569)
+         ⚠️ แถวที่ซิงก์มาก่อนวันนั้นเป็น NULL และ formula_diff ของแถวเก่าคิดจากสูตรที่ยังไม่มีช่องนี้
+            ⇒ ต้องกวาดซ้ำให้แถวเก่าคิดใหม่ ไม่ใช่เชื่อเลขเดิม
+         (ห้ามใส่ backtick ในคอมเมนต์ก้อนนี้ — อยู่ใน template literal ⇒ ปิดสตริงกลางทาง
+          ผมเหยียบคลาสนี้เป็นครั้งที่สองในคืนเดียว node --check จับได้ทั้งสองครั้ง) */
+      ams_commission REAL,
       formula_diff REAL, fields_count INTEGER,
       at TEXT DEFAULT (datetime('now')))`,
     [], { heal: false }
@@ -59,7 +65,15 @@ export function shopeeNet(f) {
   if (need.some((k) => f?.[k] === null || f?.[k] === undefined)) return null;
   const n = (v) => (v === null || v === undefined ? 0 : v);   // ช่องที่ "ไม่มีก็แปลว่าไม่มีรายการนั้น"
   return f.itemsTotal - f.commission - f.serviceFee - n(f.sellerTransactionFee) - f.paymentFee
-    - f.shippingActual + n(f.shippingSubsidyByShopee) + n(f.shippingPaidByBuyer);
+    - f.shippingActual + n(f.shippingSubsidyByShopee) + n(f.shippingPaidByBuyer)
+    /* ━━ ค่าคอมมิชชันโฆษณา/แอฟฟิลิเอต (เพิ่ม 4 ต.ค. 2569) ━━
+       📏 ยืนยันครบ 91/91 ใบที่สูตรต่าง: อธิบายผลต่างได้ **4,571 จาก 4,801 บาท = 95.2%**
+          `|diff − ams| ≤ 1 บาท` ใน 87/91 ใบ · ค่ากลางของส่วนที่เหลือ 1.00 บาท
+       ⚠️ อยู่ในกอง `n()` (ไม่มีก็แปลว่าไม่มีรายการนั้น) **ไม่ใช่กอง `need`**
+          เพราะใบที่ไม่ได้ลงโฆษณาจะไม่มีช่องนี้เลย ⇒ ใส่ใน `need` จะทำให้สูตรคืน null ทั้งที่ควรคิดได้
+       ⚠️ **ยังเหลือ 230 บาทใน 4 ใบที่ ams = 0** (38 · 38 · 38 · 29) ⇒ ชิ้นที่สองคนละเรื่อง
+          ⇒ ห้ามเขียนว่าสูตรปิดจบ */
+    - n(f.amsCommission);
 }
 
 /** เติมกระจกค่าธรรมเนียม Shopee ทีละรอบ
@@ -142,8 +156,8 @@ export async function mirrorShopeeFees(o = {}) {
     await coreQuery(
       `INSERT INTO shopee_fees (order_sn, day, escrow, items_total, commission, service_fee,
          payment_fee, seller_txn_fee, ship_buyer, ship_actual, ship_subsidy, ship_discount_seller,
-         voucher_shopee, voucher_seller, coins, cogs, withholding_tax, formula_diff, fields_count, at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
+         voucher_shopee, voucher_seller, coins, cogs, withholding_tax, ams_commission, formula_diff, fields_count, at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
        ON CONFLICT(order_sn) DO UPDATE SET
          day=excluded.day, escrow=excluded.escrow, items_total=excluded.items_total,
          commission=excluded.commission, service_fee=excluded.service_fee,
@@ -152,11 +166,12 @@ export async function mirrorShopeeFees(o = {}) {
          ship_subsidy=excluded.ship_subsidy, ship_discount_seller=excluded.ship_discount_seller,
          voucher_shopee=excluded.voucher_shopee, voucher_seller=excluded.voucher_seller,
          coins=excluded.coins, cogs=excluded.cogs, withholding_tax=excluded.withholding_tax,
+         ams_commission=excluded.ams_commission,
          formula_diff=excluded.formula_diff, fields_count=excluded.fields_count, at=datetime('now')`,
       [r.order_sn, r.order_date ?? null, f.escrowAmount, f.itemsTotal, f.commission, f.serviceFee,
         f.paymentFee, f.sellerTransactionFee, f.shippingPaidByBuyer, f.shippingActual,
         f.shippingSubsidyByShopee, f.shippingDiscountSeller, f.voucherByShopee, f.voucherBySeller,
-        f.coinsByShopee, f.cogs, f.withholdingTax, diff,
+        f.coinsByShopee, f.cogs, f.withholdingTax, f.amsCommission ?? null, diff,
         Array.isArray(f.fieldsSeenThisPage) ? f.fieldsSeenThisPage.length : null]
     );
     out.เขียนแล้ว += 1;
