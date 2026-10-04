@@ -23,6 +23,13 @@ export const REASONS = {
   return_in: "ลูกค้าคืนของ",
 };
 
+/** เหตุผลที่ "ของเข้ามาใหม่" ⇒ รับ `unitCost` ได้ (ขั้นที่ 3 ของใบ `t_mutopb3l`)
+ *  🔑 **แหล่งเดียว ห้ามพิมพ์รายชื่อนี้ซ้ำที่อื่น** — รายชื่อที่อยู่สองที่จะเพี้ยนกันเสมอ
+ *  🔴 ทางออกไม่รับต้นทุน **โดยตั้งใจ**: ต้นทุนของของที่ออกไปเป็นค่าที่ต้อง **คำนวณ**
+ *     จากถัวเฉลี่ยเคลื่อนที่ ไม่ใช่ค่าที่คนกรอก ⇒ ถ้าปล่อยให้กรอกได้
+ *     จะมีเลขสองชุดที่ขัดกันในตารางเดียว แล้วไม่มีใครรู้ว่าชุดไหนจริง */
+export const เหตุผลที่รับต้นทุนได้ = Object.freeze(["receive", "transfer_in", "return_in"]);
+
 /** บันทึกการเคลื่อนไหวหลายรายการในครั้งเดียว — คืนจำนวนที่เขียนจริง/ที่เป็นของซ้ำ */
 export async function applyMoves(list) {
   if (!coreReady()) return { error: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
@@ -40,7 +47,25 @@ export async function applyMoves(list) {
     else if (!Number.isFinite(qty) || qty === 0) bad.push({ sku, why: "qty ต้องเป็นตัวเลขและไม่เท่ากับ 0" });
     else if (!REASONS[reason]) bad.push({ sku, why: `reason ต้องเป็นหนึ่งใน ${Object.keys(REASONS).join("/")}` });
     else if (!ref) bad.push({ sku, why: "ต้องมี ref เสมอ (กันยิงซ้ำแล้วของเข้าสองรอบ)" });
-    else rows.push({ sku, qty, reason, ref });
+    else {
+      /* ━━ ต้นทุนต่อหน่วยของใบนี้ — **ไม่บังคับ** (เพิ่ม 4 ต.ค. 2569 · ใบ t_mutopb3l ขั้น 3) ━━
+         สามสถานะ: ไม่ส่งมา = NULL (ไม่ได้บอกต้นทุน) · 0 = บอกว่าศูนย์จริง (ของแถม/ตัวอย่าง) · >0 = ราคาจริง
+         🔴 **NULL กับ 0 ห้ามยุบรวม** — ยุบแล้วตัวคิดถัวเฉลี่ยจะเอาใบที่ "ไม่รู้ต้นทุน"
+            ไปถ่วงค่าเฉลี่ยเป็นศูนย์ ⇒ ต้นทุนทั้งรหัสเพี้ยนลงโดยไม่มีอะไรฟ้อง */
+      const มีช่อง = m?.unitCost !== undefined && m?.unitCost !== null && m?.unitCost !== "";
+      const ต้นทุน = มีช่อง ? Number(m.unitCost) : null;
+      if (มีช่อง && !Number.isFinite(ต้นทุน))
+        bad.push({ sku, why: "unitCost ต้องเป็นตัวเลข (ไม่ส่งมาเลย = ไม่ได้บอกต้นทุน ซึ่งรับได้)" });
+      else if (มีช่อง && ต้นทุน < 0)
+        bad.push({ sku, why: "unitCost ติดลบไม่ได้ — ของที่ได้เงินคืนต้องบันทึกเป็นใบคืน ไม่ใช่ต้นทุนลบ" });
+      else if (มีช่อง && !เหตุผลที่รับต้นทุนได้.includes(reason))
+        bad.push({
+          sku,
+          why: `unitCost ใส่ได้เฉพาะของเข้า (${เหตุผลที่รับต้นทุนได้.join("/")}) — ` +
+            "ต้นทุนของของที่ออกไปต้องคำนวณจากถัวเฉลี่ย ไม่ใช่กรอกมือ",
+        });
+      else rows.push({ sku, qty, reason, ref, ต้นทุน });
+    }
   }
   if (!rows.length) return { error: "ไม่มีรายการที่ใช้ได้", bad };
 
@@ -115,16 +140,30 @@ export async function applyMoves(list) {
   for (let i = 0; i < rows.length; i += 80) {
     const values = rows
       .slice(i, i + 80)
-      .map((r) => `(${esc(r.sku)},${r.qty},${esc(r.reason)},${esc(r.ref)},datetime('now'))`)
+      .map(
+        (r) =>
+          `(${esc(r.sku)},${r.qty},${esc(r.reason)},${esc(r.ref)},datetime('now'),` +
+          `${r.ต้นทุน === null || r.ต้นทุน === undefined ? "NULL" : r.ต้นทุน})`
+      )
       .join(",");
     // OR IGNORE = ใบเดิมยิงซ้ำก็เงียบ ไม่ error ไม่เบิ้ล (พึ่งดัชนี UNIQUE ที่ฐาน)
     await coreQuery(
-      `INSERT OR IGNORE INTO stock_moves (sku,qty,reason,ref,at) VALUES ${values}`
+      `INSERT OR IGNORE INTO stock_moves (sku,qty,reason,ref,at,unit_cost) VALUES ${values}`
     );
   }
   const after = await countMine();
   const added = after - before;
-  return { sent: rows.length, added, duplicate: rows.length - added, bad: bad.length ? bad : undefined };
+  /* 🔑 บอกด้วยว่าในชุดนี้ **มีต้นทุนมากี่ใบ** — ไม่ใช่ปล่อยให้คนเดาจากจำนวนใบ
+     ของที่กรอกต้นทุนมาน้อยลงเรื่อย ๆ คือสัญญาณว่าคนกรอกเลิกกรอก ⇒ ต้องเห็นตั้งแต่ตอนบันทึก */
+  const มีต้นทุน = rows.filter((r) => r.ต้นทุน !== null && r.ต้นทุน !== undefined).length;
+  return {
+    sent: rows.length,
+    added,
+    duplicate: rows.length - added,
+    ใบที่บอกต้นทุนมา: มีต้นทุน,
+    ใบที่ไม่ได้บอกต้นทุน: rows.length - มีต้นทุน,
+    bad: bad.length ? bad : undefined,
+  };
 }
 
 /** ลบใบที่บันทึกผิด (ทีละใบด้วยเลข id เท่านั้น)

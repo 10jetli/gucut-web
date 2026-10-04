@@ -1208,8 +1208,14 @@ async function route(req, context) {
     }
 
     // ของเข้า-ของออกที่ไม่ได้มาจากออเดอร์ (รับของ · โอน · ของเสีย · ปรับจากการนับ)
-    //   POST /api/core?move=1   body: {sku,qty,reason,ref} หรือ {moves:[...]}
+    //   POST /api/core?move=1   body: {sku,qty,reason,ref, unitCost?} หรือ {moves:[...]}
     //   GET  /api/core?list=moves&sku=&limit=&offset=
+    /* ━━ `unitCost` (ไม่บังคับ · เพิ่ม 4 ต.ค. 2569 · ใบ t_mutopb3l ขั้น 3) ━━
+       ต้นทุนต่อหน่วยของใบนั้น — **ใส่ได้เฉพาะเหตุผลที่เป็นของเข้า** (receive · transfer_in · return_in)
+       ส่งมากับเหตุผลทางออก ⇒ ตีกลับพร้อมเหตุใน `bad` (ต้นทุนขาออกต้องคำนวณ ไม่ใช่กรอก)
+       🔑 ไม่ส่งมา = NULL แปลว่า "ไม่ได้บอกต้นทุน" · ส่ง 0 = "ศูนย์จริง" — **คนละความหมาย**
+       คำตอบเพิ่มสองช่อง: `ใบที่บอกต้นทุนมา` · `ใบที่ไม่ได้บอกต้นทุน`
+       ⇒ จอต้องบอกคนกรอกตรง ๆ ว่าใบนี้ยังไม่มีต้นทุน **ห้ามแกล้งขึ้นเขียว** (กติกาเดียวกับ added/duplicate) */
     if (url.searchParams.get("movedel")) {
       if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
       const r = await deleteMove(url.searchParams.get("movedel"));
