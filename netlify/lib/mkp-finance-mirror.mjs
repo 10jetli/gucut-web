@@ -54,6 +54,24 @@ export async function ensureFeesTable() {
       at TEXT DEFAULT (datetime('now')))`,
     [], { heal: false }
   );
+  /* ━━ คอลัมน์ที่เพิ่มทีหลัง ต้องมาทาง ALTER เสมอ ━━
+     🔴 `CREATE TABLE IF NOT EXISTS` ข้างบน **ไม่แตะตารางที่มีอยู่แล้ว** ⇒ เขียน `ams_commission`
+        ลงใน DDL อย่างเดียวจะไม่เกิดคอลัมน์บนฐานจริงที่มีแถวอยู่แล้ว **แบบเงียบสนิท**
+        แล้ว INSERT รอบถัดไปจะตอบ "no such column" — ผมเกือบ push แบบนั้นไปแล้ว 4 ต.ค. 2569
+     🔑 ตารางนี้ **ไม่ได้ถูกสร้างใน coreInit()** ⇒ ALTER ต้องอยู่ที่นี่ ไม่ใช่ในรายการของ coredb.mjs
+        (ถ้าย้ายไปที่นั่น มันจะยิงตอนที่ตารางอาจยังไม่เกิด แล้วได้ "no such table" ที่ไม่ถูกกลืน)
+     ⚠️ กลืนได้เฉพาะ "คอลัมน์มีอยู่แล้ว" — อย่างอื่นต้องโยนต่อ (กฎเดียวกับ coredb.mjs)
+        กลืนหมด = วันที่ ALTER พลาดจริง จะไม่มีใครรู้จนกระทบที่อื่น */
+  for (const sql of [
+    `ALTER TABLE shopee_fees ADD COLUMN ams_commission REAL`,
+  ]) {
+    try {
+      await coreQuery(sql, [], { heal: false });
+    } catch (e) {
+      const ข้อความ = String(e?.message || e);
+      if (!/duplicate column|already exists/i.test(ข้อความ)) throw e;
+    }
+  }
   /* ดัชนีตามวัน — จอจะถามแบบ "เดือนนี้ค่าธรรมเนียมรวมเท่าไร" ซึ่งกรองด้วย day เสมอ */
   await coreQuery(`CREATE INDEX IF NOT EXISTS idx_sp_fees_day ON shopee_fees(day)`, [], { heal: false });
 }
@@ -92,28 +110,53 @@ export async function mirrorShopeeFees(o = {}) {
   /* หาใบที่ยังไม่มีในกระจกค่าธรรมเนียม
      ⚠️ คิดวันแบบไทย: D1 `datetime('now')` เป็น UTC ⇒ ต้อง +7 ก่อนตัดวัน
         ไม่บวก = หน้าต่างเหลื่อม 7 ชม. แล้วใบช่วงเช้าไทยหลุดรอบ (เจอมาแล้วที่ core-stock) */
+  /* ━━ ลำดับการหยิบใบ: โหมดปกติ vs โหมดกวาดซ้ำ ━━
+     🔴 **ของเดิมโหมด refresh เดินหน้าไม่ได้เลย** (เจอ 4 ต.ค. 2569 ตอนจะกวาดซ้ำ 91 ใบจริง)
+        เพราะ refresh ถอด LEFT JOIN ออก แล้วเรียง order_date DESC LIMIT 40
+        ⇒ ยิงกี่รอบก็ได้ **40 ใบใหม่สุดชุดเดิมทุกรอบ** ใบที่เก่ากว่านั้นไม่มีวันถึงคิว
+        ⇒ ⇒ "กวาดซ้ำทั้งกระจก" ทำไม่ได้ และหน้าตาเหมือนทำได้ทุกประการ (แต่ละรอบตอบ เขียนแล้ว 40)
+     🔑 โหมดกวาดซ้ำจึงเรียงจาก **ใบที่ซิงก์ไว้นานที่สุดก่อน** (at เก่าสุด · ไม่มีแถว = ก่อนสุด)
+        การเขียนทุกครั้งตั้ง at=datetime('now') ⇒ ใบที่เพิ่งกวาดจะไปท้ายคิวเอง
+        ⇒ ยิงซ้ำเรื่อย ๆ แล้ว **ครบทั้งกระจกแน่นอน** ไม่ต้องจำ offset และยิงซ้ำเกินก็ไม่เสียหาย */
   const sql = `SELECT o.order_sn, o.order_date FROM shopee_orders o
-      ${refresh ? "" : "LEFT JOIN shopee_fees f ON f.order_sn = o.order_sn"}
+      LEFT JOIN shopee_fees f ON f.order_sn = o.order_sn
       WHERE o.order_date >= date('now', '+7 hours', ?)
         ${refresh ? "" : "AND f.order_sn IS NULL"}
-      ORDER BY o.order_date DESC LIMIT ?`;
+      ORDER BY ${refresh ? "CASE WHEN f.at IS NULL THEN 0 ELSE 1 END, f.at ASC," : ""} o.order_date DESC
+      LIMIT ?`;
   const todo = await coreQuery(sql, [`-${days} days`, limit]);
   const rows = แถวจากผล(todo, "หาใบที่ยังไม่มีค่าธรรมเนียม");
 
   /* เหลืออีกกี่ใบ — ถามแยกเพื่อให้คนเรียกรู้ว่าต้องยิงอีกกี่รอบ
-     ⚠️ เลขนี้วัด **ก่อน** รอบนี้เขียน ⇒ ป้ายกำกับว่าเป็น "ก่อนรอบนี้" ห้ามให้อ่านเป็นยอดคงเหลือหลังรอบ */
-  const left = await coreQuery(
-    `SELECT COUNT(*) AS n FROM shopee_orders o
-       LEFT JOIN shopee_fees f ON f.order_sn = o.order_sn
-      WHERE o.order_date >= date('now', '+7 hours', ?) AND f.order_sn IS NULL`,
-    [`-${days} days`]
-  );
+     ⚠️ เลขนี้วัด **ก่อน** รอบนี้เขียน ⇒ ป้ายกำกับว่าเป็น "ก่อนรอบนี้" ห้ามให้อ่านเป็นยอดคงเหลือหลังรอบ
+     ⚠️ โหมดกวาดซ้ำนับคนละอย่าง: "ยังไม่มีแถว" ไม่ใช่เกณฑ์ที่มีความหมายในโหมดนั้น
+        ⇒ นับ "ใบที่ยังไม่เคยกวาดด้วยสูตรใหม่" แทน (ams_commission เป็น NULL)
+        เอาเกณฑ์เดียวกันทั้งสองโหมด = เลขจะเป็น 0 ตลอดในโหมดกวาดซ้ำ แล้วดูเหมือนเสร็จตั้งแต่รอบแรก */
+  const left = refresh
+    ? await coreQuery(
+        `SELECT COUNT(*) AS n FROM shopee_orders o
+           JOIN shopee_fees f ON f.order_sn = o.order_sn
+          WHERE o.order_date >= date('now', '+7 hours', ?) AND f.ams_commission IS NULL`,
+        [`-${days} days`]
+      )
+    : await coreQuery(
+        `SELECT COUNT(*) AS n FROM shopee_orders o
+           LEFT JOIN shopee_fees f ON f.order_sn = o.order_sn
+          WHERE o.order_date >= date('now', '+7 hours', ?) AND f.order_sn IS NULL`,
+        [`-${days} days`]
+      );
 
   const out = {
     ok: true, platform: "shopee", grain: "order-fees",
     ขอบเขต: `ออเดอร์ Shopee ในกระจกย้อน ${days} วัน (วันไทย)`,
     หยิบมารอบนี้: rows.length,
     ค้างก่อนรอบนี้: Number(แถวจากผล(left, "นับใบที่ยังค้าง")[0]?.n ?? 0),
+    /* 🔑 ป้ายบอกว่าเลข "ค้างก่อนรอบนี้" ข้างบนนับอะไร — สองโหมดนับคนละอย่าง
+       ไม่ติดป้าย = คนอ่านเลขเดียวกันคนละความหมายโดยไม่มีอะไรบอก */
+    "ค้างก่อนรอบนี้นับอะไร": refresh
+      ? "ใบที่ยังไม่เคยกวาดด้วยสูตรที่มีค่าคอมโฆษณา (ams_commission เป็น NULL)"
+      : "ใบที่ยังไม่มีแถวในกระจกค่าธรรมเนียมเลย",
+    โหมด: refresh ? "กวาดซ้ำ (เรียงจากใบที่ซิงก์ไว้นานสุด)" : "เติมใบที่ยังไม่มี",
     เขียนแล้ว: 0, ข้ามเพราะไม่มีก้อนรายได้: 0, ยิงไม่สำเร็จ: 0,
     truncatedByTime: false,
     ใบที่สูตรต่างเกิน2บาท: [],
@@ -259,6 +302,20 @@ export async function shopeeFeesSummary(o = {}) {
             ROUND(SUM(seller_txn_fee),2) AS ค่าธุรกรรมผู้ขาย,
             ROUND(SUM(ship_subsidy),2) AS ค่าส่งที่Shopeeออกให้,
             ROUND(SUM(ship_buyer),2) AS ค่าส่งที่ผู้ซื้อจ่าย,
+            -- สามช่องนี้เขียนลงมาตลอดแต่ไม่เคยถูกรวมในสรุป (ด่าน (6) จับได้ 4 ต.ค. 2569)
+            --  🔑 เจตนาของด่านนั้นคือ "ของที่อยู่ในฐานต้องมีทางดู" ไม่ใช่ "ของที่เราคิดว่าสำคัญ"
+            --     เพราะวันที่ยอดไม่ตรง คนจะต้องไล่ทุกช่อง ไม่ใช่เฉพาะช่องที่เราเดาไว้ล่วงหน้า
+            ROUND(SUM(voucher_shopee),2) AS ส่วนลดที่Shopeeออกให้,
+            ROUND(SUM(ship_discount_seller),2) AS ส่วนลดค่าส่งที่ร้านออกเอง,
+            ROUND(SUM(coins),2) AS เหรียญShopee,
+            -- ต้นทุนที่ Shopee รายงานมาในใบ (เขียนลงมาตลอดแต่ไม่เคยถูกรวม — ด่าน ⑥ จับได้ 4 ต.ค.)
+            ROUND(SUM(cogs),2) AS ต้นทุนที่Shopeeรายงาน,
+            -- ค่าคอมโฆษณา/แอฟฟิลิเอต — เพิ่ม 4 ต.ค. 2569 (อธิบายผลต่างเดิมได้ 95.2%)
+            ROUND(SUM(ams_commission),2) AS ค่าคอมโฆษณา,
+            -- 🔑 แถวที่ซิงก์ก่อน 4 ต.ค. เป็น NULL ⇒ formula_diff ของแถวนั้นคิดจากสูตรเก่า
+            --    เลขนี้ต้องอยู่ในสรุป ไม่ใช่ให้คนเดา: ยังไม่เป็น 0 = ยังกวาดซ้ำไม่ครบ
+            --    (ห้ามแปล "ผลต่างยังเยอะ" เป็น "แก้สูตรไม่สำเร็จ" ขณะเลขนี้ยังไม่เป็นศูนย์)
+            SUM(CASE WHEN ams_commission IS NULL THEN 1 ELSE 0 END) AS ใบที่ยังไม่ได้กวาดซ้ำ,
             ROUND(SUM(formula_diff),2) AS ผลต่างสูตรรวม,
             SUM(CASE WHEN formula_diff IS NULL THEN 1 ELSE 0 END) AS ใบที่เทียบสูตรไม่ได้,
             SUM(CASE WHEN ABS(formula_diff) > ${เกณฑ์ต่างบาท} THEN 1 ELSE 0 END) AS ใบที่สูตรต่างเกิน2บาท,
@@ -318,7 +375,15 @@ export async function shopeeFeeRows(o = {}) {
   const rows = แถวจากผล(await coreQuery(
     `SELECT order_sn, day, escrow, items_total, commission, service_fee, payment_fee,
             seller_txn_fee, ship_buyer, ship_actual, ship_subsidy, ship_discount_seller,
-            voucher_shopee, voucher_seller, coins, withholding_tax, formula_diff, fields_count
+            voucher_shopee, voucher_seller, coins, withholding_tax,
+            -- cogs = ต้นทุนที่ Shopee บอกมาในใบ escrow — **เขียนลงตั้งแต่วันแรกแต่ไม่เคยถูกอ่าน**
+            --    ด่าน (6) ในเทสเป็นคนจับได้ 4 ต.ค. 2569 ⇒ ของมีอยู่ในฐานครบ แค่ไม่มีทางดู
+            --    (ห้ามใส่ backtick ในคอมเมนต์ก้อนนี้ — อยู่ใน template literal · ผมเหยียบ
+            --     คลาสนี้เป็นครั้งที่ 3 ในคืนเดียว ทั้ง 3 ครั้ง node --check เป็นคนจับ)
+            cogs,
+            -- 🔴 ช่องที่เขียนลงแต่ไม่ได้ SELECT ออกมา = ช่องที่ไม่มีใครตรวจได้ (คลาสเดิมของไฟล์นี้
+            --    เจอครั้งที่สามแล้ว: สรุปขาด 4 ช่อง 27 ก.ย. · unit_cost เขียนได้อ่านไม่ได้ 4 ต.ค.)
+            ams_commission, formula_diff, fields_count
        FROM shopee_fees WHERE ${เงื่อนไขวัน}${เงื่อนไขต่าง}
        ORDER BY ABS(COALESCE(formula_diff, 0)) DESC, day DESC LIMIT ? OFFSET ?`,
     [`-${days} days`, limit, offset],
