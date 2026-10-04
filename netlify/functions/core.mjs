@@ -1218,6 +1218,15 @@ async function route(req, context) {
       const r = await m.escrowช่องตัวเลข(url.searchParams.get("mkpescrowfields"));
       return okJson(r, r?.ok === false ? 400 : 200);
     }
+    /* GET ?costsince=1 ⇒ วันแรกที่มีต้นทุนตรึงไว้ + ความครอบคลุม (ใบ t_mutwbamy ขั้น ③)
+       🔴 จอ **ต้องยิงเส้นนี้ก่อนโชว์กำไรช่วงวัน** — บรรทัดที่ขายก่อนวันเริ่มตรึงไม่มีต้นทุนตลอดกาล
+          ⇒ คิดกำไรคร่อมช่วงนั้น = กำไรสูงเกินจริง (ต้นทุนหาย = กำไรเท่ายอดขาย) และ **ไม่มีอะไรฟ้อง**
+       ⚠️ `วันแรก: null` = ยังไม่เริ่มตรึงเลย **ห้ามแปลว่าวันนี้** */
+    if (url.searchParams.get("costsince")) {
+      const { วันแรกที่มีต้นทุนตรึง } = await import("../lib/ต้นทุนรายรหัส.mjs");
+      const r = await วันแรกที่มีต้นทุนตรึง();
+      return okJson(r, r?.ok ? 200 : 400);
+    }
     if (url.searchParams.get("cost")) {
       const { ต้นทุนรายรหัส } = await import("../lib/ต้นทุนรายรหัส.mjs");
       const skus = (url.searchParams.get("sku") || "")
