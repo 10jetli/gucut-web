@@ -354,6 +354,67 @@ export async function readShopeeOrderFees(orderSn, deps = {}) {
   }
 }
 
+/** 🔎 ไล่ช่องใน escrow ดิบของออเดอร์เดียว — **เฉพาะช่องที่เป็นตัวเลข** (ใบ `t_mum2bzeg`)
+ *
+ * 🔴 **ทำไมต้องมี**: สูตรยอดโอน Shopee ต่าง 91 ใบ · วัดแล้ว VAT 7% ของค่าธรรมเนียม
+ *    อธิบายได้ 54% (ปิดสนิท 37/91 ใบ) **แต่ 7% เป็นอัตราที่ฟิตเข้ากับข้อมูล ไม่ใช่ค่าที่อ่านมาจากช่อง**
+ *    ⇒ ตัวเลขที่พอดีโดยบังเอิญ หน้าตาเหมือนตัวเลขที่ถูกต้องเป๊ะ (กฎ guessed-cause-written-as-fact)
+ *    ⇒ ต้องเปิดดูว่า Shopee มีช่องชื่อ VAT/ภาษี อยู่จริงไหม ในบรรดาช่องที่เรายังไม่ได้จับคู่ (~70 จาก 86)
+ *
+ * 🔒 **ความเป็นส่วนตัว — เหตุที่คืนแค่ตัวเลข**
+ *    escrow มี `buyer_user_name` · ที่อยู่ · เบอร์ ซึ่งเป็น **ข้อความ**
+ *    ⇒ ตัวนี้คืน **ค่าของช่องที่เป็นตัวเลขเท่านั้น** · ช่องที่เป็นข้อความคืน **แค่ชื่อช่อง ไม่มีค่า**
+ *    ⇒ ชื่อ/ที่อยู่/เบอร์ หลุดไม่ได้เลยในทางโครงสร้าง ไม่ใช่เพราะเราจำได้ว่าต้องกรองตัวไหน
+ *    🔑 เลือก "กรองด้วยชนิดข้อมูล" แทน "รายชื่อช่องห้าม" เพราะรายชื่อห้ามจะตกหล่นวันที่ Shopee เพิ่มช่องใหม่
+ *       (รีโปนี้เป็น public ⇒ ของที่หลุดคือหลุดถาวร)
+ *
+ * @param {string} orderSn เลขที่ออเดอร์ของ Shopee
+ */
+export async function escrowช่องตัวเลข(orderSn, deps = {}) {
+  const sn = String(orderSn ?? "").trim().slice(0, 40);
+  if (!/^[A-Za-z0-9-]{6,40}$/.test(sn)) return { ok: false, error: "order_sn ต้องเป็นตัวอักษร/ตัวเลข 6–40 ตัว" };
+  const shopee = deps.shopee ?? (await import("./shopee.mjs")).shopCall;
+  let d;
+  try {
+    d = await shopee("/api/v2/payment/get_escrow_detail", { order_sn: sn });
+  } catch (e) {
+    const msg = cleanErr(e);
+    if (/ยังไม่ได้เชื่อมร้าน/.test(msg)) return { skip: msg };
+    return { ok: false, error: msg };
+  }
+  const inc = d?.response?.order_income ?? null;
+  if (!inc) {
+    return {
+      ok: true, found: false, orderRef: sn,
+      ช่องที่เจอชั้นบน: Object.keys(d?.response ?? {}),
+      note: "ไม่มีก้อน order_income — โครงคำตอบอาจเปลี่ยน",
+    };
+  }
+  const ตัวเลข = {};
+  const ข้อความ = [];
+  const อื่น = [];
+  for (const [k, v] of Object.entries(inc)) {
+    if (typeof v === "number" && Number.isFinite(v)) ตัวเลข[k] = v;
+    else if (typeof v === "string") ข้อความ.push(k);      // 🔒 ชื่อช่องเท่านั้น ห้ามคืนค่า
+    else อื่น.push(k);                                     // array/object/null ⇒ ไม่คืนค่าเช่นกัน
+  }
+  /* ช่องที่น่าจะเป็นภาษี/VAT — คัดด้วยชื่อ **เพื่อชี้ที่ให้ดู ไม่ใช่เพื่อสรุป**
+     ⚠️ ไม่เจอ ≠ ไม่มี (อาจชื่ออื่น) · เจอ ≠ ใช่ (ต้องเทียบค่ากับส่วนต่างจริงก่อน) */
+  const เข้าข่ายภาษี = Object.keys(ตัวเลข).filter((k) => /vat|tax|ภาษี/i.test(k));
+  return {
+    ok: true, found: true, orderRef: sn,
+    "จำนวนช่องทั้งหมด": Object.keys(inc).length,
+    "ช่องตัวเลข": ตัวเลข,
+    "ช่องที่เป็นข้อความ (คืนแค่ชื่อ)": ข้อความ,
+    "ช่องชนิดอื่น (คืนแค่ชื่อ)": อื่น,
+    "ชื่อช่องที่เข้าข่ายภาษี": เข้าข่ายภาษี,
+    "🔒 ความเป็นส่วนตัว":
+      "คืนค่าเฉพาะช่องที่เป็นตัวเลข · ช่องข้อความคืนแค่ชื่อ ⇒ ชื่อผู้ซื้อ/ที่อยู่/เบอร์ ออกไม่ได้",
+    "⚠️ อ่านผลยังไง":
+      "ไม่เจอชื่อที่เข้าข่ายภาษี ไม่ได้แปลว่าไม่มี (อาจชื่ออื่น) · เจอแล้วก็ยังต้องเทียบค่ากับส่วนต่างจริงก่อนสรุป",
+  };
+}
+
 /** บรรทัดในใบสรุปรอบโอนเงินของ TikTok — อ่านอย่างเดียว
  *  ⚠️ id ได้จาก rows ของ ?mkpfinance=1 (ช่อง id ของเจ้า tiktok) */
 export async function readTiktokStatementLines(statementId, opts = {}, deps = {}) {

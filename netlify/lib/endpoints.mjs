@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-10-04T11:26:31.802Z";
+export const generatedAt = "2026-10-04T11:42:36.140Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -71,6 +71,7 @@ export const paramRoutes = [
  "init",
  "jobtiming",
  "links",
+ "mkpescrowfields",
  "mkpfeerows",
  "mkpfees",
  "mkpfeesum",
@@ -212,6 +213,7 @@ export const routeMethod = {
  "mkpfeerows": "readonly",
  "mkpfeesum": "readonly",
  "dbinfo": "readonly",
+ "mkpescrowfields": "unknown",
  "cost": "unknown",
  "init": "unknown",
  "movedel": "write",
