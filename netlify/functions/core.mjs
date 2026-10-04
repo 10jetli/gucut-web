@@ -1203,6 +1203,21 @@ async function route(req, context) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       return okJson(await d1Info());
     }
+    /* GET ?cost=1[&sku=A,B][&store=z1|z2] ⇒ ต้นทุนรายรหัส + **ป้ายบอกที่มาทุกรหัส** (ใบ t_mutopb3l ขั้น 4)
+       ท่านประธานสั่ง 4 ต.ค. 2569: ใช้ราคาซื้อที่ตั้งไว้สำหรับรหัสที่ไม่มีใบซื้อ **พร้อมป้ายบอกที่มา**
+       🔴 จอ **ห้ามอ่านแต่ช่อง `ต้นทุน` แล้วทิ้ง `ที่มา`** — เลขสองตัวหน้าตาเหมือนกันแต่เชื่อถือได้ไม่เท่ากัน
+          📏 วัด 4 ต.ค. 2569: ราคาซื้อที่ตั้งไว้ × คงเหลือ ต่ำกว่าต้นทุนเฉลี่ยของ ZORT **34.9%**
+       🔴 `ต้นทุน: null` = ยังไม่รู้ **ห้ามแปลงเป็น 0** (กำไรจะกลายเป็น 100% ของราคาขาย) */
+    if (url.searchParams.get("cost")) {
+      const { ต้นทุนรายรหัส } = await import("../lib/ต้นทุนรายรหัส.mjs");
+      const skus = (url.searchParams.get("sku") || "")
+        .split(",").map((x) => x.trim()).filter(Boolean);
+      const r = await ต้นทุนรายรหัส({
+        skus: skus.length ? skus : undefined,
+        store: url.searchParams.get("store") || "z1",
+      });
+      return okJson(r, r?.ok ? 200 : 400);
+    }
     if (url.searchParams.get("init")) {
       return json({ ok: true, init: await coreInit() });
     }
