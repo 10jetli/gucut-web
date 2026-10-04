@@ -64,6 +64,7 @@ export async function ensureFeesTable() {
         กลืนหมด = วันที่ ALTER พลาดจริง จะไม่มีใครรู้จนกระทบที่อื่น */
   for (const sql of [
     `ALTER TABLE shopee_fees ADD COLUMN ams_commission REAL`,
+    `ALTER TABLE shopee_fees ADD COLUMN reverse_shipping_fee REAL`,
   ]) {
     try {
       await coreQuery(sql, [], { heal: false });
@@ -91,7 +92,13 @@ export function shopeeNet(f) {
           เพราะใบที่ไม่ได้ลงโฆษณาจะไม่มีช่องนี้เลย ⇒ ใส่ใน `need` จะทำให้สูตรคืน null ทั้งที่ควรคิดได้
        ⚠️ **ยังเหลือ 230 บาทใน 4 ใบที่ ams = 0** (38 · 38 · 38 · 29) ⇒ ชิ้นที่สองคนละเรื่อง
           ⇒ ห้ามเขียนว่าสูตรปิดจบ */
-    - n(f.amsCommission);
+    - n(f.amsCommission)
+    /* ━━ ค่าส่งกลับตอนคืนสินค้า (5 ต.ค. 2569) — ปิด 4 ใบสุดท้ายที่ยังต่าง ━━
+       📏 38 · 38 · 38 · 29 ตรงกับผลต่างครบ 4/4 ใบ · ทั้งสี่เป็นใบคืนสินค้า
+       ⚠️ อยู่ในกอง n() เพราะใบปกติไม่มีช่องนี้เลย (สุ่มใบที่สูตรตรง 15 ใบ = 0 ทั้งหมด)
+          ใส่ใน need จะทำให้สูตรคืน null ทั้งที่คิดได้
+       🔑 ช่องที่เกือบเลือกผิด: actual_shipping_fee ตรง 2 ใน 4 ⇒ เกณฑ์คือ "อธิบายได้ทุกใบ" */
+    - n(f.reverseShippingFee);
 }
 
 /** เติมกระจกค่าธรรมเนียม Shopee ทีละรอบ
@@ -199,8 +206,9 @@ export async function mirrorShopeeFees(o = {}) {
     await coreQuery(
       `INSERT INTO shopee_fees (order_sn, day, escrow, items_total, commission, service_fee,
          payment_fee, seller_txn_fee, ship_buyer, ship_actual, ship_subsidy, ship_discount_seller,
-         voucher_shopee, voucher_seller, coins, cogs, withholding_tax, ams_commission, formula_diff, fields_count, at)
-       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
+         voucher_shopee, voucher_seller, coins, cogs, withholding_tax, ams_commission,
+         reverse_shipping_fee, formula_diff, fields_count, at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?, datetime('now'))
        ON CONFLICT(order_sn) DO UPDATE SET
          day=excluded.day, escrow=excluded.escrow, items_total=excluded.items_total,
          commission=excluded.commission, service_fee=excluded.service_fee,
@@ -210,11 +218,13 @@ export async function mirrorShopeeFees(o = {}) {
          voucher_shopee=excluded.voucher_shopee, voucher_seller=excluded.voucher_seller,
          coins=excluded.coins, cogs=excluded.cogs, withholding_tax=excluded.withholding_tax,
          ams_commission=excluded.ams_commission,
+         reverse_shipping_fee=excluded.reverse_shipping_fee,
          formula_diff=excluded.formula_diff, fields_count=excluded.fields_count, at=datetime('now')`,
       [r.order_sn, r.order_date ?? null, f.escrowAmount, f.itemsTotal, f.commission, f.serviceFee,
         f.paymentFee, f.sellerTransactionFee, f.shippingPaidByBuyer, f.shippingActual,
         f.shippingSubsidyByShopee, f.shippingDiscountSeller, f.voucherByShopee, f.voucherBySeller,
-        f.coinsByShopee, f.cogs, f.withholdingTax, f.amsCommission ?? null, diff,
+        f.coinsByShopee, f.cogs, f.withholdingTax, f.amsCommission ?? null,
+        f.reverseShippingFee ?? null, diff,
         Array.isArray(f.fieldsSeenThisPage) ? f.fieldsSeenThisPage.length : null]
     );
     out.เขียนแล้ว += 1;
@@ -308,8 +318,17 @@ export async function shopeeFeesSummary(o = {}) {
             ROUND(SUM(voucher_shopee),2) AS ส่วนลดที่Shopeeออกให้,
             ROUND(SUM(ship_discount_seller),2) AS ส่วนลดค่าส่งที่ร้านออกเอง,
             ROUND(SUM(coins),2) AS เหรียญShopee,
-            -- ต้นทุนที่ Shopee รายงานมาในใบ (เขียนลงมาตลอดแต่ไม่เคยถูกรวม — ด่าน ⑥ จับได้ 4 ต.ค.)
-            ROUND(SUM(cogs),2) AS ต้นทุนที่Shopeeรายงาน,
+            ROUND(SUM(reverse_shipping_fee),2) AS ค่าส่งกลับตอนคืนสินค้า,
+            -- 🔴 **ป้ายนี้ผมตั้งผิดเมื่อ 4 ต.ค. แล้วแก้ 5 ต.ค.** เดิมเขียนว่า "ต้นทุนที่ Shopee รายงาน"
+            --    ซึ่งโกหกบนจอเงิน: วัดแล้ว cogs == items_total **เป๊ะ 12/12 ใบ** (เคยวัด 50/50 ใบ 18 ก.ย.)
+            --    ⇒ Shopee เอา **ราคาขาย** มาใส่ช่องชื่อต้นทุน (ร้านไม่ได้กรอกต้นทุนไว้ในระบบเขา)
+            --    และมัน **กลายเป็น 0 ย้อนหลังเมื่อใบถูกคืนสินค้า** (กวาดซ้ำครั้งเดียว ยอดลด 23,650 บาท)
+            --    🚫 ห้ามเอาช่องนี้ไปคิดกำไรเด็ดขาด — กำไรจะออกมา 0 ทุกใบและดูเหมือนตัวเลขจริง
+            --    ⇒ ต้นทุนจริงของเราอยู่ที่ตาราง order_item_cost (ตรึงตอนขาย) ไม่ใช่ที่นี่
+            --    🔑 ที่ผมพลาด: ด่านของผมบอกว่าคอลัมน์ทุกตัวต้องถูก SELECT (ถูกในภาพรวม)
+            --       แล้วผมทำตามโดยไม่อ่านคำเตือนที่อยู่ห่าง 8 บรรทัดใน mkp-finance.mjs
+            --       ⇒ **ด่านรายงานตำแหน่ง ไม่ได้รายงานข้อบกพร่อง** ด่านไม่รู้ว่าช่องไหนเป็นกับดัก
+            ROUND(SUM(cogs),2) AS ราคาสินค้าที่Shopeeใส่ในช่องชื่อต้นทุน_ไม่ใช่ต้นทุน,
             -- ค่าคอมโฆษณา/แอฟฟิลิเอต — เพิ่ม 4 ต.ค. 2569 (อธิบายผลต่างเดิมได้ 95.2%)
             ROUND(SUM(ams_commission),2) AS ค่าคอมโฆษณา,
             -- 🔑 แถวที่ซิงก์ก่อน 4 ต.ค. เป็น NULL ⇒ formula_diff ของแถวนั้นคิดจากสูตรเก่า
@@ -383,7 +402,7 @@ export async function shopeeFeeRows(o = {}) {
             cogs,
             -- 🔴 ช่องที่เขียนลงแต่ไม่ได้ SELECT ออกมา = ช่องที่ไม่มีใครตรวจได้ (คลาสเดิมของไฟล์นี้
             --    เจอครั้งที่สามแล้ว: สรุปขาด 4 ช่อง 27 ก.ย. · unit_cost เขียนได้อ่านไม่ได้ 4 ต.ค.)
-            ams_commission, formula_diff, fields_count
+            ams_commission, reverse_shipping_fee, formula_diff, fields_count
        FROM shopee_fees WHERE ${เงื่อนไขวัน}${เงื่อนไขต่าง}
        ORDER BY ABS(COALESCE(formula_diff, 0)) DESC, day DESC LIMIT ? OFFSET ?`,
     [`-${days} days`, limit, offset],
