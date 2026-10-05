@@ -229,6 +229,10 @@ export async function tiktokStockCompare(o = {}) {
 
   const diff = [];
   const missingSample = [];
+  /* 🔑 เปิดทางให้ผู้เรียก **ขอรายชื่อเฉพาะรหัสที่ระบุ** ที่ตกกอง `same` (เหตุเต็มใน shopee-stock.mjs)
+     🚫 ตัวเทียบนี้ไม่รู้ว่า "ทะเบียน" คืออะไร โดยตั้งใจ — ผู้เรียกส่งชุดรหัสมาเอง */
+  const ขอรายชื่อของรหัส = new Set([...(o.alsoList || [])].map((x) => String(x).trim()).filter(Boolean));
+  const sameListed = [];
   let same = 0;
   let missing = 0;
   let viaRecipe = 0;
@@ -247,8 +251,11 @@ export async function tiktokStockCompare(o = {}) {
       if (o.full || missingSample.length < 20) missingSample.push({ sku: r.sku, name: r.name });
       continue;
     }
-    if (core === num(r.qty)) same++;
-    else diff.push({ sku: r.sku, name: r.name, tiktok: num(r.qty), core });
+    if (core === num(r.qty)) {
+      same++;
+      if (ขอรายชื่อของรหัส.has(String(r.sku).trim()))
+        sameListed.push({ sku: r.sku, name: r.name, tiktok: num(r.qty), core, via: rc && snap.has(rc.base) ? "สูตรชุด" : "ตรงตัว" });
+    } else diff.push({ sku: r.sku, name: r.name, tiktok: num(r.qty), core });
   }
 
   return {
@@ -257,6 +264,11 @@ export async function tiktokStockCompare(o = {}) {
     // ⚠️ รหัสที่ผูก seller_sku ไม่ได้ — ไม่ได้อยู่ในตัวหาร แต่ต้องเห็น
     noSellerSku: noSku,
     same,
+    /* 📏 **รายชื่อเฉพาะรหัสที่ผู้เรียกขอ ซึ่งตกกอง `same`** — ไม่ใช่รายชื่อทั้งกอง `same`
+       🔑 ย้ายรหัสจากกองนี้ไปเข้าแผน ⇒ **ต้องลด `same` ลงเท่าที่ย้าย** ไม่งั้นตัวตรวจ
+          `bucketsAddUp` ของปลายน้ำจะฟ้องว่าแถวหาย */
+    sameListed,
+    sameListedAsked: ขอรายชื่อของรหัส.size,
     missing,
     /* 📏 รายชื่อครบหรือถูกตัด — ห้ามให้ปลายทางเดาจากการนับความยาว */
     missingSampleครบ: Boolean(o.full) || missingSample.length >= missing,

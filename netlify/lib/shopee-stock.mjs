@@ -641,6 +641,17 @@ export async function shopeeStockCompare(o = {}) {
 
   const diff = [];
   const missingSample = [];
+  /* 🔑 **กอง `same` เดิมเป็น "ตัวนับล้วน" ไม่มีรายชื่อ — และนั่นทำให้ตัวแก้ที่อยู่ปลายน้ำไม่มีของให้แก้**
+     ของจริง 6 ต.ค. 2569 (ฝั่งจอจับได้): ตัวทับจำนวนของทะเบียนในแผนดันสต็อกครอบได้แค่ **2 จาก 30 รหัส**
+     เพราะรหัสทะเบียนที่แพลตฟอร์มเป็น 0 และคลังก็ 0 ถูกจัดเป็น `same` **ที่นี่** ตั้งแต่ก่อนตัวทับจะได้เห็น
+     ⇒ `rows` ของตัววางแผนประกอบจาก `diff` + `missingSample` เท่านั้น ⇒ 28 รหัสไม่เคยเข้าแผน
+     🔑 คลาส: **ตัวกรองที่อยู่ก่อนตัวแก้ ทำให้ตัวแก้ไม่มีของให้แก้** และตัวนับปลายน้ำ
+        รายงานถูกตามที่มันเห็น ⇒ คนอ่านเข้าใจว่า "ทับไป 2 เพราะมีแค่ 2 ที่ต้องทับ" ซึ่งผิด
+     ⇒ เปิดทางให้ผู้เรียก **ขอรายชื่อเฉพาะรหัสที่ระบุ** ที่ตกกอง `same`
+     🚫 **ตัวเทียบนี้ไม่รู้ว่า "ทะเบียน" คืออะไร โดยตั้งใจ** — ผู้เรียกส่งชุดรหัสมาเอง
+        (ถ้ายัดความรู้เรื่องใบอนุญาตลงไฟล์เทียบสต็อก มันจะกลายเป็นไฟล์ที่แก้เรื่องหนึ่งแล้วพังอีกเรื่อง) */
+  const ขอรายชื่อของรหัส = new Set([...(o.alsoList || [])].map((x) => String(x).trim()).filter(Boolean));
+  const sameListed = [];
   let same = 0;
   let missing = 0;
   let missingBundleMultiPart = 0;   // ในกอง missing มีกี่รหัสที่จริง ๆ คลังรู้จัก (ชุดหลายชิ้น)
@@ -651,8 +662,11 @@ export async function shopeeStockCompare(o = {}) {
     if (rec && snap.has(rec.base)) {
       viaRecipe += 1;
       const ours = Math.floor(num(snap.get(rec.base)) / rec.per);
-      if (ours === r.qty) same += 1;
-      else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: snap.get(r.sku) ?? null, gap: ours - r.qty, via: "สูตรชุด" });
+      if (ours === r.qty) {
+        same += 1;
+        if (ขอรายชื่อของรหัส.has(String(r.sku).trim()))
+          sameListed.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: snap.get(r.sku) ?? null, via: "สูตรชุด" });
+      } else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: snap.get(r.sku) ?? null, gap: ours - r.qty, via: "สูตรชุด" });
       continue;
     }
     if (!snap.has(r.sku)) {
@@ -677,8 +691,11 @@ export async function shopeeStockCompare(o = {}) {
       continue;
     }
     const ours = snap.get(r.sku);
-    if (ours === r.qty) same += 1;
-    else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: ours, gap: ours - r.qty });
+    if (ours === r.qty) {
+      same += 1;
+      if (ขอรายชื่อของรหัส.has(String(r.sku).trim()))
+        sameListed.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: ours, via: "ตรงตัว" });
+    } else diff.push({ sku: r.sku, name: r.name, shopee: r.qty, core: ours, directQty: ours, gap: ours - r.qty });
   }
   diff.sort((a, b) => Math.abs(b.gap) - Math.abs(a.gap));
   return {
@@ -688,6 +705,13 @@ export async function shopeeStockCompare(o = {}) {
     shopeeSkus: withSku.length,
     noSku: rows.length - withSku.length,
     same,
+    /* 📏 **รายชื่อเฉพาะรหัสที่ผู้เรียกขอ ซึ่งตกกอง `same`** — ไม่ใช่รายชื่อทั้งกอง `same`
+       ⚠️ `sameListed.length` ตอบคำถามว่า "ในรหัสที่ขอมา มีกี่ตัวที่ตัวเลขตรงกันอยู่แล้ว"
+          **ห้ามเอาไปอ่านว่าเป็นขนาดของกอง `same`** (ตัวจริงอยู่ที่ช่อง `same`)
+       🔑 ย้ายรหัสจากกองนี้ไปเข้าแผน ⇒ **ต้องลด `same` ลงเท่าที่ย้าย** ไม่งั้น `bucketsAddUp`
+          ของปลายน้ำจะฟ้องว่าแถวหาย (แบบแผนที่ถูกอยู่แล้วคือ Lazada: `sameExact + sameOnRecheck`) */
+    sameListed,
+    sameListedAsked: ขอรายชื่อของรหัส.size,
     /* 🔴 ในกอง `missing` มีกี่รหัสที่ **คลังรู้จักแต่คิดจำนวนไม่ได้** (ชุดหลายชิ้น)
        ⇒ ปลายทางต้องเขียนคำให้ตรง: ไม่ใช่ "คลังไม่รู้จัก" แต่เป็น "คิดจำนวนจากสูตรหลายชิ้นไม่ได้" */
     missingBundleMultiPart,

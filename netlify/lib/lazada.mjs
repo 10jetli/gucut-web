@@ -503,6 +503,14 @@ export async function lazadaStockCompare(o = {}) {
   const oneToMany = new Map(); // รหัสคลัง → รายการ sku ของ Lazada ที่ชี้มา
   const missingSample = [];
   const availVsQty = [];
+  /* 🔑 เปิดทางให้ผู้เรียก **ขอรายชื่อเฉพาะรหัสที่ระบุ** ที่ตกกอง `same` (ดูเหตุเต็มใน shopee-stock.mjs)
+     🚫 ตัวเทียบนี้ไม่รู้ว่า "ทะเบียน" คืออะไร โดยตั้งใจ — ผู้เรียกส่งชุดรหัสมาเอง
+     🔴 **ของ Lazada ต่างจากสองเจ้า: กอง `same` มีของที่ "จับคู่แบบเดา" ปนอยู่**
+        `exact:false` = จับคู่ด้วยการตัดท้ายรหัส ⇒ **เป็นการเดาว่าเป็นสินค้าตัวเดียวกัน**
+        ⇒ ติด `exact` + `matchedAs` ไปกับทุกแถว **ปลายน้ำต้องไม่ดันสต็อกของแถวที่ exact:false
+          โดยไม่มีคนยืนยัน** (คำเตือนนี้มีอยู่ในไฟล์นี้แล้วเรื่องเปอร์เซ็นต์ — ข้อนี้คือผลของมันตอนลงมือ) */
+  const ขอรายชื่อของรหัส = new Set([...(o.alsoList || [])].map((x) => String(x).trim()).filter(Boolean));
+  const sameListed = [];
   let same = 0;
   let sameExact = 0;
   let sameBase = 0;
@@ -555,6 +563,12 @@ export async function lazadaStockCompare(o = {}) {
       same += 1;
       if (exact) sameExact += 1;
       else sameBase += 1;
+      if (ขอรายชื่อของรหัส.has(String(r.sku).trim()))
+        sameListed.push({
+          sku: r.sku, lazada: r.available, core: ours,
+          directQty: viaBundle.has(r.sku) ? (snap.get(r.sku) ?? null) : ours,
+          exact, matchedAs: exact ? "ตรงตัว" : `ตัดท้ายเป็น ${key}`,
+        });
     } else
       diff.push({
         sku: r.sku,
@@ -577,6 +591,12 @@ export async function lazadaStockCompare(o = {}) {
         [...oneToMany.values()].reduce((a, g) => a + g.n, 0) + missing ===
       rows.length,
     same,
+    /* 📏 **รายชื่อเฉพาะรหัสที่ผู้เรียกขอ ซึ่งตกกอง `same`** — ไม่ใช่รายชื่อทั้งกอง `same`
+       ⚠️ ทุกแถวมี `exact` — `false` = จับคู่ด้วยการตัดท้าย = **เดา** ⇒ ห้ามดันโดยไม่มีคนยืนยัน
+       🔑 ย้ายรหัสจากกองนี้ไปเข้าแผน ⇒ ต้องลด `same`/`sameExact`/`sameBase` ตามด้วย
+          ไม่งั้น `bucketsAddUp` ข้างบนนี้จะฟ้องว่าแถวหาย (มันบวก sameExact + sameBase อยู่) */
+    sameListed,
+    sameListedAsked: ขอรายชื่อของรหัส.size,
     /* ⚠️ **ตัวเลขที่เชื่อได้จริงคือกอง exact เท่านั้น** — กอง base คือของที่เดาว่าเป็นตัวเดียวกัน */
     sameExact,
     sameBase,
