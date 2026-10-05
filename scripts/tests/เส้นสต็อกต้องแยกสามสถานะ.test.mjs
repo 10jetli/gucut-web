@@ -82,7 +82,10 @@ function ตรวจ(ดิบ, { พิมพ์ = false } = {}) {
     /* ⚠️ อย่าตรึงทั้งก้อนแบบตัวอักษร — วันที่ **เพิ่ม** ช่อง (เช่น `src`) ด่านจะแดงทั้งที่ของถูกขึ้น
        ⇒ ตรึงเฉพาะสิ่งที่ต้องมีจริง: ทางนี้ต้องส่ง `st` และ `p` · เพิ่มช่องอื่นได้ */
     ["สินค้าเดี่ยวปกติ", /return json\(\{ found: true, st, p[,}]/],
-    ["ทะเบียนชนะ ZORT", /return json\(\{ found: true, st: lic, p[,\s]/],
+    /* 5 ต.ค. 2569 · รูปของทางนี้เปลี่ยนเป็น `st: lic.st` ตอนต่อตัวหักกลับ (อ่านทะเบียนสด)
+       `lic` เปลี่ยนจาก "ตัวเลข|null" เป็น "{st, meta}|null" ⇒ **เจตนาของด่านไม่เปลี่ยน**:
+       ทางนี้ต้องยังส่ง `p` ของ ZORT ไปพร้อมจำนวนจากทะเบียน · ตรึงแค่สิ่งที่ต้องมีจริง */
+    ["ทะเบียนชนะ ZORT", /return json\(\{ found: true, st: lic\.st, p[,\s]/],
   ];
   for (const [ชื่อ, รูป] of ทางที่ต้องมีราคา)
     if (!รูป.test(s))
@@ -158,7 +161,8 @@ test("🧪 ตัวควบคุม ③ ถอน p ของสินค้�
 });
 
 test("🧪 ตัวควบคุม ③ข ถอน p ของทาง 'ทะเบียนชนะ' ⇒ ด่านต้องจับได้ (พิสูจน์ว่าครอบทั้งสองทาง)", () => {
-  const { ปลูก, บรรทัด } = ปลูกในโค้ด(src, "found: true, st: lic, p, src:", "found: true, st: lic, src:");
+  /* 5 ต.ค. 2569 · รูปเปลี่ยนเป็น `st: lic.st` ตอนต่อตัวหักกลับ — เจตนาเดิม: ถอน p แล้วด่านต้องแดง */
+  const { ปลูก, บรรทัด } = ปลูกในโค้ด(src, "found: true, st: lic.st, p, src:", "found: true, st: lic.st, src:");
   console.log(`   🌱 ปลูกในโค้ดบรรทัด ${บรรทัด}`);
   โหลดผ่านไหม(ปลูก, "ปลูก-ถอนราคาทะเบียน");
   const ผิด = ตรวจ(ปลูก);
@@ -171,8 +175,8 @@ test("🧪 ตัวควบคุม ②ข **เพิ่มทางออ�
      ⇒ ตอนนี้ `ตรวจ()` ไล่ทุกทางออกด้วย matchAll ⇒ ทางใหม่ต้องถูกจับด้วย */
   const { ปลูก, บรรทัด } = ปลูกในโค้ด(
     src,
-    "    if (lic !== null) return json({ found: true, st: lic, src: \"licensed\" }, 200, 180);",
-    '    if (lic !== null) return json({ found: true, st: lic, src: "licensed" }, 200, 180);\n' +
+    "    { const lic = await ทะเบียนรอ; if (lic) return json({ found: true, st: lic.st, src: \"licensed\", ...lic.meta }, 200, 180); }",
+    '    { const lic = await ทะเบียนรอ; if (lic) return json({ found: true, st: lic.st, src: "licensed", ...lic.meta }, 200, 180); }\n' +
       '    if (false) return json({ found: true, st: 1, kind: "bundle", p: 9, priceFrom: "web" }, 200, 180);'
   );
   console.log(`   🌱 เพิ่มทางออกใหม่หลังบรรทัด ${บรรทัด}`);
@@ -188,7 +192,9 @@ test("ไม่มีคีย์ ZORT ⇒ ต้องตอบ 503 not configu
   const i = โค้ดล้วน.indexOf("not configured");
   assert.ok(i > 0, 'ทางออก "not configured" หายไป ⇒ ไม่มีคีย์แล้วจะตกไปทางไหนไม่รู้');
   const ก้อน = โค้ดล้วน.slice(Math.max(0, i - 400), i + 120);
-  assert.match(ก้อน, /lic !== null\) return json\(\{ found: true, st: lic, src: "licensed" \}/,
+  /* 5 ต.ค. 2569 · รูปเปลี่ยนเพราะต่อตัวหักกลับ (`lic` เป็นอ็อบเจกต์แล้ว และต้อง await)
+     เจตนาเดิมคงไว้ทั้งข้อ: **ก่อนตีกลับ 503 ต้องลองตอบจากทะเบียนก่อน** */
+  assert.match(ก้อน, /if \(lic\) return json\(\{ found: true, st: lic\.st, src: "licensed"/,
     "ก่อนตีกลับ ต้องลองตอบจากทะเบียนก่อน — เลื่อย/บาร์นับเป็นเลขซีเรียล ไม่ได้อยู่ใน ZORT");
   assert.ok(!/found:\s*false/.test(ก้อน.slice(-200)),
     'ทาง "ไม่มีคีย์" ห้ามตอบ found:false — นั่นแปลว่า "ไม่มีรหัสนี้" ซึ่งเป็นคำอ้างที่เราพิสูจน์ไม่ได้');
@@ -256,6 +262,6 @@ test("🧪 ตัวควบคุม: เพิ่มประตูที่�
 
 test("ทะเบียนชนะ ZORT เรื่องจำนวน แต่ราคายังเป็นของ ZORT (ท่านประธานยืนยัน 28 ก.ย. 2569)", () => {
   assert.match(src, /src:\s*"licensed"/, "ต้องประกาศที่มาว่า licensed ⇒ จอรู้ว่าเลขนี้ไม่ได้มาจาก ZORT");
-  const i = src.indexOf("lic !== null) return json({ found: true, st: lic, p");
+  const i = src.indexOf("if (lic) return json({ found: true, st: lic.st, p");
   assert.ok(i > 0, "ทางที่ ZORT รู้จักด้วย ต้องยังส่ง p ของ ZORT ไปพร้อมจำนวนจากทะเบียน");
 });
