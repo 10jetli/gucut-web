@@ -185,11 +185,20 @@ export async function lazadaPush(rows) {
       หรือคลังไม่รู้จักรหัสนั้น ⇒ ของเดิมตอบ landed ให้ทั้งสองเคสนั้นด้วย
       ⇒ ตอนนี้ดูจาก `skipNegativeFull`/`skipUnknownFull`/`skipConflictFull` (ท่อส่งมาตอนขอ full) แล้วตอบ unknown
    @param deps.dryRun ฉีดแผนได้เพื่อทดสอบ — แทนที่แค่ขอบที่ต้องยิงออกนอก */
+/** 🏷️ **เจ้าที่เส้นนี้ตรวจ — ต้องติดไปกับคำตอบทุกทางออก** (5 ต.ค. 2569)
+ *  🔴 ต้นเรื่อง: ผมเองอ่านคำตอบของเส้นนี้แล้ว**สรุปผิด**ภายในครึ่งชั่วโมง
+ *     ชื่อฟังก์ชันบอกว่า lazada แต่ payload ที่ออกไป (`landed`/`notLanded`/`checkedAgainst`)
+ *     **ไม่มีช่องไหนบอกเจ้าเลย** ⇒ อ่านเหมือนครอบทั้งสามเจ้า
+ *     ⇒ ผมเอาคำตอบ `landed` ของ Lazada ไปสรุปเรื่องแผนรวมของทะเบียน แล้วส่งข้อสรุปผิดให้อีกฝั่ง
+ *  🔑 กฎ scope-label-before-number: **ป้ายขอบเขตต้องอยู่ในก้อนเดียวกับตัวเลข**
+ *     ไม่ใช่อยู่แค่ในชื่อฟังก์ชัน — คนอ่าน payload ไม่เห็นชื่อฟังก์ชัน */
+const ตรวจเจ้าไหน = "lazada";
+
 export async function lazadaReadBack(skus, deps = {}) {
   const dryRun = deps.dryRun || (await import("./stock-push.mjs")).stockPushDryRun;
   const plan = await dryRun({ platform: "lazada", full: true });
   const p = plan?.lazada;
-  if (!p || p.skip) return { error: `เทียบซ้ำไม่ได้: ${p?.skip || "ไม่มีข้อมูล"}` };
+  if (!p || p.skip) return { เจ้าที่ตรวจ: ตรวจเจ้าไหน, error: `เทียบซ้ำไม่ได้: ${p?.skip || "ไม่มีข้อมูล"}` };
 
   const asked = skus.map(String);
   /* 🔑 **ทุก unknown ต้องมีรหัสเหตุผลที่เครื่องอ่านได้ ไม่ใช่มีแต่ข้อความ** (CEO สั่ง 12 ก.ย. 2569)
@@ -203,6 +212,7 @@ export async function lazadaReadBack(skus, deps = {}) {
      ซึ่งอ่านได้ว่า "สำเร็จ" ทั้งที่แปลว่า "ไม่รู้" — เจอของจริงตอนตรวจหลัง deploy 13 ก.ย.
      ⚠️ ไม่ใช่ `ok:false` — "ผลแปลไม่ได้" ไม่ใช่ "ผลว่าไม่ผ่าน" (สัญญากับฝั่งจอ) */
   const unknownAll = (reason, why) => ({
+    เจ้าที่ตรวจ: ตรวจเจ้าไหน,
     inconclusive: true,
     landed: [], notLanded: [],
     unknown: asked.map((sku) => ({ sku, reason, why })),
@@ -339,6 +349,7 @@ export async function lazadaReadBack(skus, deps = {}) {
     landed.push(sku);
   }
   return {
+    เจ้าที่ตรวจ: ตรวจเจ้าไหน,
     /* ธงนี้ติดเฉพาะตอน **ไม่มีรหัสไหนได้คำตัดสินเลย** — มีบางตัวตัดสินได้ = ไม่ใช่ inconclusive
        (ผลบางส่วนยังใช้ได้ ห้ามทิ้งทั้งกระดานเพราะบางตัวตอบไม่ได้) */
     ...(landed.length + notLanded.length === 0 && unknown.length ? { inconclusive: true } : {}),
@@ -348,7 +359,7 @@ export async function lazadaReadBack(skus, deps = {}) {
       ? { unknownByReason: unknown.reduce((a, u) => ({ ...a, [u.reason]: (a[u.reason] ?? 0) + 1 }), {}) }
       : {}),
     checkedAgainst: { wouldPush: p.wouldPush, planRows: p.push.length, skipNegative: p.skipNegative, skipUnknown: p.skipUnknown, skipConflict: p.skipConflict },
-    note: "landed = ไม่อยู่ในแผนสดและไม่ได้ถูกข้าม ⇒ เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว · unknown = ตรวจไม่ได้ ห้ามอ่านว่าผ่าน",
+    note: `ขอบเขต: **${ตรวจเจ้าไหน} เจ้าเดียว** — ไม่ได้ตอบแทนอีกสองเจ้า · landed = ไม่อยู่ในแผนสดและไม่ได้ถูกข้าม ⇒ เลขบนแพลตฟอร์มตรงกับคลังเราแล้ว · unknown = ตรวจไม่ได้ ห้ามอ่านว่าผ่าน`,
   };
 }
 
