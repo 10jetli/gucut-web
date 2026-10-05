@@ -12,7 +12,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-const { ทับจำนวนด้วยทะเบียน, เป็นของทะเบียน } = await import("../../netlify/lib/licensed-push-qty.mjs");
+const { ทับจำนวนด้วยทะเบียน, เป็นของทะเบียน, แถวจากกองเท่ากัน } = await import("../../netlify/lib/licensed-push-qty.mjs");
 const { planFrom } = await import("../../netlify/lib/stock-push.mjs");
 
 const แถว = () => [
@@ -119,4 +119,69 @@ test("🔴 แถว known:false ⇒ ไม่ทับ ไม่นับ แ�
   const p = planFrom(r.rows, true);
   assert.equal(p.wouldPush, 0);
   assert.equal(p.skipUnknown, 1, "ยังอยู่กองข้ามตามกติกาเดิมของตัวคิดแผน");
+});
+
+test("🔑 planFrom ต้องส่ง coreFrom/coreQtyZort ต่อ — และแถวที่ไม่ได้ทับห้ามมีช่องนั้นเลย", () => {
+  /* 🔴 วัดเจอของจริง 6 ต.ค. 2569 00:05 บน production:
+     แถวในแผนมีช่องแค่ ['delta','from','kind','name','sku','to']
+     ⇒ ป้าย `coreFrom` ที่ตัวทับติดไว้ **หายที่ขาออกของ planFrom**
+     ⇒ คนอ่านแผนแยกไม่ออกว่าแถวไหนใช้เลขทะเบียน ⇒ ของที่สร้างมาตอบคำถามนี้ตอบไม่ได้
+     ⚠️ ตัวควบคุมลบสำคัญเท่ากัน: **แถวของธรรมดาต้องไม่มีช่องนี้เลย**
+        ถ้ามีทุกแถว การ "มีช่อง" จะเลิกมีความหมาย (คุณ CEO กำกับไว้: ห้ามใส่ coreFrom แบบเดา) */
+  const p = planFrom([
+    { sku: "Bar NW 22", name: "บาร์ 22", platformQty: 0, coreQty: 7, coreFrom: "licensed", coreQtyZort: 0, known: true },
+    { sku: "00073", name: "ของธรรมดา", platformQty: 5, coreQty: 7, known: true },
+  ], true);
+  const หา = (s) => p.push.find((x) => x.sku === s);
+  assert.equal(หา("Bar NW 22").coreFrom, "licensed", "ป้ายที่มาต้องถึงคนอ่านแผน");
+  assert.equal(หา("Bar NW 22").coreQtyZort, 0, "ต้องส่งเลข ZORT เดิมไปด้วยให้เทียบได้");
+  assert.ok(!("coreFrom" in หา("00073")), "แถวที่ไม่ได้ทับห้ามมีช่อง coreFrom เลย ไม่ใช่ค่าว่าง");
+  assert.ok(!("coreQtyZort" in หา("00073")), "แถวที่ไม่ได้ทับห้ามมีช่อง coreQtyZort เลย");
+});
+
+/* ══════ ยกรหัสทะเบียนจากกอง `same` เข้าแผน (6 ต.ค. 2569) ══════ */
+
+test("🔑 แถวจากกองเท่ากัน ⇒ เข้า rows ได้ · และแถวที่จับคู่แบบเดาห้ามเข้า", () => {
+  const r = แถวจากกองเท่ากัน([
+    { sku: "Bar NW 22", name: "บาร์ 22", lazada: 0, core: 0, directQty: 0, exact: true, matchedAs: "ตรงตัว" },
+    { sku: "Bar NW 20", lazada: 3, core: 3, exact: false, matchedAs: "ตัดท้ายเป็น Bar NW" },
+  ], "lazada");
+  assert.equal(r.rows.length, 1, "แถว exact:false ต้องไม่เข้า rows");
+  assert.equal(r.rows[0].sku, "Bar NW 22");
+  assert.equal(r.rows[0].platformQty, 0, "ต้องอ่านจากช่องของเจ้านั้น (lazada)");
+  assert.equal(r.rows[0].known, true);
+  assert.equal(r.เดา.length, 1);
+  assert.equal(r.เดา[0].sku, "Bar NW 20");
+  assert.match(r.เดา[0].เหตุ, /เดา/, "ต้องบอกว่าทำไมไม่เข้าแผน ⇒ ความรู้ว่าเดาต้องไม่หายที่รอยต่อ");
+});
+
+test("Shopee/TikTok ไม่มีช่อง exact ⇒ ต้องถือว่าตรงตัว ห้ามอ่านว่าเดา (ตัวควบคุมลบ)", () => {
+  /* 🔴 ถ้าเขียน `!r.exact` แทน `r.exact === false` ⇒ `undefined` จะกลายเป็น "เดา"
+     ⇒ Shopee กับ TikTok จะไม่มีแถวเข้าแผนเลยสักตัว **และเงียบ** */
+  for (const [ช่อง, แถว] of [["shopee", { sku: "Bar NW 16", name: "x", shopee: 0, core: 0 }],
+                              ["tiktok", { sku: "Bar NW 18", name: "y", tiktok: 2, core: 2 }]]) {
+    const r = แถวจากกองเท่ากัน([แถว], ช่อง);
+    assert.equal(r.rows.length, 1, `${ช่อง}: ไม่มีช่อง exact ⇒ ต้องเข้า rows`);
+    assert.equal(r.เดา.length, 0);
+  }
+});
+
+test("อ่านจำนวนฝั่งแพลตฟอร์มไม่ได้ ⇒ ไม่เดาว่า 0 (ชื่อช่องผิดก็ตกทางนี้)", () => {
+  for (const v of [null, undefined, "", "สาม", NaN]) {
+    const r = แถวจากกองเท่ากัน([{ sku: "Bar NW 16", shopee: v, core: 9 }], "shopee");
+    assert.equal(r.rows.length, 0, `platformQty=${JSON.stringify(v)} ⇒ ห้ามเข้าแผน`);
+    assert.equal(r.เดา.length, 1);
+  }
+  // ตัวควบคุมบวก: 0 เป็นเลขที่อ่านได้จริง ⇒ ต้องเข้าแผน (0 ≠ ไม่รู้)
+  assert.equal(แถวจากกองเท่ากัน([{ sku: "Bar NW 16", shopee: 0, core: 9 }], "shopee").rows.length, 1);
+  // ส่งชื่อช่องผิด ⇒ อ่านไม่ได้ ⇒ ตกทาง "ไม่เดา" ไม่ใช่เข้าแผนด้วยเลขมั่ว
+  assert.equal(แถวจากกองเท่ากัน([{ sku: "Bar NW 16", shopee: 0, core: 9 }], "ชื่อผิด").rows.length, 0);
+});
+
+test("ไม่มี sameListed (ตัวเทียบรุ่นเก่า หรือไม่ส่ง alsoList) ⇒ ต้องไม่พัง และไม่ยกอะไร", () => {
+  for (const v of [undefined, null, []]) {
+    const r = แถวจากกองเท่ากัน(v, "shopee");
+    assert.deepEqual(r.rows, []);
+    assert.deepEqual(r.เดา, []);
+  }
 });

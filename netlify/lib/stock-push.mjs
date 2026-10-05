@@ -92,6 +92,14 @@ export function planFrom(rows, full = false) {
           close  = แพลตฟอร์มโชว์ว่ามีแต่เราไม่มี ⇒ ดันแล้ว "กันรับออเดอร์ที่ส่งไม่ได้"
           รวมกันเป็น "เปลี่ยน N รหัส" จะอ่านไม่ออกว่าคุ้มหรือเสี่ยง */
       kind: from === 0 && to > 0 ? "reopen" : to === 0 && from > 0 ? "close" : to > from ? "up" : "down",
+      /* 🔑 **ส่งที่มาของเลขต่อไปถึงคนอ่านแผน** (คุณ CEO อนุญาต 6 ต.ค. 2569)
+         เดิม `planFrom` ประกอบแถวใหม่ด้วยช่องคงที่ ⇒ ป้าย `coreFrom` ที่ตัวทับทะเบียนติดไว้
+         **หายที่ขาออก** ⇒ คนอ่านแผนแยกไม่ออกว่าแถวไหนใช้เลขทะเบียน แถวไหนใช้เลข ZORT
+         (ของที่สร้างมาเพื่อตอบคำถามนี้ ตอบไม่ได้ในที่ที่มันจะถูกใช้ — วัดเจอของจริง 00:05)
+         ⚠️ **แถวที่ไม่ได้ถูกทับ ห้ามมีช่องนี้เลย** ไม่ใช่ใส่ค่าว่าง/เดา ⇒ ใช้ spread มีเงื่อนไข
+            ไม่งั้น `coreFrom` จะกลายเป็นช่องที่มีในทุกแถว แล้วการ "มีช่อง" เลิกมีความหมาย */
+      ...(r.coreFrom ? { coreFrom: r.coreFrom } : {}),
+      ...(r.coreQtyZort === undefined ? {} : { coreQtyZort: r.coreQtyZort }),
     });
   }
 
@@ -140,7 +148,11 @@ async function shopeePlan(full) {
   /* ⚠️ ต้องขอ full:1 เสมอ — ค่าเริ่มต้นของตัวเทียบตัด diff ไว้ 50 ตัวเพื่อการแสดงผล
       แผนดันที่คิดจากตัวอย่าง = รหัสที่เกิน 50 หายจากแผนเงียบ ๆ (เจอจริง 5 ก.ย. 2569:
       diffCount 55 แต่แผนเห็นแค่ 50 ⇒ bucketsAddUp ฟ้อง false ซึ่งคือหน้าที่ของมันพอดี) */
-  const c = await shopeeStockCompare({ full: 1 });
+  /* ชื่อช่องที่ตัวเทียบเจ้านี้ใช้เก็บจำนวนฝั่งแพลตฟอร์ม — สามเจ้าใช้ชื่อคนละชื่อ
+     ⚠️ ใส่ผิดชื่อ ⇒ อ่านจำนวนไม่ได้ ⇒ แถวตกกอง "ไม่เดาว่า 0" ทั้งหมด **ไม่ใช่พังดัง ๆ** */
+  const ช่องแพลตฟอร์ม = "shopee";
+  const { รหัสทะเบียนทั้งหมด } = await import("./licensed-push-qty.mjs");
+  const c = await shopeeStockCompare({ full: 1, alsoList: รหัสทะเบียนทั้งหมด() });
   /* ✅ **ตรงนี้เคยถูกอยู่แล้ว ไม่ได้แก้ตามรูปแบบ** — เส้นสำเร็จของ shopeeStockCompare
       ไม่มี `note` ⇒ เช็ค c.note จึงจับเฉพาะกรณีหยุดจริง (ต่างจาก Lazada ที่พัง)
       แต่มันคือระเบิดเวลา: วันที่มีคนเติมคำอธิบายลงเส้นสำเร็จ Shopee จะเงียบตายแบบเดียวกัน
@@ -163,16 +175,27 @@ async function shopeePlan(full) {
    ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
       ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
    🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
-  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
-  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const { ทับจำนวนด้วยทะเบียน, แถวจากกองเท่ากัน } = await import("./licensed-push-qty.mjs");
+  /* 🔑 **ยกรหัสทะเบียนที่ตกกอง `same` เข้าแผนด้วย** (วัดบน production 6 ต.ค. 2569 00:05)
+     ของเดิม `rows` มาจาก `c.diff` เท่านั้น ⇒ รหัสที่แพลตฟอร์ม 0 และ ZORT 0 ถูกจัดเป็น `same`
+     **ก่อนตัวทับจะได้เห็น** ⇒ ครอบได้แค่ 2/1/1 จาก 30 รหัส · 28 รหัสไม่เคยเข้าแผน
+     ⇒ ตัวเทียบมี `sameListed` ให้แล้ว (คุณ CEO เพิ่ม `9fc0cec`) — ขอด้วย `alsoList` */
+  const ยก = แถวจากกองเท่ากัน(c.sameListed, ช่องแพลตฟอร์ม);
+  const ทับ = await ทับจำนวนด้วยทะเบียน([...rows, ...ยก.rows]);
   const p = planFrom(ทับ.rows, full);
+  const planFromSame = num(p.same); // ต้องอ่านก่อนบรรทัดที่เขียนทับ `p.same` ข้างล่าง
   p.licensedApplied = ทับ.licensedApplied;
+  p.licensedLifted = ยก.rows.length;
+  if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   /* ⚠️ `same` ที่ได้จาก planFrom นับจากแถวที่ส่งเข้าไปเท่านั้น (ซึ่งเป็นแถวที่ต่างกัน)
       ของจริงต้องเอาตัวนับ `same` ของตัวเทียบมาใช้ ไม่งั้นจะได้ 0 แล้วดูเหมือนไม่มีอะไรตรงเลย */
-  p.same = num(c.same);
+  /* 🔑 **ลดกอง `same` เท่าที่ยกออกไปเข้าแผน** — ไม่งั้นด่าน `bucketsAddUp` ฟ้องว่าแถวหาย
+     ทั้งที่ไม่มีอะไรหาย (คุณ CEO เขียนเตือนไว้ในตัวเทียบตอนเพิ่ม `sameListed`)
+     บวก `planFromSame` คืนด้วย เพราะบางแถวที่ยกมา ตัวคิดแผนอาจตัดสินว่าเท่ากันอยู่ดี */
+  p.same = num(c.same) - num(p.licensedLifted) + planFromSame;
   p.platformSkus = num(c.shopeeSkus);
   /* ⚠️ missingSample เป็น "ตัวอย่าง" ไม่ใช่ทั้งหมด (ตัวเทียบตัดไว้ 20)
       ⇒ ตัวนับ skipUnknown ต้องเอาเลขจริงมาจาก `missing` ไม่ใช่ความยาวของตัวอย่าง
@@ -203,7 +226,11 @@ async function lazadaPlan(full) {
       **33 รหัสที่ต้องดันหายจากแผนเงียบ ๆ** โดย `diffCount` ยังรายงาน 83 ตามปกติ
       บั๊กตัวเดียวกันเคยแก้ที่ Shopee ไปแล้ว 5 ก.ย. 2569 แต่ **ฝั่ง Lazada ตกหล่น**
       ⇒ เจอเพราะตาข่าย `bucketsAddUp` ที่เพิ่งใส่ให้ Lazada ฟ้อง false ไม่ได้เจอเพราะสังเกตเอง */
-  const c = await lazadaStockCompare({ full: 1 });
+  /* ชื่อช่องที่ตัวเทียบเจ้านี้ใช้เก็บจำนวนฝั่งแพลตฟอร์ม — สามเจ้าใช้ชื่อคนละชื่อ
+     ⚠️ ใส่ผิดชื่อ ⇒ อ่านจำนวนไม่ได้ ⇒ แถวตกกอง "ไม่เดาว่า 0" ทั้งหมด **ไม่ใช่พังดัง ๆ** */
+  const ช่องแพลตฟอร์ม = "lazada";
+  const { รหัสทะเบียนทั้งหมด } = await import("./licensed-push-qty.mjs");
+  const c = await lazadaStockCompare({ full: 1, alsoList: รหัสทะเบียนทั้งหมด() });
   /* 🔴 **ห้ามเช็ค `c.note` ตรงนี้อีก** (บั๊กที่เจอ 6 ก.ย. 2569)
       `note` ของ lazadaStockCompare คือ **คำอธิบายคอลัมน์ของผลที่สำเร็จ** ⇒ มีทุกรอบที่สำเร็จ
       เดิมเขียน `if (c.skip || c.note)` ⇒ **แผนดันสต็อก Lazada ไม่เคยถูกคำนวณเลยสักครั้ง**
@@ -241,10 +268,18 @@ async function lazadaPlan(full) {
    ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
       ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
    🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
-  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
-  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const { ทับจำนวนด้วยทะเบียน, แถวจากกองเท่ากัน } = await import("./licensed-push-qty.mjs");
+  /* 🔑 **ยกรหัสทะเบียนที่ตกกอง `same` เข้าแผนด้วย** (วัดบน production 6 ต.ค. 2569 00:05)
+     ของเดิม `rows` มาจาก `c.diff` เท่านั้น ⇒ รหัสที่แพลตฟอร์ม 0 และ ZORT 0 ถูกจัดเป็น `same`
+     **ก่อนตัวทับจะได้เห็น** ⇒ ครอบได้แค่ 2/1/1 จาก 30 รหัส · 28 รหัสไม่เคยเข้าแผน
+     ⇒ ตัวเทียบมี `sameListed` ให้แล้ว (คุณ CEO เพิ่ม `9fc0cec`) — ขอด้วย `alsoList` */
+  const ยก = แถวจากกองเท่ากัน(c.sameListed, ช่องแพลตฟอร์ม);
+  const ทับ = await ทับจำนวนด้วยทะเบียน([...rows, ...ยก.rows]);
   const p = planFrom(ทับ.rows, full);
+  const planFromSame = num(p.same); // ต้องอ่านก่อนบรรทัดที่เขียนทับ `p.same` ข้างล่าง
   p.licensedApplied = ทับ.licensedApplied;
+  p.licensedLifted = ยก.rows.length;
+  if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
@@ -274,7 +309,16 @@ async function lazadaPlan(full) {
       ⚠️ 33 แถวนี้แปลว่า **ตัวเทียบกับตัวคิดแผนมองคำว่า "ต่าง" ไม่ตรงกัน** — ยังไม่รู้ว่าเพราะอะไร
          (คนละช่องที่หยิบมาเทียบ? ปัดเศษ?) **ยังไม่ใช่เรื่องด่วนเพราะไม่ถูกดัน**
          แต่ต้องเห็นตัวเลข ไม่ใช่ให้มันหาย ⇒ ใครมาต่อจะได้รู้ว่ามีของค้างให้ตาม */
-  /* ⚠️ **Shopee กับ TikTok เขียนทับ `p.same` แบบเดียวกันเป๊ะ — แต่ห้ามไปแก้ตาม**
+  /* 🕰️ **คำเตือนข้างล่างหมดอายุแล้ว 6 ต.ค. 2569 — เก็บไว้เพื่อเล่าว่าทำไมมันเคยถูก**
+      ตอนนั้น `planFrom.same` ของ Shopee/TikTok เป็น **0** เพราะ `rows` มีแต่แถวจาก `c.diff`
+      ⇒ เขียนทับ `p.same = c.same` ไม่ทำให้อะไรหาย
+      ⚠️ **แต่พอยกรหัสทะเบียนจากกอง `same` เข้าแผน `planFrom.same` ไม่เป็น 0 อีกแล้ว**
+      ⇒ เขียนทับเฉย ๆ จะทำให้แถวหายจริง ⇒ ตอนนี้ทั้งสามเจ้าใช้สูตร
+        `ฐาน − ที่ยกออก + planFromSame` เหมือนกันหมด **และคราวนี้แก้ตามกันได้** เพราะเหตุเดียวกันแล้ว
+      🔑 คำเตือน "ห้ามแก้ตาม" ที่ถูกตอนเขียน กลายเป็นผิดเมื่อเงื่อนไขที่ทำให้มันถูกหมดไป
+         ⇒ คำเตือนต้องบอก **เงื่อนไขที่ทำให้ตัวเองหมดอายุ** ไม่ใช่บอกแค่ข้อสรุป
+  ─────────────────────────────────────────────────────────────────────────
+  ⚠️ **(ของเดิม) Shopee กับ TikTok เขียนทับ `p.same` แบบเดียวกันเป๊ะ — แต่ห้ามไปแก้ตาม**
       ตรวจแล้ว: ตัวตรวจ `bucketsAddUp` ของสองตัวนั้นขึ้น **true** อยู่
       ⇒ ถ้ามีของถูกทับหาย ผลบวกจะ**ขาด**เหมือนที่ Lazada เป็น — แต่ของมันลงตัวพอดี
       ⇒ แปลว่า `planFrom.same` ของสองตัวนั้นเป็น 0 อยู่แล้ว ไม่มีอะไรหาย
@@ -282,7 +326,9 @@ async function lazadaPlan(full) {
       🔑 รูปโค้ดเหมือนกัน ไม่ได้แปลว่าผิดเหมือนกัน — grep เจอคือ "ที่ต้องดู" ไม่ใช่ "ที่ต้องแก้"
          [[same-shape-opposite-correctness]] · ไล่แก้ตามรูปแบบจะสร้างบั๊กใหม่เท่าที่แก้ได้ */
   const sameOnRecheck = num(p.same); // planFrom นับจาก rows ที่ส่งเข้าไปเท่านั้น
-  p.same = num(c.sameExact) + sameOnRecheck;
+  /* 🔑 ลดเท่าที่ยกออก — แถวที่ยกมาทั้งหมดเป็น `exact` (ตัวช่วยกรอง `exact:false` ออกแล้ว)
+     ⇒ ต้องลดจาก `sameExact` ให้ตรงกอง · `sameOnRecheck` คือ `planFromSame` ของเจ้านี้ */
+  p.same = num(c.sameExact) - num(p.licensedLifted) + sameOnRecheck;
   p.sameOnRecheck = sameOnRecheck;
 
   /* ⚠️ กองที่เดาจากรหัสฐาน + กองหลายรหัสชี้รหัสเดียว **ไม่นับเป็น "ดันได้"**
@@ -308,7 +354,11 @@ async function lazadaPlan(full) {
  */
 async function tiktokPlan(full) {
   const { tiktokStockCompare } = await import("./tiktok-stock.mjs");
-  const c = await tiktokStockCompare({ full });
+  /* ชื่อช่องที่ตัวเทียบเจ้านี้ใช้เก็บจำนวนฝั่งแพลตฟอร์ม — สามเจ้าใช้ชื่อคนละชื่อ
+     ⚠️ ใส่ผิดชื่อ ⇒ อ่านจำนวนไม่ได้ ⇒ แถวตกกอง "ไม่เดาว่า 0" ทั้งหมด **ไม่ใช่พังดัง ๆ** */
+  const ช่องแพลตฟอร์ม = "tiktok";
+  const { รหัสทะเบียนทั้งหมด } = await import("./licensed-push-qty.mjs");
+  const c = await tiktokStockCompare({ full, alsoList: รหัสทะเบียนทั้งหมด() });
   /* ✅ เคยถูกอยู่แล้วเหมือน Shopee (เส้นสำเร็จไม่มี `note`) — ไม่ได้แก้เพราะพัง
       แต่ถอนชนวนให้เหมือนกันทั้งไฟล์: ต้นทางใช้ `skip` แล้ว เหลือเช็คทางเดียว */
   if (c.skip) return { skip: c.skip };
@@ -329,15 +379,26 @@ async function tiktokPlan(full) {
    ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
       ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
    🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
-  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
-  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const { ทับจำนวนด้วยทะเบียน, แถวจากกองเท่ากัน } = await import("./licensed-push-qty.mjs");
+  /* 🔑 **ยกรหัสทะเบียนที่ตกกอง `same` เข้าแผนด้วย** (วัดบน production 6 ต.ค. 2569 00:05)
+     ของเดิม `rows` มาจาก `c.diff` เท่านั้น ⇒ รหัสที่แพลตฟอร์ม 0 และ ZORT 0 ถูกจัดเป็น `same`
+     **ก่อนตัวทับจะได้เห็น** ⇒ ครอบได้แค่ 2/1/1 จาก 30 รหัส · 28 รหัสไม่เคยเข้าแผน
+     ⇒ ตัวเทียบมี `sameListed` ให้แล้ว (คุณ CEO เพิ่ม `9fc0cec`) — ขอด้วย `alsoList` */
+  const ยก = แถวจากกองเท่ากัน(c.sameListed, ช่องแพลตฟอร์ม);
+  const ทับ = await ทับจำนวนด้วยทะเบียน([...rows, ...ยก.rows]);
   const p = planFrom(ทับ.rows, full);
+  const planFromSame = num(p.same); // ต้องอ่านก่อนบรรทัดที่เขียนทับ `p.same` ข้างล่าง
   p.licensedApplied = ทับ.licensedApplied;
+  p.licensedLifted = ยก.rows.length;
+  if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
-  p.same = num(c.same);
+  /* 🔑 **ลดกอง `same` เท่าที่ยกออกไปเข้าแผน** — ไม่งั้นด่าน `bucketsAddUp` ฟ้องว่าแถวหาย
+     ทั้งที่ไม่มีอะไรหาย (คุณ CEO เขียนเตือนไว้ในตัวเทียบตอนเพิ่ม `sameListed`)
+     บวก `planFromSame` คืนด้วย เพราะบางแถวที่ยกมา ตัวคิดแผนอาจตัดสินว่าเท่ากันอยู่ดี */
+  p.same = num(c.same) - num(p.licensedLifted) + planFromSame;
   p.platformSkus = num(c.tiktokSkus);
   p.skipUnknown = num(c.missing);
   /* 🔴 **ส่งต่อคำประกาศ "รายชื่อครบหรือถูกตัด"** (เพิ่ม 19 ก.ย. 2569 · ทั้งสามเจ้า)
