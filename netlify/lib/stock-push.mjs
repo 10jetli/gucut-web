@@ -157,7 +157,18 @@ async function shopeePlan(full) {
       sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
     })),
   ];
-  const p = planFrom(rows, full);
+  /* 🔁 **ทับจำนวนของในทะเบียนก่อนคิดแผน** (ท่านประธานสั่ง 5 ต.ค. 2569
+     "ให้ตัวดันสต็อกอ่าน licensed-stock เหมือนหน้าร้าน")
+   ⚠️ ทับที่ **ขาเข้าของ planFrom** ที่เดียว ⇒ `planFrom` ยังบริสุทธิ์ เทสเดิมใช้ได้หมด
+   ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
+      ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
+   🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
+  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
+  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const p = planFrom(ทับ.rows, full);
+  p.licensedApplied = ทับ.licensedApplied;
+  if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   /* ⚠️ `same` ที่ได้จาก planFrom นับจากแถวที่ส่งเข้าไปเท่านั้น (ซึ่งเป็นแถวที่ต่างกัน)
       ของจริงต้องเอาตัวนับ `same` ของตัวเทียบมาใช้ ไม่งั้นจะได้ 0 แล้วดูเหมือนไม่มีอะไรตรงเลย */
   p.same = num(c.same);
@@ -223,7 +234,18 @@ async function lazadaPlan(full) {
       sku: m.sku, name: m.name ?? "", platformQty: num(m.lazada), coreQty: null, known: false,
     })),
   ];
-  const p = planFrom(rows, full);
+  /* 🔁 **ทับจำนวนของในทะเบียนก่อนคิดแผน** (ท่านประธานสั่ง 5 ต.ค. 2569
+     "ให้ตัวดันสต็อกอ่าน licensed-stock เหมือนหน้าร้าน")
+   ⚠️ ทับที่ **ขาเข้าของ planFrom** ที่เดียว ⇒ `planFrom` ยังบริสุทธิ์ เทสเดิมใช้ได้หมด
+   ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
+      ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
+   🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
+  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
+  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const p = planFrom(ทับ.rows, full);
+  p.licensedApplied = ทับ.licensedApplied;
+  if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   p.platformSkus = num(c.lazadaSkus);
   p.skipUnknown = num(c.missing);
   /* 🔴 **ส่งต่อคำประกาศ "รายชื่อครบหรือถูกตัด"** (เพิ่ม 19 ก.ย. 2569 · ทั้งสามเจ้า)
@@ -299,7 +321,18 @@ async function tiktokPlan(full) {
       sku: m.sku, name: m.name, platformQty: null, coreQty: null, known: false,
     })),
   ];
-  const p = planFrom(rows, full);
+  /* 🔁 **ทับจำนวนของในทะเบียนก่อนคิดแผน** (ท่านประธานสั่ง 5 ต.ค. 2569
+     "ให้ตัวดันสต็อกอ่าน licensed-stock เหมือนหน้าร้าน")
+   ⚠️ ทับที่ **ขาเข้าของ planFrom** ที่เดียว ⇒ `planFrom` ยังบริสุทธิ์ เทสเดิมใช้ได้หมด
+   ⚠️ **ไม่แตะด่าน ⑥ reopen** — ของทะเบียนบนแพลตฟอร์มเป็น 0 ทุกตัว ⇒ ทับแล้วเป็น reopen ทุกแถว
+      ⇒ ยังต้องมีคนยืนยันรายรหัส · **"แผนโชว์เลขถูก" ≠ "ของจะถูกยิง"**
+   🔑 ใช้ `await import` ตามสไตล์ของไฟล์นี้ (อีกสามที่ก็ทำแบบนี้) — ไฟล์นี้ตั้งใจไม่มี import ชั้นบนสุด */
+  const { ทับจำนวนด้วยทะเบียน } = await import("./licensed-push-qty.mjs");
+  const ทับ = await ทับจำนวนด้วยทะเบียน(rows);
+  const p = planFrom(ทับ.rows, full);
+  p.licensedApplied = ทับ.licensedApplied;
+  if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
   p.same = num(c.same);
   p.platformSkus = num(c.tiktokSkus);
