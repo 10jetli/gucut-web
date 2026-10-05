@@ -113,7 +113,7 @@ const integrations = LABELS.map((l) => ({
 // ตัวตั้งค่าย่อยของเจ้าที่รู้จักแล้ว (ZORT_SALES_CHANNEL · BEAM_ENV · PEAK_LIVE …) ไม่นับว่าตกหล่น
 const known = new Set(LABELS.flatMap((l) => l.envs));
 const familiar = LABELS.map((l) => l.prefix || `^(${l.envs.map((e) => e.split("_")[0]).join("|")})_`);
-const IGNORE = /^(NEXT_PUBLIC_|NODE_|NETLIFY$|CONTEXT$|DEPLOY_|URL$|SITE_NAME$|CHAT_ADMIN_KEY$|COUPON_CODES$|CHAT_NOTIFY_URL$|POS_BRANCHES$|READ_ID_MODEL$)/; // ตัวตั้งค่าของเรา ไม่ใช่ของนอกบ้าน
+const IGNORE = /^(NEXT_PUBLIC_|NODE_|NETLIFY$|CONTEXT$|DEPLOY_|URL$|SITE_NAME$|CHAT_ADMIN_KEY$|COUPON_CODES$|CHAT_NOTIFY_URL$|POS_BRANCHES$|READ_ID_MODEL$|READ_LZ2_MODEL$)/; // ตัวตั้งค่าของเรา ไม่ใช่ของนอกบ้าน
 const unlabelled = [...envUsed]
   .filter((e) => !known.has(e) && !IGNORE.test(e) && !familiar.some((p) => new RegExp(p).test(e)))
   .sort();
