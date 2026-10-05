@@ -278,7 +278,10 @@ test("🔴🔴 ห้ามปิดตัวที่ไม่ถือกอ�
   ], อ่าน);
   const ก = รอ.rows.find((x) => x.sku === "Bar KK 30-070");
   assert.equal(ก.coreQty, 8, "ต้องไม่ถูกตั้งเป็น 0 ⇒ ของยังขายได้");
-  assert.equal(ก.coreFrom, undefined, "ไม่ได้ทับ ⇒ ห้ามติดป้าย");
+  /* 🔄 ค่าที่คาดเปลี่ยน: "รอผู้ถือ" ยัง **ทับด้วยเลขทะเบียน** (ข้ามแค่การตั้งเป็น 0)
+     รุ่นแรกคืนแถวเดิม ⇒ ตกกลับไปใช้เลข ZORT แล้วกลายเป็น `up` ⇒ ดันขึ้นผิด (เจอของจริงบน production) */
+  assert.equal(ก.coreFrom, "licensed", "ทับด้วยเลขทะเบียน ⇒ ต้องประกาศที่มา");
+  assert.equal(ก.poolWaiting, true, "และบอกว่ายังรอผู้ถือ");
   assert.equal(รอ.licensedPoolWaiting.length, 1, "ต้องมีชื่ออยู่ในกองที่เห็น ไม่ใช่เงียบ");
   assert.equal(รอ.licensedPoolWaiting[0].poolHolder, "Bar KK 30-381");
   assert.equal(รอ.licensedPoolWaiting[0].poolQty, 8, "ต้องบอกว่ากองมีเท่าไหร่ ⇒ คนเห็นความเสี่ยง");
@@ -338,4 +341,28 @@ test("🕐 licensedPoolWaiting ต้องแยกสองสถานะ —
   assert.equal(สอง.rows.find((x) => x.sku === "Bar KK 30-070").coreQty, 0);
   // 🔑 สองสถานะต้องไม่ใช่ค่าเดียวกัน ไม่งั้นการแยกไม่มีความหมาย
   assert.notEqual(หนึ่ง.licensedPoolWaiting[0].สถานะ, w.สถานะ);
+});
+
+test('🔴🔴 "รอผู้ถือ" ต้องยังทับด้วยเลขทะเบียน — ห้ามตกกลับไปใช้เลข ZORT', async () => {
+  /* 🔴 ของจริงบน Shopee หลัง deploy `a6bf0e4`: `Bar KK 30-070` กลายเป็น **`up 8 → 12`**
+     12 = เลข ZORT เก่า · 8 = เลขทะเบียน
+     เพราะรุ่นแรกของด่าน "รอผู้ถือ" คืนแถวเดิมทั้งก้อน ⇒ `coreQty` ตกกลับไปเป็น ZORT
+     ⇒ จะ **ดันกลับขึ้นไปโฆษณาเกินอีกครั้ง** และ **ทิศขึ้นไม่มีด่านคุม** ⇒ ตัวกวาดยิงเองใน 15 นาที
+     🔑 ด่านที่กัน "ปิดเร็วเกินไป" กลับเปิดทางให้ "ดันขึ้นผิด" — กันทิศหนึ่งแล้วรูย้ายไปอีกทิศ */
+  const r = await ทับจำนวนด้วยทะเบียน([
+    { sku: "Bar KK 30-381", platformQty: 0, coreQty: 0, known: true },   // ผู้ถือยังไม่โฆษณา
+    { sku: "Bar KK 30-070", platformQty: 8, coreQty: 12, known: true },  // 12 = เลข ZORT เก่า
+  ], { อ่านกลุ่ม: async () => new Map([["bar|KINGKONG 30", 8]]), อ่านรายรหัส: async () => 8 });
+  const x = r.rows.find((y) => y.sku === "Bar KK 30-070");
+  assert.equal(x.coreQty, 8, "ต้องเป็นเลขทะเบียน 8 ไม่ใช่เลข ZORT 12");
+  assert.equal(x.coreQtyZort, 12, "เก็บเลข ZORT เดิมไว้เทียบ");
+  assert.equal(x.coreFrom, "licensed", "ทับแล้ว ⇒ ต้องประกาศที่มา");
+  assert.equal(x.poolWaiting, true, "บอกว่ายังรอผู้ถืออยู่");
+  const p = planFrom(r.rows, true);
+  assert.equal(p.up, 0, "🔴 ห้ามมีทิศขึ้นเลย — ทิศขึ้นยิงอัตโนมัติไม่มีด่านคุม");
+  assert.equal(p.close + p.down, 0, "และยังต้องไม่ปิดด้วย");
+  /* ผู้ถือ `30-381` ถูกทับเป็น 8 (เลขกอง) ⇒ `reopen 0 → 8` ซึ่งรอท่านยืนยันตามด่าน ⑥
+     ส่วน `30-070` เป็น 8 = 8 ⇒ `same` ⇒ **ไม่มีอะไรยิงเองได้** ซึ่งคือผลที่ต้องการ */
+  assert.equal(p.same, 1, "30-070 เท่ากันแล้ว (8=8)");
+  assert.equal(p.reopen, 1, "เหลือแต่ผู้ถือที่รอท่านยืนยัน");
 });
