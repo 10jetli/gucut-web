@@ -155,14 +155,14 @@ export default async function handler(req, context) {
       return json({ error: "รูปเล็ก/ไม่ชัด ถ่ายใหม่ให้เห็นตัวหนังสือบนใบ" }, 422);
     }
 
-    /* ⚠️ หยิบคู่ Gateway ก่อนเสมอ ห้ามข้ามคู่ (ดูเหตุผลในหัวเส้นนี้) */
-    const gwKey = process.env.NETLIFY_AI_GATEWAY_KEY;
-    const gwBase = process.env.NETLIFY_AI_GATEWAY_URL;
-    const คู่ = gwKey && gwBase
-      ? { key: gwKey, base: gwBase }
-      : { key: process.env.ANTHROPIC_API_KEY, base: process.env.ANTHROPIC_BASE_URL };
-    if (!คู่.key) return json({ error: "ยังไม่ได้ตั้งค่าตัวอ่าน", setup: true }, 503);
-    const base = (คู่.base || "https://api.anthropic.com").replace(/\/+$/, "");
+    /* 🔴 ใช้ Gemini ไม่ใช่ Claude — วัดด้วยใบจริงที่รู้เฉลย 5 ต.ค. 2569
+       Claude Sonnet: ถูก 5/10 ช่อง และ **แต่งข้อมูลขึ้นมา** (สกลนคร → "ร้อยเอ็ด"
+       ซึ่งไม่มีในใบเลย · เลขที่ใบ ๑๕/๒๕๖๙ → 45/2565 · ชื่อ อนุชา → ญาณะ)
+       Gemini 2.5 Flash รูปเดียวกัน: เลขที่ใบ/จังหวัด/ชื่อ/แรงม้า ถูกหมด ใน 2.9 วิ
+       ⇒ ตรงกับที่พิสูจน์ตอนทำหูแว่น — Gemini เก่งภาษาไทยกว่าชัดเจน
+       ⚠️ กุญแจ OPENROUTER_KEY ต้องตั้งที่ Netlify (ตัวเดียวกับที่ g1 ใช้) */
+    const orKey = process.env.OPENROUTER_KEY;
+    if (!orKey) return json({ error: "ยังไม่ได้ตั้งกุญแจตัวอ่าน", setup: true }, 503);
 
     const คำสั่ง = [
       "รูปนี้คือใบ ลซ.๒ (ใบรับรองให้มีเลื่อยโซ่ยนต์) ของกรมป่าไม้",
@@ -170,69 +170,54 @@ export default async function handler(req, context) {
       "",
       "⚠️ กติกาสำคัญ:",
       "· ถ้าไม่ใช่ใบ ลซ.๒ ให้ตอบ {\"notLz2\": true} อย่างเดียว",
-      "· ช่องไหนอ่านไม่ออกให้เว้นเป็นสตริงว่าง \"\" **ห้ามเดา ห้ามแต่งขึ้นมา**",
+      "· ช่องไหนอ่านไม่ออกให้เว้นเป็นสตริงว่าง **ห้ามเดา ห้ามแต่งขึ้นมา**",
       "· เลขไทย (๑๒๓) ให้แปลงเป็นเลขอารบิก",
-      "· ⚠️ มีจังหวัด **สองตัวที่ต่างกัน** ห้ามสับสน:",
+      "· ⚠️ มีจังหวัดสองตัวที่ต่างกัน ห้ามสับสน:",
       "    - สถานที่ออกใบรับรอง = จังหวัดที่ลูกค้าจะเอาเลื่อยไปใช้",
-      "    - จังหวัดในที่อยู่ (ภูมิลำเนา) = ทะเบียนบ้านลูกค้า อาจคนละจังหวัดกัน",
-      "· วันที่ให้เป็น YYYY-MM-DD แบบ พ.ศ. ตามที่เขียนในใบ (เช่น 2569-09-15)",
+      "    - จังหวัดในที่อยู่ (ภูมิลำเนา) = ทะเบียนบ้านลูกค้า อาจคนละจังหวัด",
+      "· วันที่เป็น พ.ศ. รูปแบบ YYYY-MM-DD (เช่น 2569-09-15)",
+      "· ตอน: ดูมุมขวาล่างของใบ เขียนว่า (ตอนกลาง) หรือ (ตอนปลาย)",
       "",
-      "รูปแบบ JSON:",
-      "{",
-      '  "เลขที่ใบ": "สน. 15/2569",',
-      '  "จังหวัดที่ใช้เลื่อย": "สกลนคร",   // จากช่อง สถานที่ออกใบรับรอง',
-      '  "วันออก": "2569-09-15",',
-      '  "วันสิ้นอายุ": "2570-03-15",',
-      '  "ชื่อ": "นายอนุชา เสมอพิทักษ์",',
-      '  "สัญชาติ": "ไทย",',
-      '  "บ้านเลขที่": "78", "หมู่": "4", "ตำบล": "ท่าแร่",',
-      '  "อำเภอ": "เมืองสกลนคร", "จังหวัดภูมิลำเนา": "สกลนคร",   // จากที่อยู่ในใบ',
-      '  "ประเภทต้นกำลัง": "เครื่องยนต์",',
-      '  "แรงม้า": "7.1",',
-      '  "บาร์นิ้ว": "30",',
-      '  "ตอน": "กลาง หรือ ปลาย (ดูมุมขวาล่างของใบ)"',
-      "}",
+      "ตอบรูปแบบนี้:",
+      '{"เลขที่ใบ":"","จังหวัดที่ใช้เลื่อย":"","วันออก":"","วันสิ้นอายุ":"",',
+      '"ชื่อ":"","สัญชาติ":"","บ้านเลขที่":"","หมู่":"","ตำบล":"","อำเภอ":"",',
+      '"จังหวัดภูมิลำเนา":"","ประเภทต้นกำลัง":"","แรงม้า":"","บาร์นิ้ว":"","ตอน":""}',
     ].join("\n");
 
-    const media = /^data:image\/(\w+);/.exec(String(body?.image || ""))?.[1];
-    const mediaType = media === "png" ? "image/png" : "image/jpeg";
-    const ยิงAI = (path) => fetch(`${base}${path}`, {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        "x-api-key": คู่.key,
-        authorization: `Bearer ${คู่.key}`,
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: process.env.READ_LZ2_MODEL || "claude-sonnet-4-5-20250929",
-        max_tokens: 700,
-        messages: [{
-          role: "user",
-          content: [
-            { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
-            { type: "text", text: คำสั่ง },
-          ],
-        }],
-      }),
-      signal: AbortSignal.timeout(28000),
-    });
-
     try {
-      /* ⚠️ ที่อยู่ปลายทางมีสองรูป ขึ้นกับว่าเป็น Gateway หรือ Anthropic ตรง
-         ⇒ ลองเส้นแรกก่อน 404 ค่อยลองเส้นสอง (ท่าเดียวกับ read-id.mjs) */
-      const paths = base.includes("/anthropic")
-        ? ["/v1/messages"] : ["/v1/messages", "/anthropic/v1/messages"];
-      let r = await ยิงAI(paths[0]);
-      if (r.status === 404 && paths[1]) r = await ยิงAI(paths[1]);
+      const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${orKey}`,
+        },
+        body: JSON.stringify({
+          model: process.env.READ_LZ2_MODEL || "google/gemini-2.5-flash",
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: คำสั่ง },
+              { type: "image_url", image_url: { url: String(body?.image || "") } },
+            ],
+          }],
+        }),
+        signal: AbortSignal.timeout(50000),
+      });
       const out = await r.json().catch(() => null);
       if (!r.ok) return json({ error: `ตัวอ่านตอบ ${r.status}` }, 502);
-      const text = (out?.content || []).map((c) => c.text || "").join("").trim();
+      const text = String(out?.choices?.[0]?.message?.content || "").trim();
       const m = /\{[\s\S]*\}/.exec(text);
       if (!m) return json({ error: "อ่านคำตอบไม่ออก ลองถ่ายใหม่" }, 502);
       const got = JSON.parse(m[0]);
       if (got?.notLz2) {
         return json({ error: "รูปนี้ไม่ใช่ใบ ลซ.๒ — ถ่ายใบรับรองให้เห็นทั้งใบ" }, 422);
+      }
+      /* 🔴 ด่านที่สอง: AI ไม่ยอมตอบ notLz2 แต่คืนทุกช่องว่างแทน (เจอจริง 5 ต.ค. 2569
+         ป้อนภาพจอมือถือเข้าไป ⇒ ผ่านด่านแรกไปเฉย ๆ)
+         ⇒ ช่องชี้ตัวสำคัญว่างหมด = ไม่ใช่ใบ ปฏิเสธ */
+      const ชี้ตัว = ["เลขที่ใบ", "ชื่อ", "จังหวัดที่ใช้เลื่อย", "แรงม้า"];
+      if (!ชี้ตัว.some((k) => String(got[k] || "").trim())) {
+        return json({ error: "อ่านใบไม่ออกเลยสักช่อง — ถ่ายให้เห็นทั้งใบ ชัด ๆ ไม่เอียง" }, 422);
       }
       /* 🔑 คืนค่าดิบให้จอโชว์ให้คนยืนยัน **ไม่บันทึกอะไรทั้งสิ้น** */
       return json({ ok: true, อ่านได้: got });
