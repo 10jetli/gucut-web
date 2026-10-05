@@ -94,3 +94,29 @@ test("ของธรรมดาต้องไม่ถูกแตะเล�
   assert.deepEqual(r.rows, เดิม, "แถวของธรรมดาต้องเหมือนเดิมทุกช่อง");
   assert.deepEqual(r.licensedDropped, []);
 });
+
+/* ══════ รูที่คุณ CEO จับได้ 5 ต.ค. 2569 — ตัวนับนับความสำเร็จของสิ่งที่ถูกทิ้ง ══════ */
+
+test("🔴 แถว known:false ⇒ ไม่ทับ ไม่นับ แต่ต้องมีชื่อในกองที่มองเห็น", async () => {
+  /* `planFrom` ตีตก `!r.known` **ก่อนดู `coreQty`** ⇒ ทับไปก็ถูกทิ้ง
+     รุ่นแรกของผมทับแล้วนับว่าสำเร็จ ⇒ คุณ CEO รันของจริงได้ `licensedApplied: 1` แต่ `wouldPush: 0`
+
+     🚫 และ **ห้ามแก้ด้วยการยก `known` เป็น true เอง** — `known` หมายถึง "คลังเรารู้จักรหัสนี้"
+        เป็นช่องของตัวเทียบ เปลี่ยนความหมายจะกระทบคนอ่าน `skipUnknown` ทั้งหมด
+        (รอบแรกผมยก `known` ตามจดหมายที่บอกว่าเลื่อย 4 รุ่นมาในกองนี้ · คุณ CEO แก้จดหมายเองว่า
+         ข้อนั้นผิด เขาปน ZORT กับคลัง D1 · ผมยิงวัดเองยืนยัน: `skipUnknown` ของทั้งสามเจ้า
+         **ไม่มีรหัสทะเบียนเลยสักตัว** ⇒ ทางที่ผมเพิ่งเขียนเป็นทางที่ไม่มีใครเดิน) */
+  const r = await ทับจำนวนด้วยทะเบียน(
+    [{ sku: "F 660", name: "เลื่อย F660", platformQty: 0, coreQty: null, known: false }],
+    { อ่านกลุ่ม: async () => new Map([["saw|NEWWAVE F660", 20]]), อ่านรายรหัส: async () => 20 }
+  );
+  assert.equal(r.licensedApplied, 0, "🔴 นับว่าสำเร็จทั้งที่ถูกทิ้ง = ข่าวดีปลอม (รูที่ CEO จับได้)");
+  assert.equal(r.licensedNotInWarehouse.length, 1, "ต้องมีชื่ออยู่ในกองที่มองเห็น ไม่ใช่เงียบ");
+  assert.equal(r.licensedNotInWarehouse[0].ทะเบียน, 20, "ต้องบอกด้วยว่าทะเบียนมีเท่าไหร่ ⇒ คนตามแก้ได้");
+  assert.equal(r.rows[0].known, false, "ห้ามยก known — ช่องนั้นไม่ใช่ของไฟล์นี้");
+  assert.equal(r.rows[0].coreFrom, undefined, "ห้ามติดป้ายว่าทับแล้ว เพราะไม่ได้ทับ");
+  assert.equal(r.rows[0].coreQty, null, "ห้ามแตะจำนวนเลย");
+  const p = planFrom(r.rows, true);
+  assert.equal(p.wouldPush, 0);
+  assert.equal(p.skipUnknown, 1, "ยังอยู่กองข้ามตามกติกาเดิมของตัวคิดแผน");
+});

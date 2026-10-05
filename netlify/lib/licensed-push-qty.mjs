@@ -46,7 +46,7 @@ export async function ทับจำนวนด้วยทะเบียน(
   const อ่านรายรหัส = o.อ่านรายรหัส || ทะเบียนเหลือของรหัส;
   const แถวทะเบียน = rows.filter((r) => เป็นของทะเบียน(r?.sku));
   if (!แถวทะเบียน.length) {
-    return { rows, licensedApplied: 0, licensedDropped: [], licensedReadError: null };
+    return { rows, licensedApplied: 0, licensedDropped: [], licensedNotInWarehouse: [], licensedReadError: null };
   }
   let กลุ่มที่เหลือ;
   try {
@@ -58,11 +58,13 @@ export async function ทับจำนวนด้วยทะเบียน(
       rows: rows.filter((r) => !เป็นของทะเบียน(r?.sku)),
       licensedApplied: 0,
       licensedDropped: แถวทะเบียน.map((r) => ({ sku: r.sku, platformQty: r.platformQty, เหตุ })),
+      licensedNotInWarehouse: [],
       licensedReadError: เหตุ,
     };
   }
   const ออก = [];
   const ตก = [];
+  const คลังไม่รู้จัก = [];
   let ทับแล้ว = 0;
   for (const r of rows) {
     if (!เป็นของทะเบียน(r?.sku)) { ออก.push(r); continue; }
@@ -73,6 +75,24 @@ export async function ทับจำนวนด้วยทะเบียน(
         ตก.push({ sku: r.sku, platformQty: r.platformQty, เหตุ: "ตารางจับคู่บอกว่าเป็นของทะเบียน แต่หาจำนวนไม่ได้" });
         continue;
       }
+      /* 🔴 **แถว `known:false` ทับไปก็ถูกทิ้ง และตัวนับจะโกหก** (คุณ CEO จับได้ 5 ต.ค. 2569
+         รันของจริงได้ `licensedApplied: 1` แต่ `wouldPush: 0`)
+         `planFrom` ตีตก `!r.known` **ก่อนดู `coreQty`** ⇒ ทับแล้วไม่มีผล แต่ถูกนับว่าสำเร็จ
+         ⇒ ตัวนับที่นับความสำเร็จของสิ่งที่ถูกทิ้ง = ข่าวดีปลอม
+
+         🚫 **ไม่ยก `known` เป็น true ให้เอง** — `known` หมายถึง "คลังของเรารู้จักรหัสนี้"
+            เป็นช่องของตัวเทียบ ไม่ใช่ของไฟล์นี้ ⇒ เปลี่ยนความหมายจะกระทบคนอ่าน `skipUnknown` ทั้งหมด
+            (รอบแรกผมเขียนให้ยก `known` ตามจดหมายที่บอกว่าเลื่อย 4 รุ่นมาในกองนี้
+             แต่คุณ CEO แก้จดหมายเองว่า **ข้อนั้นผิด** เขาปน ZORT กับคลัง D1
+             ผมยิงวัดเองยืนยัน: `skipUnknown` ของทั้งสามเจ้า **ไม่มีรหัสทะเบียนเลยสักตัว**)
+         ⇒ จึง **ไม่ทับ ไม่นับ** แต่ **ต้องมีชื่ออยู่ในกองที่มองเห็น**
+            เพราะวันที่คลังหลุดรหัสทะเบียนไปจริง คำสั่งท่านประธานจะไม่มีผลกับรหัสนั้น **และจะเงียบ** */
+      if (!r.known) {
+        คลังไม่รู้จัก.push({ sku: r.sku, platformQty: r.platformQty ?? null, ทะเบียน: n,
+          เหตุ: "ทะเบียนบอกจำนวนได้ แต่คลังเราไม่รู้จักรหัสนี้ (known:false) ⇒ ตัวคิดแผนตีตกก่อนดูจำนวน ⇒ ไม่ทับ ไม่นับ" });
+        ออก.push(r);
+        continue;
+      }
       /* 🔑 **ทุกแถวที่ถูกทับต้องประกาศที่มาของเลข** — ไม่งั้นวันที่เลขต่างจาก ZORT
          จะไม่มีใครตอบได้ว่ามันมาจากไหน (กฎเดียวกับ `src` ของ `/api/stock`) */
       ออก.push({ ...r, coreQty: n, coreFrom: "licensed", coreQtyZort: r.coreQty });
@@ -81,5 +101,7 @@ export async function ทับจำนวนด้วยทะเบียน(
       ตก.push({ sku: r.sku, platformQty: r.platformQty, เหตุ: `อ่านจำนวนรายรหัสไม่ได้: ${e?.message || e}` });
     }
   }
-  return { rows: ออก, licensedApplied: ทับแล้ว, licensedDropped: ตก, licensedReadError: null };
+  /* `licensedApplied` ต้องนับ **แถวที่เข้าแผนจริง** เท่านั้น — ไม่ใช่จำนวนครั้งที่เราพยายามทับ */
+  return { rows: ออก, licensedApplied: ทับแล้ว, licensedDropped: ตก,
+           licensedNotInWarehouse: คลังไม่รู้จัก, licensedReadError: null };
 }

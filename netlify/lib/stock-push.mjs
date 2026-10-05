@@ -168,6 +168,7 @@ async function shopeePlan(full) {
   const p = planFrom(ทับ.rows, full);
   p.licensedApplied = ทับ.licensedApplied;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   /* ⚠️ `same` ที่ได้จาก planFrom นับจากแถวที่ส่งเข้าไปเท่านั้น (ซึ่งเป็นแถวที่ต่างกัน)
       ของจริงต้องเอาตัวนับ `same` ของตัวเทียบมาใช้ ไม่งั้นจะได้ 0 แล้วดูเหมือนไม่มีอะไรตรงเลย */
@@ -245,6 +246,7 @@ async function lazadaPlan(full) {
   const p = planFrom(ทับ.rows, full);
   p.licensedApplied = ทับ.licensedApplied;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   p.platformSkus = num(c.lazadaSkus);
   p.skipUnknown = num(c.missing);
@@ -332,6 +334,7 @@ async function tiktokPlan(full) {
   const p = planFrom(ทับ.rows, full);
   p.licensedApplied = ทับ.licensedApplied;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
+  if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
   p.same = num(c.same);

@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-10-04T14:45:13.449Z";
+export const generatedAt = "2026-10-05T16:08:53.254Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -104,6 +104,7 @@ export const paramRoutes = [
  "recon",
  "registry",
  "registryrows",
+ "registrystamp",
  "reorder",
  "resettransfers",
  "restore",
@@ -183,6 +184,7 @@ export const paramRoutes = [
 export const routeMethod = {
  "registry": "unknown",
  "registryrows": "write",
+ "registrystamp": "write",
  "d1move": "unknown",
  "stockpushlive": "write",
  "pushsweep": "write",
