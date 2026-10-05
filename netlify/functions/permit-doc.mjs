@@ -129,6 +129,72 @@ export default async function handler(req, context) {
   const url = new URL(req.url);
 
   // ---------------------------------------------------------------- ฝั่งลูกค้า
+  /* ── 📮 ร้านรับใบ ลซ.๒ ที่ส่งมาทางไปรษณีย์ (5 ต.ค. 2569) ──────────────────
+     ท่านประธาน: "พอได้ใบ ลซ.๒ จากลูกค้ามา ผมจะถ่ายรูปเข้าระบบก่อน"
+     🔑 ลูกค้าส่วนใหญ่ไม่เคยเข้าเว็บ — ส่งใบตัวจริงมาเลย (วัดแล้ว รูป=0 ทั้ง 3 ราย)
+        ⇒ เส้นนี้ต้อง **สร้างเรื่องใหม่ได้** ไม่ใช่แค่อัปรูปใส่เรื่องที่มีอยู่
+     🔑 ป้องกันด้วยรหัสหลังร้าน ไม่ใช่ session ลูกค้า — ร้านกรอกเบอร์ลูกค้าเอง
+     ⚠️ เบอร์มาจาก body ได้ **เฉพาะเส้นนี้** เพราะผ่าน adminGate แล้ว
+        เส้นลูกค้าข้างล่างยังต้องอ่านเบอร์จาก session เหมือนเดิม ห้ามแก้ */
+  if (req.method === "POST" && url.searchParams.get("shop")) {
+    /* ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — เช็คสองชั้นเสมอ
+       และต้องส่ง context ด้วย (ตัวนับคนเดารหัสใช้ IP จากตรงนั้น)
+       เขียน `if (gate) return gate` = Netlify พังทุกคำขอ (เจอจริง 25 ส.ค. 2569) */
+    const ด่าน = await adminGate(req, context);
+    if (ด่าน.deny) return ด่าน.deny;
+    if (!ด่าน.ok) return json({ error: "ต้องใส่รหัสหลังร้าน" }, 401);
+
+    const body = await req.json().catch(() => null);
+    const phone = String(body?.phone || "").replace(/[^0-9]/g, "").slice(0, 15);
+    if (phone.length < 9) return json({ error: "เบอร์ลูกค้าไม่ถูกต้อง" }, 400);
+
+    const s2 = store();
+    const key = `c/${phone}`;
+    let rec = null;
+    try {
+      rec = await s2.get(key, { type: "json" });
+    } catch (e) {
+      /* 🔴 อ่านไม่ได้ ≠ ไม่มีเรื่อง — ถ้ากลืนแล้วสร้างใหม่ทับ จะล้างประวัติลูกค้าทิ้ง
+         (กฎเดียวกับที่เส้นลูกค้าแก้ไว้แล้ว) ⇒ ตีกลับให้คนลองใหม่ */
+      return json({ error: "อ่านข้อมูลเดิมไม่ได้ ลองใหม่อีกครั้ง" }, 503);
+    }
+    const เรื่องใหม่ = !rec;
+    if (!rec) rec = blank(phone, clean(body?.name || "", 80));
+    if (body?.name) rec.name = clean(body.name, 80);
+    if (body?.saw !== undefined) rec.saw = clean(body.saw, 80);
+    if (body?.province !== undefined) rec.province = clean(body.province, 40);
+    if (body?.note !== undefined) rec.note = clean(body.note, 300);
+
+    const raw = Array.isArray(body?.images) ? body.images.slice(0, MAX_IMAGES) : [];
+    const images = [];
+    for (const one of raw) {
+      const b64 = String(one || "").replace(/^data:image\/\w+;base64,/, "");
+      if (!b64) continue;
+      const bytes = b64.length * 0.75;
+      if (bytes > MAX_BYTES) return json({ error: "รูปใหญ่เกินไป" }, 413);
+      if (bytes < MIN_BYTES) return json({ error: "รูปเล็ก/ไม่ชัด ถ่ายใหม่ให้เห็นตัวหนังสือ" }, 422);
+      images.push(String(one));
+    }
+    if (!images.length) return json({ error: "ยังไม่ได้แนบรูปใบ ลซ.๒" }, 400);
+
+    await Promise.all(images.map((img, i) => s2.set(`img/${phone}/${i}`, img)));
+    rec.images = images.length;
+    /* 🔑 ร้านถ่ายรูปเอง = ใบตัวจริงอยู่ในมือร้านแล้ว ⇒ ขั้น `got`
+       ⚠️ ห้ามถอยหลัง — เรื่องที่ส่งเลื่อยไปแล้ว (shipped/done) กดซ้ำต้องไม่ย้อนกลับ */
+    const ลำดับ = ["", "printed", "submitted", "gotlz2", "lz2", "got", "shipped", "done"];
+    if (ลำดับ.indexOf(rec.stage) < ลำดับ.indexOf("got")) advance(rec, "got");
+    rec.updatedAt = nowIso();
+    await s2.setJSON(key, rec);
+
+    await park(tell(
+      `📮 <b>ร้านรับใบ ลซ.๒ เข้าระบบแล้ว</b>\n` +
+      `${rec.name || "-"} · ${phone}\n` +
+      (เรื่องใหม่ ? "🆕 ลูกค้ารายใหม่ (ไม่เคยทำเรื่องผ่านเว็บ)\n" : "") +
+      `รูป ${rec.images} ใบ`,
+    ));
+    return json({ ok: true, item: rec, เรื่องใหม่ });
+  }
+
   const mine = url.searchParams.get("mine");
   if (req.method === "POST" || mine) {
     let me = null;
