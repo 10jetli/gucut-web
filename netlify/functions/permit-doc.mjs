@@ -406,6 +406,34 @@ export default async function handler(req, context) {
     return json(await readAll());
   }
 
+  /* 🗑 ร้านลบเรื่องที่บันทึกผิด (5 ต.ค. 2569)
+     🔑 จำเป็นคู่กับ ?shop=1 — ร้านถ่ายรูปผิดคน/ผิดใบได้ ต้องมีทางแก้
+        ไม่งั้นข้อมูลผิดค้างในระบบตลอดกาล และไปโผล่ในรายการของลูกค้าคนนั้น
+     ⚠️ ลบตัวเรื่อง **ต้องลบรูปด้วย** — เหลือรูปค้าง = เอกสารราชการของคนที่ถูกลบไปแล้ว
+        ยังอยู่ในระบบ และรอบหน้าที่บันทึกเบอร์เดิมจะเห็นรูปเก่าปนมา (คีย์ซ้ำกัน)
+     ⚠️ ต้องส่ง `confirm` มาด้วย — กันยิงพลาดลบของจริง */
+  if (req.method === "DELETE" && url.searchParams.get("shop")) {
+    const ด่าน = await adminGate(req, context);
+    if (ด่าน.deny) return ด่าน.deny;
+    if (!ด่าน.ok) return json({ error: "ต้องใส่รหัสหลังร้าน" }, 401);
+    const phone = String(url.searchParams.get("phone") || "").replace(/[^0-9]/g, "");
+    if (phone.length < 9) return json({ error: "ระบุเบอร์ลูกค้าให้ถูกต้อง" }, 400);
+    if (url.searchParams.get("confirm") !== "1") {
+      return json({ error: "ต้องยืนยันด้วย confirm=1" }, 400);
+    }
+    const s3 = store();
+    const rec = await s3.get(`c/${phone}`, { type: "json" }).catch(() => null);
+    if (!rec) return json({ error: "ไม่พบเรื่องของเบอร์นี้" }, 404);
+    const n = Number(rec.images || 0);
+    await Promise.all(
+      Array.from({ length: Math.max(n, MAX_IMAGES) },
+                 (_, i) => s3.delete(`img/${phone}/${i}`).catch(() => {})),
+    );
+    await s3.delete(`c/${phone}`);
+    await park(tell(`🗑 <b>ร้านลบเรื่องทะเบียน</b>\n${rec.name || "-"} · ${phone}`));
+    return json({ ok: true, ลบแล้ว: phone });
+  }
+
   if (req.method === "PATCH") {
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
