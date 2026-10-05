@@ -235,8 +235,13 @@ export default async function handler(req, context) {
     if (!ด่าน.ok) return json({ error: "ต้องใส่รหัสหลังร้าน" }, 401);
 
     const body = await req.json().catch(() => null);
-    const phone = String(body?.phone || "").replace(/[^0-9]/g, "").slice(0, 15);
-    if (phone.length < 9) return json({ error: "เบอร์ลูกค้าไม่ถูกต้อง" }, 400);
+    /* ท่านประธานสั่ง 5 ต.ค. 2569: ไม่บังคับเบอร์ — ใบมาทางไปรษณีย์ บางทียังไม่รู้เบอร์
+       ไม่มีเบอร์ = ออกรหัสเรื่องชั่วคราว (np<เวลา>) · ใส่มาแต่ผิดรูปค่อยตีกลับ
+       ⚠️ เรื่องรหัสชั่วคราวจะไม่จับคู่กับบัญชีลูกค้าฝั่งเว็บ (จับด้วยเบอร์) — รู้เบอร์แล้ว
+       ให้ลบเรื่องแล้วบันทึกใหม่ด้วยเบอร์จริง (รูปที่เก็บไว้ต้องถ่ายเข้าใหม่) */
+    let phone = String(body?.phone || "").replace(/[^0-9]/g, "").slice(0, 15);
+    if (phone && phone.length < 9) return json({ error: "เบอร์ลูกค้าไม่ถูกต้อง" }, 400);
+    if (!phone) phone = `np${Date.now()}`;
 
     const s2 = store();
     const key = `c/${phone}`;
