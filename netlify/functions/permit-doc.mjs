@@ -136,6 +136,111 @@ export default async function handler(req, context) {
      🔑 ป้องกันด้วยรหัสหลังร้าน ไม่ใช่ session ลูกค้า — ร้านกรอกเบอร์ลูกค้าเอง
      ⚠️ เบอร์มาจาก body ได้ **เฉพาะเส้นนี้** เพราะผ่าน adminGate แล้ว
         เส้นลูกค้าข้างล่างยังต้องอ่านเบอร์จาก session เหมือนเดิม ห้ามแก้ */
+  /* ── 🤖 AI อ่านใบ ลซ.๒ ให้ (5 ต.ค. 2569) ───────────────────────────────────
+     ท่านประธาน: "ใส่แค่เบอร์โทร ชื่อลูกค้าให้รับอ่านเอง"
+                + "ในใบ ลซ บอกอะไรหลายอย่างให้เอาไปใช้"
+     🔑 เส้นนี้ **อ่านอย่างเดียว ไม่บันทึกอะไร** — คืนค่าให้จอโชว์ให้คนยืนยันก่อน
+        (AI แต่งข้อมูลเองได้ · บทเรียนตัวอ่านบัตร 25 ส.ค. 2569 รูปขาว 1 พิกเซล
+         ได้บัตรเต็มใบ ⇒ ของที่เอาไปใช้ต่อทางราชการ ต้องผ่านตาคนเสมอ)
+     ⚠️ เสียเครดิตจริงต่อการเรียกหนึ่งครั้ง ⇒ ต้องมีรหัสหลังร้าน */
+  if (req.method === "POST" && url.searchParams.get("read")) {
+    const ด่าน = await adminGate(req, context);
+    if (ด่าน.deny) return ด่าน.deny;
+    if (!ด่าน.ok) return json({ error: "ต้องใส่รหัสหลังร้าน" }, 401);
+
+    const body = await req.json().catch(() => null);
+    const b64 = String(body?.image || "").replace(/^data:image\/\w+;base64,/, "");
+    if (!b64) return json({ error: "ไม่มีรูป" }, 400);
+    if (b64.length * 0.75 < MIN_BYTES) {
+      return json({ error: "รูปเล็ก/ไม่ชัด ถ่ายใหม่ให้เห็นตัวหนังสือบนใบ" }, 422);
+    }
+
+    /* ⚠️ หยิบคู่ Gateway ก่อนเสมอ ห้ามข้ามคู่ (ดูเหตุผลในหัวเส้นนี้) */
+    const gwKey = process.env.NETLIFY_AI_GATEWAY_KEY;
+    const gwBase = process.env.NETLIFY_AI_GATEWAY_URL;
+    const คู่ = gwKey && gwBase
+      ? { key: gwKey, base: gwBase }
+      : { key: process.env.ANTHROPIC_API_KEY, base: process.env.ANTHROPIC_BASE_URL };
+    if (!คู่.key) return json({ error: "ยังไม่ได้ตั้งค่าตัวอ่าน", setup: true }, 503);
+    const base = (คู่.base || "https://api.anthropic.com").replace(/\/+$/, "");
+
+    const คำสั่ง = [
+      "รูปนี้คือใบ ลซ.๒ (ใบรับรองให้มีเลื่อยโซ่ยนต์) ของกรมป่าไม้",
+      "อ่านข้อมูลออกมาเป็น JSON เท่านั้น ไม่ต้องอธิบายอะไรเพิ่ม",
+      "",
+      "⚠️ กติกาสำคัญ:",
+      "· ถ้าไม่ใช่ใบ ลซ.๒ ให้ตอบ {\"notLz2\": true} อย่างเดียว",
+      "· ช่องไหนอ่านไม่ออกให้เว้นเป็นสตริงว่าง \"\" **ห้ามเดา ห้ามแต่งขึ้นมา**",
+      "· เลขไทย (๑๒๓) ให้แปลงเป็นเลขอารบิก",
+      "· ⚠️ มีจังหวัด **สองตัวที่ต่างกัน** ห้ามสับสน:",
+      "    - สถานที่ออกใบรับรอง = จังหวัดที่ลูกค้าจะเอาเลื่อยไปใช้",
+      "    - จังหวัดในที่อยู่ (ภูมิลำเนา) = ทะเบียนบ้านลูกค้า อาจคนละจังหวัดกัน",
+      "· วันที่ให้เป็น YYYY-MM-DD แบบ พ.ศ. ตามที่เขียนในใบ (เช่น 2569-09-15)",
+      "",
+      "รูปแบบ JSON:",
+      "{",
+      '  "เลขที่ใบ": "สน. 15/2569",',
+      '  "จังหวัดที่ใช้เลื่อย": "สกลนคร",   // จากช่อง สถานที่ออกใบรับรอง',
+      '  "วันออก": "2569-09-15",',
+      '  "วันสิ้นอายุ": "2570-03-15",',
+      '  "ชื่อ": "นายอนุชา เสมอพิทักษ์",',
+      '  "สัญชาติ": "ไทย",',
+      '  "บ้านเลขที่": "78", "หมู่": "4", "ตำบล": "ท่าแร่",',
+      '  "อำเภอ": "เมืองสกลนคร", "จังหวัดภูมิลำเนา": "สกลนคร",   // จากที่อยู่ในใบ',
+      '  "ประเภทต้นกำลัง": "เครื่องยนต์",',
+      '  "แรงม้า": "7.1",',
+      '  "บาร์นิ้ว": "30",',
+      '  "ตอน": "กลาง หรือ ปลาย (ดูมุมขวาล่างของใบ)"',
+      "}",
+    ].join("\n");
+
+    const media = /^data:image\/(\w+);/.exec(String(body?.image || ""))?.[1];
+    const mediaType = media === "png" ? "image/png" : "image/jpeg";
+    const ยิงAI = (path) => fetch(`${base}${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": คู่.key,
+        authorization: `Bearer ${คู่.key}`,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: process.env.READ_LZ2_MODEL || "claude-sonnet-4-5-20250929",
+        max_tokens: 700,
+        messages: [{
+          role: "user",
+          content: [
+            { type: "image", source: { type: "base64", media_type: mediaType, data: b64 } },
+            { type: "text", text: คำสั่ง },
+          ],
+        }],
+      }),
+      signal: AbortSignal.timeout(28000),
+    });
+
+    try {
+      /* ⚠️ ที่อยู่ปลายทางมีสองรูป ขึ้นกับว่าเป็น Gateway หรือ Anthropic ตรง
+         ⇒ ลองเส้นแรกก่อน 404 ค่อยลองเส้นสอง (ท่าเดียวกับ read-id.mjs) */
+      const paths = base.includes("/anthropic")
+        ? ["/v1/messages"] : ["/v1/messages", "/anthropic/v1/messages"];
+      let r = await ยิงAI(paths[0]);
+      if (r.status === 404 && paths[1]) r = await ยิงAI(paths[1]);
+      const out = await r.json().catch(() => null);
+      if (!r.ok) return json({ error: `ตัวอ่านตอบ ${r.status}` }, 502);
+      const text = (out?.content || []).map((c) => c.text || "").join("").trim();
+      const m = /\{[\s\S]*\}/.exec(text);
+      if (!m) return json({ error: "อ่านคำตอบไม่ออก ลองถ่ายใหม่" }, 502);
+      const got = JSON.parse(m[0]);
+      if (got?.notLz2) {
+        return json({ error: "รูปนี้ไม่ใช่ใบ ลซ.๒ — ถ่ายใบรับรองให้เห็นทั้งใบ" }, 422);
+      }
+      /* 🔑 คืนค่าดิบให้จอโชว์ให้คนยืนยัน **ไม่บันทึกอะไรทั้งสิ้น** */
+      return json({ ok: true, อ่านได้: got });
+    } catch (e) {
+      return json({ error: "ตัวอ่านไม่ตอบ: " + String(e?.name || e).slice(0, 60) }, 504);
+    }
+  }
+
   if (req.method === "POST" && url.searchParams.get("shop")) {
     /* ⚠️ adminGate คืน { wants, ok, deny } ไม่ใช่ Response — เช็คสองชั้นเสมอ
        และต้องส่ง context ด้วย (ตัวนับคนเดารหัสใช้ IP จากตรงนั้น)
@@ -164,6 +269,30 @@ export default async function handler(req, context) {
     if (body?.saw !== undefined) rec.saw = clean(body.saw, 80);
     if (body?.province !== undefined) rec.province = clean(body.province, 40);
     if (body?.note !== undefined) rec.note = clean(body.note, 300);
+    /* 📋 ข้อมูลจากหน้าใบ ลซ.๒ — ท่านประธาน: "ในใบ ลซ บอกอะไรหลายอย่างให้เอาไปใช้"
+       🔑 `วันสิ้นอายุ` สำคัญที่สุด = นาฬิกา 180 วันที่ใบจะสิ้นผล
+          (ถ้าร้านจำหน่ายไม่ทัน ลูกค้าต้องไปขอใหม่ทั้งหมด) ตอนนี้ยังไม่มีใครจับเวลา
+       🔑 `แรงม้า`/`บาร์นิ้ว` ใช้กรอกด้านหลังใบอัตโนมัติต่อได้
+       ⚠️ เก็บเป็นก้อนเดียวใต้ `lz2` — ไม่ปนกับฟิลด์เดิม จะได้รู้ว่าอันไหนมาจากใบ */
+    if (body?.lz2 && typeof body.lz2 === "object") {
+      const ช่อง = ["เลขที่ใบ", "จังหวัดที่ใช้เลื่อย", "วันออก", "วันสิ้นอายุ",
+                    "ชื่อ", "สัญชาติ",
+                    "บ้านเลขที่", "หมู่", "ตำบล", "อำเภอ", "จังหวัดภูมิลำเนา",
+                    "ประเภทต้นกำลัง", "แรงม้า", "บาร์นิ้ว", "ตอน"];
+      rec.lz2 = rec.lz2 || {};
+      for (const k of ช่อง) {
+        if (body.lz2[k] !== undefined) rec.lz2[k] = clean(String(body.lz2[k]), 120);
+      }
+      /* ชื่อบนใบเป็นชื่อทางการ — ใช้เป็นชื่อหลักถ้าร้านยังไม่ได้กรอกเอง */
+      if (!rec.name && rec.lz2["ชื่อ"]) rec.name = rec.lz2["ชื่อ"];
+      /* 🔴 `province` ของเรื่อง = **จังหวัดที่ยื่น/ใช้เลื่อย** ไม่ใช่ภูมิลำเนา
+         (ท่านประธานชี้เอง 5 ต.ค. 2569: "สถานที่ออกใบรับรอง จังหวัดสกลนคร
+          แสดงว่าลูกค้าจะเอาไปใช้ที่จังหวัดนี้ ภูมิลำเนาอาจอยู่จังหวัดอื่น")
+         ⇒ หยิบผิดตัว = หน้าหลังร้านจะบอกจังหวัดผิด และตามเรื่องกับ ทสจ. ผิดที่ */
+      if (!rec.province && rec.lz2["จังหวัดที่ใช้เลื่อย"]) {
+        rec.province = rec.lz2["จังหวัดที่ใช้เลื่อย"];
+      }
+    }
 
     const raw = Array.isArray(body?.images) ? body.images.slice(0, MAX_IMAGES) : [];
     const images = [];
