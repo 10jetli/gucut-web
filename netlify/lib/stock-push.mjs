@@ -99,6 +99,9 @@ export function planFrom(rows, full = false) {
          ⚠️ **แถวที่ไม่ได้ถูกทับ ห้ามมีช่องนี้เลย** ไม่ใช่ใส่ค่าว่าง/เดา ⇒ ใช้ spread มีเงื่อนไข
             ไม่งั้น `coreFrom` จะกลายเป็นช่องที่มีในทุกแถว แล้วการ "มีช่อง" เลิกมีความหมาย */
       ...(r.coreFrom ? { coreFrom: r.coreFrom } : {}),
+      /* กองร่วม: บอกด้วยว่า 0 นี้เพราะของอยู่ที่ตัวเลือกอื่น **ไม่ใช่ของหมด**
+         ไม่ส่งต่อ = คนอ่านแผนเห็น `close → 0` แล้วเข้าใจว่าสินค้าหมด ซึ่งผิดและตัดสินใจผิดตาม */
+      ...(r.poolHolder ? { poolHolder: r.poolHolder, poolQty: r.poolQty } : {}),
       ...(r.coreQtyZort === undefined ? {} : { coreQtyZort: r.coreQtyZort }),
     });
   }
@@ -189,6 +192,9 @@ async function shopeePlan(full) {
   if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
+  /* 🔴 กองร่วมที่ยังปิดไม่ได้เพราะผู้ถือยังไม่โฆษณา — **ต้องเห็นบนจอ**
+     ถ้าเงียบ จะดูเหมือนกติกากองร่วมทำงานครบแล้ว ทั้งที่ยังโฆษณาเกินอยู่ */
+  if (ทับ.licensedPoolWaiting.length) p.licensedPoolWaiting = ทับ.licensedPoolWaiting;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   /* ⚠️ `same` ที่ได้จาก planFrom นับจากแถวที่ส่งเข้าไปเท่านั้น (ซึ่งเป็นแถวที่ต่างกัน)
       ของจริงต้องเอาตัวนับ `same` ของตัวเทียบมาใช้ ไม่งั้นจะได้ 0 แล้วดูเหมือนไม่มีอะไรตรงเลย */
@@ -282,6 +288,9 @@ async function lazadaPlan(full) {
   if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
+  /* 🔴 กองร่วมที่ยังปิดไม่ได้เพราะผู้ถือยังไม่โฆษณา — **ต้องเห็นบนจอ**
+     ถ้าเงียบ จะดูเหมือนกติกากองร่วมทำงานครบแล้ว ทั้งที่ยังโฆษณาเกินอยู่ */
+  if (ทับ.licensedPoolWaiting.length) p.licensedPoolWaiting = ทับ.licensedPoolWaiting;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   p.platformSkus = num(c.lazadaSkus);
   p.skipUnknown = num(c.missing);
@@ -393,6 +402,9 @@ async function tiktokPlan(full) {
   if (ยก.เดา.length) p.licensedGuessMatched = ยก.เดา;
   if (ทับ.licensedDropped.length) p.licensedDropped = ทับ.licensedDropped;
   if (ทับ.licensedNotInWarehouse.length) p.licensedNotInWarehouse = ทับ.licensedNotInWarehouse;
+  /* 🔴 กองร่วมที่ยังปิดไม่ได้เพราะผู้ถือยังไม่โฆษณา — **ต้องเห็นบนจอ**
+     ถ้าเงียบ จะดูเหมือนกติกากองร่วมทำงานครบแล้ว ทั้งที่ยังโฆษณาเกินอยู่ */
+  if (ทับ.licensedPoolWaiting.length) p.licensedPoolWaiting = ทับ.licensedPoolWaiting;
   if (ทับ.licensedReadError) p.licensedReadError = ทับ.licensedReadError;
   // ตัวนับจริงมาจากตัวเทียบ ไม่ใช่จากตัวอย่างที่ตัดมาแสดง (บทเรียนเดียวกับฝั่ง Shopee)
   /* 🔑 **ลดกอง `same` เท่าที่ยกออกไปเข้าแผน** — ไม่งั้นด่าน `bucketsAddUp` ฟ้องว่าแถวหาย
