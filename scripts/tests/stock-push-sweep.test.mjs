@@ -218,3 +218,57 @@ test('🔑 พลังแยกแยะ: ก้อนเร็ว ⇒ **ต้
   แผนที่จะคืน = null; ผลยิงที่จะคืน = null;
   assert.equal(ส่งแผนมา.length - เดิม, 3, 'ก้อนเร็วทั้งสามก้อน ⇒ ต้องยิงครบ 3 ก้อน');
 });
+
+/* 🔴 9 ต.ค. 2569 — Shopee รอบ 10:35Z/13:20Z ขึ้น `planned 31 · fired 0 · not_sent 30` ติดกันสองรอบ
+   แล้ว **ไม่มีใครตอบได้ว่ารหัสไหนโดนและเพราะอะไร** · `pushstuck?reason=` ตอบ 0 แถวทุกค่า
+   ต้นตอสองชั้น ทั้งคู่เงียบ:
+    ① `สรุปผล()` คืน `results: [...results, ...prep.skipped]` ⇒ แถว not_sent อยู่ก้อนเดียวกับที่ยิงจริง
+       ⇒ ตัวกวาดตั้ง `pushed_at = now` ให้แถวที่ **ไม่เคยออกนอกระบบ**
+       ⇒ ⇒ UPSERT ล้าง `verified_*` ทุกรอบ (เงื่อนไข `excluded.pushed_at IS NOT NULL`)
+          = รหัสที่ถูกด่านกั้นถูกล้างการยืนยันทิ้งทุกรอบ ทั้งที่ไม่มีอะไรเปลี่ยน
+    ② `notSentKind` ถูกใช้แค่ตัดสินใจเรื่อง `last_error` **แล้วทิ้ง** ⇒ ไม่เคยถูกจดลงสมุด
+   🔑 เทสนี้ต้องแยกแยะได้ทั้งสองทิศ: แถวที่ยิงจริงต้องยังได้ `pushed_at`
+      (ไม่งั้น "แก้" จะกลายเป็นหยุดจดของที่ถูกอยู่แล้ว — คลาส fixes-can-destroy-truth) */
+test('ไม่ได้ส่ง ⇒ ต้องจดเหตุรายรหัสในช่องของตัวเอง และ **ห้าม** ได้ pushed_at', async () => {
+  คำสั่ง.length = 0;
+  ผลยิงที่จะคืน = {
+    fired: 1, pushed: 1, rejected: 0, notSent: 1,
+    results: [
+      { sku: 'A1', from: 1, to: 5, kind: 'up', result: 'pushed' },
+      { sku: 'B2', result: 'not_sent', notSentKind: 'policy_hold',
+        why: 'อยู่ในใบค้างส่ง — ต้องปิดใบก่อน' },
+    ],
+  };
+  try {
+    await กวาดดันสต็อก({ platform: 'lazada', force: true });
+  } finally {
+    ผลยิงที่จะคืน = null;   // ⚠️ คืนค่าใน finally ไม่งั้นเทสต์ถัดไปแดงด้วยเหตุปลอม
+  }
+  const แทรก = คำสั่ง.filter((c) => /INSERT INTO push_state/.test(c.sql));
+  assert.ok(แทรก.length > 0, 'ต้องมีคำสั่งแทรก push_state');
+  /* ลำดับคอลัมน์ 18 ช่อง: sku·channel·planned_qty·planned_at·pushed_qty·pushed_at·push_result·
+     verified_qty·verified_at·skip_reason·skip_first_at·skip_last_at·skip_streak·
+     last_error·last_error_at·not_sent_kind·not_sent_why·not_sent_at */
+  const ช่อง = 18;
+  const แถว = [];
+  for (const c of แทรก) {
+    for (let i = 0; i + ช่อง <= c.params.length; i += ช่อง) แถว.push(c.params.slice(i, i + ช่อง));
+  }
+  assert.ok(แถว.length >= 2, `ต้องได้อย่างน้อยสองแถว ได้ ${แถว.length} (ถ้าหารไม่ลงตัว = จำนวนช่องเพี้ยน)`);
+  const หา = (sku) => แถว.find((r) => r[0] === sku);
+  const b2 = หา('B2');
+  assert.ok(b2, 'ต้องมีแถว B2 ในสมุด');
+  assert.equal(b2[15], 'policy_hold', 'B2 ต้องได้ not_sent_kind = policy_hold');
+  assert.match(String(b2[16]), /ใบค้างส่ง/, 'B2 ต้องได้ not_sent_why เป็นเหตุรายรหัส');
+  assert.ok(b2[17], 'B2 ต้องมี not_sent_at');
+  /* 🔑 ด่านที่จับบั๊กตัวจริง — ของเดิมผ่านทุกข้อข้างบนไม่ได้ เพราะมันไม่มีช่องพวกนั้น
+     แต่ข้อนี้คือข้อที่ **ของเดิมตกแน่** ถ้ามีช่องแล้วแต่ยังตั้ง pushed_at ให้ not_sent */
+  assert.equal(b2[5], null, '🔴 B2 ไม่เคยถูกยิง ⇒ pushed_at ต้องเป็น null (ไม่งั้น verified_* จะถูกล้างทุกรอบ)');
+  assert.equal(b2[4], null, 'B2 ไม่เคยถูกยิง ⇒ pushed_qty ต้องเป็น null');
+  /* ── ตัวควบคุมทิศกลับ: แถวที่ยิงจริงต้องไม่ถูกกระทบ ──────────────────── */
+  const a1 = หา('A1');
+  assert.ok(a1, 'ต้องมีแถว A1 ในสมุด');
+  assert.ok(a1[5], 'A1 ยิงจริง ⇒ ต้องยังได้ pushed_at เหมือนเดิม');
+  assert.equal(a1[4], 5, 'A1 ยิงจริง ⇒ pushed_qty ต้องเป็น 5');
+  assert.equal(a1[15], null, 'A1 ยิงจริง ⇒ not_sent_kind ต้องเป็น null (ไม่ใช่ค่าค้างจากรอบก่อน)');
+});

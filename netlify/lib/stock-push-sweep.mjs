@@ -131,6 +131,21 @@ async function สร้างตาราง() {
        last_error_at TEXT,
        PRIMARY KEY (sku, channel))`
   );
+  /* 🔴 **"ถูกข้าม" กับ "ไม่ได้ส่ง" เป็นคนละเรื่อง ⇒ คนละช่อง** (เพิ่ม 9 ต.ค. 2569)
+     · `skip_reason`   = **ตัวกวาด** ตัดออกก่อนทำแผน (ข้อมูลฝั่งเราผิด เช่น `negative`)
+     · `not_sent_kind` = **ตัวยิง** ตัดออกก่อนยิง (ถูกด่านกั้น เช่น `policy_hold`)
+     🔑 สองอย่างนี้ **สั่งคนละอย่าง**: อันแรกให้ไปแก้ข้อมูล อันหลังให้ไปปิดใบ/ให้คนยืนยัน
+        ⇒ ยัดลงช่องเดียวกัน = พจนานุกรมสองเล่มปนกัน แล้วจอแปลผิดทั้งจอ
+           (`not-sent-kinds.mjs` เตือนเรื่องนี้ไว้เองตั้งแต่ 28 ก.ย. — วันนี้กัดที่ช่องที่ยังไม่ได้จด)
+     🔴 **เหตุที่ต้องมี**: ก่อนวันนี้ `not_sent` ถูกจดเป็น **ตัวเลขรวมต่อรอบ** อย่างเดียว
+        ⇒ Shopee รอบ 10:35Z/13:20Z ขึ้น `planned 31 · fired 0 · not_sent 30` ติดกันสองรอบ
+          แล้ว **ไม่มีใครตอบได้ว่ารหัสไหนโดน** · `pushstuck?reason=` ตอบ 0 แถวทุกค่า
+          เพราะมันอ่าน `skip_reason` ซึ่งเป็นของตัวกวาด ไม่ใช่ของตัวยิง
+     ⚠️ แถวเก่าเป็น NULL ตลอดไป ⇒ ตัวอ่านต้องแยก "ท่อรุ่นเก่าไม่ได้จด" ออกจาก "ส่งได้ปกติ"
+        [[new-columns-need-backfill]] */
+  for (const c of ["not_sent_kind TEXT", "not_sent_why TEXT", "not_sent_at TEXT"]) {
+    try { await coreQuery(`ALTER TABLE push_state ADD COLUMN ${c}`); } catch { /* มีอยู่แล้ว = ปกติ */ }
+  }
   await coreQuery(
     `CREATE TABLE IF NOT EXISTS push_sweep_log (
        at TEXT PRIMARY KEY, channel TEXT, mode TEXT,
@@ -175,8 +190,11 @@ async function สร้างตาราง() {
  *  ⇒ `D1 400: too many SQL variables` ทั้งรอบ
  *  ⚠️ **ทดสอบบน SQLite ในเครื่องผ่านฉลุย** เพราะ SQLite ยอมถึง 999 — ต่างกันเงียบ ๆ
  *     ⇒ บทเรียน: ตัวจำลองที่ "ใจกว้างกว่าของจริง" ให้ผลเขียวที่แปลว่า "ยังไม่เจอ" ไม่ใช่ "ไม่มี"
- *  15 คอลัมน์ ⇒ ได้มากสุด 6 แถวต่อคำสั่ง (90 ตัวแปร) */
-const แถวต่อคำสั่ง = 6;
+ *  18 คอลัมน์ ⇒ ได้มากสุด 5 แถวต่อคำสั่ง (90 ตัวแปร)
+ *  🔴 **เพิ่มคอลัมน์ต้องลดเลขนี้ด้วยทุกครั้ง** — 9 ต.ค. 2569 เพิ่ม 3 ช่อง (`not_sent_*`)
+ *     ถ้าปล่อยไว้ที่ 6 จะได้ 18 × 6 = 108 ตัวแปร ⇒ เกิน 100 ⇒ ทั้งรอบล้ม
+ *     และ **เทสในเครื่องจะผ่านฉลุย** เพราะ SQLite ยอมถึง 999 (ตามคำเตือนข้างบนเป๊ะ) */
+const แถวต่อคำสั่ง = 5;
 
 async function เขียนเป็นชุด(แถว, กันเวลา = null) {
   if (!แถว.length) return { เขียนแล้ว: 0, ไม่ได้เขียน: 0 };
@@ -191,7 +209,7 @@ async function เขียนเป็นชุด(แถว, กันเว�
       return { เขียนแล้ว, ไม่ได้เขียน: แถว.length - เขียนแล้ว };
     }
     const ก้อน = แถว.slice(i, i + ต่อก้อน);
-    const ค่า = ก้อน.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
+    const ค่า = ก้อน.map(() => "(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").join(",");
     const params = [];
     for (const r of ก้อน) {
       const ข้าม = r.skip_reason ?? null;
@@ -209,7 +227,8 @@ async function เขียนเป็นชุด(แถว, กันเว�
         ข้าม ? (r.planned_at ?? null) : null,   // skip_first_at
         ข้าม ? (r.planned_at ?? null) : null,   // skip_last_at
         ข้าม ? 1 : 0,                            // skip_streak
-        r.last_error ?? null, r.last_error_at ?? null
+        r.last_error ?? null, r.last_error_at ?? null,
+        r.not_sent_kind ?? null, r.not_sent_why ?? null, r.not_sent_at ?? null
       );
     }
     /* ⚠️ `skip_streak` ต้อง **นับต่อจากของเดิม** ไม่ใช่เขียนทับ
@@ -220,7 +239,7 @@ async function เขียนเป็นชุด(แถว, กันเว�
       `INSERT INTO push_state
          (sku,channel,planned_qty,planned_at,pushed_qty,pushed_at,push_result,
           verified_qty,verified_at,skip_reason,skip_first_at,skip_last_at,skip_streak,
-          last_error,last_error_at)
+          last_error,last_error_at,not_sent_kind,not_sent_why,not_sent_at)
        VALUES ${ค่า}
        ON CONFLICT(sku,channel) DO UPDATE SET
          planned_qty   = excluded.planned_qty,
@@ -244,7 +263,15 @@ async function เขียนเป็นชุด(แถว, กันเว�
              WHEN push_state.skip_reason IS NULL THEN excluded.planned_at
              ELSE COALESCE(push_state.skip_first_at, excluded.planned_at) END,
          skip_last_at  = CASE WHEN excluded.skip_reason IS NULL THEN NULL ELSE excluded.planned_at END,
-         skip_streak   = CASE WHEN excluded.skip_reason IS NULL THEN 0 ELSE push_state.skip_streak + 1 END`,
+         skip_streak   = CASE WHEN excluded.skip_reason IS NULL THEN 0 ELSE push_state.skip_streak + 1 END,
+         /* เขียนทับทุกรอบ ไม่ใส่ COALESCE โดยตั้งใจ — เหตุไม่ได้ส่งเป็นของรอบนี้
+            รอบที่ส่งได้จะส่ง null มา จึงทำให้เหตุเก่าหายเอง ไม่ต้องมีสคริปต์กวาด
+            (ท่าเดียวกับช่อง last_error ที่แก้ไว้ 18 ก.ย. 2569)
+            NOTE: คอมเมนต์นี้อยู่ข้างใน template literal — ห้ามใส่เครื่องหมาย backtick
+            เพราะมันจะปิดสตริงกลางทาง (เจอจริงตอนเขียนบล็อกนี้เอง 9 ต.ค. 2569) */
+         not_sent_kind = excluded.not_sent_kind,
+         not_sent_why  = excluded.not_sent_why,
+         not_sent_at   = excluded.not_sent_at`,
       params
     );
     เขียนแล้ว += ก้อน.length;
@@ -592,9 +619,29 @@ export async function กวาดดันสต็อก({ platform = "lazada"
     for (const r of แถว) {
       const got = ทีละรหัส.get(r.sku);
       if (!got) continue;
-      r.pushed_qty = got.to ?? null;
-      r.pushed_at = now;
+      /* 🔴 **แก้ 9 ต.ค. 2569 — ของเดิมเขียน `pushed_at = now` ให้แถวที่ไม่เคยถูกยิงเลย**
+         `สรุปผล()` ใน stock-push-common คืน `results: [...results, ...prep.skipped]`
+         ⇒ แถว `not_sent` **อยู่ในก้อนเดียวกับแถวที่ยิงจริง** ⇒ ลูปนี้เลยตั้ง `pushed_*` ให้ทั้งคู่
+         ผลที่ตามมาสองชั้น ทั้งคู่เงียบ:
+          ① ช่อง `pushed_at` โกหก — บอกว่า "ยิงแล้ว" ทั้งที่ไม่เคยออกนอกระบบ
+             ⇒ ตัวนับ "เคยยิง" บวมด้วยแถวที่ถูกด่านกั้น
+          ② UPSERT ข้างล่างล้าง `verified_*` เมื่อ `excluded.pushed_at IS NOT NULL`
+             ⇒ **รหัสที่ถูกด่านกั้นจะถูกล้างการยืนยันทิ้งทุกรอบ** ทั้งที่ไม่มีอะไรเปลี่ยนเลย
+         🚫 **ไม่กวาดย้อนหลัง** — แยกไม่ออกว่า `pushed_at` แถวไหนเป็นของจริง
+            ⇒ เลข "เคยยิง" ของแถวเก่าจะยังบวมอยู่ ต้องเขียนกำกับ ไม่ใช่แกล้งว่าหายแล้ว */
+      const ไม่ได้ส่ง = got.result === "not_sent";
       r.push_result = got.result ?? null;
+      if (ไม่ได้ส่ง) {
+        r.not_sent_kind = got.notSentKind ?? null;
+        r.not_sent_why = got.why ? String(got.why).slice(0, 200) : null;
+        r.not_sent_at = now;
+      } else {
+        r.pushed_qty = got.to ?? null;
+        r.pushed_at = now;
+        r.not_sent_kind = null;
+        r.not_sent_why = null;
+        r.not_sent_at = null;
+      }
       /* 🔑 **"ยิงแล้วได้ 200" ยังไม่นับว่าสำเร็จ** — `verified_at` ตั้งได้ที่เดียวคือ
          ท่อนยืนยันข้างบน (รอบถัดไปพิสูจน์ว่ารหัสหายจากแผนจริง) **ห้ามตั้งตรงนี้เด็ดขาด**
          ตอบ 200 ไม่ได้แปลว่าปลายทางทำให้ — แถบ "อัปเดตออโต้" ทั้งแถบพังถ้าตั้งผิดจุดนี้ */
