@@ -56,7 +56,15 @@ const ตั้งรหัส = () => { process.env.ZORT_STORENAME = 's'; proce
 const ถอดรหัส = () => { delete process.env.ZORT_STORENAME; delete process.env.ZORT_APIKEY; delete process.env.ZORT_APISECRET; };
 const ตั้งต้น = () => {
   calls = []; อ่านพัง = false; รหัสผล = '200'; พฤติกรรม = 'set';
-  คลัง = { 'Bar NW 16': { id: 20942809, stock: 4, availablestock: 0 }, 'A1': { id: 11, stock: 10, availablestock: 10 } };
+  /* ค่าตั้งต้นเป็น **ของจริงที่วัดสดเมื่อ 10 ต.ค. 2569** ไม่ใช่เลขที่แต่งให้เทสผ่าน
+     Bar NW 16      คงเหลือ 4 · พร้อมขาย 0 (ใบค้างจอง 4)
+     Bar NW 24-9800 คงเหลือ 5 · พร้อมขาย 0 (ใบค้างจอง 5) ← เคสที่ชีตของท่านบอก 0 ⇒ เขียนแล้วพร้อมขาย −5
+     A1 เป็นรหัสสมมติที่ไม่มีการจอง ใช้วัดทางปกติ */
+  คลัง = {
+    'Bar NW 16': { id: 20942809, stock: 4, availablestock: 0 },
+    'Bar NW 24-9800': { id: 20942810, stock: 5, availablestock: 0 },
+    'A1': { id: 11, stock: 10, availablestock: 10 },
+  };
   ตั้งรหัส();
 };
 
@@ -90,7 +98,13 @@ test('โหมดซ้อม: อ่านค่าก่อนให้ดู
   assert.equal(r.willSend.path, 'Product/UpdateProductAvailableStockList?warehousecode=NEW');
   assert.deepEqual(r.willSend.body, { stocks: [{ sku: 'Bar NW 16', stock: 4 }] });
   // ค่าก่อนเขียนต้องติดมาด้วย — คนเรียกต้องเห็นว่าของตั้งต้นเป็น 0 (⇒ รอบนี้แยก set/add ไม่ออก)
-  assert.deepEqual(r.before['Bar NW 16'], { stock: 4, availablestock: 0 });
+  // และต้องเห็น "จองอยู่" ซึ่งเป็นค่าที่เราคิดเอง (ZORT ไม่มีช่องนี้) ⇒ ชื่อคีย์ต้องประกาศที่มาของมัน
+  const ก = r.before['Bar NW 16'];
+  assert.equal(ก.stock, 4);
+  assert.equal(ก.availablestock, 0);
+  const คีย์จอง = Object.keys(ก).find((k) => k.startsWith('จองอยู่'));
+  assert.match(คีย์จอง, /คงเหลือ − พร้อมขาย/, 'ชื่อคีย์ต้องบอกว่าเป็นค่าที่คิดมา ไม่ใช่ช่องของ ZORT');
+  assert.equal(ก[คีย์จอง], 4);
   assert.equal(เขียน().length, 0);
   assert.equal(คลัง['Bar NW 16'].availablestock, 0);
 });
@@ -204,6 +218,55 @@ test('ไม่ได้ตั้งรหัส ZORT ⇒ ตีกลับต�
   assert.equal(r.ok, false);
   assert.equal(เขียน().length, 0);
   ตั้งรหัส();
+});
+
+/* ━━ ด่าน "เขียนแล้วพร้อมขายจะติดลบ" — ปลูกด้วย **เลขของเคสจริงที่รออยู่** ไม่ใช่เลขสมมติ ━━
+   Bar NW 24-9800: ชีตของท่านบอก 0 · ZORT คงเหลือ 5 · ใบค้างจอง 5 ⇒ เขียน 0 เฉย ๆ = พร้อมขาย −5 */
+test('🔴 ตีกลับเมื่อเขียนตามชีตแล้วพร้อมขายจะติดลบ — ด้วยเลขของ Bar NW 24-9800 ตัวจริง', async () => {
+  ตั้งต้น();
+  const ใบ = { ref: 'S-NEG', field: 'stock', warehousecode: 'NEW',
+    stocks: [{ sku: 'Bar NW 24-9800', stock: 0 }], confirm: true };
+  const r = await zortUpdateProductStock(ใบ);
+  assert.equal(r.ok, false);
+  assert.equal(r.พร้อมขายจะติดลบ, true);
+  assert.match(r.error, /-5/);
+  assert.equal(เขียน().length, 0, 'ต้องไม่เขียนอะไรเลย');
+  assert.equal(คลัง['Bar NW 24-9800'].stock, 5);
+  // ยืนยันโดยตั้งใจแล้วถึงเขียนได้ (ไม่ห้ามถาวร — พร้อมขายติดลบมีอยู่จริงในข้อมูลร้าน)
+  ตั้งต้น();
+  const y = await zortUpdateProductStock({ ...ใบ, allowNegativeAvailable: true });
+  assert.equal(y.written, true);
+  assert.equal(เขียน().length, 1);
+});
+
+test('โหมดซ้อมต้องบอกล่วงหน้าว่าจะถูกตีกลับ + คืน "จองอยู่" ที่คิดจาก คงเหลือ − พร้อมขาย', async () => {
+  ตั้งต้น();
+  const r = await zortUpdateProductStock({ ref: 'S-NEG-DRY', field: 'stock', warehousecode: 'NEW',
+    stocks: [{ sku: 'Bar NW 24-9800', stock: 0 }] });
+  assert.equal(r.dryRun, true);
+  assert.equal(r.จะถูกตีกลับตอนconfirm, true);
+  assert.deepEqual(r.คาดการณ์[0], { sku: 'Bar NW 24-9800', จะเขียน: 0, จองอยู่: 5, คาดพร้อมขายหลังเขียน: -5 });
+  assert.equal(เขียน().length, 0);
+});
+
+test('ตัวควบคุมลบของด่านนี้: รหัสที่ไม่มีการจอง ต้องผ่านฉลุย (ด่านไม่ได้ห้ามทุกการเขียน)', async () => {
+  ตั้งต้น();
+  const r = await zortUpdateProductStock({ ref: 'S-POS', field: 'stock', warehousecode: 'NEW',
+    stocks: [{ sku: 'A1', stock: 0 }], confirm: true });
+  assert.equal(r.written, true);
+  assert.equal(r.rows[0].จองอยู่ก่อนเขียน, 0);
+  assert.equal(r.rows[0].คาดพร้อมขายหลังเขียน, 0);
+});
+
+test('เขียนจริงแล้ววัดสูตรจองซ้ำ — "สูตรจองยังใช้ได้" ต้องเป็น true/false ตามของจริง ไม่ใช่เขียวตายตัว', async () => {
+  // ZORT ปลอมตัวนี้ขยับแต่ช่องที่เขียน (ไม่คิดพร้อมขายใหม่) ⇒ สูตรต้องรายงานว่า **ใช้ไม่ได้** รอบนี้
+  ตั้งต้น();
+  const r = await zortUpdateProductStock({ ref: 'S-F3', field: 'stock', warehousecode: 'NEW',
+    stocks: [{ sku: 'Bar NW 16', stock: 9 }], confirm: true, allowNegativeAvailable: true });
+  assert.equal(r.rows[0].จองอยู่ก่อนเขียน, 4);
+  assert.equal(r.rows[0].คาดพร้อมขายหลังเขียน, 5);
+  assert.equal(r.rows[0].พร้อมขายที่ได้จริง, 0, 'ZORT ปลอมไม่คิดพร้อมขายใหม่');
+  assert.equal(r.rows[0].สูตรจองยังใช้ได้, false, 'ต้องกล้ารายงานว่าไม่ตรง ไม่ใช่เขียวตลอดกาล');
 });
 
 test('เส้น ?updatestock=1 ใน core.mjs รับ POST เท่านั้น และมีค่าตั้งต้นเป็นโหมดซ้อม', () => {
