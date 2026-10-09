@@ -657,6 +657,163 @@ export async function zortDeleteProduct(o = {}) {
   return { ok: true, deleted: true, ref, id, sku, warn, message: `ลบสินค้า ${sku} ออกจาก ZORT แล้ว` };
 }
 
+/* ── เขียน "จำนวน" กลับเข้า ZORT — เส้นเดียวที่ท่อยังไม่มี (คุณส้มขอมา 10 ต.ค. 2569 05:57) ──
+   🔴 **ก่อนรอบนี้ท่อเราเขียนจำนวนลง ZORT ไม่ได้เลยสักเส้น** (ตรวจแล้ว: `?updateproduct=`
+      แมปแค่ราคา/ต้นทุน/น้ำหนัก/ขนาด · grep ทั้ง repo หา UpdateProductStockList ไม่เจอสักบรรทัด)
+
+   เส้นของ ZORT (เอกสาร V4 · คุณส้มอ่านของจริงมาให้):
+     POST Product/UpdateProductStockList?warehousecode=<code>           → ช่อง "คงเหลือ" (stock)
+     POST Product/UpdateProductAvailableStockList?warehousecode=<code>  → ช่อง "พร้อมขาย" (availablestock)
+     body: {"stocks":[{"sku":"…","stock":<Double>}]}
+
+   🔑 **ทำไมต้องเลือก `field` เองทุกครั้ง ห้ามมีค่าตั้งต้น**
+      ของจริงที่วัดได้ 10 ต.ค. 2569 (sku `Bar NW 16`): stock = 4 · availablestock = 0
+      ⇒ สองช่องนี้ **ไม่ใช่ของชิ้นเดียวกัน** และอาการ "แพลตฟอร์มขายไม่ได้" น่าจะมาจากช่องพร้อมขาย
+      ⇒ ตั้งค่าตั้งต้นให้ช่องใดช่องหนึ่ง = เดาแทนคนใช้ แล้วเขียนผิดช่องแบบเงียบสนิท
+      และ **ห้ามเขียนสองช่องในคำสั่งเดียว** — อ่านกลับแล้วจะแยกไม่ออกว่าช่องไหนทำให้ค่าเปลี่ยน
+
+   🔑 **set หรือ add? — ยังไม่รู้ และเส้นนี้จะไม่เดาแทน**
+      เอกสารไม่ได้บอก ⇒ ตอบได้ด้วยการเขียนจริงครั้งเดียวเท่านั้น
+      ⇒ คำตอบจึงคืน `before` / `sent` / `after` มาให้ครบ แล้วมีช่อง `ตีความ` ที่ยอมบอกว่า
+        **"แยกไม่ออก"** เมื่อ before = 0 (เพราะ 0+7 กับ set 7 ให้เลขเดียวกัน)
+        ⇒ อยากรู้คำตอบต้องยิงกับรหัสที่ของตั้งต้น **ไม่ใช่ 0**
+
+   🔑 **อ่านกลับหลังเขียนและคืนค่าที่อ่านได้มาด้วย** (คุณส้มขอมาเป็นข้อหลัก · ท่านประธานสั่งว่าห้ามเชื่อ 200)
+      ⇒ ผู้เรียกไม่มีทางเชื่อ 200 ลอย ๆ ได้ เพราะคำตอบมีเลขที่อ่านกลับมาติดมาเสมอ
+      ⚠️ **แต่การอ่านกลับทันทีไม่พอ** — `availablestock` เป็นค่าที่ ZORT คิดจากของอื่น (คงเหลือ − ที่จองไว้)
+         เขียนสำเร็จ ≠ ค่าคงอยู่ ⇒ คำตอบติดธง `ต้องอ่านซ้ำภายหลัง` ไว้เสมอ
+         อ่านซ้ำด้วย GET /api/core?zortproduct=<sku> หลังผ่านรอบซิงก์ของ ZORT ไปแล้วหนึ่งรอบ
+
+   ⚠️ `warehousecode` **ต้องส่งมาเสมอ ไม่มีค่าตั้งต้นในโค้ด**
+      ของร้านคือ `NEW` (คุณส้มอ่านจากใบซื้อจริง PO-202603001 — ไม่ได้เดา)
+      แต่เส้นนี้จะไม่ฝังค่านั้นไว้ เพราะเคยเกือบพลาดมาแล้ววันก่อน: เส้นอื่นของเราเคยประกาศ
+      `KLD`/`ANJ` เป็น "ค่าตั้งต้นในโค้ด (ไม่มีใครตั้ง POS_BRANCHES)" แล้วเกือบถูกหยิบไปใช้เป็นของจริง
+      ⇒ คลังผิด = เขียนจำนวนเข้าคลังที่ไม่ใช่ของร้าน แบบที่ ZORT ตอบ 200 เหมือนกันทุกประการ
+
+   🚫 **ขอบเขตรอบนี้คือสต็อกอย่างเดียว (ท่านประธานย้ำ)** ⇒ ช่อง `cost` ของ ZORT เส้นนี้ **ตีกลับ**
+      ไม่ใช่เพราะ ZORT ไม่รับ แต่เพราะอยู่นอกขอบเขตที่สั่ง (ต้นทุนมีเส้นของตัวเองที่ `?updateproduct=` ช่อง cost)
+
+   ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น · **ยังไม่เคยยิงจริง** · ครั้งแรกที่ยิงจริงต้องเป็นคำสั่งของท่านประธาน */
+const โหมดสต็อก = {
+  stock: { path: "Product/UpdateProductStockList", ช่อง: "stock", ป้าย: "คงเหลือ (stock)" },
+  available: { path: "Product/UpdateProductAvailableStockList", ช่อง: "availablestock", ป้าย: "พร้อมขาย (availablestock)" },
+};
+
+/** อ่านสินค้าหลายรหัสพร้อมกัน — คืน map sku → ค่าที่อ่านได้ หรือเหตุที่อ่านไม่ได้
+ *  ⚠️ สามสถานะเหมือน zortFindProduct: อ่านได้ · ไม่มีรหัสนี้ · ถามไม่สำเร็จ (ไม่รู้ ≠ ไม่มี) */
+async function อ่านสินค้าหลายรหัส(skus) {
+  const got = await Promise.all(skus.map((s) => zortFindProduct(s)));
+  const out = {};
+  skus.forEach((s, i) => {
+    const r = got[i];
+    out[s] = r?.ok && r.found
+      ? { ok: true, id: r.product.id, stock: r.product.stock, availablestock: r.product.availablestock }
+      : { ok: false, unknown: !!r?.unknown, error: r?.found === false ? `ZORT ไม่มีรหัส ${s}` : (r?.error || "อ่านไม่สำเร็จ") };
+  });
+  return out;
+}
+
+/** เทียบ before/sent/after แล้วบอกว่าเลขที่ได้ "ตีความได้ว่าอะไร" — **ยอมตอบว่าแยกไม่ออก**
+ *  🔴 กฎที่ต้องไม่หลุด: ของตั้งต้น 0 ทำให้ set กับ add ให้เลขเดียวกัน (0+7 = set 7)
+ *     ⇒ สรุปว่า "set" จากรหัสที่ของเป็น 0 คือการสรุปจากตัวควบคุมที่แยกแยะไม่ได้ */
+function ตีความผลเขียน(before, sent, after) {
+  if (before === null || after === null) return "อ่านค่าไม่ครบ — ตีความไม่ได้";
+  if (before === 0) return "แยกไม่ออก (ของตั้งต้นเป็น 0 ⇒ set กับ add ให้เลขเดียวกัน) — ต้องยิงกับรหัสที่ของไม่ใช่ 0";
+  if (after === sent && after !== before + sent) return "ดูเหมือน set (ทับค่าเดิม)";
+  if (after === before + sent && after !== sent) return "ดูเหมือน add (บวกเพิ่มจากเดิม)";
+  if (after === before) return "ค่าไม่ขยับเลย — ZORT ตอบสำเร็จแต่เลขไม่เปลี่ยน (ช่องนี้อาจเป็นค่าที่ถูกคิดใหม่)";
+  return "เลขที่ได้ไม่ตรงทั้ง set และ add — ห้ามสรุป ให้เอาเลขไปดูด้วยตา";
+}
+
+export async function zortUpdateProductStock(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+
+  const โหมด = โหมดสต็อก[txt(o.field, 20)];
+  if (!โหมด)
+    return { ok: false, error: 'ต้องระบุ field เป็น "stock" (ช่องคงเหลือ) หรือ "available" (ช่องพร้อมขาย) — ไม่มีค่าตั้งต้น เพราะสองช่องนี้คนละค่ากัน (วัดจริง 10 ต.ค. 2569: Bar NW 16 คงเหลือ 4 · พร้อมขาย 0)' };
+
+  const warehouse = txt(o.warehousecode, 40);
+  if (!warehouse)
+    return { ok: false, error: "ต้องระบุ warehousecode — เส้นนี้ไม่มีค่าตั้งต้นในโค้ดโดยตั้งใจ (คลังผิด = เขียนเข้าคลังที่ไม่ใช่ของร้าน แล้ว ZORT ก็ตอบ 200 เหมือนกัน)" };
+
+  const รายการดิบ = Array.isArray(o.stocks) ? o.stocks : null;
+  if (!รายการดิบ || !รายการดิบ.length)
+    return { ok: false, error: 'ต้องส่ง stocks เป็นอาร์เรย์ [{sku, stock}] อย่างน้อยหนึ่งแถว' };
+  /* เพดาน 5 รหัสต่อคำสั่ง — ไม่ใช่ข้อจำกัดของ ZORT แต่เป็น **งบเวลาของฟังก์ชัน** (เพดาน 26 วิ)
+     หนึ่งรอบต้องยิง อ่านก่อน → เขียน → อ่านกลับ ⇒ ขอมากกว่านี้ให้แบ่งหลายคำสั่ง (ref คนละใบ) */
+  if (รายการดิบ.length > 5)
+    return { ok: false, error: `ขอมา ${รายการดิบ.length} รหัส — เส้นนี้รับไม่เกิน 5 รหัสต่อคำสั่ง (ต้องอ่านก่อน-เขียน-อ่านกลับ ภายใน 26 วิ) ⇒ แบ่งเป็นหลายคำสั่ง ref คนละใบ` };
+
+  const stocks = [];
+  const เห็นแล้ว = new Set();
+  for (const แถว of รายการดิบ) {
+    const sku = txt(แถว?.sku, 60);
+    if (!sku) return { ok: false, error: "มีแถวที่ไม่มี sku — ยังไม่ส่งเข้า ZORT" };
+    if (เห็นแล้ว.has(sku)) return { ok: false, error: `รหัส ${sku} ส่งมาซ้ำในคำสั่งเดียว — ไม่เดาว่าจะเอาค่าไหน` };
+    เห็นแล้ว.add(sku);
+    if (แถว?.cost !== undefined)
+      return { ok: false, error: `แถว ${sku} ส่ง cost มาด้วย — รอบนี้ขอบเขตคือสต็อกอย่างเดียว (ท่านประธานสั่ง) ⇒ ต้นทุนใช้ ?updateproduct=1 ช่อง cost` };
+    const n = numOrNull(แถว?.stock);
+    if (n === null) return { ok: false, error: `แถว ${sku} อ่านจำนวนไม่ออก — ห้ามแปลงค่าที่อ่านไม่ออกเป็น 0` };
+    if (n < 0) return { ok: false, error: `แถว ${sku} จำนวนติดลบ (${n}) — เส้นนี้ไม่รับค่าติดลบโดยตั้งใจ (ไม่ใช่ข้อจำกัดของ ZORT)` };
+    stocks.push({ sku, stock: n });
+  }
+
+  const skus = stocks.map((s) => s.sku);
+  const ก่อน = await อ่านสินค้าหลายรหัส(skus);
+  const อ่านไม่ได้ = skus.filter((s) => !ก่อน[s].ok);
+  if (อ่านไม่ได้.length)
+    return { ok: false, ref, unknown: อ่านไม่ได้.some((s) => ก่อน[s].unknown),
+      error: `อ่านค่าก่อนเขียนไม่ได้: ${อ่านไม่ได้.map((s) => ก่อน[s].error).join(" · ")} — ยังไม่เขียนอะไรเลย (ไม่รู้ ≠ ตรง)`,
+      before: ก่อน };
+
+  const willSend = { path: `${โหมด.path}?warehousecode=${encodeURIComponent(warehouse)}`, body: { stocks } };
+  const ก่อนย่อ = Object.fromEntries(skus.map((s) => [s, { stock: ก่อน[s].stock, availablestock: ก่อน[s].availablestock }]));
+
+  if (!o.confirm)
+    return { ok: true, dryRun: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, willSend, before: ก่อนย่อ,
+      note: "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ตอน confirm:true ท่อจะอ่านค่าก่อน → เขียน → **อ่านกลับแล้วคืนเลขที่อ่านได้มาด้วย**",
+      ยังไม่รู้: 'ZORT ตีความ stock ที่ส่งไปเป็น "ทับค่าเดิม" หรือ "บวกเพิ่ม" — เอกสารไม่บอก ⇒ รู้ได้จากการเขียนจริงกับรหัสที่ของตั้งต้นไม่ใช่ 0 เท่านั้น' };
+
+  const seen = await seenRef("product-stock", ref);
+  if (seen.state === "unknown")
+    return { ok: false, ref, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "การเขียนจำนวนครั้งนี้เคยส่งไปแล้ว — ไม่ได้ส่งซ้ำ (กดปุ่มเดิมซ้ำได้ ห้ามกรอกใบใหม่)" };
+
+  const r = await zortPost(willSend.path, willSend.body);
+  if (!r.ok) return zortFail(r, { ref, field: โหมด.ป้าย, warehousecode: warehouse, before: ก่อนย่อ });
+  const warn = await markSafely("product-stock", ref, { kind: "product-stock", field: โหมด.ช่อง, warehouse, skus });
+
+  /* 🔴 อ่านกลับ — **ส่วนที่ทำให้ผู้เรียกเชื่อ 200 ลอย ๆ ไม่ได้**
+      อ่านกลับไม่สำเร็จ = ยังเขียว (ZORT รับไปแล้วจริง) แต่ต้องประกาศว่าไม่ได้ยืนยัน ห้ามเงียบ */
+  const หลัง = await อ่านสินค้าหลายรหัส(skus);
+  const ผลรายรหัส = stocks.map(({ sku, stock }) => {
+    const b = ก่อน[sku][โหมด.ช่อง] ?? null;
+    const a = หลัง[sku].ok ? (หลัง[sku][โหมด.ช่อง] ?? null) : null;
+    return {
+      sku, sent: stock, before: b, after: a,
+      อ่านกลับได้: หลัง[sku].ok,
+      ...(หลัง[sku].ok ? {} : { อ่านกลับไม่ได้เพราะ: หลัง[sku].error }),
+      ตรงกับที่ส่ง: หลัง[sku].ok ? a === stock : null,
+      ตีความ: หลัง[sku].ok ? ตีความผลเขียน(b, stock, a) : "อ่านกลับไม่ได้ — ตีความไม่ได้",
+    };
+  });
+
+  return {
+    ok: true, written: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, warn,
+    rows: ผลรายรหัส,
+    readBackAll: Object.fromEntries(skus.map((s) => [s, หลัง[s].ok
+      ? { stock: หลัง[s].stock, availablestock: หลัง[s].availablestock }
+      : { error: หลัง[s].error }])),
+    ต้องอ่านซ้ำภายหลัง: true,
+    อ่านซ้ำด้วย: "GET /api/core?zortproduct=<sku>",
+    เหตุที่ต้องอ่านซ้ำ: "availablestock เป็นค่าที่ ZORT คิดจากของอื่น (คงเหลือ − ที่จองไว้) ⇒ เขียนสำเร็จไม่ได้แปลว่าค่าคงอยู่ · ต้องอ่านซ้ำหลังผ่านรอบซิงก์ของ ZORT ไปอีกหนึ่งรอบ",
+    message: `ส่งจำนวน ${stocks.length} รหัสเข้า ZORT ช่อง${โหมด.ป้าย} คลัง ${warehouse} แล้ว — ดูเลขที่อ่านกลับใน rows ก่อนสรุปว่าสำเร็จ`,
+  };
+}
+
 /* ── รูปสินค้า · ต้นทุน · พิมพ์บาร์โค้ด — งานกระดาน t_mu0m98gq ──
    ต้นทุน (product-cost): ใช้ ?updateproduct=1 ช่อง cost → purchaseprice ได้เลย ไม่ต้องมีเส้นใหม่
      ⚠️ ZORT API มีแค่ purchaseprice (ราคาซื้อที่ตั้งไว้) **ไม่มีต้นทุนเฉลี่ย/ประวัติต้นทุน** — จอห้ามเขียนว่าเป็นต้นทุนเฉลี่ย

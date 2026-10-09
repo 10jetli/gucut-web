@@ -1347,6 +1347,25 @@ async function route(req, context) {
       const r = await zortUpdateProduct(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST ?updatestock=1 body {ref, field:"stock"|"available", warehousecode, stocks:[{sku,stock}], confirm?}
+         ⇒ ZORT Product/UpdateProductStockList หรือ UpdateProductAvailableStockList ?warehousecode=
+       🔴 **เส้นเดียวของท่อที่เขียน "จำนวน" ลง ZORT ได้** (ก่อน 10 ต.ค. 2569 ไม่มีเลยสักเส้น)
+       🔑 ต้องระบุ `field` เองทุกครั้ง **ไม่มีค่าตั้งต้น** — คงเหลือกับพร้อมขายคนละค่ากันจริง
+          (วัดจริง 10 ต.ค. 2569 · sku Bar NW 16: คงเหลือ 4 · พร้อมขาย 0 ⇒ ที่ขายไม่ได้คือช่องพร้อมขาย)
+          และเขียนได้ช่องเดียวต่อคำสั่ง — เขียนสองช่องพร้อมกันแล้วอ่านกลับจะแยกไม่ออกว่าช่องไหนทำให้เลขเปลี่ยน
+       🔑 **คำตอบมีเลขที่อ่านกลับมาติดมาด้วยเสมอ** ⇒ ผู้เรียกเชื่อ 200 ลอย ๆ ไม่ได้ (ท่านประธานสั่ง)
+          แต่ `availablestock` เป็นค่าที่ ZORT คิดใหม่ได้ ⇒ คำตอบติดธง `ต้องอ่านซ้ำภายหลัง` ไว้ตลอด
+       🚫 ไม่รับช่อง cost (นอกขอบเขต "สต็อกอย่างเดียว") · ไม่รับค่าติดลบ · ไม่เกิน 5 รหัสต่อคำสั่ง
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น · **ยังไม่เคยยิงจริง** · ครั้งแรกที่ยิงจริงต้องเป็นคำสั่งของท่านประธาน
+       ⚠️ ผิด method = 405 */
+    if (url.searchParams.get("updatestock")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body) return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON)" }, 400);
+      const { zortUpdateProductStock } = await import("../lib/zort-write.mjs");
+      const r = await zortUpdateProductStock(body);
+      return json(r, r.ok ? 200 : r.unknown ? 502 : 400);
+    }
     if (url.searchParams.has("deleteproduct")) {
       if (req.method !== "DELETE") return json({ error: "ต้องเป็น DELETE" }, 405);
       const q = url.searchParams;
