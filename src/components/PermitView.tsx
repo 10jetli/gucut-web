@@ -2140,16 +2140,31 @@ export default function PermitView() {
                       ⚠️ ต้องมี download ระบุชื่อไทย ไม่งั้นลูกค้าได้ไฟล์ชื่อ med-cert-lz1.pdf
                          ซึ่งหาไม่เจอในเครื่องตัวเอง
                       ⚠️ ต้องมี rel="noopener" คู่กับ target="_blank" เสมอ */}
+                  {/* 🔴 ห้ามให้ปุ่มนี้โหลด "ฟอร์มเปล่า" — ท่านประธานทักเอง 10 ต.ค. 2569
+                         *"เอกสารต้องเป็นชุดเดียวกันกับปุ่มแดงข้างบน ที่มีข้อมูลลูกค้า
+                          (ห้ามโหลดเอกสารเปล่า)"*
+                      เหตุ: ลูกค้าที่กดตรงนี้ได้กระดาษว่าง แล้วเอาไปยื่นทั้งที่ยังไม่มีข้อมูลตัวเอง
+                      ⇒ เสียเที่ยวไปสำนักงาน ซึ่งแย่กว่าไม่มีปุ่มเลย
+                      ⇒ ปุ่มนี้จึงเรียก printOfficialForm() ตัวเดียวกับปุ่มใหญ่ด้านบน
+                         (พิมพ์ ลซ.๑ ๘ หน้าพร้อมข้อมูล + ใบรับรองแพทย์ ในชุดเดียว)
+                      ⚠️ ฟอร์มเปล่ายังเข้าถึงได้อยู่ แต่เฉพาะตอนสร้าง PDF ไม่สำเร็จ
+                         (ข้อความ genError ด้านบนบอกทาง) — เป็นทางถอย ไม่ใช่ทางหลัก */}
                   {"sample" in doc && doc.sample && (
-                    <a
-                      href={doc.sample.url}
-                      download={doc.sample.filename}
-                      target="_blank"
-                      rel="noopener"
-                      className="mt-1.5 inline-block rounded-sm border border-steel-600 px-2.5 py-1.5 text-[12.5px] font-semibold text-ink"
-                    >
-                      📄 โหลดแบบฟอร์ม (PDF)
-                    </a>
+                    canPrint ? (
+                      <button
+                        type="button"
+                        onClick={() => void printOfficialForm()}
+                        disabled={genBusy}
+                        className="mt-1.5 inline-block rounded-sm border border-safety px-2.5 py-1.5 text-[12.5px] font-semibold text-safety disabled:border-steel-600 disabled:text-steel-300"
+                      >
+                        {genBusy ? "กำลังเตรียมเอกสาร…" : "🖨️ พิมพ์ชุดนี้ (มีข้อมูลของคุณแล้ว)"}
+                      </button>
+                    ) : (
+                      <span className="mt-1.5 block text-[11.5px] text-ink-300">
+                        กรอกข้อมูลด้านบนให้ครบก่อน แล้วกดปุ่ม &ldquo;ขอใบอนุญาต&rdquo;
+                        เอกสารชุดนี้จะพิมพ์ออกมาพร้อมข้อมูลของคุณ
+                      </span>
+                    )
                   )}
                 </li>
               ))}
