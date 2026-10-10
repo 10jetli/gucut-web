@@ -725,6 +725,37 @@ function ตีความผลเขียน(before, sent, after) {
   return "เลขที่ได้ไม่ตรงทั้ง set และ add — ห้ามสรุป ให้เอาเลขไปดูด้วยตา";
 }
 
+/** รายชื่อคลังที่ ZORT รู้จัก — ใช้ตรวจ `warehousecode` ก่อนเขียน **สามสถานะ ห้ามยุบ**
+ *  คืน `{ ok:true, codes:[...] }`      = อ่านได้ ⇒ เอาไปเทียบได้
+ *  คืน `{ ok:false, unknown:true }`     = ถาม ZORT ไม่ได้ ⇒ ผู้เรียก **ต้องตีกลับ** (ไม่รู้ ≠ ตรง)
+ *
+ *  🔴 ที่มา 10 ต.ค. 2569 — คุณส้มขอเอง: *"ขอให้โหมดซ้อมตอบให้ได้ว่า warehousecode ที่ส่งมา
+ *     ZORT รู้จักไหม ไม่งั้นเราจะเขียนสำเร็จเข้าคลังที่ไม่ใช่ของร้าน แล้วรายงานว่าสำเร็จ"*
+ *     เหตุที่เขาสงสัย: เขายิง `GetProducts&warehousecode=KLD|ANJ` แล้วได้ `Access Denied.`
+ *  🔑 **แต่สองเรื่องนี้คนละคำถาม** — อันนั้นคือ *ตัวกรองคลังฝั่งอ่าน* ไม่ได้บอกอะไรเลยเรื่องฝั่งเขียน
+ *     ⇒ ด่านนี้ตอบได้แค่คำถามเดียว: **"รหัสนี้มีอยู่ในรายชื่อคลังของ ZORT จริงไหม"**
+ *  🚫 **สิ่งที่ด่านนี้ตอบไม่ได้ และห้ามให้ใครอ่านเกิน**: ZORT จะเอาเลขไปลงคลังไหนจริงตอนเขียน
+ *     (ZORT ตอบ 200 เหมือนกันทั้งคลังถูกและคลังผิด) ⇒ รู้ได้จาก **อ่านกลับใบแรกที่ยิงจริง** เท่านั้น
+ *  📏 วัดจริง 10 ต.ค. 2569: `Warehouse/GetWarehouses` → 200 คืน 3 คลัง `NEW` (โกดัง) · `KLD` · `ANJ`
+ *     ⇒ `NEW` จึงไม่ใช่ค่าที่อ่านจากใบซื้อใบเดียวอีกแล้ว ZORT ยืนยันเองว่ามีรหัสนี้
+ *     ⚠️ เลขนี้เป็นสภาพของระบบอื่น ⇒ **ห้ามเอาไปเขียนตายตัวในโค้ด** ให้ยิงอ่านทุกครั้ง (คลาส stale-state) */
+async function รายชื่อคลังของ_ZORT() {
+  const headers = creds();
+  if (!headers) return { ok: false, unknown: true, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Warehouse/GetWarehouses?limit=100`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถามรายชื่อคลังจาก ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = r.ok ? await r.json().catch(() => null) : null;
+  const list = Array.isArray(d?.list) ? d.list : null;
+  if (!list) return { ok: false, unknown: true, error: `ถามรายชื่อคลังจาก ZORT ไม่สำเร็จ (HTTP ${r.status}) — ยังไม่รู้ว่ารหัสคลังถูกไหม` };
+  const codes = list.map((w) => txt(w?.code, 40)).filter(Boolean);
+  if (!codes.length) return { ok: false, unknown: true, error: "ZORT ตอบรายชื่อคลังมาแต่ไม่มีช่อง code เลย — ยังตัดสินไม่ได้" };
+  return { ok: true, codes, names: Object.fromEntries(list.map((w) => [txt(w?.code, 40), txt(w?.name, 60)])) };
+}
+
 export async function zortUpdateProductStock(o = {}) {
   const ref = cleanRef(o.ref);
   if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
@@ -760,6 +791,22 @@ export async function zortUpdateProductStock(o = {}) {
     stocks.push({ sku, stock: n });
   }
 
+  /* ── ด่าน "ZORT รู้จักรหัสคลังนี้ไหม" — คุณส้มขอ 10 ต.ค. 2569 (ดูเหตุผลเต็มที่ รายชื่อคลังของ_ZORT) ──
+     🔴 ตีกลับทั้งสองทิศ: ไม่อยู่ในรายชื่อ = ตีกลับ · **อ่านรายชื่อไม่ได้ก็ตีกลับ** (ไม่รู้ ≠ ตรง)
+        ทิศหลังสำคัญกว่า — ถ้าปล่อยผ่านตอนอ่านไม่ได้ ด่านนี้จะหายไปเงียบ ๆ วันที่ ZORT ล่ม
+        ซึ่งคือวันที่เราต้องการมันที่สุด [[fallbacks-must-announce]] */
+  const คลัง = await รายชื่อคลังของ_ZORT();
+  if (!คลัง.ok)
+    return { ok: false, ref, unknown: true,
+      error: `${คลัง.error} — ยังไม่เขียนอะไรเลย (ตรวจรหัสคลังไม่ได้ ⇒ ไม่เขียน)`,
+      warehousecode: warehouse, warehouseKnown: null };
+  if (!คลัง.codes.includes(warehouse))
+    return { ok: false, ref, warehousecode: warehouse, warehouseKnown: false,
+      คลังที่ZORTรู้จัก: คลัง.codes,
+      error: `ZORT ไม่มีคลังรหัส "${warehouse}" — ที่มีคือ ${คลัง.codes.join(" · ")} ⇒ ไม่เขียน (คลังผิด ZORT ก็ตอบ 200 เหมือนกัน แล้วเราจะรายงานว่าสำเร็จ)` };
+
+  /* ⬆️ ด่านคลังอยู่ **หลัง**ด่านที่ตรวจได้ในเครื่อง และ **ก่อน**การอ่านค่าก่อนเขียน
+     ⇒ คำสั่งที่ผิดรูปถูกตีกลับฟรี ไม่เสียคำขอไป ZORT · และคลังผิดถูกตีกลับก่อนอ่านทีละรหัส */
   const skus = stocks.map((s) => s.sku);
   const ก่อน = await อ่านสินค้าหลายรหัส(skus);
   const อ่านไม่ได้ = skus.filter((s) => !ก่อน[s].ok);
@@ -769,6 +816,14 @@ export async function zortUpdateProductStock(o = {}) {
       before: ก่อน };
 
   const willSend = { path: `${โหมด.path}?warehousecode=${encodeURIComponent(warehouse)}`, body: { stocks } };
+  /* 🔑 ประกาศผลการตรวจคลังออกไปทุกคำตอบ — พร้อม **ข้อจำกัดของมันเอง** ติดไปด้วยเสมอ
+     ไม่งั้นคนอ่านจะเข้าใจว่า "คลังถูกแน่" ซึ่งด่านนี้ไม่ได้พิสูจน์ (ดูหัว รายชื่อคลังของ_ZORT) */
+  const ผลตรวจคลัง = {
+    warehouseKnown: true,
+    คลังที่ZORTรู้จัก: คลัง.codes,
+    ชื่อคลังที่ส่ง: คลัง.names?.[warehouse] ?? null,
+    "ด่านนี้ยังไม่ได้พิสูจน์": "ZORT จะเอาเลขไปลงคลังนี้จริงไหม — ตัวกรองคลังฝั่งอ่านของรหัส API เราถูก Access Denied (วัด 10 ต.ค. 2569) ⇒ รู้ได้จากการอ่านกลับใบแรกที่ยิงจริงเท่านั้น",
+  };
 
   /* ── ด่าน "เขียนแล้วพร้อมขายจะติดลบ" — คุณส้มเสนอ 10 ต.ค. 2569 06:24 ──
      🔑 สูตร `จอง = คงเหลือ − พร้อมขาย` **ถูกวัดแล้ว ไม่ใช่เดา**: ยิงอ่านสด 9 รหัสบาร์ทะเบียน
@@ -798,7 +853,7 @@ export async function zortUpdateProductStock(o = {}) {
   const ติดลบ = (คาดพร้อมขาย || []).filter((x) => x.คาดพร้อมขายหลังเขียน !== null && x.คาดพร้อมขายหลังเขียน < 0);
 
   if (!o.confirm)
-    return { ok: true, dryRun: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, willSend, before: ก่อนย่อ,
+    return { ok: true, dryRun: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, ...ผลตรวจคลัง, willSend, before: ก่อนย่อ,
       ...(คาดพร้อมขาย ? { คาดการณ์: คาดพร้อมขาย } : {}),
       ...(ติดลบ.length ? { จะถูกตีกลับตอนconfirm: true,
         เหตุที่จะถูกตีกลับ: `เขียนแล้วพร้อมขายจะติดลบ: ${ติดลบ.map((x) => `${x.sku} → ${x.คาดพร้อมขายหลังเขียน} (จองอยู่ ${x.จองอยู่})`).join(" · ")} ⇒ ต้องเคลียร์ใบค้างก่อน หรือยืนยันด้วย allowNegativeAvailable:true` } : {}),
@@ -848,7 +903,7 @@ export async function zortUpdateProductStock(o = {}) {
   });
 
   return {
-    ok: true, written: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, warn,
+    ok: true, written: true, ref, field: โหมด.ป้าย, warehousecode: warehouse, ...ผลตรวจคลัง, warn,
     rows: ผลรายรหัส,
     readBackAll: Object.fromEntries(skus.map((s) => [s, หลัง[s].ok
       ? { stock: หลัง[s].stock, availablestock: หลัง[s].availablestock }

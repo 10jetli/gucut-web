@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-10-05T16:27:19.855Z",
+  "generatedAt": "2026-10-10T03:06:15.212Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -255,7 +255,8 @@ export const ZORT_ARCH = {
       "endpoint": "Warehouse/GetWarehouses",
       "kind": "read",
       "files": [
-        "netlify/lib/core-purchases.mjs"
+        "netlify/lib/core-purchases.mjs",
+        "netlify/lib/zort-write.mjs"
       ],
       "module": "Warehouse"
     },
@@ -834,7 +835,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-10-05T16:27:19.855Z",
+    "at": "2026-10-10T03:06:15.212Z",
     "problems": [],
     "ok": true
   }

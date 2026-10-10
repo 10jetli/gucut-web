@@ -23,11 +23,19 @@ let คลัง = {};
 let พฤติกรรม = 'set';     // ZORT จะตีความค่าที่ส่งไปแบบไหน — ตัวแปรที่ทำให้เทสนี้แยกแยะได้
 let อ่านพัง = false;
 let รหัสผล = '200';
+/* รายชื่อคลังของ ZORT ปลอม — **ค่าจริงที่วัดสดเมื่อ 10 ต.ค. 2569** (Warehouse/GetWarehouses → 200)
+   NEW = โกดัง · KLD · ANJ · ⚠️ ของจริงเปลี่ยนได้ ⇒ เทสนี้ทดสอบ "ตรรกะของด่าน" ไม่ใช่ยืนยันรายชื่อ */
+let คลังของZORT = [{ code: 'NEW', name: 'โกดัง' }, { code: 'KLD', name: 'KLD' }, { code: 'ANJ', name: 'ANJ' }];
+let รายชื่อคลังพัง = false;
 let calls = [];
 
 globalThis.fetch = async (url, init = {}) => {
   const u = String(url);
   calls.push({ url: u, method: init.method || 'GET', body: init.body ? JSON.parse(init.body) : null });
+  if (u.includes('Warehouse/GetWarehouses')) {
+    if (รายชื่อคลังพัง) return { ok: false, status: 500, json: async () => ({}) };
+    return { ok: true, status: 200, json: async () => ({ list: คลังของZORT }) };
+  }
   if (u.includes('GetProducts')) {
     if (อ่านพัง) throw new Error('network down');
     const sku = decodeURIComponent(new URL(u).searchParams.get('searchsku') || '');
@@ -55,7 +63,8 @@ const เขียน = () => posts().filter((c) => /UpdateProduct(Available)?St
 const ตั้งรหัส = () => { process.env.ZORT_STORENAME = 's'; process.env.ZORT_APIKEY = 'k'; process.env.ZORT_APISECRET = 'x'; };
 const ถอดรหัส = () => { delete process.env.ZORT_STORENAME; delete process.env.ZORT_APIKEY; delete process.env.ZORT_APISECRET; };
 const ตั้งต้น = () => {
-  calls = []; อ่านพัง = false; รหัสผล = '200'; พฤติกรรม = 'set';
+  calls = []; อ่านพัง = false; รหัสผล = '200'; พฤติกรรม = 'set'; รายชื่อคลังพัง = false;
+  คลังของZORT = [{ code: 'NEW', name: 'โกดัง' }, { code: 'KLD', name: 'KLD' }, { code: 'ANJ', name: 'ANJ' }];
   /* ค่าตั้งต้นเป็น **ของจริงที่วัดสดเมื่อ 10 ต.ค. 2569** ไม่ใช่เลขที่แต่งให้เทสผ่าน
      Bar NW 16      คงเหลือ 4 · พร้อมขาย 0 (ใบค้างจอง 4)
      Bar NW 24-9800 คงเหลือ 5 · พร้อมขาย 0 (ใบค้างจอง 5) ← เคสที่ชีตของท่านบอก 0 ⇒ เขียนแล้วพร้อมขาย −5
@@ -138,9 +147,12 @@ test('🔑 อ่านกลับหลังเขียนและคืน
   assert.equal(r.readBackAll.A1.stock, 7);
   // availablestock เป็นค่าที่ ZORT คิดใหม่ได้ ⇒ ธงนี้ต้องติดมาทุกครั้ง ไม่ว่าเลขจะสวยแค่ไหน
   assert.equal(r.ต้องอ่านซ้ำภายหลัง, true);
-  // ลำดับต้องเป็น อ่านก่อน → เขียน → อ่านกลับ
-  const ลำดับ = calls.map((c) => (/StockList/.test(c.url) ? 'เขียน' : 'อ่าน'));
-  assert.deepEqual(ลำดับ, ['อ่าน', 'เขียน', 'อ่าน']);
+  /* ลำดับต้องเป็น ตรวจคลัง → อ่านค่าก่อน → เขียน → อ่านกลับ
+     🔑 แยกชนิดคำขอให้ละเอียด ไม่ยุบเป็น "อ่าน" เฉย ๆ — ไม่งั้นวันที่ด่านคลังหายไป
+        จำนวนคำขอจะยังเท่าเดิมได้ (คำขออ่านสินค้าชดเชยพอดี) แล้วเทสนี้จะเขียวโดยด่านหาย */
+  const ลำดับ = calls.map((c) =>
+    /StockList/.test(c.url) ? 'เขียน' : /GetWarehouses/.test(c.url) ? 'ตรวจคลัง' : 'อ่านสินค้า');
+  assert.deepEqual(ลำดับ, ['ตรวจคลัง', 'อ่านสินค้า', 'เขียน', 'อ่านสินค้า']);
 });
 
 test('🔴 ตัวควบคุมลบของการตีความ set/add — ของตั้งต้น 0 ต้องตอบ "แยกไม่ออก" ห้ามตอบ set', async () => {
@@ -278,4 +290,58 @@ test('เส้น ?updatestock=1 ใน core.mjs รับ POST เท่าน
   assert.match(ท่อน, /zortUpdateProductStock/);
   // ไม่มีการเติม confirm ให้เองในท่อ — ต้องมาจากผู้เรียกเท่านั้น
   assert.doesNotMatch(ท่อน, /confirm:\s*true/);
+});
+
+/* ══════════ ด่านรหัสคลัง — คุณส้มขอ 10 ต.ค. 2569 ══════════
+   เหตุ: เขายิง `GetProducts&warehousecode=KLD|ANJ` แล้วได้ `Access Denied.` ⇒ กลัวว่าเราจะ
+   "เขียนสำเร็จเข้าคลังที่ไม่ใช่ของร้าน แล้วรายงานว่าสำเร็จ" (ZORT ตอบ 200 ทั้งคลังถูกและผิด)
+   🔑 เทสชุดนี้ต้องแยกแยะให้ได้สามอย่าง ไม่ใช่แค่ "มีด่าน":
+      ① คลังที่ ZORT ไม่รู้จัก ⇒ ไม่เขียน  ② อ่านรายชื่อไม่ได้ ⇒ ไม่เขียน (ไม่รู้ ≠ ตรง)
+      ③ ด่านต้อง **ประกาศข้อจำกัดของตัวเอง** ไม่ให้คนอ่านเกินว่า "คลังถูกแน่แล้ว" */
+const คำสั่งคลัง = (wh) => ({ ref: `W-${wh}`, field: 'stock', warehousecode: wh, stocks: [{ sku: 'A1', stock: 1 }] });
+
+test('คลังที่ ZORT ไม่รู้จัก ⇒ ตีกลับ ไม่เขียน · พร้อมตัวควบคุมบวกที่คลังถูก', async () => {
+  ตั้งต้น();
+  const ผิด = await zortUpdateProductStock(คำสั่งคลัง('NEWW'));   // พิมพ์เกินหนึ่งตัว
+  assert.equal(ผิด.ok, false);
+  assert.equal(ผิด.warehouseKnown, false);
+  assert.match(ผิด.error, /ไม่มีคลังรหัส "NEWW"/);
+  assert.match(ผิด.error, /NEW · KLD · ANJ/);          // บอกด้วยว่าที่มีคืออะไร ไม่ใช่แค่ว่าผิด
+  assert.equal(เขียน().length, 0, 'คลังผิดต้องไม่มีคำสั่งเขียนหลุดไปสักใบ');
+  assert.equal(คลัง['A1'].stock, 10, 'ของในคลังปลอมต้องไม่ขยับ');
+
+  // ── ตัวควบคุมบวก: คลังที่อยู่ในรายชื่อต้องผ่านด่านนี้ไปถึงโหมดซ้อม ──
+  ตั้งต้น();
+  const ถูก = await zortUpdateProductStock(คำสั่งคลัง('NEW'));
+  assert.equal(ถูก.ok, true);
+  assert.equal(ถูก.dryRun, true);
+  assert.equal(ถูก.warehouseKnown, true);
+  assert.deepEqual(ถูก.คลังที่ZORTรู้จัก, ['NEW', 'KLD', 'ANJ']);
+  assert.equal(ถูก.ชื่อคลังที่ส่ง, 'โกดัง');
+});
+
+test('อ่านรายชื่อคลังไม่ได้ ⇒ ตีกลับ ไม่เขียน (ไม่รู้ ≠ ตรง) ไม่ใช่ปล่อยผ่าน', async () => {
+  ตั้งต้น();
+  รายชื่อคลังพัง = true;
+  const r = await zortUpdateProductStock({ ...คำสั่งคลัง('NEW'), confirm: true });
+  assert.equal(r.ok, false);
+  assert.equal(r.unknown, true, 'ต้องบอกว่า "ยังไม่รู้" ไม่ใช่ "ไม่ผ่าน"');
+  assert.equal(r.warehouseKnown, null, 'สามสถานะ — ห้ามยุบ null เป็น false');
+  assert.match(r.error, /ตรวจรหัสคลังไม่ได้/);
+  assert.equal(เขียน().length, 0, 'ZORT ล่มคือวันที่ต้องการด่านนี้ที่สุด ⇒ ห้ามเขียน');
+});
+
+test('โหมดซ้อมต้องประกาศข้อจำกัดของด่านคลังเอง — ห้ามให้คนอ่านว่า "คลังถูกแน่"', async () => {
+  ตั้งต้น();
+  const r = await zortUpdateProductStock(คำสั่งคลัง('NEW'));
+  const ข้อจำกัด = r['ด่านนี้ยังไม่ได้พิสูจน์'];
+  assert.ok(ข้อจำกัด, 'ต้องมีช่องที่บอกว่าด่านนี้พิสูจน์อะไรไม่ได้');
+  assert.match(ข้อจำกัด, /อ่านกลับ/, 'ต้องชี้ว่าทางรู้จริงคือการอ่านกลับใบแรก');
+});
+
+test('ด่านคลังต้องอยู่หลังด่านในเครื่อง — คำสั่งผิดรูปต้องไม่เสียคำขอไป ZORT เลย', async () => {
+  ตั้งต้น();
+  const r = await zortUpdateProductStock({ ref: 'W-0', field: 'stock', warehousecode: 'NEW', stocks: [] });
+  assert.match(r.error, /stocks/);
+  assert.equal(calls.length, 0, 'ยังไม่ควรมีคำขอไป ZORT แม้แต่คำขอรายชื่อคลัง');
 });
