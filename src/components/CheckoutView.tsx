@@ -1,6 +1,7 @@
 "use client";
 
 import NotifyBell from "@/components/NotifyBell";
+import { สถานะป้ายของตัวเลือก, ป้ายลซ2 } from "@/lib/permit-label-core.mjs";
 import Image from "next/image";
 import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
@@ -653,6 +654,12 @@ export default function CheckoutView() {
                 {i.title}
               </Link>
               {i.variant && i.variant !== "-" && <p className="mt-0.5 text-[11px] text-steel-300">{i.variant}</p>}
+              {/* 🔴 จุดนี้สำคัญที่สุดของทั้งเรื่อง — เหตุที่ท่านสั่งติดป้ายคือ
+                  "ลูกค้าสั่งซื้อได้โดยไม่รู้ว่าต้องขอใบอนุญาตก่อน ⇒ สั่งมาแล้วส่งไม่ได้"
+                  ⇒ หน้าชำระเงินคือหน้าสุดท้ายก่อนเกิดออเดอร์ที่ส่งไม่ได้ ⇒ ป้ายต้องอยู่ที่นี่ด้วย */}
+              {สถานะป้ายของตัวเลือก({ k: i.sku, h: i.handle }) === "ต้องขอ" && (
+                <p className="mt-1 text-[10px] font-semibold text-[#1a1a1a]">{ป้ายลซ2}</p>
+              )}
               <div className="mt-1.5 flex items-center gap-2">
                 <Price value={i.price} className="flex-1 font-heading text-[15px] font-semibold text-safety" />
                 <Stepper qty={i.qty} onChange={(q) => setQty(i, q)} />

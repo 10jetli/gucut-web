@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { สถานะป้ายของตัวเลือก, ป้ายลซ2 } from "@/lib/permit-label-core.mjs";
 import { SHELL_W } from "@/lib/layout";
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -67,6 +68,12 @@ export default function CartView() {
               </Link>
               {it.variant && it.variant !== "-" && (
                 <p className="mt-0.5 text-[11px] text-steel-300">{it.variant}</p>
+              )}
+              {/* 🏷️ 【ต้องขอ ลซ.2 ก่อน】 ในตะกร้า — ท่านประธานสั่ง 10 ต.ค. 2569 "ทำต่อให้ครบ"
+                  🔑 ตะกร้าไม่มีรหัสสินค้า มีแต่ handle + sku ของตัวเลือก ⇒ เกณฑ์ตัดสินจาก handle ได้
+                  (ดูเหตุผลในหัว src/lib/permit-label-core.mjs) · ตัดสินรายบรรทัด ไม่เหมาทั้งตะกร้า */}
+              {สถานะป้ายของตัวเลือก({ k: it.sku, h: it.handle }) === "ต้องขอ" && (
+                <p className="mt-1 text-[10px] font-semibold text-[#1a1a1a]">{ป้ายลซ2}</p>
               )}
               <div className="mt-auto flex items-center gap-2 pt-1.5">
                 <Price value={it.price} className="flex-1 font-heading text-[15px] font-semibold text-safety" />

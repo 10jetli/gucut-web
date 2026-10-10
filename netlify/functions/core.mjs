@@ -495,7 +495,11 @@ async function route(req, context) {
       const body = await req.json().catch(() => null);
       if (!body || !Array.isArray(body.rows)) return json({ error: "ต้องส่ง {rows:[...]}" }, 400);
       const { registryImport } = await import("../lib/core-registry.mjs");
-      return json(await registryImport(body.rows));
+      /* ⚠️ `allowClearSaleData` — ปลดด่าน "กำลังจะลบข้อมูลการจำหน่าย" (ดูเหตุผลเต็มใน core-registry.mjs)
+         เส้นนี้ **ลบทั้งล็อตแล้วเขียนใหม่** ⇒ CSV ที่ไม่มีคอลัมน์บุคคลจะล้าง sold_at/buyer/lz2 ทิ้ง
+         ⇒ ด่านตีกลับไว้ก่อน · ส่ง `allowClearSaleData:true` คือการกดยืนยันอีกครั้งโดยตั้งใจ
+         🚫 ห้ามให้ค่านี้ติดไปกับสคริปต์เป็นค่าเริ่มต้น — มันมีไว้สำหรับการล้างที่ตั้งใจเท่านั้น */
+      return json(await registryImport(body.rows, { allowClearSaleData: body.allowClearSaleData === true }));
     }
 
     if (url.searchParams.get("d1move")) {
