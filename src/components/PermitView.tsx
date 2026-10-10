@@ -1922,7 +1922,7 @@ export default function PermitView() {
             <button
               onClick={() => void printOfficialForm()}
               disabled={!canPrint || genBusy}
-              className="mt-2 w-full rounded-sm bg-ink py-3.5 text-[15px] font-bold text-white disabled:bg-steel-700 disabled:text-steel-300"
+              className="mt-2 w-full rounded-md bg-safety py-4 text-[17px] font-extrabold text-white shadow-[0_4px_0_0_#8f2100] transition active:translate-y-[2px] active:shadow-[0_2px_0_0_#8f2100] disabled:bg-steel-700 disabled:text-steel-300 disabled:shadow-none disabled:active:translate-y-0"
             >
               {/* ⚠️ ภาพร่างเขียนปุ่มนี้ว่า "ขอใบอนุญาต" จึงใช้คำนั้นเป็นตัวใหญ่
                   แต่ต้องมีบรรทัดล่างบอกว่าจริง ๆ แล้วมันคือการพิมพ์เอกสาร
