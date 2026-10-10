@@ -23,12 +23,18 @@ let sqls = [];
  *  🔒 ไม่มีค่าจริงของชื่อ/เลข ลซ.๒/จังหวัด แม้ในฟิกซ์เจอร์ — ด่านไม่ต้องรู้ค่าเพื่อทำงาน */
 let แถวเดิม = [];
 let อ่านเดิมพัง = false;
+let อ่านกลับพัง = false;
+let อ่านกลับปลอม = [{ แถว: 0, มีข้อมูล: 0 }];
 
 mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreReady: () => true,
   coreQuery: async (sql) => {
     const s = String(sql);
     sqls.push(s);
+    if (/SELECT COUNT\(\*\) AS แถว/.test(s)) {          /* คำสั่งอ่านกลับหลังเขียน */
+      if (อ่านกลับพัง) throw new Error('D1 ล่มตอนอ่านกลับ');
+      return อ่านกลับปลอม;
+    }
     if (/FROM registry WHERE lot IN/.test(s)) {
       if (อ่านเดิมพัง) throw new Error('D1 ล่ม');
       return แถวเดิม;
@@ -39,7 +45,8 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
 
 const { registryImport } = await import('../../netlify/lib/core-registry.mjs');
 
-const ตั้งต้น = () => { sqls = []; อ่านเดิมพัง = false; แถวเดิม = []; };
+const ตั้งต้น = () => { sqls = []; อ่านเดิมพัง = false; อ่านกลับพัง = false; แถวเดิม = [];
+  อ่านกลับปลอม = [{ แถว: 0, มีข้อมูล: 0 }]; };
 const ลบ = () => sqls.filter((s) => /^\s*DELETE FROM registry/.test(s));
 const เขียน = () => sqls.filter((s) => /INSERT INTO registry/.test(s));
 /** แถวเดิมหนึ่งแถวที่ขายไปแล้ว (ถือครบทั้งห้าช่อง) */
@@ -132,19 +139,111 @@ test('🔒 คำสั่งที่ยิงไปฐานต้องอ่
   assert.doesNotMatch(อ่าน, /SELECT[^]*?\bbuyer\b\s*(,|FROM)/, 'ห้าม SELECT ค่าจริงของ buyer');
 });
 
-test('⑤ allowClearSaleData:true ⇒ ล้างได้ และต้องไม่ไปอ่านของเดิมเลย (ตั้งใจล้าง)', async () => {
+test('⑤ allowClearSaleData:true ⇒ ต้องมี reason · ปลดทั้งก้อน · และคำตอบต้องติดธงให้เห็น', async () => {
+  /* 🔴 ไม่มี reason ⇒ ตีกลับ — ของที่ลบคือหลักฐานตามกฎหมาย ต้องมีบรรทัดบอกว่าทำไม */
   ตั้งต้น();
   แถวเดิม = [เดิมขายแล้ว(2, 'A1')];
-  const r = await registryImport([ใหม่ยังไม่ขาย(2, 'A1')], { allowClearSaleData: true });
+  const ไม่มีเหตุ = await registryImport([ใหม่ยังไม่ขาย(2, 'A1')], { allowClearSaleData: true });
+  assert.equal(ไม่มีเหตุ.ok, false);
+  assert.match(ไม่มีเหตุ.error, /reason/);
+  assert.equal(ลบ().length, 0);
+
+  ตั้งต้น();
+  แถวเดิม = [เดิมขายแล้ว(2, 'A1')];
+  อ่านกลับปลอม = [{ แถว: 1, มีข้อมูล: 0 }];
+  const r = await registryImport([ใหม่ยังไม่ขาย(2, 'A1')],
+    { allowClearSaleData: true, reason: 'ท่านสั่งล้างล็อตนี้ใหม่ทั้งล็อต' });
   assert.equal(r.ok, true);
+  assert.equal(r.ปลดด่านแบบทั้งก้อน, true, 'ต้องเห็นในคำตอบว่ารอบนี้ปิดด่านทั้งบล็อก');
+  assert.equal(r.reason, 'ท่านสั่งล้างล็อตนี้ใหม่ทั้งล็อต');
+  assert.match(r.เตือน, /ไม่มีอะไรฟ้อง/);
   assert.equal(ลบ().length, 1);
-  assert.equal(sqls.filter((s) => /FROM registry WHERE lot IN/.test(s)).length, 0);
+  /* ปลดทั้งก้อน ⇒ ไม่ต้องอ่านของเดิม (ตั้งใจล้าง) แต่ยังต้องอ่านกลับ */
+  assert.equal(sqls.filter((s) => /AS มี_buyer/.test(s)).length, 0);
+  assert.equal(sqls.filter((s) => /SELECT COUNT\(\*\) AS แถว/.test(s)).length, 1);
+});
+
+test('🔴 allowClearSaleData แบบ "รายแถว" — แถวในรายชื่อยอมให้เสียได้ · แถวนอกรายชื่อยังถูกคุม', async () => {
+  /* เคสจริงที่ฝั่งจอยกมา: ใบ ลซ.๒ ของแถวเดียวถูกยกเลิก ⇒ ต้องล้างแถวนั้นแถวเดียว
+     ⇒ สวิตช์ทั้งก้อนคือทางพัง เพราะถ้า CSV ขาดอะไรอีก จะไม่มีอะไรฟ้อง */
+  ตั้งต้น();
+  แถวเดิม = [เดิมขายแล้ว(2, 'A1'), เดิมขายแล้ว(2, 'A2')];
+  อ่านกลับปลอม = [{ แถว: 2, มีข้อมูล: 1 }];
+  const r = await registryImport([ใหม่ยังไม่ขาย(2, 'A1'), ใหม่ขายแล้ว(2, 'A2')],
+    { allowClearSaleData: ['2|A1'] });
+  assert.equal(r.ok, true, 'A1 อยู่ในรายชื่อ ⇒ ยอมให้เสียข้อมูลได้');
+  assert.equal(r.อนุญาตรายแถว, 1);
+  assert.equal(r.ปลดด่านแบบทั้งก้อน, undefined, 'ต้องไม่ใช่การปลดทั้งก้อน');
+  assert.equal(ลบ().length, 1);
+
+  /* แถวที่ไม่อยู่ในรายชื่อยังต้องถูกตีกลับ */
+  ตั้งต้น();
+  แถวเดิม = [เดิมขายแล้ว(2, 'A1'), เดิมขายแล้ว(2, 'A2')];
+  const ตีกลับ = await registryImport([ใหม่ยังไม่ขาย(2, 'A1'), ใหม่ยังไม่ขาย(2, 'A2')],
+    { allowClearSaleData: ['2|A1'] });
+  assert.equal(ตีกลับ.ok, false);
+  assert.equal(ตีกลับ.แถวที่จะเสียหาย, 1, 'เหลือ A2 ที่ไม่ได้รับอนุญาต');
+  assert.equal(ตีกลับ.ตัวอย่าง[0].serial, 'A2');
+  assert.equal(ลบ().length, 0);
+});
+
+test('รายชื่อคีย์ที่อนุญาตแต่ไม่ได้ใช้ ต้องถูกรายงาน (คัดลอกคำสั่งเก่ามายิงซ้ำ = กลิ่นไม่ดี)', async () => {
+  ตั้งต้น();
+  แถวเดิม = [เดิมขายแล้ว(2, 'A1')];
+  อ่านกลับปลอม = [{ แถว: 1, มีข้อมูล: 1 }];
+  const r = await registryImport([ใหม่ขายแล้ว(2, 'A1')], { allowClearSaleData: ['2|เก่า', '2|A1'] });
+  assert.equal(r.ok, true);
+  /* 🔑 "ไม่ได้ใช้" = **อนุญาตไว้แต่ไม่มีอะไรเสียหาย** ⇒ `2|A1` ก็ไม่ได้ใช้ เพราะส่งข้อมูลมาครบ
+     ⇒ รายงานทั้งคู่ถูกแล้ว และมีความหมายว่า "คุณอนุญาตให้ล้าง แต่ไม่มีอะไรถูกล้าง"
+     ⚠️ ถ้ารายงานแค่คีย์ที่ไม่มีในข้อมูล จะกลายเป็นการบอกว่า `2|A1` **ถูกใช้** ซึ่งไม่จริง */
+  assert.deepEqual([...r.คีย์ที่อนุญาตแต่ไม่ได้ใช้].sort(), ['2|A1', '2|เก่า'].sort());
+  assert.equal(r.อนุญาตรายแถว, 0, 'ไม่มีแถวไหนต้องใช้สิทธิ์ที่อนุญาตไว้');
+});
+
+test('🚫 ค่า allowClearSaleData ที่อ่านไม่ได้ ⇒ ตีกลับ ห้ามรับ truthy ลอย ๆ', async () => {
+  for (const ค่า of ['true', 1, {}, []]) {
+    ตั้งต้น();
+    แถวเดิม = [เดิมขายแล้ว(2, 'A1')];
+    const r = await registryImport([ใหม่ยังไม่ขาย(2, 'A1')], { allowClearSaleData: ค่า });
+    assert.equal(r.ok, false, `ค่า ${JSON.stringify(ค่า)} ต้องถูกตีกลับ`);
+    assert.equal(ลบ().length, 0);
+  }
+});
+
+test('🔑 อ่านกลับหลังเขียน — ขาหลักฐานที่ไม่ได้ใช้กฎของด่าน · และอ่านไม่ได้ต้องบอกว่าไม่รู้', async () => {
+  ตั้งต้น();
+  แถวเดิม = [];
+  อ่านกลับปลอม = [{ แถว: 2, มีข้อมูล: 1 }];
+  const r = await registryImport([ใหม่ขายแล้ว(2, 'A1'), ใหม่ยังไม่ขาย(2, 'A2')]);
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.อ่านกลับ, { แถวในล็อตเหล่านี้: 2, แถวที่ถือข้อมูลจำหน่าย: 1,
+    คาดไว้: { แถว: 2, แถวที่ถือข้อมูลจำหน่าย: 1 }, ตรงกับที่ส่ง: true });
+
+  /* ไม่ตรง ⇒ ต้องบอกว่าไม่ตรง ไม่ใช่เงียบ */
+  ตั้งต้น();
+  อ่านกลับปลอม = [{ แถว: 1, มีข้อมูล: 0 }];
+  const ไม่ตรง = await registryImport([ใหม่ขายแล้ว(2, 'A1'), ใหม่ยังไม่ขาย(2, 'A2')]);
+  assert.equal(ไม่ตรง.อ่านกลับ.ตรงกับที่ส่ง, false);
+
+  /* อ่านกลับไม่ได้ ⇒ "ยังไม่รู้" และ **ห้ามแปลว่าเขียนไม่สำเร็จ** (เขียนไปแล้วจริง) */
+  ตั้งต้น();
+  อ่านกลับพัง = true;
+  const ไม่รู้ = await registryImport([ใหม่ขายแล้ว(2, 'A1')]);
+  assert.equal(ไม่รู้.ok, true, 'เขียนสำเร็จแล้ว ⇒ ห้ามพลิกเป็น false เพราะอ่านกลับไม่ได้');
+  assert.match(ไม่รู้.อ่านกลับ.ยังไม่รู้, /อ่านกลับไม่ได้/);
 });
 
 test('เส้น ?registryimport= ต้องรับ allowClearSaleData จาก body เท่านั้น', async () => {
   const src = (await import('node:fs')).readFileSync('netlify/functions/core.mjs', 'utf8');
-  const เรียก = src.split('\n').filter((l) => /registryImport\(/.test(l) && !/^\s*(\/\*|\*|\/\/)/.test(l));
-  assert.equal(เรียก.length, 1, `ต้องมีจุดเรียก registryImport จุดเดียวในเส้น ได้ ${เรียก.length}`);
-  assert.match(เรียก[0], /allowClearSaleData:\s*body\.allowClearSaleData === true/,
-    'ต้องมาจาก body และเทียบ === true (ห้ามรับสตริง "false" เป็นจริง)');
+  /* ⚠️ อ่านเป็น **ก้อนของคำสั่งเรียก** ไม่ใช่บรรทัดเดียว — คำสั่งถูกตัดบรรทัดจริง
+     ตะแกรงที่ยึดบรรทัดเดียวจะแดงลวงทันทีที่ใครจัดรูปโค้ดใหม่ */
+  const i = src.indexOf('await registryImport(body.rows');
+  assert.ok(i > 0, 'ต้องเจอจุดเรียก registryImport ในเส้น');
+  const ก้อน = src.slice(i, src.indexOf('));', i) + 3);
+  assert.equal((src.match(/await registryImport\(/g) || []).length, 1, 'ต้องมีจุดเรียกจุดเดียว');
+  assert.match(ก้อน, /allowClearSaleData:\s*body\.allowClearSaleData/,
+    'ต้องส่งต่อตามรูปที่มา — ตัวแปลความอยู่ใน registryImport ที่เดียว');
+  assert.match(ก้อน, /reason:\s*body\.reason/, 'ต้องส่ง reason ต่อไปให้ด่านตรวจ');
+  assert.doesNotMatch(ก้อน, /=== true/,
+    'ห้ามแปลงเป็น boolean ตรงนี้ ไม่งั้นอาร์เรย์คีย์จะกลายเป็น false เงียบ ๆ');
 });

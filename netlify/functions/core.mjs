@@ -499,7 +499,12 @@ async function route(req, context) {
          เส้นนี้ **ลบทั้งล็อตแล้วเขียนใหม่** ⇒ CSV ที่ไม่มีคอลัมน์บุคคลจะล้าง sold_at/buyer/lz2 ทิ้ง
          ⇒ ด่านตีกลับไว้ก่อน · ส่ง `allowClearSaleData:true` คือการกดยืนยันอีกครั้งโดยตั้งใจ
          🚫 ห้ามให้ค่านี้ติดไปกับสคริปต์เป็นค่าเริ่มต้น — มันมีไว้สำหรับการล้างที่ตั้งใจเท่านั้น */
-      return json(await registryImport(body.rows, { allowClearSaleData: body.allowClearSaleData === true }));
+      /* 🔑 ส่งต่อ **ตามรูปที่มา** — ตัวแปลความอยู่ใน registryImport ที่เดียว (สามรูป: อาร์เรย์คีย์ ·
+         true+reason · อย่างอื่นตีกลับ) ⇒ ท่อไม่ตัดสินแทน และไม่แปลงค่าให้เป็น boolean ตรงนี้
+         (เดิมเขียน `=== true` ตรงนี้ ⇒ อาร์เรย์คีย์จะกลายเป็น false เงียบ ๆ แล้วด่านคุมทั้งก้อน
+          ⇒ คนส่งรายชื่อคีย์มาจะถูกตีกลับโดยไม่รู้ว่าทำไม) */
+      return json(await registryImport(body.rows, {
+        allowClearSaleData: body.allowClearSaleData, reason: body.reason }));
     }
 
     if (url.searchParams.get("d1move")) {
