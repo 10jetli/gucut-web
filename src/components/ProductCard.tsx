@@ -4,6 +4,8 @@ import Stars from "./Stars";
 import { compactCount, discountPercent, type Product } from "@/lib/types";
 import Price from "@/components/Price";
 import { สถานะของสินค้า, ขึ้นป้ายหมดได้ } from "@/lib/stock-state";
+import PermitBadge from "./PermitBadge";
+import { ป้ายของสินค้า } from "@/lib/permit-label";
 
 // การ์ดสินค้าแบบ Shopee/TikTok Shop — รูปสี่เหลี่ยมจัตุรัส ป้าย %ลด ราคาส้ม สต็อกจริง
 //
@@ -66,6 +68,10 @@ export default function ProductCard({
         )}
       </div>
       <div className="p-2">
+        {/* 🏷️ ป้าย 【ต้องขอ ลซ.2 ก่อน】 — วางเหนือชื่อสินค้าโดยตั้งใจ
+            ลูกค้าต้องเห็น **ก่อน** กดเข้าไปในหน้าสินค้า ไม่ใช่เห็นตอนจะจ่ายเงิน
+            (กฎทีม: คำเตือนต้องอยู่ในที่ที่คนเห็น ไม่ใช่ที่ที่ต้องเลื่อนจอถึงเห็น) */}
+        {ป้ายของสินค้า(p) && <PermitBadge ขอบเขต={ป้ายของสินค้า(p)} className="mb-1" />}
         {/* leading-5 (20px) × 2 บรรทัด = 40px = min-h-10 พอดี
             ถ้า min-h สูงกว่าความสูง 2 บรรทัด บรรทัดที่ 3 จะโผล่ครึ่งตัวออกมา */}
         <p className="clamp-2 min-h-10 text-[13px] leading-5 text-[#1a1a1a]">{p.t}</p>

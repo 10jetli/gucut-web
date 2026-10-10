@@ -15,6 +15,8 @@ import ProductVideoFloat from "./ProductVideoFloat";
 import { PERMIT_MODELS } from "@/lib/permit";
 import ProductTopBar from "./ProductTopBar";
 import MallBadge from "./MallBadge";
+import PermitBadge from "./PermitBadge";
+import { ป้ายของสินค้า } from "@/lib/permit-label";
 import TrustRow from "./TrustRow";
 import { videoForProduct } from "@/lib/videos";
 import { track } from "@/lib/track";
@@ -137,6 +139,25 @@ export default function ProductDetail({
           <MallBadge className="mr-1.5 translate-y-[-1px]" />
           {p.t}
         </h1>
+        {/* 🏷️ 【ต้องขอ ลซ.2 ก่อน】 — ท่านประธานสั่ง 10 ต.ค. 2569
+            วางใต้ชื่อสินค้าและ **เหนือปุ่มซื้อ** เพราะเหตุที่ท่านให้คือ
+            "ลูกค้าสั่งซื้อได้โดยไม่รู้ว่าต้องขอใบอนุญาตก่อน ⇒ สั่งมาแล้วส่งไม่ได้"
+            ⇒ ป้ายที่ต้องเลื่อนจอถึงเห็น = วางผิดที่ (กฎทีม warning-placement) */}
+        {ป้ายของสินค้า(p) && (
+          <div className="mt-2 rounded-sm border border-[#1a1a1a]/15 bg-[#1a1a1a]/[0.04] p-2">
+            <PermitBadge ขอบเขต={ป้ายของสินค้า(p)} />
+            <p className="mt-1.5 text-[11px] leading-relaxed text-steel-300">
+              {/* ⚠️ เขียนได้แค่ "ต้องขอใบอนุญาตให้มี" ห้ามเขียนว่าของอื่น "ผิดกฎหมาย"
+                  และห้ามเขียนว่าร้านยื่นแทน — ลูกค้ายื่นเอง ร้านเป็นแค่ตัวกลางเก็บ ลซ.๒ ตอนกลาง */}
+              {ป้ายของสินค้า(p) === "บางตัวเลือก"
+                ? "บางขนาดของสินค้านี้เป็นของที่อยู่ในทะเบียน ⇒ ต้องมีใบ ลซ.๒ ก่อนร้านจะส่งของให้ได้ · ดูได้ที่ปุ่มเลือกขนาด ขนาดไหนต้องขอจะมีป้ายกำกับ"
+                : "สินค้านี้อยู่ในทะเบียนตามกฎหมาย ⇒ ต้องมีใบ ลซ.๒ ก่อนร้านจะส่งของให้ได้ · จองไว้ก่อนได้ แล้วจ่ายเงินตอนส่งใบ ลซ.๒ ให้ร้าน"}
+            </p>
+            <a href="/permit/" className="mt-1 inline-block text-[11px] font-semibold text-safety underline">
+              ดูขั้นตอนขอทะเบียน (กรอกฟอร์มที่เว็บได้)
+            </a>
+          </div>
+        )}
         {/* 🛡️ แถวรับรอง — ท่านประธานสั่ง 30 ก.ย. 2569 (ต้นแบบ LazMall) */}
         <TrustRow className="mt-1.5" />
         {p.rv && (
