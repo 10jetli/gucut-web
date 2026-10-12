@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-10-10T03:06:15.212Z",
+  "generatedAt": "2026-10-12T00:44:14.813Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -12,10 +12,19 @@ export const ZORT_ARCH = {
       "module": "Bundle"
     },
     {
+      "endpoint": "Bundle/DeleteBundle",
+      "kind": "write",
+      "files": [
+        "netlify/lib/zort-write.mjs"
+      ],
+      "module": "Bundle"
+    },
+    {
       "endpoint": "Bundle/GetBundleDetail",
       "kind": "read",
       "files": [
-        "netlify/lib/core-products.mjs"
+        "netlify/lib/core-products.mjs",
+        "netlify/lib/zort-write.mjs"
       ],
       "module": "Bundle"
     },
@@ -25,6 +34,14 @@ export const ZORT_ARCH = {
       "files": [
         "netlify/functions/stock.mjs",
         "netlify/lib/core-products.mjs"
+      ],
+      "module": "Bundle"
+    },
+    {
+      "endpoint": "Bundle/UpdateBundle",
+      "kind": "write",
+      "files": [
+        "netlify/lib/zort-write.mjs"
       ],
       "module": "Bundle"
     },
@@ -274,11 +291,13 @@ export const ZORT_ARCH = {
       "module": "Bundle",
       "endpoints": [
         "Bundle/AddBundle",
+        "Bundle/DeleteBundle",
         "Bundle/GetBundleDetail",
-        "Bundle/GetBundles"
+        "Bundle/GetBundles",
+        "Bundle/UpdateBundle"
       ],
       "reads": 2,
-      "writes": 1
+      "writes": 3
     },
     {
       "module": "Contact",
@@ -835,7 +854,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-10-10T03:06:15.212Z",
+    "at": "2026-10-12T00:44:14.813Z",
     "problems": [],
     "ok": true
   }

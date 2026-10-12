@@ -1691,6 +1691,26 @@ async function route(req, context) {
       const r = await zortAddContact(body);
       return json(r, r.ok ? 200 : 400);
     }
+    /* POST ?updatebundle=1 body {ref, id, sku, name?, price?, vat?, items?:[{sku,qty}], before?, confirm?}
+       POST ?deletebundle=1 body {ref, id, sku, confirm?}
+       ⇒ ZORT Bundle/UpdateBundle?id= · Bundle/DeleteBundle?id=
+       📏 ยิงตรวจ 12 ต.ค. 2569: ทั้งสองเส้นตอบ 405 (= มีจริง เป็นเส้นเขียน) · ตัวควบคุมลบ Bundle/EditBundleXyz → 404
+       ⚠️ โหมดซ้อมเป็นค่าเริ่มต้น (ต้อง confirm:true) · ต้องมี ref · **ยังไม่เคยยิงจริง**
+       ⚠️ `sku` คือรหัสที่คาดว่า id นี้เป็น — ท่อถาม ZORT ยืนยันก่อนเขียนทุกครั้ง (กันแก้/ลบผิดตัว)
+       🔑 `?updatebundle=1` คืน `after` ที่ **อ่านกลับจาก ZORT** ไม่ใช่ค่าที่ส่งไป (คุณส้มขอ 12 ต.ค.)
+          อ่านกลับไม่ได้ ⇒ `after:null` + `afterUnknown` ⇒ จอต้องเขียนว่า "บันทึกแล้วแต่ยังอ่านกลับไม่ได้"
+          🚫 ห้ามแปลว่าไม่สำเร็จ — เส้นเขียนตอบ ok มาแล้ว (กฎ three-states-not-two) */
+    if (url.searchParams.get("updatebundle") || url.searchParams.get("deletebundle")) {
+      if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
+      const body = await req.json().catch(() => null);
+      if (!body || typeof body !== "object" || Array.isArray(body))
+        return json({ error: "อ่าน body ไม่ได้ (ต้องเป็น JSON object)" }, 400);
+      const { zortUpdateBundle, zortDeleteBundle } = await import("../lib/zort-write.mjs");
+      const r = url.searchParams.get("updatebundle")
+        ? await zortUpdateBundle(body)
+        : await zortDeleteBundle(body);
+      return json(r, r.ok ? 200 : 400);
+    }
     if (url.searchParams.get("addbundle") || url.searchParams.get("addwarehouse")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
       const body = await req.json().catch(() => null);

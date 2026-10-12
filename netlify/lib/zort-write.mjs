@@ -468,6 +468,215 @@ export async function zortAddBundle(o = {}) {
     message: `เพิ่มสินค้าชุด ${sku} (${list.length} ส่วนประกอบ) เข้า ZORT แล้ว` };
 }
 
+/* ══ แก้/ลบ สินค้าชุด (Bundle) ═══════════════════════════════════════════════════
+   คุณส้มขอมา 12 ต.ค. 2569 (ใบ t_mv4hthvf `bundle-edit`) + ใบ t_mv4he1qr `bundle-delete` ของผม
+   📏 ยิงตรวจเอง 12 ต.ค. 2569 (GET เท่านั้น · zort-probe.sh พร้อมตัวควบคุมบวก 4 ลบ 1):
+        Bundle/UpdateBundle → 405 · Bundle/DeleteBundle → 405 · Bundle/AddBundle → 405
+        Bundle/GetBundles   → 200 · Bundle/EditBundleXyz (ตัวควบคุมลบ) → 404  ✅ ผลแยกแยะได้
+      ⇒ 405 = เส้นมีจริงแต่เป็นเส้นเขียน ⇒ **ไม่ใช่ `impossible`** · ก่อนรอบนี้ติดที่ "ท่อเราไม่มีเส้น"
+      🔴 ทะเบียนเดิมที่บรรทัด ~2036 จด `untested:true` ไว้ **ยังจริงอยู่** — มีเส้นแล้วแต่ยังไม่เคยยิงจริง
+         ⇒ `confirm:true` ครั้งแรกต้องเป็นคำสั่งของท่านประธานเอง ห้ามใครยิงเองเพื่อ "ลองดู"
+
+   🔑 ข้อที่ต่างจากเส้นแก้สินค้าเดี่ยว และเป็นเหตุผลหลักของโค้ดท่อนนี้:
+      **เรายังไม่รู้ว่า UpdateBundle ที่ไม่ส่ง `list` ไปด้วย จะเมินสูตรเดิม หรือล้างสูตรทิ้ง**
+      ตอบคำถามนี้ได้ด้วยการเขียนจริงเท่านั้น (อ่านอย่างเดียวไม่มีทางรู้) ⇒ **ห้ามเดา**
+      ⇒ ท่าที่ปลอดภัยโดยไม่ต้องรู้คำตอบ: ถ้าผู้เรียกไม่ได้ส่งสูตรใหม่มา
+         ท่อ **อ่านสูตรปัจจุบันจาก ZORT แล้วส่งกลับไปเหมือนเดิม** ⇒ ผลเท่ากันทั้งสองกรณี
+         อ่านสูตรไม่ได้ = ไม่แก้ (ดีกว่าเสี่ยงล้างสูตรจนตัดสต็อกชุดไม่ได้)
+   ⚠️ สูตรชุดว่าง (`list` ว่าง) ของชุดที่ขายอยู่ **น่าสงสัยกว่าน่าเชื่อ** ⇒ ถือว่าอ่านไม่ได้
+      (กติกาเดียวกับ syncBundleRecipes ใน core-products.mjs) */
+async function zortBundleById(id) {
+  const headers = creds();
+  if (!headers) return { error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  let r;
+  try {
+    r = await fetch(`${BASE}/Bundle/GetBundleDetail?id=${id}`, { headers, signal: AbortSignal.timeout(8000) });
+  } catch (e) {
+    return { error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  const d = await r.json().catch(() => null);
+  if (!r.ok || !d) return { error: `ถาม ZORT ไม่สำเร็จ (HTTP ${r.status})` };
+  /* ⚠️ GetBundleDetail วาง id/resCode ไว้ชั้นบนสุด ไม่ใช่ใต้ res (คุณส้มจับได้ 14 ก.ย. 2569)
+     ⇒ รับเฉพาะก้อนที่ id ตรงกับที่ถาม ไม่งั้นถือว่า "ไม่รู้" */
+  const b = [d, d?.detail, d?.bundle].find((x) => x && Number(x.id) === Number(id));
+  if (!b) return { error: `ZORT ไม่คืนชุด id ${id} (หรือรูปคำตอบไม่รู้จัก)` };
+  return { bundle: b };
+}
+
+/** อ่านสูตรชุดให้เป็นรูปที่ส่งกลับเข้า ZORT ได้ทันที — คืน null เมื่อ "ไม่รู้" (ห้ามแปลว่าว่าง) */
+function recipeOf(bundle) {
+  if (!Array.isArray(bundle?.list) || !bundle.list.length) return null;
+  const out = [];
+  for (const x of bundle.list) {
+    const sku = txt(x?.sku, 60);
+    const q = numOrNull(x?.quantity);
+    if (!sku || q === null || q <= 0) return null;   // บรรทัดอ่านไม่ครบ = ทั้งสูตรเชื่อไม่ได้
+    out.push({ sku, quantity: q });
+  }
+  return out;
+}
+
+async function confirmBundleIdentity(id, sku) {
+  const got = await zortBundleById(id);
+  if (got.error) return { ok: false, unknown: true, error: `${got.error} — ยังไม่ได้แก้/ลบอะไร` };
+  const real = txt(got.bundle.sku, 60);
+  if (real !== sku)
+    return { ok: false, mismatch: true,
+      error: `id ${id} ใน ZORT คือชุด ${real || "(ไม่มี sku)"} ${txt(got.bundle.name, 60)} — ไม่ใช่ ${sku} ⇒ ไม่ทำต่อ` };
+  return { ok: true, bundle: got.bundle };
+}
+
+/** แก้สินค้าชุดใน ZORT — จอ `/core/bundles/<sku>/edit` ของคุณส้ม (กิ่ง codex/bundle-edit)
+ *  body {ref, id, sku, name?, price?, vat?, items?:[{sku,qty}], before?:{name?,price?}, confirm?}
+ *  · `sku` = รหัสที่ "คาดว่า" id นี้เป็น — กันแก้ผิดตัว (ท่อถาม ZORT ยืนยันก่อนเขียนทุกครั้ง)
+ *  · `before` (ไม่บังคับ) = ค่าที่จอเห็นตอนเปิดฟอร์ม ⇒ ถ้าของจริงใน ZORT ไม่ตรง = มีคนแก้คาบเกี่ยว ⇒ ตีกลับ
+ *  · คืน `after` ที่อ่านกลับจาก ZORT หลังเขียน (คุณส้มขอ) — **ไม่ใช่ค่าที่เราส่งไป** */
+export async function zortUpdateBundle(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันแก้ผิดตัว" };
+
+  const want = {};
+  const name = txt(o.name, 200);
+  if (o.name !== undefined) {
+    if (!name) return { ok: false, error: "ชื่อชุดว่างไม่ได้ (ยังไม่รู้ว่า ZORT ตีความว่าล้างค่าหรือเมิน ⇒ ห้ามเดา)" };
+    want.name = name;
+  }
+  if (o.price !== undefined) {
+    const n = numOrNull(o.price);
+    if (n === null || n < 0) return { ok: false, error: "price ต้องเป็นตัวเลขไม่ติดลบ" };
+    want.sellprice = String(n);
+  }
+  if (o.vat !== undefined) {
+    const v = numOrNull(o.vat);
+    if (v === null || !Number.isInteger(v)) return { ok: false, error: "vat ต้องเป็นจำนวนเต็ม (sell_vat_status)" };
+    want.sell_vat_status = v;
+  }
+  /* สูตรใหม่ (ถ้าส่งมา) — ด่านเดียวกับ AddBundle: ต้องมีรหัส · จำนวน > 0 · ห้ามใส่ตัวเอง */
+  let newList = null;
+  if (o.items !== undefined) {
+    const items = Array.isArray(o.items) ? o.items : null;
+    if (!items || !items.length)
+      return { ok: false, error: "ส่ง items มาแล้วต้องมีอย่างน้อย 1 รายการ — ชุดที่ไม่มีส่วนประกอบตัดสต็อกไม่ได้" };
+    newList = [];
+    for (let i = 0; i < items.length; i++) {
+      const s2 = txt(items[i]?.sku, 60);
+      const q = numOrNull(items[i]?.qty ?? items[i]?.quantity);
+      if (!s2) return { ok: false, error: `ส่วนประกอบแถวที่ ${i + 1} ไม่มี sku` };
+      if (q === null || q <= 0) return { ok: false, error: `ส่วนประกอบ ${s2} จำนวนต้องเป็นตัวเลขมากกว่า 0` };
+      if (s2 === sku) return { ok: false, error: `ชุด ${sku} ใส่ตัวเองเป็นส่วนประกอบไม่ได้` };
+      newList.push({ sku: s2, quantity: q });
+    }
+  }
+  if (!Object.keys(want).length && !newList) return { ok: false, error: "ไม่มีช่องให้แก้เลย" };
+
+  /* อ่านของจริงก่อนเสมอ — ทั้งโหมดซ้อมและโหมดจริง
+     โหมดซ้อมที่ไม่อ่านของจริง จะโชว์ willSend ที่สวยแต่บอกไม่ได้ว่าจะชนอะไร */
+  const who = await confirmBundleIdentity(id, sku);
+  if (!who.ok) return { ref, ...who };
+  const cur = who.bundle;
+  const curRecipe = recipeOf(cur);
+  if (!curRecipe)
+    return { ok: false, ref, unknown: true,
+      error: `อ่านสูตรชุด ${sku} จาก ZORT ไม่ได้ (list ว่างหรือบรรทัดไม่ครบ) — ไม่แก้ เพราะเสี่ยงล้างสูตรจนตัดสต็อกชุดไม่ได้` };
+
+  /* มีคนแก้คาบเกี่ยวไหม — เทียบกับค่าที่จอเห็นตอนเปิดฟอร์ม */
+  if (o.before && typeof o.before === "object") {
+    const bName = txt(o.before.name, 200);
+    const bPrice = numOrNull(o.before.price);
+    const realName = txt(cur.name, 200);
+    const realPrice = numOrNull(cur.sellprice ?? cur.price);
+    if (bName && bName !== realName)
+      return { ok: false, ref, stale: true,
+        error: `ชื่อชุดใน ZORT ตอนนี้คือ "${realName}" ไม่ใช่ "${bName}" ที่จอเห็น — มีคนแก้คาบเกี่ยว ⇒ โหลดใหม่ก่อนบันทึก` };
+    if (bPrice !== null && realPrice !== null && bPrice !== realPrice)
+      return { ok: false, ref, stale: true,
+        error: `ราคาชุดใน ZORT ตอนนี้คือ ${realPrice} ไม่ใช่ ${bPrice} ที่จอเห็น — มีคนแก้คาบเกี่ยว ⇒ โหลดใหม่ก่อนบันทึก` };
+  }
+
+  /* 🔑 ไม่ส่งสูตรใหม่ = ส่งสูตรเดิมกลับไป (อธิบายเหตุผลไว้หัวบล็อกแล้ว) */
+  const body = { name: txt(cur.name, 200), sku, ...want, list: newList ?? curRecipe };
+  const keptRecipe = !newList;
+
+  if (!o.confirm)
+    return { ok: true, dryRun: true, ref, expectSku: sku,
+      willSend: { query: { id }, body },
+      ก่อนแก้: { name: txt(cur.name, 200), price: numOrNull(cur.sellprice ?? cur.price), สูตร: curRecipe },
+      keptRecipe,
+      note: keptRecipe
+        ? "โหมดซ้อม — ไม่ได้ส่งสูตรใหม่มา ท่อจะส่ง **สูตรเดิมที่อ่านจาก ZORT** กลับไปด้วย (กันกรณีที่ไม่ส่ง list แล้ว ZORT ล้างสูตร — ยังไม่เคยพิสูจน์)"
+        : "โหมดซ้อม — ยังไม่ได้ส่งเข้า ZORT · ส่ง confirm:true เมื่อพร้อมบันทึกจริง" };
+
+  const seen = await seenRef("bundle-update", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ส่งเข้า ZORT" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "การแก้ครั้งนี้เคยบันทึกไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost(`Bundle/UpdateBundle?id=${id}`, body);
+  if (!r.ok) return zortFail(r, { ref });
+  const warn = await markSafely("bundle-update", ref, { kind: "bundle-update", id, sku, fields: Object.keys(want), parts: body.list.length });
+
+  /* อ่านกลับจาก ZORT — **คำตอบของเส้นเขียนไม่ใช่หลักฐานว่าของเปลี่ยน** (กฎ prove-by-measuring-not-inferring)
+     อ่านกลับไม่ได้ ⇒ `after: null` + `afterUnknown` ⇒ จอต้องเขียนว่า "บันทึกแล้วแต่ยังอ่านกลับไม่ได้"
+     🚫 ห้ามจอแปลว่า "ไม่สำเร็จ" — เส้นเขียนตอบ ok มาแล้ว */
+  const back = await zortBundleById(id);
+  const after = back.bundle
+    ? { name: txt(back.bundle.name, 200), price: numOrNull(back.bundle.sellprice ?? back.bundle.price), สูตร: recipeOf(back.bundle) }
+    : null;
+  return { ok: true, updated: true, ref, id, sku, warn, keptRecipe,
+    after, afterUnknown: after ? undefined : (back.error || "อ่านกลับไม่ได้"),
+    message: `แก้สินค้าชุด ${sku} ใน ZORT แล้ว` };
+}
+
+/** ลบสินค้าชุดใน ZORT — จอ "ลบสินค้าชุด" (soon: bundle-delete) · ใบ t_mv4he1qr
+ *  ⚠️ **ลบแล้วเอาคืนไม่ได้** และสูตรชุดคือของที่ขูด/ซิงก์มาหลายรอบ (ดู syncBundleRecipes)
+ *  🔑 ด่านที่ต่างจากลบสินค้าเดี่ยว: **ไม่เช็คสต็อกชุด** เพราะสต็อกชุดเป็นค่าที่คิดจากส่วนประกอบ
+ *     ไม่ใช่ของที่เก็บในตัวชุด ⇒ บังคับให้เป็น 0 จะกลายเป็นด่านที่ไม่มีใครผ่านได้เลย
+ *     แทนด้วย: ยืนยันตัวตน (id ↔ sku) + โหมดซ้อมโชว์สูตรที่จะหายไปทั้งใบ + อ่านกลับยืนยันว่าหายจริง */
+export async function zortDeleteBundle(o = {}) {
+  const ref = cleanRef(o.ref);
+  if (!ref) return { ok: false, error: "ต้องส่ง ref มาด้วยเสมอ (กันยิงซ้ำ)" };
+  const id = productId(o.id);
+  const sku = txt(o.sku, 60);
+  if (!id || !sku) return { ok: false, error: "ต้องมีทั้ง id (ของ ZORT เป็นตัวเลข) และ sku ที่คาดไว้ — กันลบผิดตัว" };
+
+  const who = await confirmBundleIdentity(id, sku);
+  if (!who.ok) return { ref, ...who };
+  const cur = who.bundle;
+
+  if (!o.confirm)
+    return { ok: true, dryRun: true, ref, expectSku: sku,
+      willSend: { query: { id }, body: null },
+      จะหายไป: { name: txt(cur.name, 200), price: numOrNull(cur.sellprice ?? cur.price), สูตร: recipeOf(cur) },
+      note: "โหมดซ้อม — ⚠️ ลบแล้วเอาคืนไม่ได้ · สูตรชุดทั้งใบจะหายจาก ZORT (ส่วนประกอบแต่ละตัวไม่ถูกลบ) · ส่ง confirm:true เมื่อแน่ใจ" };
+
+  const seen = await seenRef("bundle-delete", ref);
+  if (seen.state === "unknown")
+    return { ok: false, error: "ตอนนี้ตรวจใบซ้ำไม่ได้ (ที่เก็บมีปัญหา) — ยังไม่ลบ" };
+  if (seen.state === "seen")
+    return { ok: true, duplicate: true, ref, first: seen.info, message: "ชุดนี้เคยลบไปแล้ว — ไม่ได้ส่งซ้ำ" };
+
+  const r = await zortPost(`Bundle/DeleteBundle?id=${id}`, {});
+  if (!r.ok) return zortFail(r, { ref });
+  const warn = await markSafely("bundle-delete", ref, { kind: "bundle-delete", id, sku, parts: recipeOf(cur)?.length ?? null });
+
+  /* อ่านกลับเพื่อยืนยันว่าหายจริง — ที่นี่ "อ่านไม่เจอ" คือผลที่ถูกต้อง
+     ⚠️ แต่ "อ่านไม่ได้เพราะ ZORT ล่ม" ก็หน้าตาเหมือนกันเป๊ะ ⇒ แยกเป็น gone / stillThere / unknown
+        (กฎ probe-fails-same-direction — ตัวชี้ขาดที่พังไปทางเดียวกับผลที่เราอยากเห็น) */
+  const back = await zortBundleById(id);
+  let verify = "unknown";
+  if (back.bundle) verify = "stillThere";
+  else if (/ไม่คืนชุด id/.test(String(back.error || ""))) verify = "gone";
+  return { ok: true, deleted: true, ref, id, sku, warn, verify,
+    verifyNote: verify === "gone" ? "อ่านกลับแล้วไม่เจอชุดนี้ใน ZORT = ลบจริง"
+      : verify === "stillThere" ? "🔴 ZORT ตอบว่าลบสำเร็จ แต่อ่านกลับยังเจอชุดนี้ — ไปตรวจในหน้า ZORT ก่อนกดซ้ำ"
+      : `ยังอ่านกลับไม่ได้ (${String(back.error || "").slice(0, 90)}) — ลบแล้วแต่ยังยืนยันไม่ได้ ห้ามแปลว่าไม่สำเร็จ`,
+    message: `ลบสินค้าชุด ${sku} ออกจาก ZORT แล้ว` };
+}
+
 /** เพิ่มคลังสินค้า/สาขาเข้า ZORT — จอ "เพิ่มคลังสินค้า/สาขา" (soon: warehouse-add) · งานกระดาน t_mu0m99go
  *  ⚠️ **ชื่อช่องมาจากเอกสารทางการ ZORT API V4** (developers.zortout.com/api-reference/warehouse · อ่าน 14 ก.ย. 2569)
  *     POST Warehouse/AddWarehouse · code (บังคับ) · name (บังคับ) · address (ไม่บังคับ) · สำเร็จ = detail.id

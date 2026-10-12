@@ -28,10 +28,22 @@ export default async function handler(req, context) {
   let s;
   try { s = store(); } catch { return json({ error: "store unavailable" }, 503); }
 
-  const read = async () => (await s.get(KEY, { type: "json" }).catch(() => null)) || {};
-
   if (req.method === "GET") {
-    return json({ map: await read() }, 200, {
+    /* 🔴 B01 ขา GET (แก้ 12 ต.ค. 2569) — ครึ่งที่ยังเหลือหลังแก้ขาเขียนเมื่อ 14 ก.ย.
+       เดิม: `.catch(() => null) || {}` ⇒ Blobs สะดุด = ตอบ `{map:{}}` **200 พร้อมหัวแคช**
+       ⇒ ขอบเครือข่ายจำ "ไม่มีคลิปไหนผูกสินค้า" ไว้ 60 วิ + ใช้ของเก่าต่อได้อีก 300 วิ
+       ⇒ ลูกค้าทุกคนที่เปิดฟีดในช่วงนั้น **ไม่เห็นปุ่มซื้อเลยสักใบ** และไม่มีอะไรฟ้อง
+          (อาการเหมือนที่ขาเขียนทำไว้เป๊ะ แต่เกิดได้โดยไม่มีใครกดบันทึกอะไรเลย)
+       🔑 "อ่านไม่ได้" ≠ "ยังไม่เคยผูก" — null = ยังไม่เคยผูก (แคชได้) · throw = ไม่รู้ (ห้ามแคช)
+          ดูกฎ read-before-write-no-swallow · http-200-empty-payload · fallbacks-must-announce */
+    let map;
+    try { map = (await s.get(KEY, { type: "json" })) || {}; }
+    catch {
+      return json({ map: {}, อ่านไม่ได้: true, เหตุ: "อ่านรายการคลิปไม่ได้ชั่วคราว" }, 503, {
+        "cache-control": "no-store",
+      });
+    }
+    return json({ map }, 200, {
       "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     });
   }

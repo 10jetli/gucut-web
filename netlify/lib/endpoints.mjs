@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-10-10T02:32:28.857Z";
+export const generatedAt = "2026-10-12T00:44:14.478Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -149,6 +149,7 @@ export const paramRoutes = [
  "tiktoksync",
  "tokens",
  "transfer",
+ "updatebundle",
  "updateproduct",
  "updatestock",
  "uploadtoken",
@@ -246,6 +247,7 @@ export const routeMethod = {
  "batch": "write",
  "addsale": "write",
  "addcontact": "write",
+ "updatebundle": "write",
  "addbundle": "write",
  "shopinfo": "unknown",
  "addquotation": "write",
@@ -374,6 +376,23 @@ export const writeFields = {
   "ref",
   "sku",
   "vat"
+ ],
+ "zortUpdateBundle": [
+  "before",
+  "confirm",
+  "id",
+  "items",
+  "name",
+  "price",
+  "ref",
+  "sku",
+  "vat"
+ ],
+ "zortDeleteBundle": [
+  "confirm",
+  "id",
+  "ref",
+  "sku"
  ],
  "zortAddWarehouse": [
   "address",

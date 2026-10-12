@@ -48,6 +48,7 @@ const { default: auth } = await import('../../netlify/functions/auth.mjs');
 const { default: office } = await import('../../netlify/functions/office.mjs');
 const { default: clipShop } = await import('../../netlify/functions/clip-shop.mjs');
 const post = (body) => new Request('https://x/api', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+const get = () => new Request('https://x/api', { method: 'GET' });
 
 test('B12 register: อ่านบัญชีพลาด ⇒ 503 ไม่เขียนทับ · มีบัญชีอยู่แล้ว ⇒ 409 · ไม่มีบัญชี ⇒ สมัครได้', async () => {
   reset();
@@ -109,4 +110,34 @@ test('B01 clip-shop: อ่านรายการพลาด ⇒ 503 ไม�
   const ok = await clipShop(post({ clip: 'c1', product: { h: 'saw-a', t: 'เลื่อย A', p: 9000 } }), {});
   assert.equal(ok.status, 200);
   assert.deepEqual(Object.keys(data.get('clip-shop')), ['c1']);
+});
+
+test('B01 clip-shop ขา GET: อ่านพลาด ⇒ ต้องไม่ตอบ 200 ว่าง และต้องห้ามแคช', async () => {
+  reset();
+  data.set('clip-shop', { c1: { h: 'saw-a', t: 'เลื่อย A', p: 9000 }, c2: { h: 'saw-b', t: 'เลื่อย B', p: 12000 } });
+  failPrefix = 'clip-shop';
+  const r = await clipShop(get(), {});
+  /* 🔑 ข้อที่แพงที่สุดคือหัวแคช ไม่ใช่ตัวเลข status —
+     200 + s-maxage=60 + stale-while-revalidate=300 ทำให้ขอบเครือข่ายจำ "ไม่มีคลิปไหนผูกสินค้า"
+     ⇒ ลูกค้าทุกคนไม่เห็นปุ่มซื้อนานถึง 5 นาที จากการสะดุดครั้งเดียว */
+  assert.notEqual(r.status, 200, 'อ่านไม่ได้ ห้ามตอบ 200 (ลูกค้าจะได้ของว่างที่ดูเหมือนคำตอบจริง)');
+  const cc = r.headers.get('cache-control') || '';
+  assert.ok(/no-store/.test(cc), `ต้องห้ามแคชความว่าง แต่ได้หัว: ${cc}`);
+  assert.ok(!/s-maxage|stale-while-revalidate/.test(cc), `ห้ามมีหัวแคชที่ขอบ: ${cc}`);
+  const body = await r.json();
+  assert.equal(body.อ่านไม่ได้, true, 'ต้องประกาศว่าอ่านไม่ได้ ไม่ใช่เงียบ (fallbacks-must-announce)');
+  assert.equal(writes.length, 0, 'ขาอ่านห้ามเขียนอะไร');
+
+  // ยังไม่เคยผูกเลย (null ไม่ใช่ throw) ⇒ ของจริงคือว่าง แคชได้ตามปกติ
+  reset();
+  const fresh = await clipShop(get(), {});
+  assert.equal(fresh.status, 200);
+  assert.deepEqual((await fresh.json()).map, {});
+  assert.ok(/s-maxage/.test(fresh.headers.get('cache-control') || ''), 'ของจริงที่ว่าง แคชได้');
+
+  // มีของจริง ⇒ ต้องส่งครบ
+  reset();
+  data.set('clip-shop', { c1: { h: 'saw-a', t: 'เลื่อย A', p: 9000 } });
+  const okr = await clipShop(get(), {});
+  assert.deepEqual(Object.keys((await okr.json()).map), ['c1']);
 });

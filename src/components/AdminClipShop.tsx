@@ -22,12 +22,21 @@ export default function AdminClipShop() {
   const [q, setQ] = useState("");
   const [onlyEmpty, setOnlyEmpty] = useState(true);
   const [msg, setMsg] = useState("");
+  /* 🔑 "อ่านรายการไม่ได้" ต้องแยกจาก "ยังไม่เคยผูกอะไร" — สองอย่างนี้หน้าตาเหมือนกันเป๊ะบนจอ
+     (ลิสต์ว่าง + ตัวนับ 0) แล้วคนจะผูกใหม่ทั้งที่ของเดิมยังอยู่ · กฎ fallbacks-must-announce */
+  const [อ่านไม่ได้, setอ่านไม่ได้] = useState(false);
 
   useEffect(() => setKey(requireKey()), []);
 
   useEffect(() => {
     fetch("/feed.json").then((r) => r.json()).then(setClips).catch(() => {});
-    fetch("/api/clip-shop").then((r) => r.json()).then((d) => setMap(d.map ?? {})).catch(() => {});
+    fetch("/api/clip-shop")
+      .then((r) => r.json())
+      .then((d) => {
+        if (d?.อ่านไม่ได้) { setอ่านไม่ได้(true); return; }   // ห้าม setMap({}) — จะกลายเป็นคำโกหกว่า "ยังไม่ผูก"
+        setMap(d.map ?? {});
+      })
+      .catch(() => setอ่านไม่ได้(true));
     // ดัชนีค้นหาสินค้าทั้งคลัง — หนักไปสำหรับหน้าร้าน แต่หลังร้านโหลดได้
     fetch("/search-index.json")
       .then((r) => r.json())
@@ -74,7 +83,9 @@ export default function AdminClipShop() {
       <header className="flex items-center gap-2 bg-ink px-3 py-3.5">
         <Link href="/admin/" aria-label="ย้อนกลับ" className="p-1 text-[20px] leading-none text-white">‹</Link>
         <span className="text-[15px] font-semibold text-white">ผูกสินค้ากับคลิป</span>
-        <span className="ml-auto text-[12px] text-white/60">ผูกแล้ว {linked} คลิป</span>
+        <span className="ml-auto text-[12px] text-white/60">
+          {อ่านไม่ได้ ? "ยังไม่รู้ว่าผูกไว้กี่คลิป" : `ผูกแล้ว ${linked} คลิป`}
+        </span>
       </header>
 
       <div className="mx-auto max-w-lg p-3">
@@ -92,6 +103,14 @@ export default function AdminClipShop() {
           />
           เอาเฉพาะคลิปที่ยังไม่มีสินค้า ({clips.filter((c) => !c.p && !map[c.v.v]).length} คลิป)
         </label>
+
+        {อ่านไม่ได้ && (
+          <p className="mb-3 rounded-sm border border-amber-300 bg-amber-50 px-3 py-2.5 text-[13px] leading-relaxed text-amber-900">
+            <strong>อ่านรายการที่ผูกไว้ไม่ได้ชั่วคราว</strong> — ที่เห็นว่า &ldquo;ยังไม่มีสินค้า&rdquo;
+            เชื่อไม่ได้รอบนี้ ของที่ผูกไว้เดิม<strong>ยังอยู่ครบ</strong> ไม่ได้หาย
+            · โหลดหน้าใหม่อีกครั้งก่อนผูกเพิ่ม (กดผูกตอนนี้ระบบจะตีกลับให้เอง ไม่เขียนทับของเดิม)
+          </p>
+        )}
 
         {msg && <p className="mb-3 rounded-sm bg-safety-tint px-3 py-2 text-[13px] text-safety">{msg}</p>}
 
