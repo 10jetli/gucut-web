@@ -2,9 +2,16 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import Portal from "./Portal";
+import Price from "./Price";
 import { SHELL_W } from "@/lib/layout";
-import { คีย์อะไหล่, type PartGroup, type PartRow, type PartsDoc, type PartsModel } from "@/lib/parts";
+import { addToCart } from "@/lib/cart";
+import {
+  คีย์อะไหล่, สภาพของอะไหล่, ซื้อได้, สรุปที่เลือก, อ่านของในร้าน,
+  type PartGroup, type PartRow, type PartsDoc, type PartsModel,
+  type ของในร้าน, type สภาพขาย,
+} from "@/lib/parts";
 
 // แผนผังอะไหล่ — ออกแบบให้ "นิ้วโป้งข้างเดียวบนมือถือ" ใช้จบ
 //
@@ -28,6 +35,12 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
   const [คำค้น, setคำค้น] = useState("");
   const [เน้น, setเน้น] = useState<string | null>(null);
   const [map, setMap] = useState<แมป>({});
+  const [ของร้าน, setของร้าน] = useState<Record<string, ของในร้าน>>({});
+  /** 🔑 สี่สถานะของ "การถามท่อ" — ไม่ใช่ boolean
+   *  `ไม่ได้` ต้องไม่ถูกจอแปลว่า "ของหมด" (ดู สภาพของอะไหล่ ใน lib/parts.ts) */
+  const [ท่อ, setท่อ] = useState<"ยังไม่ถาม" | "กำลังถาม" | "ได้แล้ว" | "ไม่ได้">("ยังไม่ถาม");
+  const [เลือกซื้อ, setเลือกซื้อ] = useState<Record<string, number>>({});
+  const [ใส่แล้ว, setใส่แล้ว] = useState(0);
   const กรอบ = useRef<HTMLDivElement>(null);
 
   const g: PartGroup | undefined = doc.กลุ่ม[กลุ่มที่เลือก];
@@ -46,6 +59,37 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
       ยกเลิก = true;
     };
   }, [doc.รหัสรุ่น]);
+
+  // ── ราคา/สต็อก/รูป ของอะไหล่ที่จับคู่แล้ว — **ถามครั้งเดียวต่อรุ่น**
+  //    (ไม่ใช่ต่อกลุ่ม และไม่ใช่ต่อชิ้น · เหตุอยู่ใน lib/parts.ts)
+  //    ⚠️ ถามไม่ได้ ⇒ `ท่อ: "ไม่ได้"` และจอต้องเขียนว่า "ยังอ่านราคาไม่ได้"
+  //       ห้ามกลายเป็น "หมด" และห้ามเงียบ — ลูกค้าจะคิดว่าร้านไม่มีของ
+  useEffect(() => {
+    let ยกเลิก = false;
+    setของร้าน({});
+    setเลือกซื้อ({});
+    setท่อ("กำลังถาม");
+    fetch(`/api/parts-skus?model=${encodeURIComponent(doc.รหัสรุ่น)}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((j) => {
+        if (ยกเลิก) return;
+        setของร้าน(อ่านของในร้าน(j));
+        setท่อ("ได้แล้ว");
+      })
+      .catch(() => {
+        if (!ยกเลิก) setท่อ("ไม่ได้");
+      });
+    return () => {
+      ยกเลิก = true;
+    };
+  }, [doc.รหัสรุ่น]);
+
+  // แถบ "ใส่ตะกร้าแล้ว" ต้องหายเอง — มันทับการ์ดแถวล่างอยู่ ถ้าค้างไว้ก็บังของที่คนกำลังไล่อ่าน
+  useEffect(() => {
+    if (!ใส่แล้ว) return;
+    const t = setTimeout(() => setใส่แล้ว(0), 6000);
+    return () => clearTimeout(t);
+  }, [ใส่แล้ว]);
 
   // ── ค้นหา: รหัสอะไหล่ หรือ ชื่ออังกฤษ · ค้นข้ามทุกกลุ่มของรุ่นนี้
   const ผลค้น = useMemo(() => {
@@ -77,6 +121,35 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
   useEffect(() => {
     กรอบ.current?.scrollTo({ left: 0, top: 0 });
   }, [กลุ่มที่เลือก, ระดับซูม]);
+
+  const สรุป = สรุปที่เลือก(เลือกซื้อ, ของร้าน);
+
+  /** ใส่ของที่เลือกไว้ทั้งหมดลงตะกร้าทีเดียว
+   *  ⚠️ ข้ามชิ้นที่ข้อมูลไม่พอ (ไม่มี handle/ราคา) และ **นับว่าข้ามไปกี่ชิ้น**
+   *     ถ้าไม่นับ จอจะบอกว่าใส่ครบทั้งที่บางชิ้นหลุด = ข่าวดีปลอม */
+  const ใส่ตะกร้าทั้งหมด = () => {
+    let ใส่ = 0;
+    for (const [คีย์, n] of Object.entries(เลือกซื้อ)) {
+      const ของ = ของร้าน[คีย์];
+      const สภาพ = สภาพของอะไหล่(ของ?.sku, ของ);
+      if (!ซื้อได้(สภาพ, ของ) || !ของ || !ของ.handle || typeof ของ.price !== "number") continue;
+      addToCart(
+        {
+          productId: ของ.id || ของ.handle,
+          handle: ของ.handle,
+          title: ของ.title || ของ.sku,
+          variant: "-",
+          price: ของ.price,
+          image: ของ.image || "",
+          sku: ของ.sku,
+        },
+        n,
+      );
+      ใส่ += n;
+    }
+    setใส่แล้ว(ใส่);
+    setเลือกซื้อ({});
+  };
 
   if (!g) return null;
   const จับคู่แล้ว = (รหัส: string) => map[คีย์อะไหล่(รหัส)];
@@ -250,32 +323,89 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
             </p>
           </div>
 
-          {/* ── รายการทั้งกลุ่ม: สำหรับคนที่อยากไล่อ่านมากกว่าจิ้มภาพ ── */}
-          <ul className="mx-3 mt-3 divide-y divide-steel-600 overflow-hidden rounded-lg border border-steel-600">
+          {/* ── รายการทั้งกลุ่ม: **การ์ดต่อแถว ไม่ใช่ตาราง** ──────────────────
+              เจ้าของร้านสั่ง 11 ต.ค. 2569 ว่าเน้นมือถือ 100% ⇒ ตาราง 7 คอลัมน์
+              แบบเว็บอะไหล่ฝรั่งใช้บนมือถือไม่ได้ (ต้องเลื่อนแนวนอนอ่านทีละช่อง)
+              ⚠️ ปุ่ม −/+ เป้ากด 44px ตามที่สั่ง — คนซื้ออะไหล่มือเปื้อนน้ำมัน */}
+          {ท่อ === "ไม่ได้" && (
+            <p className="mx-3 mt-3 rounded-md border border-steel-600 bg-safety-tint px-3 py-2 text-[12.5px] leading-relaxed text-carbon">
+              ตอนนี้<b>ยังอ่านราคากับสต็อกไม่ได้</b> — ไม่ได้แปลว่าของหมด
+              รายการยังดูได้ครบ กดชิ้นที่ต้องการแล้วทักร้านถามได้เลย
+            </p>
+          )}
+          <ul className="mx-3 mt-3 space-y-2">
             {g.อะไหล่.map((row, i) => (
               <li key={`${row.รหัส}-${i}`}>
-                <button
-                  type="button"
-                  onClick={() => เปิดเลข(row.เลข)}
-                  className="flex w-full items-center gap-2 px-3 py-2.5 text-left active:bg-steel-100/60"
-                >
-                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-steel-100 text-[12px] font-bold text-carbon">
-                    {row.เลข}
-                  </span>
-                  <span className="min-w-0 flex-1">
-                    <span className="block truncate text-[13.5px] text-carbon">{row.ชื่อ || "—"}</span>
-                    <span className="block text-[11.5px] tabular-nums text-steel-300">{row.รหัส}</span>
-                  </span>
-                  {จับคู่แล้ว(row.รหัส) && (
-                    <span className="shrink-0 rounded-sm bg-safety px-1.5 py-0.5 text-[10.5px] font-bold text-white">
-                      มีขาย
-                    </span>
-                  )}
-                </button>
+                <การ์ดอะไหล่
+                  row={row}
+                  ของ={ของร้าน[คีย์อะไหล่(row.รหัส)]}
+                  skuจับคู่={จับคู่แล้ว(row.รหัส)}
+                  ท่อ={ท่อ}
+                  จำนวน={เลือกซื้อ[คีย์อะไหล่(row.รหัส)] || 0}
+                  onจำนวน={(n) =>
+                    setเลือกซื้อ((ก) => {
+                      const คีย์ = คีย์อะไหล่(row.รหัส);
+                      const ถัดไป = { ...ก };
+                      if (n > 0) ถัดไป[คีย์] = n;
+                      else delete ถัดไป[คีย์];
+                      return ถัดไป;
+                    })
+                  }
+                  onเปิด={() => เปิดเลข(row.เลข)}
+                />
               </li>
             ))}
           </ul>
         </>
+      )}
+
+      {/* ── แถบลอยล่างจอแบบ Shopee ─────────────────────────────────────────
+          🔴 เหตุที่ปุ่มใส่ตะกร้าอยู่ท้ายรายการเฉย ๆ ไม่ได้: F440 มี 368 แถว
+             เลือกชิ้นที่ 7 แล้วต้องเลื่อนผ่านอีก 361 แถวไปกดปุ่ม = ไม่มีใครซื้อ
+          ⚠️ bottom-[57px] เพราะเมนูล่าง (BottomNav) สูง 57px และ **ไม่ซ่อนตัวเองที่ /parts/**
+             (มันซ่อนเฉพาะ /products/) ⇒ วางที่ bottom-0 จะถูกเมนูทับจนกดไม่ได้ */}
+      {สรุป.ชิ้น > 0 && (
+        <div
+          className={`fixed inset-x-0 bottom-[57px] z-40 mx-auto ${SHELL_W} border-t border-steel-600 bg-white pb-[env(safe-area-inset-bottom)] shadow-[0_-2px_8px_rgba(0,0,0,0.08)]`}
+        >
+          <div className="flex items-center gap-3 px-3 py-2">
+            <div className="min-w-0 flex-1">
+              {/* สองเลข ไม่ใช่เลขเดียว — "3 รายการ" กับ "12 ชิ้น" คนละความหมาย */}
+              <p className="text-[12px] text-steel-300">
+                เลือก {สรุป.รายการ} รายการ · {สรุป.ชิ้น} ชิ้น
+              </p>
+              <p className="text-[17px] font-extrabold leading-tight text-safety">
+                <Price value={สรุป.เงิน} />
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setเลือกซื้อ({})}
+              className="min-h-[44px] shrink-0 rounded-md border border-steel-600 px-3 text-[13px] text-steel-300"
+            >
+              ล้าง
+            </button>
+            <button
+              type="button"
+              onClick={ใส่ตะกร้าทั้งหมด}
+              className="min-h-[44px] shrink-0 rounded-md bg-safety px-4 text-[15px] font-extrabold text-white shadow-[0_3px_0_0_#8f2100] active:translate-y-[2px] active:shadow-[0_1px_0_0_#8f2100]"
+            >
+              ใส่ตะกร้า
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ใส่ตะกร้าแล้วต้องมีอะไรบอก — ไม่งั้นคนกดซ้ำเพราะไม่รู้ว่าติดไหม */}
+      {ใส่แล้ว > 0 && สรุป.ชิ้น === 0 && (
+        <div className={`fixed inset-x-0 bottom-[57px] z-40 mx-auto ${SHELL_W} px-3 pb-2`}>
+          <div className="flex items-center justify-between gap-2 rounded-md bg-carbon px-3 py-2.5 text-white">
+            <span className="text-[13px]">ใส่ตะกร้าแล้ว {ใส่แล้ว} ชิ้น</span>
+            <Link href="/cart/" className="rounded-md bg-white px-3 py-1.5 text-[13px] font-bold text-carbon">
+              ดูตะกร้า
+            </Link>
+          </div>
+        </div>
       )}
 
       {เลือกอยู่ && (
@@ -378,5 +508,132 @@ function แผ่นอะไหล่({
         </div>
       </div>
     </Portal>
+  );
+}
+
+// ── การ์ดอะไหล่หนึ่งชิ้น ────────────────────────────────────────────────────
+// ต้นแบบที่เจ้าของร้านส่งมา (lsengineers.co.uk) เป็นตารางเดสก์ท็อป 7 คอลัมน์
+// ⚠️ ของเราทำเป็นการ์ด **โดยตั้งใจ** ไม่ใช่ลอกไม่ครบ — บนมือถือตารางนั้นต้องเลื่อน
+//    แนวนอนอ่านทีละช่อง และท่านย้ำเรื่องหน้านี้มาตลอดว่าเน้นมือถือ 100%
+//
+// 🔑 **สีแบรนด์ใช้โทเคน `safety` (#c42d00) ไม่ใช่ #FF3C00 ที่เขียนในใบสั่ง**
+//    #ff3c00 เป็นสีเดิมถึง 19 ส.ค. 2569 และถูกถอดออกเพราะวัดคอนทราสต์บนพื้นขาว
+//    ได้ 3.56 (เกณฑ์ 4.5) ⇒ ราคา/ปุ่ม 29 จุดไม่ผ่าน · ดูเหตุเต็มใน tailwind.config.ts
+//    ⇒ ถ้าใครสั่งให้กลับไปใช้ #ff3c00 ต้องแก้ที่จานสีกลางพร้อมเหตุ ไม่ใช่ฝังในไฟล์นี้
+function การ์ดอะไหล่({
+  row,
+  ของ,
+  skuจับคู่,
+  ท่อ,
+  จำนวน,
+  onจำนวน,
+  onเปิด,
+}: {
+  row: PartRow;
+  ของ: ของในร้าน | undefined;
+  skuจับคู่: string | undefined;
+  ท่อ: "ยังไม่ถาม" | "กำลังถาม" | "ได้แล้ว" | "ไม่ได้";
+  จำนวน: number;
+  onจำนวน: (n: number) => void;
+  onเปิด: () => void;
+}) {
+  const สภาพ: สภาพขาย = สภาพของอะไหล่(skuจับคู่, ของ);
+  const กดซื้อได้ = ซื้อได้(สภาพ, ของ);
+  const เพดาน = กดซื้อได้ && ของ && ของ.st !== null ? ของ.st : 0;
+
+  // ป้ายกลมมีสีพื้น — อ่านเร็วกว่าไอคอน+ตัวหนังสือตอนไล่สายตา 368 แถว
+  // ⚠️ ทุกป้ายมี **ตัวหนังสือ** ไม่ใช่สีเพียว ๆ (คนตาบอดสีต้องอ่านได้)
+  const ป้าย: Record<สภาพขาย, { คำ: string; คลาส: string }> = {
+    มีสินค้า: { คำ: "มีสินค้า", คลาส: "bg-safety text-white" },
+    หมด: { คำ: "ของหมด", คลาส: "bg-steel-700 text-ink-700" },
+    ยังไม่ได้จับคู่: { คำ: "ยังไม่ลงขาย", คลาส: "border border-steel-600 bg-white text-steel-300" },
+    ยังอ่านไม่ได้: { คำ: "ยังอ่านราคาไม่ได้", คลาส: "border border-carbon bg-white text-carbon" },
+  };
+  const ติดป้าย = ท่อ === "กำลังถาม" && skuจับคู่
+    ? { คำ: "กำลังเช็คสต็อก", คลาส: "border border-steel-600 bg-white text-steel-300" }
+    : ป้าย[สภาพ];
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-steel-600 bg-white">
+      <div className="flex gap-2.5 p-2.5">
+        {/* รูปย่อจัตุรัส — lazy ตามค่าเริ่มต้นของ next/image (ห้ามใส่ priority ที่นี่
+            เพราะรายการนี้ยาว 368 แถว ใส่แล้วจะแย่งเน็ตกับรูปที่ลูกค้าเห็นจริง) */}
+        <button
+          type="button"
+          onClick={onเปิด}
+          aria-label={`ดูอะไหล่หมายเลข ${row.เลข}`}
+          className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border border-steel-700 bg-white"
+        >
+          {ของ?.image ? (
+            <Image src={ของ.image} alt={ของ.title || row.ชื่อ || row.รหัส} fill sizes="72px" className="object-contain" />
+          ) : (
+            <span className="grid h-full w-full place-items-center text-[20px] font-bold text-steel-300">
+              {row.เลข}
+            </span>
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div className="flex items-start gap-2">
+            <button type="button" onClick={onเปิด} className="min-w-0 flex-1 text-left">
+              <span className="block text-[13.5px] font-medium leading-snug text-carbon">
+                <span className="mr-1.5 inline-grid h-5 w-5 place-items-center rounded-full bg-steel-900 align-middle text-[11px] font-bold text-carbon">
+                  {row.เลข}
+                </span>
+                {ของ?.title || row.ชื่อ || "—"}
+              </span>
+              <span className="mt-0.5 block text-[11.5px] tabular-nums text-steel-300">
+                {row.รหัส}
+                {row.จำนวน ? ` · ใช้ ${row.จำนวน} ตัว` : ""}
+              </span>
+            </button>
+            <span className={`shrink-0 rounded-full px-2 py-0.5 text-[10.5px] font-bold ${ติดป้าย.คลาส}`}>
+              {ติดป้าย.คำ}
+            </span>
+          </div>
+
+          <div className="mt-1.5 flex items-center justify-between gap-2">
+            {/* ราคาไทยไม่มีทศนิยม (Price ใช้ toLocaleString ของ th-TH)
+                ⚠️ ไม่มีราคา **ห้ามพิมพ์ 0** — เขียนว่ายังไม่รู้ ตามกฎ "ไม่รู้ห้ามกลายเป็นศูนย์" */}
+            {typeof ของ?.price === "number" ? (
+              <span className="text-[15px] font-extrabold text-safety">
+                <Price value={ของ.price} />
+              </span>
+            ) : (
+              <span className="text-[11.5px] text-steel-300">
+                {สภาพ === "ยังไม่ได้จับคู่" ? "ยังไม่ได้ลงขายในเว็บ" : "ยังไม่รู้ราคา"}
+              </span>
+            )}
+
+            {กดซื้อได้ ? (
+              <div className="flex shrink-0 items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onจำนวน(Math.max(0, จำนวน - 1))}
+                  disabled={จำนวน <= 0}
+                  aria-label={`ลดจำนวน ${row.รหัส}`}
+                  className="h-[44px] w-[44px] rounded-md border border-steel-600 text-[20px] font-bold text-carbon disabled:text-steel-700"
+                >
+                  −
+                </button>
+                <span className="min-w-[28px] text-center text-[15px] font-bold tabular-nums text-carbon">
+                  {จำนวน}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => onจำนวน(Math.min(เพดาน, จำนวน + 1))}
+                  disabled={จำนวน >= เพดาน}
+                  aria-label={`เพิ่มจำนวน ${row.รหัส}`}
+                  title={จำนวน >= เพดาน ? `มีของ ${เพดาน} ชิ้น` : undefined}
+                  className="h-[44px] w-[44px] rounded-md border border-safety bg-safety text-[20px] font-bold text-white disabled:border-steel-600 disabled:bg-white disabled:text-steel-700"
+                >
+                  +
+                </button>
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }

@@ -72,3 +72,98 @@ export function หารุ่น(slug: string): PartsModel | undefined {
 export function คีย์อะไหล่(รหัส: string): string {
   return รหัส.replace(/\s+/g, "");
 }
+
+// ───────────────────────────────────────────────────────────────────────────
+// ของในร้านที่ผูกกับอะไหล่ชิ้นนั้น — ใช้โชว์ราคา/สต็อก และใส่ตะกร้า
+//
+// 🔑 **ถามทีเดียวต่อรุ่น ไม่ใช่รายชิ้น** (เจ้าของร้านสั่ง 11 ต.ค. 2569)
+//    F440 มี 368 แถว · ถ้ายิง /api/stock?sku= รายชิ้น = ลูกค้าหนึ่งคนเปิดหน้าเดียว
+//    เท่ากับยิง ZORT 368 ครั้ง ⇒ นี่ไม่ใช่เรื่อง "หน้าช้า" มันคือค่าโควตาที่ร้านจ่าย
+// ───────────────────────────────────────────────────────────────────────────
+
+/** ของในร้านหนึ่งชิ้น — ทุกช่องมาจากนอกบ้าน ⇒ ต้องรับว่าหายได้ทุกช่อง */
+export type ของในร้าน = {
+  sku: string;
+  /** รหัสสินค้า/handle ที่ใช้เปิดหน้าสินค้า — ไม่มี = เปิดหน้าสินค้าไม่ได้ */
+  handle: string | null;
+  id: string | null;
+  title: string | null;
+  /** ราคา — **null ได้** (ของมีทะเบียนตอบมาแค่สต็อก ไม่มีราคา · ดู useLiveStock) */
+  price: number | null;
+  image: string | null;
+  /** สต็อกพร้อมขาย — **null = ยังไม่รู้ ห้ามแปลว่า 0** */
+  st: number | null;
+};
+
+/** สี่สถานะ ไม่ใช่สาม — ใบสั่งเขียนไว้สาม แต่ "ยังอ่านไม่ได้" เป็นสถานะที่เกิดจริง
+ *
+ *  🔴 ถ้ายุบ "ยังอ่านไม่ได้" ไปรวมกับ "หมด" ⇒ จอจะบอกลูกค้าว่าของหมด
+ *     ในวันที่ท่อสะดุด ทั้งที่ของอยู่ในชั้นครบ ⇒ ปิดการขายของที่มีอยู่
+ *  🔴 ถ้ายุบไปรวมกับ "มีสินค้า" ⇒ ลูกค้าสั่งของที่ไม่มี
+ *  ⇒ ทิศของ "ไม่รู้" ในเรื่องที่มีผลกับเงิน ต้องเป็นสถานะของตัวเอง (กฎเดียวกับ B18 ฝั่งท่อ) */
+export type สภาพขาย = "ยังไม่ได้จับคู่" | "มีสินค้า" | "หมด" | "ยังอ่านไม่ได้";
+
+export function สภาพของอะไหล่(
+  skuที่จับคู่: string | undefined | null,
+  ของ: ของในร้าน | undefined | null,
+): สภาพขาย {
+  // ยังไม่มีใครบอกว่าอะไหล่ชิ้นนี้คือสินค้ารหัสไหน — คนละเรื่องกับ "ของหมด"
+  if (!skuที่จับคู่) return "ยังไม่ได้จับคู่";
+  if (!ของ || ของ.st === null || !Number.isFinite(ของ.st)) return "ยังอ่านไม่ได้";
+  return ของ.st > 0 ? "มีสินค้า" : "หมด";
+}
+
+/** กดใส่ตะกร้าได้ไหม — ต้องมีของ **และ** มีข้อมูลพอจะสร้างรายการในตะกร้าได้
+ *  (ตะกร้าต้องมี handle/id/ราคา ไม่งั้นหน้าตะกร้าจะมีแถวที่กดต่อไม่ได้) */
+export function ซื้อได้(สภาพ: สภาพขาย, ของ: ของในร้าน | undefined | null): boolean {
+  return สภาพ === "มีสินค้า" && !!ของ && !!ของ.handle && typeof ของ.price === "number" && ของ.price > 0;
+}
+
+/** สรุปของที่เลือกไว้ สำหรับแถบลอยล่างจอ
+ *  ⚠️ คืน **สองเลข** คือจำนวนชิ้นกับจำนวนรายการ เพราะ "เลือก 3 รายการ 12 ชิ้น"
+ *     ไม่ใช่เลขเดียวกัน · โชว์เลขเดียวแล้วคนอ่านจะเข้าใจผิดทันที */
+export function สรุปที่เลือก(
+  เลือก: Record<string, number>,
+  ของทั้งหมด: Record<string, ของในร้าน>,
+): { รายการ: number; ชิ้น: number; เงิน: number } {
+  let รายการ = 0;
+  let ชิ้น = 0;
+  let เงิน = 0;
+  for (const [คีย์, จำนวน] of Object.entries(เลือก)) {
+    const n = Math.max(0, Math.floor(Number(จำนวน) || 0));
+    if (!n) continue;
+    const ของ = ของทั้งหมด[คีย์];
+    if (!ของ || typeof ของ.price !== "number") continue;
+    รายการ += 1;
+    ชิ้น += n;
+    เงิน += ของ.price * n;
+  }
+  return { รายการ, ชิ้น, เงิน };
+}
+
+/** อ่านคำตอบของ /api/parts-skus — จุดรับเข้าจากนอกบ้าน ตรวจทีละช่อง
+ *  🔑 ช่องที่หายไปต้องกลายเป็น null ตั้งแต่ที่นี่ ห้ามปล่อย undefined ไหลเข้าจอ
+ *     (บทเรียน useLiveStock: `p: number` ที่ของจริงเป็น undefined ทำหน้าสินค้าตายทั้งหน้า) */
+export function อ่านของในร้าน(j: unknown): Record<string, ของในร้าน> {
+  const out: Record<string, ของในร้าน> = {};
+  const items = (j as { items?: unknown })?.items;
+  if (!items || typeof items !== "object") return out;
+  for (const [k, v] of Object.entries(items as Record<string, unknown>)) {
+    const คีย์ = คีย์อะไหล่(String(k));
+    const o = (v || {}) as Record<string, unknown>;
+    const sku = typeof o.sku === "string" ? o.sku.trim() : "";
+    if (!คีย์ || !sku) continue;
+    const ราคา = typeof o.price === "number" && Number.isFinite(o.price) && o.price > 0 ? o.price : null;
+    const st = typeof o.st === "number" && Number.isFinite(o.st) ? Math.max(0, Math.floor(o.st)) : null;
+    out[คีย์] = {
+      sku,
+      handle: typeof o.handle === "string" && o.handle ? o.handle : null,
+      id: typeof o.id === "string" && o.id ? o.id : null,
+      title: typeof o.title === "string" && o.title ? o.title : null,
+      price: ราคา,
+      image: typeof o.image === "string" && o.image ? o.image : null,
+      st,
+    };
+  }
+  return out;
+}
