@@ -592,7 +592,13 @@ function การ์ดอะไหล่({
     : ป้าย[สภาพ];
 
   return (
-    <div className="overflow-hidden rounded-xl border border-steel-700 bg-white shadow-[0_1px_4px_rgba(26,26,26,0.06)]">
+    /* 🎨 ขีดสีแบรนด์ซ้ายมือ = แถวนี้ซื้อได้เลย — ตากวาด 368 แถวแล้วเจอของที่ซื้อได้ทันที
+       (แถวที่ซื้อไม่ได้ไม่มีขีด เงียบ ๆ ไป ไม่ต้องแย่งความสนใจ) */
+    <div
+      className={`overflow-hidden rounded-xl border bg-white shadow-[0_1px_4px_rgba(26,26,26,0.06)] ${
+        กดซื้อได้ ? "border-steel-700 border-l-[3px] border-l-safety" : "border-steel-700"
+      }`}
+    >
       <div className="flex gap-2.5 p-2.5">
         {/* รูปย่อจัตุรัส — lazy ตามค่าเริ่มต้นของ next/image (ห้ามใส่ priority ที่นี่
             เพราะรายการนี้ยาว 368 แถว ใส่แล้วจะแย่งเน็ตกับรูปที่ลูกค้าเห็นจริง) */}
@@ -688,26 +694,26 @@ function การ์ดอะไหล่({
                  ⚠️ สีของสภาพปิดใช้ **ตัวหนังสือเข้มบนเทาอ่อน** ไม่ใช่ขาวจาง ๆ
                     (ของจริง 12 ต.ค. 2569: ขาว + opacity 40% = 1.43:1 อ่านไม่ออก
                      ⇒ ปุ่มที่กดไม่ได้ ไม่ควรเป็นปุ่มที่อ่านไม่ได้) */
-              <div className="flex shrink-0 items-stretch overflow-hidden rounded-lg border border-steel-700" aria-hidden="true">
-                <span className="grid h-[44px] w-[42px] place-items-center bg-steel-900 text-[20px] font-bold text-steel-300">−</span>
-                <span className="grid min-w-[40px] place-items-center border-x border-steel-700 bg-steel-900 text-[15px] font-bold tabular-nums text-steel-300">0</span>
-                <span className="grid h-[44px] w-[42px] place-items-center bg-steel-900 text-[20px] font-bold text-steel-300">+</span>
-              </div>
+              /* 🎨 ขัด UI รอบสอง 12 ต.ค. 2569 — ท่านประธานดูหน้าจริงแล้วสั่ง "สวย ๆ"
+                 ของเดิม: แถวที่ขายไม่ได้โชว์ stepper ปลอม **บวก** ปุ่มแดงเต็มความกว้างอีกแถว
+                 ⇒ 263 จาก 368 แถวเป็นแบบนี้ ⇒ **หน้าเต็มไปด้วยสีแดงจนของที่ขายได้จริงจมหาย**
+                    และการ์ดที่ขายไม่ได้ยัง **สูงกว่า** การ์ดที่ขายได้ — ผิดลำดับความสำคัญ
+                 ⇒ ยุบสองอย่างเหลือปุ่มเดียว กะทัดรัด อยู่ตำแหน่งเดียวกับ stepper
+                    โครงการ์ดยังครบทุกช่อง (รูป · ชื่อ · รหัส · ราคา · ปุ่ม) ไม่ได้ยุบหาย */
+              <Link
+                href={`/account/?chat=1&q=${encodeURIComponent(
+                  `ขอสอบถามอะไหล่ ${ชื่อรุ่น} รหัส ${row.รหัส} ${row.ชื่อ}`,
+                )}`}
+                className="grid h-[44px] shrink-0 place-items-center rounded-lg border border-steel-600 px-3.5 text-[12.5px] font-bold text-carbon active:bg-steel-900"
+              >
+                ทักร้านถาม
+              </Link>
             )}
           </div>
 
-          {/* ชิ้นที่ซื้อจากเว็บยังไม่ได้ ต้องมี **ทางไปต่อ** ไม่ใช่ทางตัน
-              (เจ้าของร้านสั่ง: ป้าย "สอบถามร้าน" ต้องมาคู่กับปุ่มทักแชท) */}
-          {!กดซื้อได้ && (
-            <Link
-              href={`/account/?chat=1&q=${encodeURIComponent(
-                `ขอสอบถามอะไหล่ ${ชื่อรุ่น} รหัส ${row.รหัส} ${row.ชื่อ}`,
-              )}`}
-              className="mt-1.5 block rounded-md border border-safety py-2 text-center text-[12.5px] font-bold text-safety"
-            >
-              ทักร้านถามชิ้นนี้
-            </Link>
-          )}
+          {/* ℹ️ ปุ่มทักร้านย้ายไปอยู่แถวเดียวกับราคาแล้ว (ขัด UI รอบสอง 12 ต.ค. 2569)
+              เจ้าของร้านสั่งไว้ว่าป้าย "สอบถามร้าน" ต้องมาคู่กับทางทักแชท — **ยังมีครบ**
+              เปลี่ยนแค่ตำแหน่งกับน้ำหนักสี ไม่ได้เอาออก */}
         </div>
       </div>
     </div>
