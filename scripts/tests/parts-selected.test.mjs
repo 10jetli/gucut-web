@@ -29,7 +29,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { สรุปที่เลือก } from '../../src/lib/parts.ts';
+import { สรุปที่เลือก } from '../../src/lib/parts-core.mjs';
 
 const ทั้งหมด = { A: { sku: '04382', title: 'โซ่', price: 1250, image: null, handle: 'x', st: 5 } };
 

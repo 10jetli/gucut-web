@@ -9,15 +9,25 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
 // lib/parts.ts เป็น TypeScript — แปลงด้วย tsc ตัวในเครื่องแล้ว import ของจริง
 // (ห้ามคัดลอกตรรกะมาเขียนซ้ำในเทส ไม่งั้นเทสยืนยันสำเนา ไม่ได้ยืนยันของที่รันจริง)
 const ที่ = mkdtempSync(join(tmpdir(), 'parts-lib-'));
+/* 🔴 **แก้ 12 ต.ค. 2569 (gucut)** — `parts.ts` ไม่ self-contained อีกแล้ว
+   `สรุปที่เลือก` ย้ายไป `src/lib/parts-core.mjs` (เหตุ: Node 20 ที่ build โหลด `.ts` ไม่ได้
+   ⇒ ตรรกะที่เทสต้องเรียกต้องอยู่ `.mjs` · ดูหัวไฟล์ parts-core.mjs)
+   ⇒ `parts.ts` มี `export ... from "./parts-core.mjs"` ⇒ **ต้องคัดลอกไฟล์นั้นไปด้วย**
+     ไม่คัดลอก = `ERR_MODULE_NOT_FOUND` ซึ่งเกิดจริงรอบนี้ (ผมเป็นคนทำให้พัง เลยแก้ให้)
+   🔑 และนี่คือตัวอย่างของข้อที่คุณส้มเตือนไว้เองวันนี้: **ด่าน/เทสที่ผูกกับรูปร่างของโค้ด
+     จะพังหรือตาบอดเมื่อมีคนย้ายโค้ด** — รอบนี้โชคดีที่มันพังเสียงดัง ไม่ได้เขียวเงียบ ๆ
+   ⚠️ ใครย้ายตรรกะใน parts.* อีก ต้องมาเติมไฟล์ที่ต้องคัดลอกตรงนี้ด้วย */
 execFileSync('npx', ['tsc', 'src/lib/parts.ts', '--outDir', ที่, '--module', 'es2022',
   '--target', 'es2022', '--moduleResolution', 'bundler'], { stdio: 'pipe' });
+for (const ชื่อ of ['parts-core.mjs'])
+  writeFileSync(join(ที่, ชื่อ), readFileSync(join('src/lib', ชื่อ), 'utf8'));
 writeFileSync(join(ที่, 'package.json'), '{"type":"module"}');
 const { สภาพของอะไหล่, ซื้อได้, สรุปที่เลือก, อ่านของในร้าน, คีย์อะไหล่ } =
   await import(join(ที่, 'parts.js'));
