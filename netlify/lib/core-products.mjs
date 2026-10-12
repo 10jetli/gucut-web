@@ -342,6 +342,9 @@ export async function probeBundleDetail(skuIn, whIn) {
   };
 }
 
+/* 👯 ฝาแฝด: syncBundleRecipes (ไฟล์เดียวกัน ห่างไป ~400 บรรทัด) — ด่าน check-code-twins.mjs
+   ⚠️ **"อยู่ไฟล์เดียวกันก็เห็น" ไม่จริง** — B22 12 ต.ค. 2569 พิสูจน์แล้ว
+   ทั้งคู่กวาดรายชื่อชุดด้วย `Bundle/GetBundles?limit=200` เหมือนกัน ⇒ แก้ลูปที่นี่ต้องดูที่นั่น */
 export async function syncBundles() {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();
@@ -741,6 +744,9 @@ export async function recipeCheckedAt() {
   }
 }
 
+/* 👯 ฝาแฝด: syncBundles (ไฟล์เดียวกัน ขึ้นไป ~400 บรรทัด) — ด่าน check-code-twins.mjs
+   ⚠️ ตัวนี้คือฝั่งที่ **ตกหล่นเมื่อ 4 ต.ค.** (ไม่มีตัวจับชนเพดานเลย จนแก้ 12 ต.ค.)
+   ⇒ แก้ลูปกวาดรายชื่อชุดที่นี่ ต้องเปิด syncBundles ดูคู่ในคอมมิตเดียวกัน */
 export async function syncBundleRecipes({ limit = RECIPE_BATCH, deadlineMs = RECIPE_DEADLINE_MS } = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   const h = headers();

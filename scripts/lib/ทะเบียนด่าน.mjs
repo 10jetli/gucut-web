@@ -15,6 +15,20 @@
       ระหว่างการรันมือแต่ละครั้ง ⇒ จึงต้องมีด่านถูก ๆ ที่รันทุก build คอยตรวจแค่ข้อนี้ */
 export const ทะเบียน = [
   {
+    ด่าน: "check-code-twins (ป้ายชี้ฝาแฝดหาย)",
+    ไฟล์: "netlify/lib/core-contacts.mjs",
+    เงื่อนไขเป้า:
+      "ต้องเป็นไฟล์ **ที่อยู่ในทะเบียนคู่ฝาแฝด** ของ check-code-twins.mjs และต้องมีป้ายอยู่ก่อนปลูก ⇒ "
+      + "ปลูกในไฟล์ที่ไม่ได้อยู่ในทะเบียน ด่านจะเขียวเหมือนเดิม แล้วเราจะอ่านผิดว่าด่านพัง",
+    แก้: (s) => s.replace("// 👯 ฝาแฝด: netlify/lib/core-purchases.mjs", "// (ถอดป้ายออก)"),
+    ต้องมีในไฟล์: "// 👯 ฝาแฝด: netlify/lib/core-purchases.mjs",
+    คำสั่ง: ["node", "scripts/check-code-twins.mjs"],
+    ต้องเอ่ยถึง: "core-contacts.mjs",
+    ที่มา:
+      "12 ต.ค. 2569 ใบ t_mv4v52jk — คลาส 'ฝาแฝดถูกแก้คนละรอบแล้วไม่เท่ากัน' โผล่ 3 รอบในวันเดียว "
+      + "(B21 shopee/tiktok · B22 syncBundles/syncBundleRecipes ในไฟล์เดียวกัน · B23 purchases/contacts)",
+  },
+  {
     ด่าน: "check-syntax",
     ไฟล์: "scripts/gen-warn-keys.mjs",
     /* 🔑 **เงื่อนไขของเป้า** — ฝั่งจอสรุป 20 ก.ย. 2569: ตัวสูตรอ่านออกจากโค้ดได้
