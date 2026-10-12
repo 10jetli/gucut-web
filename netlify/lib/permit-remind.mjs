@@ -105,9 +105,24 @@ export async function runReminders() {
 
   const pushed = [];
   const forShop = [];
+  /* 🔴 **B24 ภาคสอง (12 ต.ค. 2569)** — รอบ 4 ต.ค. แก้ **ขาอ่านรายชื่อ** (list ล้ม ⇒ โยน)
+     แต่ **ขาอ่านรายแถว** ยังกลืนเหมือนเดิม: `.catch(() => null)` แล้ว `continue`
+     ⇒ เรื่องที่อ่านไม่ได้ถูกนับเป็น **"ไม่ต้องเตือน"** เงียบ ๆ
+     ⇒ และรายงานคืน `checked: blobs.length` ⇒ **นับรวมแถวที่อ่านไม่ได้ว่าตรวจแล้ว**
+     🔑 คลาสเดียวกับที่ `อ่านทุกแถว()` ใน `blob-keys.mjs` แก้ไว้แล้ว — ไฟล์นี้ใช้แค่ครึ่งเดียว
+        (ยืมแต่ `อ่านรายชื่อคีย์` ไม่ได้ยืมตัวนับ `unreadable`)
+     ⚠️ ที่นี่ยืม `อ่านทุกแถว()` มาตรง ๆ ไม่ได้ เพราะลูปต้องใช้ **คีย์** เขียนกลับ
+        (`s.setJSON(b.key, rec)`) ส่วนตัวนั้นคืนแต่ตัวแถว ⇒ จึงนับเองด้วยกติกาเดียวกัน
+        📌 ถ้าวันไหนมีคนที่สามต้องการทั้งคีย์และตัวนับ ให้เพิ่มทางเลือกคืนคีย์ใน `อ่านทุกแถว()`
+           **ไม่ใช่ลอกลูปนี้เป็นสำเนาที่สาม** */
+  let อ่านแถวไม่ได้ = 0;
 
   for (const b of blobs) {
-    const rec = await s.get(b.key, { type: "json" }).catch(() => null);
+    let rec = null;
+    let อ่านได้ = true;
+    try { rec = await s.get(b.key, { type: "json" }); }
+    catch { อ่านได้ = false; }
+    if (!อ่านได้) { อ่านแถวไม่ได้++; continue; }
     if (!rec || !NUDGE.includes(rec.stage)) continue;
 
     // นับจากตอนที่เข้าขั้นนี้ ไม่ใช่ตอนเปิดเรื่อง
@@ -136,15 +151,22 @@ export async function runReminders() {
       const r = await linePush(lineId, `${msg.title}\n${msg.body}`, link).catch(() => "error");
       if (r === "sent") reached.push("LINE");
       else if (r === "blocked") reached.push("LINE ส่งไม่ได้ (ยังไม่ได้เพิ่มเพื่อน)");
+      /* 🔴 **B24 ภาคสอง** — ของเดิมตกกรณีอื่นทิ้งเงียบ ("error" หรือค่าที่ไม่รู้จัก)
+         ⇒ ร้านเห็น "ไม่ถึงเลย" เหมือนกรณีที่ลูกค้าไม่มี LINE ซึ่งคนละเรื่องกันโดยสิ้นเชิง
+         (ลูกค้ามี LINE อยู่ แต่เรายิงไม่ออก ⇒ ลองใหม่ได้ · ไม่มี LINE ⇒ ต้องโทร) */
+      else reached.push(`LINE ยิงไม่ออก — ยังไม่รู้ผล (${String(r).slice(0, 20)})`);
     }
 
     // ---- ชั้น 2: Web Push
-    const n = await pushToUser(rec.phone, {
-      title: msg.title,
-      body: msg.body,
-      url: "/permit/",
-    }).catch(() => 0);
-    if (n) reached.push("แจ้งเตือนมือถือ");
+    /* 🔴 **B24 ภาคสอง** — `pushToUser` คืน `null` = **ยังไม่รู้ว่าส่งถึงไหม** (แก้ไว้ใน B11 วันนี้)
+       ของเดิม `.catch(() => 0)` + `if (n)` ยุบ **null · 0 · ข้อผิดพลาด** เป็น "ไม่ถึง" ก้อนเดียว
+       ⇒ ⇒ ขาผลิตบอกความจริงแล้ว แต่ **ขาใช้โยนข้อมูลนั้นทิ้ง** ⇒ ร้านอ่านว่า "ไม่ถึงเลย"
+          ทั้งที่ความจริงคือ "อ่านรายชื่อเครื่องไม่ได้" ⇒ ร้านโทรตามฟรี หรือแย่กว่า: ไปตั้งค่าใหม่ */
+    let n = null;
+    try { n = await pushToUser(rec.phone, { title: msg.title, body: msg.body, url: "/permit/" }); }
+    catch { n = null; }
+    if (n === null) reached.push("แจ้งเตือนมือถือ — **ยังไม่รู้ผล** (อ่านรายชื่อเครื่องไม่ได้)");
+    else if (n) reached.push("แจ้งเตือนมือถือ");
 
     rec.lastRemind = new Date().toISOString();
     rec.remindCount = sent + 1;
@@ -170,6 +192,14 @@ export async function runReminders() {
     );
   }
 
-  return { checked: blobs.length, nudged: forShop.length, pushed: pushed.length };
+  /* ⚠️ `อ่านแถวไม่ได้` ต้องอยู่ในคำตอบ **แม้เป็น 0** — ไม่มีช่อง ≠ ไม่มีปัญหา
+     (กติกาเดียวกับ `unreadable` ใน `blob-keys.mjs`) · และ `checked` ต้องไม่นับแถวที่อ่านไม่ได้
+     ไม่งั้นรายงานจะบอกว่าตรวจครบทั้งที่บางเรื่องไม่เคยถูกเปิดอ่าน */
+  return {
+    checked: blobs.length - อ่านแถวไม่ได้,
+    อ่านแถวไม่ได้,
+    nudged: forShop.length,
+    pushed: pushed.length,
+  };
 }
 
