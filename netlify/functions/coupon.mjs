@@ -11,7 +11,8 @@
 //    และจำนวนครั้งต่อคน ถ้าเช็คฝั่งลูกค้าจะปลอมได้ทันที
 import { adminGate } from "../lib/admin-gate.mjs";
 import {
-  allCoupons, couponStore, findCoupon, publicCoupon, readCoupons, readCouponsForWrite,
+  couponStore, findCoupon, publicCoupon, readCouponsForWrite,
+  อ่านโค้ดพร้อมสถานะ, ตรวจโค้ดไม่ได้,
   validate, writeCoupons,
 } from "../lib/coupons.mjs";
 import { currentUser, store as usersStore } from "../lib/session.mjs";
@@ -74,14 +75,30 @@ export default async function handler(req, context) {
       const gate = await adminGate(req, context);
       if (gate.deny) return gate.deny;
       if (!gate.ok) return json({ error: "unauthorized" }, 401);
-      return json({ all: await readCoupons(s) });
+      /* 🔴 **B18 (แก้ 12 ต.ค. 2569)** — เดิม `readCoupons` กลืนความล้มเหลวเป็น `[]`
+         ⇒ ตารางหลังร้านขึ้น **ว่าง** ตอน Blobs สะดุด · ไฟล์ `coupons.mjs` เตือนไว้เองว่า
+           "GET ?all ได้ตารางว่าง ⇒ คนใช้จะสร้างใหม่ ซึ่งคือจังหวะที่เขียนทับพอดี"
+         ⇒ คำเตือนนั้นอยู่ในไฟล์มาตั้งแต่ 6 ก.ย. แต่ **เส้นนี้ยังกลืนอยู่** ⇒ ปิดให้ตรงนี้
+         🔑 ทางอ่านของ *เจ้าของร้าน* ต้องบอกว่าอ่านไม่ได้ ไม่ใช่โชว์ว่าง —
+            เพราะคนที่เห็นตารางว่างจะลงมือ **เขียน** ต่อทันที */
+      const { list: ทั้งหมด, อ่านไม่ได้ } = await อ่านโค้ดพร้อมสถานะ(s);
+      if (อ่านไม่ได้) {
+        return json({ error: "อ่านรายชื่อโค้ดไม่ได้ชั่วคราว — **ห้ามสร้างโค้ดใหม่ตอนนี้** "
+          + "เพราะการบันทึกจะเขียนทับรายชื่อเดิมที่ยังอ่านไม่ได้ · ลองรีเฟรชอีกครั้ง" }, 503);
+      }
+      return json({ all: ทั้งหมด.filter((c) => !c.fromEnv) });
     }
 
     const user = await me(req);
-    const list = (await readCoupons(s))
-      .filter((c) => c.visible !== false && !c.off)
+    /* ทางนี้ **กลืนต่อโดยตั้งใจ** — หน้าร้านต้องไม่ล้มเพราะ Blobs สะดุด
+       แต่แนบ `อ่านไม่ได้` ไปให้จอ เพื่อให้จอเขียนว่า "ยังโหลดโปรโมชันไม่ได้"
+       ไม่ใช่ "ไม่มีโปรโมชัน" ⇒ รายการว่างสองความหมาย ต้องแยกให้จอเห็น
+       (จอยังไม่ใช้ช่องนี้ก็ไม่พัง — เพิ่มช่อง ไม่ได้เปลี่ยนรูปเดิม) */
+    const { list: ทั้งหมด, อ่านไม่ได้ } = await อ่านโค้ดพร้อมสถานะ(s);
+    const list = ทั้งหมด
+      .filter((c) => c.visible !== false && !c.off && !c.fromEnv)
       .map(publicCoupon);
-    return json({ coupons: list, mine: user?.coupons ?? {} });
+    return json({ coupons: list, mine: user?.coupons ?? {}, อ่านไม่ได้ });
   }
 
   if (req.method !== "POST") return json({ error: "method not allowed" }, 405);
@@ -153,7 +170,12 @@ export default async function handler(req, context) {
   // ---------- กดเก็บโค้ดเข้าบัญชี ----------
   if (action === "collect") {
     if (!user) return json({ ok: false, error: "เข้าสู่ระบบก่อนถึงจะเก็บโค้ดได้" }, 401);
-    const c = findCoupon(await readCoupons(s), code);
+    /* ทางนี้ก็พูดผิดแบบเดียวกัน: อ่านไม่ได้ ⇒ "ไม่มีโค้ดนี้แล้ว" ⇒ ลูกค้าเชื่อว่าโค้ดถูกถอน
+       ⚠️ ต่างจากทางตรวจ: ทางนี้ **เขียนบัญชีลูกค้า** ⇒ อ่านไม่ได้แล้วเขียนต่อไม่ได้อยู่ดี
+          ⇒ ตอบว่าตรวจไม่ได้ ให้เขากดใหม่ ไม่ใช่บอกว่าโค้ดหายไปแล้ว */
+    const { list: มีอยู่, อ่านไม่ได้: โค้ดอ่านไม่ได้ } = await อ่านโค้ดพร้อมสถานะ(s);
+    const c = findCoupon(มีอยู่, code);
+    if (!c && โค้ดอ่านไม่ได้) return json(ตรวจโค้ดไม่ได้());
     if (!c || c.off || c.visible === false) return json({ ok: false, error: "ไม่มีโค้ดนี้แล้ว" });
 
     const us = usersStore();
@@ -173,7 +195,18 @@ export default async function handler(req, context) {
     return json({ ok: false, error: "ลองใส่โค้ดบ่อยเกินไป รออีกสักครู่แล้วลองใหม่" });
   }
 
-  const c = findCoupon(await allCoupons(s), code);
+  /* 🔴 **B18 ส่วนที่ยังค้าง (แก้ 12 ต.ค. 2569)** — เดิมใช้ `allCoupons` ซึ่งกลืน
+     ความล้มเหลวของ Blobs เป็น `[]` ⇒ `validate(undefined)` ตอบ
+     **"ไม่มีโค้ดนี้ หรือโค้ดหมดอายุแล้ว"** ⇒ ลูกค้าที่ถือโค้ดจริงถูกบอกว่าโค้ดเขาไม่มีอยู่
+     ⇒ ⇒ ทิศของเงินถูกแล้ว (ไม่ให้ส่วนลด) แต่ **ถ้อยคำผิด** และราคาของถ้อยคำผิดทางนี้คือ
+        ลูกค้าเลิกลอง/ทิ้งตะกร้า/ทักมาว่าร้านโกง — แพงกว่าให้เขารอหนึ่งนาที
+     🔑 "ไม่ให้ส่วนลด" กับ "บอกว่าโค้ดไม่มีอยู่" เป็นสองเรื่อง · ของเดิมทำทั้งสอง
+     ⚠️ ลำดับสำคัญ: ถ้า **เจอโค้ด** (รวมโค้ดลับจาก env ที่ใช้ได้แม้ Blobs ล่ม) ⇒ ตรวจปกติ
+        พูดว่า "ตรวจไม่ได้" เฉพาะตอน **ไม่เจอ และ อ่านไม่ได้** เท่านั้น
+        ไม่งั้นโค้ดที่ไม่มีอยู่จริงจะได้ข้อความกำกวมตอน Blobs ล่ม */
+  const { list, อ่านไม่ได้ } = await อ่านโค้ดพร้อมสถานะ(s);
+  const c = findCoupon(list, code);
+  if (!c && อ่านไม่ได้) return json(ตรวจโค้ดไม่ได้());
   const r = validate(c, subtotal, user);
   return json(r.ok ? { ok: true, code: r.code, discount: r.discount, label: r.label } : r);
 }
