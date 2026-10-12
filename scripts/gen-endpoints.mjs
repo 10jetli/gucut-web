@@ -85,6 +85,28 @@ if (รูปที่ไม่รู้จัก.length) {
       (เช่น o.coreQuery · o.archiveSlips) ⇒ ตัดชื่อที่รู้ว่าเป็นตัวช่วยออก แต่ไม่รับประกันว่าสะอาด
       ⇒ ใช้เป็น "รายการที่ต้องดูด้วยตา" ห้ามนับเป็นสัญญาของ API */
 const ตัวช่วยที่ฉีดเข้ามา = new Set(["coreQuery", "archiveSlips", "now", "fetch", "store", "log", "signal"]);
+/* ══ 🚪 **ประตูของเส้นเขียน — ยก "ตารางที่บังคับจริง" มาใส่สารบัญ** (12 ต.ค. 2569) ═══
+   🔴 เหตุ (ฝั่งจอวัดมา): กองหยาบ `writeFields` ด้านล่าง **มองไม่เห็นช่องที่สำคัญที่สุด**
+      เพราะมันเก็บด้วย regex `o.xxx` ⇒ ช่องที่อ่านเป็นคู่ในลูป หรืออ่านด้วย `o["ชื่อไทย"]` หลุดหมด
+      ⇒ ⇒ ช่อง `รูป` / `ไม่มีรูปเพราะ` ที่ทำให้จอเพิ่มสินค้าส่งไม่ได้ **14 วัน** คือช่องที่มันมองไม่เห็น
+   🔑 จึงไม่สกัดด้วย regex อีก — **import ตารางที่บังคับจริง** (`ประตูเขียน` ใน `zort-write.mjs`)
+      ⇒ ฝั่งจออ่านสารบัญนี้แล้วรู้ว่า "ต้องส่งอะไร" โดยไม่ต้องอ่านโค้ดท่อ
+      ⚠️ และเพราะเป็น **ตัวเดียวกับที่บังคับ** มันจึงเน่าไม่ได้ (แก้ตาราง = พฤติกรรมเปลี่ยนด้วย)
+   🚫 **อ่านไม่ได้ ⇒ ประกาศออกมา ห้ามปล่อยเป็นก้อนว่าง** — ก้อนว่างจะอ่านว่า "เส้นนี้ไม่มีประตู"
+      ซึ่งเป็นคำตอบที่ผิดในทิศที่อันตราย (ผู้เรียกจะเชื่อว่าส่งอะไรก็ได้) */
+let writeGatesText = "export const writeGates = null;\n"
+  + "export const writeGatesNote = 'อ่านตารางประตูไม่ได้ ⇒ **ยังไม่รู้** ไม่ใช่ว่าไม่มีประตู';\n";
+try {
+  const { ประตูเขียน } = await import("../netlify/lib/zort-write.mjs");
+  if (ประตูเขียน && Object.keys(ประตูเขียน).length) {
+    writeGatesText = `export const writeGates = ${JSON.stringify(ประตูเขียน, null, 1)};\n`
+      + "export const writeGatesNote = null;\n";
+  }
+} catch (e) {
+  writeGatesText = "export const writeGates = null;\n"
+    + `export const writeGatesNote = ${JSON.stringify("อ่านตารางประตูไม่ได้: " + String(e?.message ?? e).slice(0, 120))};\n`;
+}
+
 const writeFields = {};
 try {
   const w = readFileSync(join(ราก, "netlify", "lib", "zort-write.mjs"), "utf8")
@@ -166,5 +188,6 @@ const ผลเขียน = เขียนถ้าเนื้อเปล�
   `export const routeMethod = ${JSON.stringify(วิธีเรียกของเส้น, null, 1)};\n` +
   "// ⚠️ ช่องที่ตัวเขียนของ ZORT รับเข้า — **หยาบ** (regex เก็บ o.xxx) ใช้ดูด้วยตา ห้ามถือเป็นสัญญา API\n" +
   `export const writeFields = ${JSON.stringify(writeFields, null, 1)};\n`
+  + writeGatesText
 );
 console.log(`gen-endpoints: list ${เรียง.length} เส้น · เส้นพารามิเตอร์ (หยาบ) ${เส้นพารามิเตอร์.size} ชื่อ → netlify/lib/endpoints.mjs`);
