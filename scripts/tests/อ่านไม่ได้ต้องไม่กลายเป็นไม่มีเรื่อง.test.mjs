@@ -36,7 +36,10 @@ mock.module('../../netlify/lib/admin-gate.mjs', { namedExports: {
 } });
 mock.module('../../netlify/lib/push.mjs', { namedExports: { pushToAdmins: async () => {} } });
 mock.module('../../netlify/lib/session.mjs', { namedExports: {
-  currentUser: async () => ({ phone: '0800000000' }),
+  currentUser: async () => ({ user: { phone: '0800000000' }, token: 'ก'.repeat(24) }),
+  /* B26: `permit-doc` ใช้ `currentUserState` แล้ว ⇒ ม็อกต้องมีด้วย
+     (ม็อกที่ทับทั้งโมดูลผูกกับรายชื่อ export ของวันนั้น) */
+  currentUserState: async () => ({ state: 'user', user: { phone: '0800000000' }, token: 'ก'.repeat(24) }),
   store: () => ({ async get() { return null; }, async setJSON() {} }),
 } });
 mock.module('../../netlify/lib/blob-keys.mjs', { namedExports: {

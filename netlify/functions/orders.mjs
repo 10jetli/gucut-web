@@ -20,7 +20,7 @@
 import { getStore } from "@netlify/blobs";
 import { pushToAdmins } from "../lib/push.mjs";
 import { adminGate } from "../lib/admin-gate.mjs";
-import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
+import { currentUser, currentUserState, normPhone, store as usersStore } from "../lib/session.mjs";
 import { markUsed } from "../lib/coupons.mjs";
 import { addPoints, earnFrom, redeemPlan, อ่านกติกาแบบเข้ม } from "../lib/points.mjs";
 import { SITE_HOST, SITE_URL } from "../lib/site.mjs";
@@ -163,7 +163,19 @@ export default async function handler(req, context) {
       }
       cfg = null;   // ลูกค้าไม่ได้ขอใช้แต้ม ⇒ เดินต่อโดยไม่คิดส่วนลดแต้ม
     }
-    const buyer = await currentUser(req, usersStore()).then((r) => r?.user ?? null).catch(() => null);
+    /* 🔴 **B26 ส่วนที่ยังค้าง (แก้ 12 ต.ค. 2569)** — `currentUser` ยุบ "อ่านไม่ได้" เป็น null
+       ⇒ `buyer` เป็น null ⇒ `plan` เป็น 0 ⇒ **ลูกค้าที่ขอใช้แต้ม จ่ายราคาเต็มแบบเงียบ ๆ**
+       ⚠️ และมันไม่สอดคล้องกับกิ่งที่อยู่เหนือมันสิบบรรทัด ซึ่ง **ตอบ 503** เมื่ออ่าน
+          *กติกาแต้ม* ไม่ได้และลูกค้าขอใช้แต้ม ⇒ เหตุเดียวกัน (ถังอ่านไม่ได้) สองคำตอบ
+       🔑 ถ้าลูกค้า **ไม่ได้** ขอใช้แต้ม ⇒ เดินต่อแบบไม่มีบัญชีได้ (ไม่มีใครเสียอะไร)
+          แต่ต้องติดธงไว้ในใบ ไม่ใช่เงียบ — ไม่งั้นออเดอร์นั้นไม่มีบัญชีผูกและไม่มีใครรู้ว่าทำไม */
+    const สภาพผู้ซื้อ = await currentUserState(req, usersStore())
+      .catch((err) => ({ state: "unknown", err }));
+    if (สภาพผู้ซื้อ.state === "unknown" && Number(body.usePoints) > 0) {
+      return json({ error: "ยังอ่านบัญชีแต้มของคุณไม่ได้ชั่วคราว — ลองสั่งอีกครั้งในอีกสักครู่" }, 503);
+    }
+    const อ่านบัญชีไม่ได้ = สภาพผู้ซื้อ.state === "unknown";
+    const buyer = สภาพผู้ซื้อ.state === "user" ? สภาพผู้ซื้อ.user : null;
     const plan = (buyer && cfg)
       ? redeemPlan(body.usePoints, Number(buyer.points || 0), Math.max(0, subtotal - discount), cfg)
       : { points: 0, discount: 0 };
@@ -208,6 +220,9 @@ export default async function handler(req, context) {
           เดิมไม่จด แล้วไปหาคนจากคุกกี้ของ "คำขอที่มายืนยันเงินเข้า" ⇒ webhook/ตัวกวาดไม่มีคุกกี้ = ไม่หัก ·
           คนอื่นเปิดลิงก์เช็คสถานะขณะล็อกอิน = หักบัญชีคนนั้น · มาจากเซสชันฝั่งเซิร์ฟเวอร์เท่านั้น ห้ามรับจาก body */
       buyerPhone: buyer?.phone || null,
+      /* ธงให้คนเห็นว่า "ไม่มีบัญชีผูก" เพราะ **อ่านไม่ได้** ไม่ใช่เพราะลูกค้าไม่ได้ล็อกอิน
+         (ใบที่ไม่มี buyerPhone มีสองเหตุ ⇒ ห้ามยุบ) */
+      ...(อ่านบัญชีไม่ได้ ? { อ่านบัญชีผู้ซื้อไม่ได้: true } : {}),
       pointDiscount,
       subtotal,
       shipping,

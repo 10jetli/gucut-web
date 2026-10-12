@@ -15,7 +15,7 @@ import {
   อ่านโค้ดพร้อมสถานะ, ตรวจโค้ดไม่ได้,
   validate, writeCoupons,
 } from "../lib/coupons.mjs";
-import { currentUser, store as usersStore } from "../lib/session.mjs";
+import { currentUserState, store as usersStore } from "../lib/session.mjs";
 
 const MAX_TRIES = 20;                 // ลองผิดได้กี่ครั้งต่อ IP
 const WINDOW_MS = 10 * 60 * 1000;
@@ -55,13 +55,16 @@ async function tooMany(s, ip) {
   return false;
 }
 
+/* 🔴 **B26 ส่วนที่ยังค้าง (แก้ 12 ต.ค. 2569)** — คืน null ทั้ง "ไม่ได้ล็อกอิน" และ "อ่านไม่ได้"
+   ⇒ โค้ดที่ตั้ง `memberOnly` ตอบ **"โค้ดนี้สำหรับสมาชิก — เข้าสู่ระบบก่อนใช้ได้เลย"**
+     ให้คนที่ **ล็อกอินอยู่แล้ว** ⇒ เขากดเข้าสู่ระบบซ้ำแล้วก็เจอเหมือนเดิม
+   ⇒ คืนสามสถานะขึ้นไป ให้ผู้เรียกเลือกเองว่าจะพูดอะไร
+   ⚠️ ทิศเดิมคงไว้: ระบบสมาชิกล่ม **ยังให้ใช้โค้ดทั่วไปได้** (ไม่ล้มหน้าเช็คเอาต์) */
+const meState = async (req) =>
+  currentUserState(req, usersStore()).catch((err) => ({ state: "unknown", err }));
 const me = async (req) => {
-  try {
-    const found = await currentUser(req, usersStore());
-    return found?.user ?? null;
-  } catch {
-    return null;   // ระบบสมาชิกล่ม — ยังให้ใช้โค้ดทั่วไปได้ตามปกติ
-  }
+  const r = await meState(req);
+  return r.state === "user" ? r.user : null;
 };
 
 export default async function handler(req, context) {
@@ -165,10 +168,17 @@ export default async function handler(req, context) {
 
   const code = up(body.code);
   if (!code) return json({ ok: false, error: "ใส่โค้ดส่วนลดก่อนครับ" });
-  const user = await me(req);
+  /* 🔴 **B26** — ต้องรู้ด้วยว่า "ไม่ใช่สมาชิก" เพราะไม่ได้ล็อกอิน หรือเพราะ **ถามไม่ได้**
+     เพราะโค้ดที่ตั้ง `memberOnly` จะตอบ "เข้าสู่ระบบก่อนใช้ได้เลย" ให้คนที่ล็อกอินอยู่ */
+  const สภาพฉัน = await meState(req);
+  const user = สภาพฉัน.state === "user" ? สภาพฉัน.user : null;
 
   // ---------- กดเก็บโค้ดเข้าบัญชี ----------
   if (action === "collect") {
+    if (สภาพฉัน.state === "unknown") {
+      return json({ ok: false, ตรวจไม่ได้: true,
+        error: "ตรวจสถานะสมาชิกไม่ได้ชั่วคราว — **ไม่ใช่ว่าคุณหลุดจากระบบ** ลองกดอีกครั้ง" }, 503);
+    }
     if (!user) return json({ ok: false, error: "เข้าสู่ระบบก่อนถึงจะเก็บโค้ดได้" }, 401);
     /* ทางนี้ก็พูดผิดแบบเดียวกัน: อ่านไม่ได้ ⇒ "ไม่มีโค้ดนี้แล้ว" ⇒ ลูกค้าเชื่อว่าโค้ดถูกถอน
        ⚠️ ต่างจากทางตรวจ: ทางนี้ **เขียนบัญชีลูกค้า** ⇒ อ่านไม่ได้แล้วเขียนต่อไม่ได้อยู่ดี
@@ -207,6 +217,12 @@ export default async function handler(req, context) {
   const { list, อ่านไม่ได้ } = await อ่านโค้ดพร้อมสถานะ(s);
   const c = findCoupon(list, code);
   if (!c && อ่านไม่ได้) return json(ตรวจโค้ดไม่ได้());
+  /* 🔴 **B26** — โค้ดเฉพาะสมาชิก + ถามตัวตนไม่ได้ ⇒ ห้ามบอกว่า "เข้าสู่ระบบก่อน"
+     เพราะเขาอาจล็อกอินอยู่แล้ว · กดเข้าสู่ระบบซ้ำก็เจอเหมือนเดิม = ทางตัน */
+  if (c?.memberOnly && สภาพฉัน.state === "unknown") {
+    return json({ ok: false, ตรวจไม่ได้: true,
+      error: "โค้ดนี้สำหรับสมาชิก และตอนนี้ **ตรวจสถานะสมาชิกไม่ได้** — ลองกดอีกครั้งในอีกสักครู่" });
+  }
   const r = validate(c, subtotal, user);
   return json(r.ok ? { ok: true, code: r.code, discount: r.discount, label: r.label } : r);
 }

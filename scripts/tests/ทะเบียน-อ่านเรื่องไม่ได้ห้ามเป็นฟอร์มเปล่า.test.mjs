@@ -35,6 +35,12 @@ mock.module('@netlify/blobs', { namedExports: { getStore: () => fakeStore } });
 mock.module('../../netlify/lib/session.mjs', {
   namedExports: {
     currentUser: async () => ({ user: { phone: '0811111111', name: 'ลูกค้า' } }),
+    /* ⚠️ เติมโดย gucut2 (12 ต.ค. 2569) — **ไม่ใช่การแก้เจตนาของเทสนี้**
+       `permit-doc.mjs` เปลี่ยนมาใช้ `currentUserState` ตามใบ B26 (อ่านตัวตนไม่ได้
+       ต้องไม่กลายเป็น 401 "ต้องเข้าสู่ระบบก่อน") ⇒ ม็อกที่ทับทั้งโมดูลต้องมี export ใหม่ด้วย
+       ไม่งั้นไฟล์นี้ตกทั้งไฟล์ด้วย SyntaxError ซึ่งไม่เกี่ยวกับสิ่งที่มันตรวจเลย
+       🔑 คลาส: ม็อกที่ทับทั้งโมดูล **ผูกกับรายชื่อ export ของวันนั้น** ⇒ โมดูลโตแล้วเทสตก */
+    currentUserState: async () => ({ state: 'user', user: { phone: '0811111111', name: 'ลูกค้า' }, token: 'ก'.repeat(24) }),
     normPhone: (p) => String(p || '').replace(/\D/g, ''),
     store: () => fakeStore,
   },

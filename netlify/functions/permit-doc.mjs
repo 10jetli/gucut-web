@@ -37,7 +37,7 @@
 import { getStore } from "@netlify/blobs";
 import { adminGate } from "../lib/admin-gate.mjs";
 import { pushToAdmins } from "../lib/push.mjs";
-import { currentUser, store as usersStore } from "../lib/session.mjs";
+import { currentUser, currentUserState, store as usersStore } from "../lib/session.mjs";
 import { อ่านทุกแถว } from "../lib/blob-keys.mjs";
 
 const json = (o, s = 200) =>
@@ -316,8 +316,24 @@ export default async function handler(req, context) {
 
   const mine = url.searchParams.get("mine");
   if (req.method === "POST" || mine) {
-    let me = null;
-    try { me = await currentUser(req, usersStore()); } catch { /* ถือว่าไม่ได้ล็อกอิน */ }
+    /* 🔴 **B26 ส่วนที่ยังค้าง (แก้ 12 ต.ค. 2569)** — จุดนี้ใช้ `currentUser` ซึ่ง **ยุบ
+       "อ่านไม่ได้" เป็น null** ⇒ ลูกค้าที่ล็อกอินอยู่จริงได้ **401 "ต้องเข้าสู่ระบบก่อน"
+       + `needLogin: true`** ⇒ หน้าเว็บเด้งไปหน้าล็อกอิน/ล้างสถานะที่จำไว้
+       ⇒ นี่คืออาการพาดหัวของใบ B26 เป๊ะ ("ลูกค้าถูกแสดงว่าไม่ได้ล็อกอิน")
+       🔑 และมันละเมิดกฎที่เขียนกำกับ `currentUser` ไว้เองใน `session.mjs`:
+          *"จุดที่ให้สิทธิ์ · เขียนทับข้อมูล · หรือบอกลูกค้าว่าเขาเป็นใคร ⇒ ห้ามใช้ตัวนี้"*
+          จุดนี้ทำทั้งสามอย่าง (401 บอกตัวตน · ทาง POST เขียน `c/<phone>` ทับ)
+       ⚠️ ด่าน 503 ที่เขียนไว้ดีแล้วข้างล่าง (อ่าน `c/<phone>` ไม่ได้) **เดินไปไม่ถึง**
+          ถ้าการอ่านตัวตนล้มก่อน ⇒ แก้ชั้นนอกด้วย ไม่ใช่แก้ชั้นในแล้วจบ */
+    const สภาพ = await currentUserState(req, usersStore())
+      .catch((err) => ({ state: "unknown", err }));
+    if (สภาพ.state === "unknown") {
+      return json({
+        error: "ตรวจสถานะเข้าสู่ระบบไม่ได้ชั่วคราว — **ไม่ใช่ว่าคุณหลุดจากระบบ** ลองใหม่อีกครั้ง",
+        เหตุ: "อ่านบัญชีจาก Blobs ไม่ได้",
+      }, 503);
+    }
+    const me = สภาพ.state === "user" ? { user: สภาพ.user, token: สภาพ.token } : null;
     // ⚠️ ไม่ล็อกอิน = 401 เสมอ ห้ามปล่อยผ่านแบบไม่ระบุตัวตน
     //    เจ้าของร้านสั่งไว้ว่าต้องล็อกอินถึงทำเรื่องได้
     if (!me?.user?.phone) return json({ error: "ต้องเข้าสู่ระบบก่อน", needLogin: true }, 401);
