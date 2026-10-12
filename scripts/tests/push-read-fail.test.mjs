@@ -23,10 +23,12 @@ const fakeStore = {
 };
 const reset = () => { data.clear(); failKey = null; };
 mock.module('@netlify/blobs', { namedExports: { getStore: () => fakeStore } });
+/** ตั้งให้ sendNotification ปฏิเสธด้วย statusCode ที่กำหนด — ใช้แยก 404/410 ออกจาก 500 */
+let ส่งพลาด = null;
 mock.module('web-push', { defaultExport: {
   generateVAPIDKeys: () => ({ publicKey: 'ปลอม-pub', privateKey: 'ปลอม-priv' }),
   setVapidDetails: () => {},
-  sendNotification: async () => ({ statusCode: 201 }),
+  sendNotification: async () => { if (ส่งพลาด) throw ส่งพลาด; return { statusCode: 201 }; },
 } });
 mock.module('../../netlify/lib/session.mjs', { namedExports: { normPhone: (v) => String(v ?? '') } });
 const { listSubs, pushToAdmins } = await import('../../netlify/lib/push.mjs');
@@ -112,4 +114,42 @@ test('removeUserSub: อ่านรายชื่อเก่าไม่ไ�
   const ดี = await removeUserSub('0812345678', 'https://a');
   assert.equal(ดี.ตรวจของเก่าได้, true);
   assert.deepEqual(data.get('u/0812345678').map((x) => x.endpoint), ['https://b'], 'อ่านได้ ⇒ ลบจริง');
+});
+
+/* ── B11 ครึ่งที่เหลือ (ใบ t_mv4oaw7d) ────────────────────────────────────
+   ตัวนับ `ok` ของทั้งสองฝั่งถูกแล้วตั้งแต่ 3 ต.ค. (นับจาก `.then()` ไม่ใช่ `all - dead`)
+   🔴 ที่เหลือคือ **ขาลูกค้ากลืนความล้มที่ไม่ใช่ 404/410 เงียบสนิท** ขณะที่ขาแอดมินรายงาน
+   ⇒ ความไม่สมมาตรในไฟล์เดียวกัน · ของที่หายคือแจ้งเตือนออเดอร์ของลูกค้า */
+test('🔴 ส่งล้มด้วย 500 ⇒ ok ต้องไม่นับ · ห้ามลบเครื่องทิ้ง · และต้องรายงาน (ไม่เงียบ)', async () => {
+  reset();
+  เตรียมคีย์();
+  data.set('u/0812345678', [{ endpoint: 'https://a', keys: { p256dh: 'k', auth: 'a' } }]);
+  const เตือน = [];
+  const เดิม = console.warn;
+  console.warn = (m) => เตือน.push(String(m));
+  try {
+    ส่งพลาด = { statusCode: 500 };
+    const n = await pushToUser('0812345678', { title: 'ออเดอร์จัดส่งแล้ว' });
+    assert.equal(n, 0, '🔑 ล้ม 500 ห้ามนับเป็นสำเร็จ (คลาส B11)');
+    assert.ok(Array.isArray(data.get('u/0812345678')) && data.get('u/0812345678').length === 1,
+      '500 = ปลายทางสะดุดชั่วคราว ห้ามลบเครื่องทิ้ง');
+    assert.ok(เตือน.some((m) => /ไม่สำเร็จ/.test(m)),
+      `🔑 ต้องรายงานออก console — เงียบ = ลูกค้าไม่ได้แจ้งเตือนแล้วไม่มีใครรู้ (ได้: ${เตือน.join('|')})`);
+  } finally { console.warn = เดิม; ส่งพลาด = null; }
+});
+
+test('ตัวควบคุมลบ: 410 ⇒ ลบเครื่องทิ้งได้ (ถอนสิทธิ์จริง) และไม่ต้องรายงานว่าผิดปกติ', async () => {
+  reset();
+  เตรียมคีย์();
+  data.set('u/0812345678', [{ endpoint: 'https://a', keys: { p256dh: 'k', auth: 'a' } }]);
+  const เตือน = [];
+  const เดิม = console.warn;
+  console.warn = (m) => เตือน.push(String(m));
+  try {
+    ส่งพลาด = { statusCode: 410 };
+    const n = await pushToUser('0812345678', { title: 'x' });
+    assert.equal(n, 0);
+    assert.deepEqual(data.get('u/0812345678'), [], '410 = ถอนสิทธิ์จริง ⇒ เก็บกวาดได้');
+    assert.ok(!เตือน.some((m) => /ไม่สำเร็จ/.test(m)), '410 ไม่ใช่ความผิดปกติ ⇒ ไม่ต้องร้อง');
+  } finally { console.warn = เดิม; ส่งพลาด = null; }
 });
