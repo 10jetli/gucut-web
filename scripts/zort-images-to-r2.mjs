@@ -14,7 +14,11 @@ const arg = (n, fb) => { const i = process.argv.indexOf(n); return i > 0 ? proce
 const LIMIT = Number(arg("--limit", 0));
 const SAVE = arg("--save-dir", "");
 const API = "https://gucut.com/api/core";
-const LADDER = [128, 256, 384, 640];
+// 🔑 ขั้นบันไดมาจาก **แหล่งเดียว** — ห้ามประกาศซ้ำที่นี่
+//    ⚠️ ตัวนี้ประกอบ `files{}` ส่งเข้า `?imgmirror=1` ⇒ คีย์ไม่ตรง LADDER ของตัวเขียน
+//      = ตีกลับทั้งใบด้วย "ขาดรูปขั้น …" · และเดิมไฟล์นี้ **ไม่มีคอมเมนต์เตือนเลย**
+//      ⇒ ใครไล่แก้ตามคอมเมนต์ของไฟล์อื่นครบทุกใบ ก็ยังพลาดตัวนี้ (12 ต.ค. 2569)
+import { LADDER } from "../src/lib/image-ladder.mjs";
 const KEY = fs.readFileSync(path.join(os.homedir(), ".gucut-admin-key"), "utf8").trim();
 const H = { "x-admin-key": KEY };
 

@@ -107,6 +107,32 @@ try {
     + `export const writeGatesNote = ${JSON.stringify("อ่านตารางประตูไม่ได้: " + String(e?.message ?? e).slice(0, 120))};\n`;
 }
 
+/* 🪜 **ขั้นบันไดขนาดรูป — ค่าที่ต้องข้ามรีโปไปหาฝั่งจอ** (12 ต.ค. 2569)
+   ฝั่งจอมี `STEPS` ใน `gucut-next/lib/sku-images.ts` ซึ่ง **ต้องตรงกับของเราเป๊ะ**
+   ไม่ตรง = จอขอขั้นที่ตัวเขียนไม่ได้ผลิต ⇒ 404 ⇒ **กล่องเทาทั้งหน้าแบบไม่มี error**
+   ⇒ อ่านเหมือน "ร้านยังไม่ถ่ายรูป" ⇒ ไม่มีใครรายงาน
+   🔑 `import` ข้ามรีโปไม่ได้ (เขามองไฟล์เราไม่เห็นตอน build) ⇒ ค่าจึงเดินทางมาทางสารบัญนี้
+      และเพราะสารบัญถูกสร้างใหม่ทุก build **จึงไม่มีสำเนาค้างให้เน่า**
+   ⚠️ ของในรีโปนี้ให้ `import` ใบไม้ตรง ๆ **ห้ามอ่านจากสารบัญ** — สารบัญเป็นทางอ้อมของ import
+      = เพิ่มที่ให้เพี้ยนอีกจุดโดยไม่ได้อะไรคืน (ด่าน `check-image-ladder.mjs` บังคับฝั่งนี้)
+   🚫 อ่านไม่ได้ ⇒ `null` + `note` **ห้ามคืน `[]`** — ก้อนว่างอ่านว่า "ร้านไม่มีขั้นบันได"
+      ซึ่งผิดในทิศที่อันตราย (ฝั่งจอจะคิดว่าไม่ต้องเทียบ แล้วด่านเขาเขียวตลอดกาล) */
+let imageLadderText = "export const imageLadder = null;\n"
+  + "export const imageLadderNote = 'อ่านขั้นบันไดไม่ได้ ⇒ **ยังไม่รู้** ไม่ใช่ว่าไม่มี — ห้ามอ่านว่าไม่ต้องเทียบ';\n";
+try {
+  const { LADDER } = await import("../src/lib/image-ladder.mjs");
+  if (Array.isArray(LADDER) && LADDER.length && LADDER.every((n) => Number.isInteger(n) && n > 0)) {
+    imageLadderText = `export const imageLadder = ${JSON.stringify(LADDER)};\n`
+      + "export const imageLadderNote = null;\n";
+  } else {
+    imageLadderText = "export const imageLadder = null;\n"
+      + `export const imageLadderNote = ${JSON.stringify("ค่าที่อ่านได้ไม่ใช่อาร์เรย์จำนวนเต็มบวก: " + JSON.stringify(LADDER).slice(0, 80))};\n`;
+  }
+} catch (e) {
+  imageLadderText = "export const imageLadder = null;\n"
+    + `export const imageLadderNote = ${JSON.stringify("อ่านขั้นบันไดไม่ได้: " + String(e?.message ?? e).slice(0, 120))};\n`;
+}
+
 const writeFields = {};
 try {
   const w = readFileSync(join(ราก, "netlify", "lib", "zort-write.mjs"), "utf8")
@@ -189,5 +215,6 @@ const ผลเขียน = เขียนถ้าเนื้อเปล�
   "// ⚠️ ช่องที่ตัวเขียนของ ZORT รับเข้า — **หยาบ** (regex เก็บ o.xxx) ใช้ดูด้วยตา ห้ามถือเป็นสัญญา API\n" +
   `export const writeFields = ${JSON.stringify(writeFields, null, 1)};\n`
   + writeGatesText
+  + imageLadderText
 );
 console.log(`gen-endpoints: list ${เรียง.length} เส้น · เส้นพารามิเตอร์ (หยาบ) ${เส้นพารามิเตอร์.size} ชื่อ → netlify/lib/endpoints.mjs`);

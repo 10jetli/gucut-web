@@ -34,9 +34,9 @@ const root = process.cwd();
 const SRC_DIR = path.join(root, "public/img");
 const DONE_FILE = path.join(root, ".img-r2-done.json");
 
-// ⚠️ ต้องตรงกับ LADDER ใน src/lib/image-loader.js เป๊ะ ๆ
+// 🔑 ขั้นบันไดมาจาก **แหล่งเดียว** `src/lib/image-ladder.mjs` — ห้ามประกาศซ้ำที่นี่
 //    ไม่ตรง = เบราว์เซอร์ขอไฟล์ที่ไม่มีอยู่ → รูปหาย ทั้งเว็บ
-const LADDER = [128, 256, 384, 640];
+import { LADDER } from "../src/lib/image-ladder.mjs";
 
 // ⚠️ ยังใช้ถังของคลิปอยู่ (คีย์ปัจจุบันสร้างถังใหม่ไม่ได้ — ผูกไว้กับถังเดียว)
 //    อยู่ใต้ /i/ แยกจาก /v/ กับ /v2/ ของคลิปชัดเจน ย้ายไปถังใหม่ทีหลังได้ด้วยการ copy

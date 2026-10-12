@@ -9,8 +9,12 @@ import { createHash } from "node:crypto";
 import { coreQuery } from "./coredb.mjs";
 import { r2Put, r2Ready } from "./r2.mjs";
 
-// ⚠️ ต้องตรงกับ LADDER ใน src/lib/image-loader.js และ STEPS ใน gucut-next/lib/sku-images.ts เป๊ะ
-export const LADDER = [128, 256, 384, 640];
+// 🔑 ขั้นบันไดมาจาก **แหล่งเดียว** — ห้ามประกาศซ้ำที่นี่ (ด่าน `scripts/check-image-ladder.mjs` บังคับ)
+//    ส่งต่อ (`export`) ไว้เพราะมีคนนำเข้าจากไฟล์นี้อยู่แล้ว — ไม่ใช่สำเนาที่สอง
+//    ⚠️ ฝั่งจอหลังร้านอยู่คนละรีโป (`STEPS` ใน gucut-next/lib/sku-images.ts) `import` ไม่ได้
+//      ⇒ ค่านี้เดินทางไปหาเขาทางสารบัญ `/api/core?endpoints=1` ช่อง `imageLadder`
+import { LADDER } from "../../src/lib/image-ladder.mjs";
+export { LADDER };
 const MAX_BYTES = 400 * 1024;
 
 export function isWebp(buf) {
