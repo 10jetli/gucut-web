@@ -68,6 +68,11 @@ export default async function handler(req, context) {
         body: "ใช้งานได้แล้ว — ลูกค้าทักเมื่อไหร่จะเด้งแบบนี้",
         url: "/admin/chat/",
       });
+      /* `null` = อ่านรายชื่อเครื่องไม่ได้ ⇒ **ไม่รู้ว่าส่งถึงใคร** ห้ามขึ้นเขียวว่า sent: 0
+         (เจ้าของร้านกดปุ่มทดสอบแล้วเห็นเขียว จะเชื่อว่าระบบพร้อม — ตรงข้ามกับความจริง) */
+      if (n === null)
+        return json({ error: "อ่านรายชื่อเครื่องที่เปิดรับไม่ได้ชั่วคราว — ยังไม่รู้ว่าส่งถึงใคร ลองใหม่อีกครั้ง",
+          อ่านไม่ได้: true }, 503);
       return json({ ok: true, sent: n });
     }
     if (!body?.subscription?.endpoint) return json({ error: "no subscription" }, 400);
@@ -80,7 +85,15 @@ export default async function handler(req, context) {
     return json({ ok: true });
   }
 
-  if (req.method === "PUT") return json({ devices: (await listSubs()).length });
+  if (req.method === "PUT") {
+    /* 🔴 เดิม `devices: (await listSubs()).length` ⇒ อ่านพลาด = `devices: 0` พร้อม 200
+       ⇒ จอนับเครื่องขึ้น 0 ทั้งที่ของจริงมีเครื่องเปิดรับอยู่ ⇒ คนไปตั้งใหม่ทั้งที่ไม่ใช่ปัญหา */
+    try { return json({ devices: (await listSubs()).length }); }
+    catch (e) {
+      return json({ error: "อ่านรายชื่อเครื่องไม่ได้ชั่วคราว — **ยังไม่รู้ว่ามีกี่เครื่อง** (ไม่ได้แปลว่าไม่มี)",
+        อ่านไม่ได้: true, เหตุ: String(e?.message ?? e).slice(0, 80) }, 503);
+    }
+  }
   return json({ error: "method not allowed" }, 405);
 }
 
