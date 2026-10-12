@@ -99,7 +99,7 @@ export const readUser = (usersStore, phone) =>
  * บวก/ลบแต้ม พร้อมจดประวัติ — n เป็นบวกคือได้แต้ม ลบคือใช้แต้ม
  * คืนยอดแต้มใหม่ หรือ null ถ้าไม่มีบัญชีนั้น
  */
-export async function addPoints(usersStore, phone, n, note, orderId) {
+export async function addPoints(usersStore, phone, n, note, orderId, opts = {}) {
   const key = `u/${phone}`;
   /* 🔴 B03 ราก (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): เดิม `.catch(() => null)` ⇒ "อ่านไม่ได้" กับ "ไม่มีบัญชี"
      แยกกันไม่ออก (คืน null ทั้งคู่) ⇒ claimPending ลบแต้มค้างทิ้งทั้งที่ไม่ได้บวกเข้าบัญชี
@@ -109,6 +109,25 @@ export async function addPoints(usersStore, phone, n, note, orderId) {
   const u = await usersStore.get(key, { type: "json" });
   if (!u) return null;
   const before = Number(u.points || 0);
+  /* 🔴 **รูที่เหลือจาก B03 (ปิด 12 ต.ค. 2569 · gucut2)** — คนละรูกับรากที่แก้ 14 ก.ย.
+     รากคือ "แต้มหาย" · รูนี้คือ **"แต้มซ้ำ"** เกิดจากบรรทัดเดียวใน `claimPending`:
+       `await usersStore.delete(pendKey(phone)).catch(() => {})`
+     ลบยอดรอไม่สำเร็จ **หลังบวกเข้าบัญชีสำเร็จแล้ว** ⇒ ยอดรอยังอยู่ ⇒ ล็อกอินรอบหน้าบวกอีกรอบ
+     ⇒ ของสองก้อน (`u/<เบอร์>` กับ `pts/<เบอร์>`) ไม่มีธุรกรรมร่วม ⇒ จังหวะคาบเกี่ยวนี้ปิดด้วยการลองใหม่ไม่ได้
+     ⇒ ปิดด้วย **หลักฐานที่ถูกเขียนลงไปพร้อมกับการบวก**: ประวัติแต้มในบัญชีเดียวกัน
+        เคยจดคีย์นี้แล้ว = รอบก่อนบวกสำเร็จแล้ว ⇒ ไม่บวกซ้ำ คืนยอดเดิมเป็นตัวเลข
+        (คืนตัวเลข ไม่ใช่ null โดยตั้งใจ — `claimPending` จะได้ลบยอดรอทิ้งได้ ซึ่งคือสิ่งที่ค้างอยู่)
+     ⚠️ **ขอบเขตแคบโดยตั้งใจ**: ใช้เฉพาะคนเรียกที่ส่ง `opts.กันซ้ำ` มาเอง
+        ห้ามกันซ้ำด้วย `orderId` ลอย ๆ เพราะ **เส้นได้แต้มกับเส้นหักแต้มใช้เลขใบเดียวกัน**
+        (`orders.mjs:526` ให้แต้มด้วย `o.id` · `order-finalize.mjs:114` หักแต้มด้วย `order.id`)
+        ⇒ กันซ้ำด้วยเลขใบจะทำให้ "ซื้อใบที่เคยใช้แต้มใบนั้น" ไม่ได้แต้ม — รูใหม่ที่แย่กว่าเดิม */
+  const กันซ้ำ = typeof opts.กันซ้ำ === "string" && opts.กันซ้ำ ? opts.กันซ้ำ : null;
+  if (กันซ้ำ && Array.isArray(u.pointLog) && u.pointLog.some((e) => e && e.o === กันซ้ำ)) {
+    // บอกคนเรียกว่า "ไม่ได้บวกรอบนี้" — ยอดที่คืนไปเป็นตัวเลขจริงก็จริง
+    // แต่ถ้าไม่บอก คนเรียกจะรายงานว่าโอนแต้มให้ลูกค้าอีกรอบ ทั้งที่ไม่มีอะไรเปลี่ยน
+    if (opts.รายงาน && typeof opts.รายงาน === "object") opts.รายงาน.ข้ามเพราะเคยบวกแล้ว = true;
+    return before;
+  }
   const after = Math.max(0, before + Math.round(n));
   u.points = after;
   u.pointLog = [
@@ -148,8 +167,19 @@ export async function claimPending(usersStore, phone) {
        ไม่มีบัญชี (null) หรืออ่านบัญชีไม่ได้ (throw) ⇒ ยอดรอยังอยู่ รอบล็อกอินหน้าโอนใหม่ได้ */
   const pend = await usersStore.get(pendKey(phone), { type: "json" });
   if (!pend?.n) return 0;
-  const after = await addPoints(usersStore, phone, pend.n, pend.note || "แต้มสะสมเดิมจากระบบเก่า", null);
+  /* คีย์กันบวกซ้ำ — ผูกกับ **ก้อนยอดรอก้อนนี้** (เวลาที่ถูกพักไว้ + จำนวน)
+     ⚠️ ยอดรอรุ่นเก่าที่ไม่มี `at` จะไม่มีคีย์ ⇒ กันซ้ำไม่ได้ และนั่นคือความจริง ไม่ใช่ข้อยกเว้นที่ซ่อนไว้
+        (`addPending` ใส่ `at` ทุกครั้งตั้งแต่ 14 ก.ย. ⇒ ก้อนที่ไม่มี `at` คือก้อนเก่ากว่านั้น) */
+  const คีย์กันซ้ำ = pend.at ? `pend:${pend.at}:${Math.round(pend.n)}` : null;
+  const รายงาน = {};
+  const after = await addPoints(
+    usersStore, phone, pend.n, pend.note || "แต้มสะสมเดิมจากระบบเก่า",
+    คีย์กันซ้ำ, { กันซ้ำ: คีย์กันซ้ำ, รายงาน },
+  );
   if (typeof after !== "number") return 0;
+  /* ลบยอดรอได้ก็ดี ลบไม่ได้ก็ **ไม่เสียหายอีกแล้ว** — รอบหน้าคีย์กันซ้ำจะจับได้เอง
+     (ก่อน 12 ต.ค. 2569 บรรทัดนี้คือจุดที่ทำให้บวกซ้ำ เพราะไม่มีใครจับได้ว่าเคยบวกแล้ว) */
   await usersStore.delete(pendKey(phone)).catch(() => {});
-  return pend.n;
+  // เคยบวกไปแล้วรอบก่อน ⇒ รอบนี้โอน 0 แต้ม · คืน pend.n จะเป็นการรายงานการโอนที่ไม่ได้เกิดขึ้น
+  return รายงาน.ข้ามเพราะเคยบวกแล้ว ? 0 : pend.n;
 }
