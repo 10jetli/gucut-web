@@ -12,7 +12,7 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
 import { markSync, freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
-import { ตรวจชนเพดาน } from "./zort-pages.mjs";
+import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -291,12 +291,37 @@ export async function probeBundleDetail(skuIn, whIn) {
   const d = await get(`Bundle/GetBundleDetail?id=${id}${wh ? `&warehousecode=${encodeURIComponent(wh)}` : ""}`);
   if (!d.body) return { ok: false, unknown: true, step: "GetBundleDetail", id, http: d.http, bytes: d.bytes, error: d.error };
   const list = d.body.list;
+  /* ── ค่าที่ฟอร์มแก้ชุดต้องใช้ — **แบนชั้นบนสุด** (คุณส้มขอ 12 ต.ค. 2569 · ใบ t_mv4hthvf)
+     เดิมเส้นนี้คืนแต่ `summaryKeys` ซึ่งเป็น **ชื่อช่อง** ไม่ใช่ค่า ⇒ กรอกฟอร์มไม่ได้
+     และเทียบ "ค่าก่อนแก้" ก่อนเขียนทับก็ไม่ได้ ซึ่งเป็นด่านกันเขียนทับงานคนอื่นของเส้น update
+
+     🔑 **อ่านจาก `GetBundleDetail` ไม่ใช่ `GetBundles` — และข้อนี้สำคัญกว่าที่ดู**
+        ด่าน `before` ของ `zortUpdateBundle` เทียบกับค่าที่ `zortBundleById()` อ่าน
+        ซึ่งอ่านจาก **`Bundle/GetBundleDetail`** ⇒ ถ้าส่งค่าจากรายการสรุปมาให้จอ
+        จอจะส่ง `before` ที่มาจากคนละแหล่งกับที่ด่านเทียบ ⇒ สองแหล่งไม่ตรงกันวันไหน
+        ได้ทั้ง **ตีกลับทั้งที่ไม่มีใครแก้** และ **ปล่อยผ่านทั้งที่มีคนแก้** ([[probe-shares-the-bug]])
+        📏 วัด 12 ต.ค.: ทั้งสองเส้นคืนชื่อช่องชุดเดียวกัน 13 ชื่อ ⇒ ตอนนี้เลือกได้ทั้งคู่
+           **แต่ "ตอนนี้เท่ากัน" ไม่ใช่เหตุผลให้เลือกผิดแหล่ง** — ยึดแหล่งที่ด่านใช้
+
+     ⚠️ **ด่าน `before` ครอบแค่ `name` กับ `price`** — ไม่ครอบ `sell_vat_status`
+        ⇒ ส่งค่า vat มาให้กรอกฟอร์มได้ แต่ **การแก้ vat ไม่มีตัวกันเขียนทับคาบเกี่ยว**
+        จอต้องไม่เขียนให้คนเข้าใจว่า vat ถูกป้องกันด้วย (ฝั่งท่อจะเติมด่านให้ต้องเป็นใบแยก)
+     ⚠️ ช่องที่ ZORT **ไม่ส่งมาเลย** ต้องแยกจาก "ส่งมาเป็นค่าว่าง" ⇒ จดใน `ช่องที่หาย`
+        ไม่ยุบเป็น null เฉย ๆ ไม่งั้นจอจะกรอกช่องว่างทับค่าจริงใน ZORT */
+  const ช่องฟอร์ม = ["name", "sellprice", "sell_vat_status"];
+  const ช่องที่หาย = ช่องฟอร์ม.filter((k) => !(k in d.body));
   return {
     ok: true,
     found: true,
     sku,
     id,
     warehousecode: wh || null,
+    name: d.body.name ?? null,
+    sellprice: d.body.sellprice ?? null,
+    sell_vat_status: d.body.sell_vat_status ?? null,
+    ค่าฟอร์มมาจาก: "Bundle/GetBundleDetail",
+    ช่องที่หาย,
+    vatมีด่านกันเขียนทับ: false,
     summaryKeys: Object.keys(b),
     // ค่าดิบตามที่ ZORT ส่ง (ไม่แปลง) — ใช้ชี้ขาดว่า "ว่าง" หรือ "0" หรือ "ติดลบ" (ใบด่วน t_mu1dfbz2)
     summaryStock: { stock: b.stock ?? null, availablestock: b.availablestock ?? null },
@@ -329,19 +354,28 @@ export async function syncBundles() {
 
   const all = [];
   let ถึงหน้าสุดท้ายจริง = false;
+  /* 🔴 **B22 ภาคสอง (12 ต.ค. 2569)** — ตรงนี้เคยเป็น **สำเนาที่สี่** ของลูปไล่หน้า
+     ทั้งที่ `zort-pages.mjs` ถูกสร้างขึ้นเมื่อ 3-4 ต.ค. เพื่อเป็นกติกา "ที่เดียว" พอดี
+     ⇒ ตัวนี้จึง **ตัดสินหน้าแรกต่างจากกติกากลาง**: กติกากลางถือว่าหน้าแรกที่ไม่มีช่อง
+       `list` = "ไม่มีรายการ" (และเขียนกำกับไว้ว่ายังวัดไม่ได้ จึงไม่ตั้งด่านบนรูปที่เดาเอา)
+       แต่สำเนานี้ถือเป็น **ความล้มเหลว** ⇒ วันที่ร้านไม่มีชุดเลย จะได้แดงลวง
+     ⚠️ วันนี้ยังไม่พังเพราะร้านมี 360 ชุด = **ถูกโดยอุบัติเหตุ** ([[correct-by-accident]])
+     ⇒ เลิกถือสำเนา ใช้กติกากลางตัวเดียว ⇒ ทั้งสองที่ตัดสินเหมือนกันโดยไม่ต้องจำ */
   for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, {
-      headers: h,
-      signal: AbortSignal.timeout(12000),
-    }).catch(() => null);
-    const data = res?.ok ? await res.json().catch(() => null) : null;
-    /* 🔒 หน้าไหนถามไม่สำเร็จ = หยุดทั้งรอบ (เดิมกลืนเป็น [] แล้ว break ⇒ ได้ครึ่งเดียวแต่จดเหมือนครบ) */
-    if (!Array.isArray(data?.list)) {
-      return { ok: false, งาน: "syncBundles", error: `[syncBundles] ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไร` };
+    let list;
+    try {
+      list = await อ่านหน้าZort(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, h, {
+        หน้า: page,
+        ชื่อ: "syncBundles",
+        timeout: 12000,
+      });
+    } catch (e) {
+      // 🔒 หน้าไหนอ่านไม่ได้ = หยุดทั้งรอบ ไม่เขียนอะไร (ของบางส่วนห้ามถูกใช้เป็นของครบ)
+      return { ok: false, งาน: "syncBundles", error: `${e?.message || e} — รอบนี้ไม่เขียนอะไร` };
     }
-    all.push(...data.list);
+    all.push(...list);
     /* 🔑 B22 — จดหลักฐานว่า 'หมดจริง' ไม่ใช่แค่ break (ลูปนี้ออกได้สองทาง) */
-    if (data.list.length < 200) { ถึงหน้าสุดท้ายจริง = true; break; }
+    if (list.length < 200) { ถึงหน้าสุดท้ายจริง = true; break; }
   }
   /* 🔴 B22 ข้อที่สอง — ลูปนี้ออกได้สองทาง และของเดิมออกทั้งสองทางเงียบเหมือนกัน
      ① หน้าสั้น = หมดจริง  ② **ชนเพดาน 10 หน้า (2,000 ชุด)** = ยังมีต่อแต่เราหยุดเอง
@@ -714,24 +748,39 @@ export async function syncBundleRecipes({ limit = RECIPE_BATCH, deadlineMs = REC
   const t0 = Date.now();
   const n = Math.max(1, Math.min(200, Math.floor(Number(limit)) || RECIPE_BATCH));
 
-  // ① รายชื่อชุด + id — ไม่ครบทุกหน้า = ไม่รู้ว่ามีชุดอะไรบ้าง ⇒ หยุดทั้งรอบ
+  /* ① รายชื่อชุด + id — ไม่ครบทุกหน้า = ไม่รู้ว่ามีชุดอะไรบ้าง ⇒ หยุดทั้งรอบ
+     🔴 **B22 ภาคสอง (12 ต.ค. 2569)** — บรรทัดบนนี้เป็น **เจตนาที่โค้ดไม่ได้ทำ** สองข้อ:
+       ① เคยเป็นสำเนาลูปของตัวเอง ⇒ ตัดสินหน้าแรกต่างจากกติกากลาง `zort-pages.mjs`
+       ② `if (data.list.length < 200) break` **ไม่มีตัวจับชนเพดาน** ⇒ ออกจากลูปเพราะ
+          ครบ 10 หน้า (2,000 ชุด) **เงียบเหมือนหมดจริง** ⇒ เดินต่อด้วยรายชื่อชุดที่ขาด
+          ⇒ ชุดที่หายไปจะ **ไม่เคยถูกตรวจสูตรเลย** และ `bundle_recipe_state` ไม่รู้จักมันด้วย
+             ⇒ ขายชุดนั้นแล้วตัดสต็อกผิดตัว โดยไม่มีอะไรฟ้อง
+          (คลาสเดียวกับที่ `syncBundles` ปิดไปเมื่อ 4 ต.ค. — ตัวนี้ตกหล่น เพราะเป็นฝาแฝด
+           ในไฟล์เดียวกัน และ **ไฟล์ที่เพิ่งแก้คือไฟล์ที่เราไม่กลับไปดู**) */
   const byId = new Map();
+  let ถึงหน้าสุดท้ายชุด = false;
   for (let page = 1; page <= 10; page++) {
-    const res = await fetch(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, {
-      headers: h,
-      signal: AbortSignal.timeout(12000),
-    }).catch(() => null);
-    const data = res?.ok ? await res.json().catch(() => null) : null;
-    if (!Array.isArray(data?.list)) {
-      return { ok: false, งาน: "syncBundleRecipes", error: `[syncBundleRecipes] ถามรายชื่อชุดจาก ZORT หน้า ${page} ไม่สำเร็จ — รอบนี้ไม่เขียนอะไรเลย (สูตรชุด)` };
+    let list;
+    try {
+      list = await อ่านหน้าZort(`${BASE}/Bundle/GetBundles?limit=200&page=${page}`, h, {
+        หน้า: page,
+        ชื่อ: "syncBundleRecipes",
+        timeout: 12000,
+      });
+    } catch (e) {
+      return { ok: false, งาน: "syncBundleRecipes", error: `${e?.message || e} — รอบนี้ไม่เขียนอะไรเลย (สูตรชุด)` };
     }
-    for (const b of data.list) {
+    for (const b of list) {
       const sku = String(b?.sku ?? "").trim().slice(0, 200)  // 🔴 ตัดที่ 200 ให้เท่ากับตัวซิงก์สินค้า — ตัด 60 ทำคีย์ไม่ตรงกับตารางอื่น (เจอ 18 ก.ย. 2569);
       const id = Number(b?.id);
       if (sku && Number.isInteger(id) && id > 0 && !byId.has(sku)) byId.set(sku, id);
     }
-    if (data.list.length < 200) break;
+    if (list.length < 200) { ถึงหน้าสุดท้ายชุด = true; break; }
   }
+  const เกินเพดานสูตร = ตรวจชนเพดาน({
+    ถึงหน้าสุดท้ายจริง: ถึงหน้าสุดท้ายชุด, เพดานหน้า: 10, ต่อหน้า: 200, ชื่อ: "syncBundleRecipes",
+  });
+  if (เกินเพดานสูตร) return { ok: false, งาน: "syncBundleRecipes", error: เกินเพดานสูตร.message };
   if (!byId.size) return { ok: false, error: "ZORT คืนรายชื่อชุดว่าง — รอบนี้ไม่เขียนอะไร" };
 
   await coreQuery(
