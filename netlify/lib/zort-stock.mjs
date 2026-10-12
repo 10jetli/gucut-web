@@ -55,8 +55,24 @@ async function fetchPage(headers, page) {
     signal: AbortSignal.timeout(12000),
   });
   if (!r.ok) throw new Error(`zort ${r.status}`);
-  const d = await r.json().catch(() => ({}));
-  return d.list || d.List || [];
+  /* 🔴 **B09 (แก้ 12 ต.ค. 2569)** — ของเดิม `r.json().catch(() => ({}))` แล้ว `d.list || []`
+     ⇒ HTTP 200 แต่ JSON เสีย (ZORT ตอบหน้า HTML/ตัดกลางทาง) ⇒ ได้ `{}` ⇒ คืน `[]`
+     🔑 และ `[]` **มีความหมายอยู่แล้วในสัญญาของตัวเก็บ**: `collectZortStock` แยกชัดว่า
+        `null` = พลาด (เอาไปลองซ้ำ + นับใน `partial`/`หน้าที่พลาด`) · `[]` = **จบหน้าแล้ว**
+        ⇒ กลืน JSON เสียเป็น `[]` = **บอกตัวเก็บว่า "ข้อมูลหมดแล้ว"** ⇒ ลูปหยุดที่ batch แรก
+        ⇒ `partial: false` · `stale: false` ⇒ แคชถูกเขียนทับด้วยสต็อกที่ไม่ครบ
+        ⇒ ฟีดสินค้าบอก AI/ลูกค้าว่า SKU ที่ตกหล่น **ไม่มีของ** โดยหน้าสถานะขึ้นเขียวทุกช่อง
+     ⇒ ⇒ โยนทั้งสองกรณี แล้วให้กลไกที่มีอยู่ทำงาน (ตัวเรียกห่อ `.catch(() => null)` ให้แล้ว)
+     ⚠️ **ไม่มีช่อง `list`/`List` เลย ก็ต้องโยน ไม่ใช่ถือว่าหน้าว่าง** — หน้าว่างจริงของ ZORT
+        ส่ง `list: []` มา (มีคีย์ ค่าเป็นอาเรย์ว่าง) ⇒ "ไม่มีคีย์" = รูปคำตอบที่เราไม่รู้จัก
+        (คลาสเดียวกับ http-200-empty-payload: 200 ไม่ได้แปลว่าได้ของ) */
+  let d;
+  try { d = await r.json(); }
+  catch (e) { throw new Error(`zort หน้า ${page} ตอบ 200 แต่อ่าน JSON ไม่ได้: ${String(e?.message ?? e).slice(0, 80)}`); }
+  const rows = d?.list ?? d?.List;
+  if (!Array.isArray(rows))
+    throw new Error(`zort หน้า ${page} ตอบ 200 แต่ไม่มีช่อง list ที่เป็นอาเรย์ (ได้ ${typeof rows}) — รูปคำตอบไม่รู้จัก`);
+  return rows;
 }
 
 /** กวาดสต็อกทั้งคลัง — คืน { at, map: { "<sku>": [สต็อก, ราคา] } } */
