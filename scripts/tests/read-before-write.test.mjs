@@ -141,3 +141,23 @@ test('B01 clip-shop ขา GET: อ่านพลาด ⇒ ต้องไม�
   const okr = await clipShop(get(), {});
   assert.deepEqual(Object.keys((await okr.json()).map), ['c1']);
 });
+
+test('B02 office ขา GET: อ่านกระดานพลาด ⇒ ห้ามตอบ 200 พร้อมกระดานว่าง (ตัวจ่ายงานจะหยุดทีม)', async () => {
+  reset();
+  data.set('office/tasks', [{ id: 't1', text: 'งานจริง', owner: 'gucut' }, { id: 't2', text: 'อีกใบ', owner: 'gucut2' }]);
+  failPrefix = 'office/tasks';
+  const r = await office(new Request('https://x/api/office', { method: 'GET' }), {});
+  /* 🔑 ผู้อ่านปลายทางคือ "ตัวตัดสินใจอัตโนมัติ" — มันทำ d.get("tasks", []) แล้วสรุปว่ากระดานว่าง
+     ⇒ 200 + tasks:[] ทำให้ทีมหยุดเดินทั้งรอบจากการอ่านพลาดครั้งเดียว */
+  assert.notEqual(r.status, 200, 'อ่านกระดานไม่ได้ ห้ามตอบ 200');
+  const b = await r.json();
+  assert.equal(b.อ่านไม่ได้, true, 'ต้องประกาศว่าอ่านไม่ได้ ไม่ใช่เงียบ');
+  assert.ok(!Array.isArray(b.tasks), 'ห้ามมีคีย์ tasks ที่เป็นอาเรย์ว่าง — ผู้อ่านจะเชื่อว่ากระดานว่าง');
+  assert.equal(writes.length, 0, 'ขาอ่านห้ามเขียนอะไร');
+
+  // ไม่มีคีย์เลย (null ไม่ใช่ throw) = กระดานใหม่ว่างจริง ⇒ ต้องตอบ 200 ตามปกติ
+  reset();
+  const fresh = await office(new Request('https://x/api/office', { method: 'GET' }), {});
+  assert.equal(fresh.status, 200);
+  assert.deepEqual((await fresh.json()).tasks, []);
+});
