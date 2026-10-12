@@ -50,7 +50,16 @@ export default async function handler(req, context) {
       return json({ ok: true, devices: n });
     }
     if (req.method === "DELETE") {
-      if (body?.endpoint) await removeUserSub(phone, body.endpoint);
+      if (body?.endpoint) {
+        /* 🔑 แยก "ลบคีย์เครื่องแล้ว" ออกจาก "ตรวจรายชื่อเก่าได้หรือไม่"
+           อ่านรายชื่อเก่าไม่ได้ ⇒ เครื่องนี้อาจยังค้างอยู่ในอาร์เรย์เดิมแล้วได้แจ้งเตือนต่อ
+           ⇒ ต้องบอกลูกค้าตรง ๆ **ห้ามขึ้น ok:true เฉย ๆ** (ลูกค้ากดเลิกแล้วยังเด้ง = เรื่องร้องเรียน) */
+        const ผล = await removeUserSub(phone, body.endpoint);
+        if (ผล && ผล.ตรวจของเก่าได้ === false)
+          return json({ ok: true, เตือน: true,
+            ข้อความ: "ปิดแจ้งเตือนของเครื่องนี้แล้ว แต่ตรวจรายชื่อชุดเก่าไม่ได้ชั่วคราว — "
+              + "ถ้ายังมีแจ้งเตือนเด้งอยู่ กดปิดอีกครั้งภายหลัง" });
+      }
       return json({ ok: true });
     }
     return json({ error: "method not allowed" }, 405);

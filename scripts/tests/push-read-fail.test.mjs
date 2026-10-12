@@ -11,7 +11,15 @@ let failKey = null;
 const fakeStore = {
   get: async (k) => { if (failKey && k === failKey) throw new Error('blobs ล่มจำลอง'); return data.has(k) ? data.get(k) : null; },
   setJSON: async (k, v) => data.set(k, v),
-  list: async () => ({ blobs: [] }),
+  /* 🔑 เพิ่ม `delete` ตอนเขียนเทส B07 — **ตัวปลอมเดิมไม่มีมันเลย**
+     ⇒ ถ้าไม่เพิ่ม เทสจะล้มด้วย "s.delete is not a function" ซึ่ง **เป็นข่าวดี**
+       (ตัวปลอมที่ขาดมิติแล้วเงียบ จะทำให้พฤติกรรมการลบไม่เคยถูกทดสอบเลย
+        และเราจะอ่านว่า "ผ่าน" — คลาส mock-cant-see-missing-dimension) */
+  delete: async (k) => { data.delete(k); },
+  list: async (o) => {
+    const พรีฟิกซ์ = o?.prefix ?? '';
+    return { blobs: [...data.keys()].filter((k) => k.startsWith(พรีฟิกซ์) && k !== พรีฟิกซ์.replace(/\/$/, '')).map((key) => ({ key })) };
+  },
 };
 const reset = () => { data.clear(); failKey = null; };
 mock.module('@netlify/blobs', { namedExports: { getStore: () => fakeStore } });
@@ -57,4 +65,51 @@ test('ตัวควบคุมลบ: ไม่มีใครสมัคร
   const n = await pushToAdmins({ title: 'x', body: 'y' });
   assert.ok(typeof n === 'number' && n >= 0, `ต้องเป็นตัวเลข ได้ ${n}`);
   assert.notEqual(n, null, 'มีเครื่องสมัครอยู่ ห้ามคืน null');
+});
+
+/* ── B07 ฝั่งลูกค้า (ใบ t_mv4la7u4) ────────────────────────────────────────
+   ใบงานชี้ addSub/removeSub ซึ่งถูกแก้ไปแล้ว 14 ก.ย. และ `addUserSub` ปลอดภัย
+   โดยโครงสร้างอยู่แล้ว (หนึ่งเครื่อง–หนึ่งคีย์ ⇒ ไม่มีอ่าน-แล้ว-เขียนทับ)
+   ของจริงที่เหลือ: `readUserSubs` กลืนการอ่านพลาด ⇒ ผู้เรียกแยกไม่ออกระหว่าง
+   "ไม่มีเครื่อง" กับ "อ่านไม่ได้" ⇒ `hasUserSub` ตอบ false · `pushToUser` คืน 0
+   ⚠️ ทิศ "ส่งเท่าที่รู้" ถูกแล้ว **ไม่แก้** — ที่เพิ่มคือธงบอกว่ารอบนั้นอ่านไม่ครบ */
+const { hasUserSub, pushToUser, removeUserSub, addUserSub } = await import('../../netlify/lib/push.mjs');
+
+test('🔴 hasUserSub: อ่านไม่ครบ ⇒ null (ไม่รู้) ไม่ใช่ false', async () => {
+  reset();
+  เตรียมคีย์();
+  failKey = 'u/0812345678';
+  assert.equal(await hasUserSub('0812345678'), null,
+    '🔑 ตัวนี้ตอบคำถาม ไม่ได้ลดสิทธิ์ ⇒ ยุบ "ไม่รู้" เป็น false ไม่ได้');
+});
+
+test('ตัวควบคุมลบของ hasUserSub: ไม่มีเครื่องจริง ⇒ false · มีเครื่อง ⇒ true', async () => {
+  reset(); เตรียมคีย์();
+  assert.equal(await hasUserSub('0812345678'), false, 'อ่านได้แต่ว่าง = ไม่มีเครื่องจริง');
+  reset(); เตรียมคีย์();
+  data.set('u/0812345678', [{ endpoint: 'https://a' }]);
+  assert.equal(await hasUserSub('0812345678'), true);
+});
+
+test('🔴 pushToUser: อ่านไม่ครบและไม่เจอเครื่อง ⇒ null · ไม่มีเครื่องจริง ⇒ 0', async () => {
+  reset(); เตรียมคีย์();
+  failKey = 'u/0812345678';
+  assert.equal(await pushToUser('0812345678', { title: 'x' }), null, 'ไม่รู้ ห้ามตอบ 0');
+  reset(); เตรียมคีย์();
+  assert.equal(await pushToUser('0812345678', { title: 'x' }), 0, 'ไม่มีเครื่องจริง ⇒ 0');
+});
+
+test('removeUserSub: อ่านรายชื่อเก่าไม่ได้ ⇒ บอกผู้เรียก (ห้ามเงียบ) และห้ามเขียนทับ', async () => {
+  reset(); เตรียมคีย์();
+  data.set('u/0812345678', [{ endpoint: 'https://a' }, { endpoint: 'https://b' }]);
+  failKey = 'u/0812345678';
+  const ผล = await removeUserSub('0812345678', 'https://a');
+  assert.equal(ผล.ตรวจของเก่าได้, false, 'ต้องบอกว่าตรวจของเก่าไม่ได้');
+  assert.equal(data.get('u/0812345678').length, 2, 'ห้ามเขียนทับรายชื่อเก่า');
+
+  reset(); เตรียมคีย์();
+  data.set('u/0812345678', [{ endpoint: 'https://a' }, { endpoint: 'https://b' }]);
+  const ดี = await removeUserSub('0812345678', 'https://a');
+  assert.equal(ดี.ตรวจของเก่าได้, true);
+  assert.deepEqual(data.get('u/0812345678').map((x) => x.endpoint), ['https://b'], 'อ่านได้ ⇒ ลบจริง');
 });

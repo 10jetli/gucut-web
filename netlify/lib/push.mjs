@@ -152,16 +152,27 @@ const deviceKey = (phone, endpoint) => {
  *  คืน { subs, legacy } · legacy = อาร์เรย์เดิมที่ยังค้างอยู่ (ใช้ตอนต้องลบเครื่องตาย) */
 async function readUserSubs(phone) {
   const s = store();
-  const legacy = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
+  /* 🔴 B07 ขาอ่าน (แก้ 12 ต.ค. 2569) — ทิศ "ส่งเท่าที่รู้" **ถูกแล้ว ไม่แก้**
+     แต่เดิม **ไม่มีใครรู้ว่ารอบนั้นอ่านครบหรือไม่** ⇒ ผู้เรียกแยกไม่ออกระหว่าง
+       "เบอร์นี้ไม่มีเครื่องเปิดรับ"  กับ  "เราอ่านรายชื่อเครื่องไม่ได้"
+     ⇒ `pushToUser` คืน 0 · `hasUserSub` คืน false ⇒ **คำยืนยันที่เป็นเท็จ**
+     ⇒ เพิ่มธง `ไม่ครบ` — ทางถอยยังทำงานเหมือนเดิม แต่**ประกาศตัวว่าถูกใช้**
+        (กฎ fallbacks-must-announce · ทางถอยที่ไม่ประกาศตัวจะกลายเป็นทางหลักโดยไม่มีใครตัดสินใจ) */
+  let ไม่ครบ = false;
+  let legacy = [];
+  try { legacy = (await s.get(userKey(phone), { type: "json" })) || []; }
+  catch { ไม่ครบ = true; }      // อ่านอาร์เรย์เดิมไม่ได้ ⇒ เครื่องเก่าอาจหลุดจากรอบนี้
   let ใหม่ = [];
   try {
     const { blobs } = await s.list({ prefix: `${userKey(phone)}/` });
-    ใหม่ = (await Promise.all(
-      (blobs || []).map((b) => s.get(b.key, { type: "json" }).catch(() => null)),
-    )).filter((x) => x && x.endpoint);
+    const ผล = await Promise.all(
+      (blobs || []).map((b) => s.get(b.key, { type: "json" }).then((v) => v, () => { ไม่ครบ = true; return null; })),
+    );
+    ใหม่ = ผล.filter((x) => x && x.endpoint);
   } catch {
     /* ⚠️ อ่านรายการคีย์ไม่ได้ = **ไม่ใช่ว่าไม่มีเครื่อง** ⇒ ยังต้องส่งให้ของเก่าตามปกติ
        ทิศของความผิดต้องไปทาง "ส่งเท่าที่รู้" ไม่ใช่ "ถือว่าไม่มีใคร" */
+    ไม่ครบ = true;
   }
   const เห็นแล้ว = new Set();
   const subs = [];
@@ -170,7 +181,7 @@ async function readUserSubs(phone) {
     เห็นแล้ว.add(x.endpoint);
     subs.push(x);
   }
-  return { subs, legacy: Array.isArray(legacy) ? legacy : [] };
+  return { subs, legacy: Array.isArray(legacy) ? legacy : [], ไม่ครบ };
 }
 
 /** เก็บ subscription ของลูกค้าหนึ่งคน (มีได้หลายเครื่อง) */
@@ -188,16 +199,30 @@ export async function removeUserSub(phone, endpoint) {
   const s = store();
   // ลบทั้งสองที่: คีย์รายเครื่อง (ของใหม่) และในอาร์เรย์เดิม (ของเก่าที่ยังค้าง)
   await s.delete(deviceKey(phone, endpoint)).catch(() => {});
-  const legacy = (await s.get(userKey(phone), { type: "json" }).catch(() => null)) || [];
-  if (Array.isArray(legacy) && legacy.some((x) => x.endpoint === endpoint)) {
+  /* 🔑 เดิมอ่านอาร์เรย์เดิมพลาด ⇒ ได้ `[]` ⇒ `.some()` เป็นเท็จ ⇒ **ไม่เขียนทับ (ดี)**
+     แต่ก็ **ไม่ได้ลบ endpoint ออกจากอาร์เรย์เดิม และไม่มีใครรู้** ⇒ เครื่องที่ลูกค้ากดเลิกรับ
+     จะยังอยู่ในรายชื่อเก่า แล้วได้แจ้งเตือนต่อไป ⇒ ลูกค้ากดเลิกแล้วยังเด้ง = เรื่องร้องเรียน
+     ⇒ คืนผลให้ผู้เรียกรู้ แยก "ลบคีย์เครื่องแล้ว" ออกจาก "ตรวจรายชื่อเก่าได้หรือไม่" */
+  let ตรวจของเก่าได้ = true;
+  let legacy = [];
+  try { legacy = (await s.get(userKey(phone), { type: "json" })) || []; }
+  catch { ตรวจของเก่าได้ = false; }
+  if (ตรวจของเก่าได้ && Array.isArray(legacy) && legacy.some((x) => x.endpoint === endpoint)) {
     await s.setJSON(userKey(phone), legacy.filter((x) => x.endpoint !== endpoint));
   }
+  return { ลบคีย์เครื่องแล้ว: true, ตรวจของเก่าได้ };
 }
 
+/** เบอร์นี้มีเครื่องเปิดรับไหม — **คืนสามค่า** `true` · `false` · `null` (อ่านไม่ครบ ⇒ ไม่รู้)
+ *  🔑 ตัวนี้ **ตอบคำถาม** ไม่ได้ลดสิทธิ์ ⇒ ยุบ "ไม่รู้" เป็น `false` ไม่ได้
+ *     (เหตุผลเดียวกับที่ `/api/points` ห้ามตอบ "คุณมี 0 แต้ม" ตอนอ่านแต้มไม่ได้ · ใบ B04)
+ *  ⚠️ ตอนนี้ **ยังไม่มีใครเรียกตัวนี้** — ใครจะเอาไปใช้ต้องรับมือ `null` ด้วย
+ *     ห้ามเขียน `if (!(await hasUserSub(p)))` เพราะ `null` จะตกไปทาง "ไม่มีเครื่อง" ทันที */
 export async function hasUserSub(phone) {
   if (!phone) return false;
-  const { subs } = await readUserSubs(phone);
-  return subs.length > 0;
+  const { subs, ไม่ครบ } = await readUserSubs(phone);
+  if (subs.length) return true;
+  return ไม่ครบ ? null : false;
 }
 
 /** ส่งแจ้งเตือนหาลูกค้าหนึ่งคน — คืนจำนวนเครื่องที่ส่งสำเร็จ */
@@ -205,8 +230,12 @@ export async function pushToUser(phone, payload) {
   if (!phone) return 0;
   await vapid();
   const s = store();
-  const { subs: all, legacy } = await readUserSubs(phone);
-  if (!all.length) return 0;
+  const { subs: all, legacy, ไม่ครบ } = await readUserSubs(phone);
+  /* 🔑 `null` = ไม่รู้ว่ามีเครื่องไหม · `0` = ไม่มีเครื่องจริง — ยุบสองอย่างนี้ = แจ้งเตือนหายเงียบ
+     (คลาสเดียวกับ pushToAdmins ใบ B06) · ห้ามโยน เพราะผู้เรียกคือ order-finalize/remind/zort-order */
+  if (!all.length) return ไม่ครบ ? null : 0;
+  if (ไม่ครบ)
+    console.error(`[push] อ่านรายชื่อเครื่องของ ${phone} ไม่ครบ ⇒ จำนวนที่ส่งเป็น "อย่างน้อย" ไม่ใช่ "ทั้งหมด"`);
   const dead = [];
   let ok = 0;
   await Promise.all(
