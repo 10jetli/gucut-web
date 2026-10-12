@@ -8,17 +8,39 @@
 // ที่นี่มีไว้ให้ดูและให้ร้านตั้งค่าเท่านั้น
 import { adminGate } from "../lib/admin-gate.mjs";
 import { addPending, addPoints, readLoyalty, writeLoyalty } from "../lib/points.mjs";
-import { currentUser, normPhone, store as usersStore } from "../lib/session.mjs";
+import { currentUserState, normPhone, store as usersStore } from "../lib/session.mjs";
 
-const json = (o, s = 200) =>
-  new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json" } });
+const json = (o, s = 200, extra = {}) =>
+  new Response(JSON.stringify(o), { status: s, headers: { "content-type": "application/json", ...extra } });
 
 export default async function handler(req, context) {
   const cfg = await readLoyalty();
 
   if (req.method === "GET") {
-    let me = null;
-    try { me = (await currentUser(req, usersStore()))?.user ?? null; } catch { /* ไม่ได้ล็อกอิน */ }
+    /* 🔴 B04 ตระกูลเดียวกัน ขา GET (แก้ 12 ต.ค. 2569) — ใบงานชี้ `addPending` ซึ่งถูกแก้ไปแล้ว 14 ก.ย.
+       (อ่านพลาด = throw · ผู้เรียกที่ `/api/points` ไม่ได้ห่อ catch ⇒ ได้ 500 = "ไม่รู้" ซึ่งถูกแล้ว)
+       ของจริงที่เหลืออยู่คือ **ขาอ่านของลูกค้า** ที่นี่:
+         เดิม: `try { currentUser(...) } catch { }` โดยคอมเมนต์ในวงเล็บปีกกาเขียนว่า "ไม่ได้ล็อกอิน"
+         ⇒ **Blobs อ่านพลาด ถูกเรียกว่า "ไม่ได้ล็อกอิน"**
+         ⇒ ลูกค้าที่มี 1,200 แต้ม เปิดหน้าแล้วเห็น **`points: 0` + ประวัติว่าง พร้อม HTTP 200**
+         ⇒ อ่านได้ความเดียวว่า "แต้มฉันหายไปหมด" — ซึ่งเป็นคำกล่าวอ้างที่เป็นเท็จ ไม่ใช่การขอโทษ
+
+       🔑 `session.mjs` **แยกสามสถานะไว้ให้แล้ว** (`currentUserState` → guest / unknown / user)
+          แต่ `currentUser` ยุบ `unknown` เป็น null โดยตั้งใจ พร้อมคอมเมนต์ว่าปลอดภัยเพราะ
+          "ผู้เรียกที่เหลือทุกตัวใช้ค่านี้ไป **ให้สิทธิ์น้อยลง** เท่านั้น (fail-closed)"
+          ⇒ 🔴 **ข้อยกเว้นอยู่ตรงนี้** — ที่นี่ไม่ได้ลดสิทธิ์ แต่ **ประกาศตัวเลขให้ลูกค้า**
+             ⇒ ไม่ใช่ fail-closed แต่เป็น **fail-with-a-false-claim** และไม่มีใครสังเกต
+          ⇒ เส้นนี้จึงต้องเรียก `currentUserState` เอง ไม่ใช้ตัวที่ยุบแล้ว [[three-states-not-two]]
+       ⚠️ "ไม่ได้ล็อกอิน" (guest) ยังตอบ 200 + points 0 ตามเดิม — **นั่นคือความจริงสำหรับคนนอก**
+          สิ่งที่ห้ามคือเอา "อ่านไม่ได้" ไปพูดแทนความจริงนั้น */
+    const สภาพ = await currentUserState(req, usersStore()).catch((err) => ({ state: "unknown", err }));
+    if (สภาพ.state === "unknown")
+      return json({
+        ...cfg,
+        อ่านไม่ได้: true,
+        เหตุ: "อ่านแต้มของคุณไม่ได้ชั่วคราว — แต้มยังอยู่ครบ ไม่ได้หาย ลองใหม่อีกครั้ง",
+      }, 503, { "cache-control": "no-store" });
+    const me = สภาพ.state === "user" ? สภาพ.user : null;
     return json({
       ...cfg,
       points: Number(me?.points || 0),

@@ -23,7 +23,10 @@ async function ยิงGET(จำนวนประวัติ) {
   mock.reset();
   mock.module("../../netlify/lib/session.mjs", {
     namedExports: {
-      currentUser: async () => ผู้ใช้ที่มีประวัติ(จำนวนประวัติ),
+      /* 🔑 12 ต.ค. 2569: `/api/points` เปลี่ยนไปเรียก `currentUserState` (สามสถานะ)
+         เพราะตัวที่ยุบเหลือสองสถานะทำให้ "อ่านแต้มไม่ได้" ถูกพูดออกไปเป็น "คุณมี 0 แต้ม"
+         ⇒ mock ต้องตามไปที่ชื่อใหม่ **เจตนาของเทสไฟล์นี้ไม่เปลี่ยน** (เดินทาง pointLog > 30) */
+      currentUserState: async () => ({ state: "user", ...ผู้ใช้ที่มีประวัติ(จำนวนประวัติ) }),
       normPhone: (p) => String(p ?? ""),
       store: () => ({}),
     },
@@ -60,7 +63,7 @@ test("ตัวควบคุมลบ: ประวัติ 5 รายกา
 test("ตัวควบคุมลบ: ไม่มีประวัติเลย ⇒ log ว่าง · logTotal 0 (ไม่ใช่ null/undefined)", async () => {
   mock.reset();
   mock.module("../../netlify/lib/session.mjs", {
-    namedExports: { currentUser: async () => ({ user: { points: 0 } }), normPhone: (p) => String(p ?? ""), store: () => ({}) },
+    namedExports: { currentUserState: async () => ({ state: "user", user: { points: 0 } }), normPhone: (p) => String(p ?? ""), store: () => ({}) },
   });
   mock.module("../../netlify/lib/points.mjs", {
     namedExports: { readLoyalty: async () => ({ on: true }), writeLoyalty: async () => {}, addPoints: async () => {}, addPending: async () => {} },
