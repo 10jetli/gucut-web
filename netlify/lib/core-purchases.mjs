@@ -455,7 +455,15 @@ export async function syncTransfers(days = 90, opt = {}) {
       `${BASE}/Transfer/GetTransfers?limit=200&page=${page}`,
       h, { หน้า: page, ชื่อ: "ใบโอน", timeout: 12000 },
     );
-    if (!list.length) break;
+    /* 🔴 **B23 (12 ต.ค. 2569)** — ทางออกที่แปลว่า "ครบแล้ว" **ต้องล้าง `nextPage`**
+       `nextPage` ถูกตั้งเป็น `page + 1` ตอนท้ายของรอบก่อน ⇒ `break` เฉย ๆ = คืนเลขหน้าค้าง
+       ⇒ สัญญาของฟังก์ชันนี้เขียนไว้เองว่า **"`nextPage` ไม่ null = ยังกวาดไม่หมด"**
+       ⇒ ⇒ และบรรทัดชีพจรใช้ค่านี้ตัดสิน: `nextPage ? "partial" : "ok"`
+          ⇒ **รอบที่กวาดครบจริงจะถูกจด `partial` ตลอดกาล** ⇒ จอเตือนว่าซิงก์ไม่ครบทุกรอบ
+             ทั้งที่ครบ (เหลืองลวงถาวร) และงานตามเวลาเรียกแบบไม่วนต่อ ⇒ ไม่มีวันได้ `ok`
+       🔑 **บั๊กตัวเดียวกันนี้ `core-contacts.mjs` แก้ไปแล้วเมื่อ 15 ก.ย. 2569** พร้อมคอมเมนต์
+          อธิบายเหตุครบถ้วน — แต่แก้ที่ฝาแฝดข้างเดียว (ตัวที่สามของคลาสนี้ในวันเดียว) */
+    if (!list.length) { nextPage = null; break; }
     let hitOld = false;
     for (const t of list) {
       const date = String(t?.transferdate ?? "").slice(0, 10);
@@ -474,7 +482,8 @@ export async function syncTransfers(days = 90, opt = {}) {
         note: String(t?.description ?? "").slice(0, 200),
       });
     }
-    if (hitOld || list.length < 200) break;
+    // เจอใบเก่ากว่าช่วงที่ขอ หรือหน้าสั้นกว่าเพดาน = ครบแล้วทั้งสองทาง ⇒ ล้าง `nextPage` ด้วย
+    if (hitOld || list.length < 200) { nextPage = null; break; }
     nextPage = page + 1;
   }
   if (!rows.length) {
