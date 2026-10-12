@@ -601,6 +601,11 @@ async function route(req, context) {
           ok: false, inconclusive: true,
           why: "ดึงรายชื่อที่ลงขายจากแพลตฟอร์มไม่ได้รอบนี้ — ยังสรุปเรื่องรหัสไม่ได้",
           checked: ml?.checked ?? [], notConnected: ml?.notConnected ?? [],
+          /* 🔴 **B28 ส่วนที่ยังค้าง (แก้ 12 ต.ค. 2569)** — เส้นนี้ส่ง `checked` กับ `notConnected`
+             แต่ **ไม่ส่ง `failed`** ⇒ ข้อความ "ตรวจสถานะการเชื่อมไม่ได้" ที่ `marketplace-listings`
+             ตั้งใจแยกไว้ตั้งแต่ 4 ต.ค. **ไม่เคยถึงจอเลย**
+             🔑 ธงที่ซื่อสัตย์แต่ไม่มีใครส่งต่อ = ธงที่ไม่มีผล (คลาสเดียวกับ B18 ชั้นที่ห้า) */
+          ช่องทางที่ถามไม่ได้: ml?.failed ?? {},
         });
       }
       const r = auditSkus({
@@ -612,6 +617,8 @@ async function route(req, context) {
         ...r,
         ดึงรายชื่อเมื่อ: ml.at ? new Date(ml.at).toISOString() : null,
         ช่องทางที่ยังไม่ได้ต่อ: ml.notConnected || [],
+        // B28: ต้องส่งคู่กันเสมอ — "ยังไม่ได้ต่อ" กับ "ถามไม่ได้" เป็นสองเรื่อง
+        ช่องทางที่ถามไม่ได้: ml.failed || {},
       });
     }
     /* ⏱️ GET ?sweeptiming=1[&hours=N] ⇒ การกระจายเวลาต่อรอบของงานกวาด **จากสมุดที่มีอยู่แล้ว**
