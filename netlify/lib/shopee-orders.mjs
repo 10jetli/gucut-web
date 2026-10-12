@@ -37,7 +37,60 @@ async function ensureTables() {
       qty REAL NOT NULL DEFAULT 0, price REAL NOT NULL DEFAULT 0,
       PRIMARY KEY (order_sn, line))`
   );
+  /* ⚠️ **ลายนิ้วมือรายการสินค้า — ฝาแฝด TikTok มีตั้งแต่ 6 ก.ย. 2569 ฝั่งนี้ไม่เคยมี**
+      ตัวเทียบ "เปลี่ยนหรือยัง" ด้านล่างดูแค่ status/amount/buyer/วัน ⇒ วันที่เราแก้ชื่อฟิลด์
+      ให้ถูก ใบเก่าที่สี่ค่านั้นไม่ขยับ **จะไม่ถูกเขียนใหม่ตลอดกาล** รายการสินค้าที่แปลผิด
+      จะแช่แข็งอยู่อย่างนั้น (คลาส [[new-columns-need-backfill]])
+      📏 **ขอบเขตของการกวาดย้อนหลัง** — คอลัมน์ว่าง (NULL) เทียบไม่ตรงกับ fp ที่คิดใหม่เสมอ
+         ⇒ ใบที่ **อยู่ในช่วง `days`** จะถูกเขียนใหม่ให้เองรอบแรกหลังเพิ่มคอลัมน์
+         🔴 แต่ใบที่ **เก่ากว่าช่วง `days`** ไม่เคยถูกถามซ้ำ ⇒ `items_fp` ค้าง NULL ตลอดไป
+            (ฝาแฝด TikTok ก็มีขอบเขตเดียวกันนี้ และไม่ได้เขียนไว้ — จดที่นี่ให้ทั้งคู่) */
+  await coreQuery(`ALTER TABLE shopee_orders ADD COLUMN items_fp TEXT`).catch(() => {});
   tablesReady = true;
+}
+
+/* ── ตัวตัดสินสามตัวของ B21 — ยกออกมาให้ **ทดสอบได้** ────────────────────────
+   เหตุ: ตรรกะนี้ตัดสินว่า "ไม่รู้" หรือ "ไม่มี" และตัดสินว่าจะ **ลบของจริงทิ้ง** หรือไม่
+   ตอนฝังอยู่ในฟังก์ชันที่ต้องมีทั้งเน็ตและ D1 ⇒ เขียนผิดแล้วไม่มีอะไรแดง
+   (ท่าเดียวกับ `อ่านสต็อกผู้ขาย`/`ตัดสินสต็อกอ่านไม่ได้` ใน shopee-stock.mjs) */
+
+/** รายการสินค้าของออเดอร์หนึ่งใบ — `null` = **ยังไม่รู้** · `[]` = รู้แล้วว่าไม่มี
+ *  ⚠️ เราขอ `item_list` ไปใน `response_optional_fields` ⇒ ไม่มี = ผิดคาด ต้องแยกให้ออก */
+export function แปลรายการสินค้า(o) {
+  if (!Array.isArray(o?.item_list)) return null;
+  return o.item_list.map((it, idx) => ({
+    line: idx + 1,
+    sku: String(it?.model_sku || it?.item_sku || "").trim().slice(0, 60),
+    name: String(it?.item_name || "").slice(0, 120),
+    qty: num(it?.model_quantity_purchased),
+    price: num(it?.model_discounted_price),
+  }));
+}
+
+/** ลายนิ้วมือรายการสินค้า — `null` เข้า ⇒ `null` ออก (ห้ามยุบเป็นสตริงว่าง)
+ *  ยุบเมื่อไหร่ ใบที่อ่านไม่ได้จะ "เปลี่ยน" ทุกรอบ แล้วไปลบของจริงทิ้งทุกรอบ */
+export function ลายนิ้วมือรายการ(items) {
+  if (items === null || items === undefined) return null;
+  return items.map((i) => `${i.sku}:${i.qty}:${i.price}`).join("|").slice(0, 400);
+}
+
+/** ใบนี้ต้องเขียนลง D1 ใหม่ไหม — `p` = แถวเดิมใน D1 (ไม่มี = undefined) */
+export function ต้องเขียนใหม่(p, r) {
+  if (!p) return true;
+  return (
+    String(p.status ?? "") !== r.status ||
+    num(p.amount) !== r.amount ||
+    String(p.buyer ?? "") !== r.buyer ||
+    String(p.order_date ?? "") !== r.day ||
+    // ⚠️ เทียบรายการสินค้า **เฉพาะใบที่รู้** — `fp === null` คือยังไม่รู้ ไม่ใช่ "ไม่มี"
+    (r.fp !== null && String(p.items_fp ?? "") !== r.fp)
+  );
+}
+
+/** ค่าที่จะเขียนลงคอลัมน์ `items_fp` — ไม่รู้ ⇒ **คงค่าเดิม** ห้ามทับด้วยความว่าง */
+export function ค่าitems_fp(r, p) {
+  if (r.fp !== null) return esc(r.fp);
+  return p?.items_fp == null ? "NULL" : esc(p.items_fp);
 }
 
 /** กระจกออเดอร์ Shopee ช่วง N วันล่าสุดลง D1 — idempotent รันซ้ำได้ */
@@ -52,6 +105,10 @@ export async function syncShopeeOrders(days = 3) {
 
   // 1) กวาดรายชื่อออเดอร์ในช่วงเวลา (Shopee ให้ช่วงละไม่เกิน 15 วัน — เราใช้ 3)
   const sns = [];
+  /* 🔴 **B21 ภาคสอง (12 ต.ค. 2569)** — ฝาแฝด TikTok จด `unmapped.add("data.orders")`
+      แต่ฝั่งนี้ `break` เงียบแล้วคืน `orders: 0` ⇒ **คลาสเดียวกัน แก้คนละท่า**
+      ⇒ ของที่ "ไม่รู้" ถูกเล่าเป็น "ไม่มีออเดอร์" ซึ่งคือตัวบั๊กของใบ B21 เอง */
+  const unmapped = new Set();
   let cursor = "";
   for (let page = 0; page < 10; page++) {
     const data = await shopCall("/api/v2/order/get_order_list", {
@@ -77,6 +134,7 @@ export async function syncShopeeOrders(days = 3) {
       if (page > 0) {
         throw new Error(`Shopee หน้า ${page + 1} ไม่มีช่อง order_list ทั้งที่หน้าก่อนบอกว่ายังมีต่อ — อ่านไม่ครบ`);
       }
+      unmapped.add("response.order_list");
       break;
     }
     sns.push(...list.map((o) => o.order_sn).filter(Boolean));
@@ -84,7 +142,9 @@ export async function syncShopeeOrders(days = 3) {
     cursor = String(data?.response?.next_cursor ?? "");
     if (!cursor) break;
   }
-  if (!sns.length) return { days, orders: 0 };
+  // ⚠️ คืน `unmapped` ด้วยเสมอ — ไม่งั้น "กวาดได้ 0 เพราะร้านว่าง" กับ
+  //    "กวาดได้ 0 เพราะอ่านช่องไม่เจอ" หน้าตาเหมือนกันเป๊ะในรายงาน
+  if (!sns.length) return { days, orders: 0, unmapped: [...unmapped] };
 
   // 2) รายละเอียดทีละก้อน 50 ใบ (เพดานของ get_order_detail)
   const rows = [];
@@ -117,34 +177,34 @@ export async function syncShopeeOrders(days = 3) {
         buyer: String(o.buyer_username || "").slice(0, 60),
         day: thaiDay(o.create_time),
         ct: num(o.create_time),
-        // ระดับ SKU — model_sku คือรหัสของตัวเลือกที่ลูกค้าหยิบ (ตรงกับ SKU ในระบบเรา)
-        items: (o.item_list ?? []).map((it, idx) => ({
-          line: idx + 1,
-          sku: String(it.model_sku || it.item_sku || "").trim().slice(0, 60),
-          name: String(it.item_name || "").slice(0, 120),
-          qty: num(it.model_quantity_purchased),
-          price: num(it.model_discounted_price),
-        })),
+        /* ระดับ SKU — model_sku คือรหัสของตัวเลือกที่ลูกค้าหยิบ (ตรงกับ SKU ในระบบเรา)
+           🔴 **B21 ภาคสอง** — ของเดิม `?? []` ⇒ ใบที่ Shopee ไม่คืน `item_list` มา
+              จะถูกเขียนลง D1 เป็น **ใบที่ไม่มีสินค้าสักชิ้น** อย่างเงียบ ๆ
+              แล้วรอบถัดไปจะไม่ถูกแก้ เพราะตัวเทียบไม่ได้ดูรายการสินค้า
+              ⇒ ยิ่งร้าย: ขั้นที่ 4 `DELETE` แล้ว `INSERT` ของว่าง = **ลบรายการที่ถูกต้องทิ้ง**
+              ⇒ `null` = ยังไม่รู้ · `[]` = รู้แล้วว่าไม่มี — ห้ามยุบสองอย่างนี้
+              (เราขอ `item_list` ไปใน `response_optional_fields` ⇒ ไม่มี = ผิดคาด ต้องฟ้อง) */
+        items: แปลรายการสินค้า(o),
       });
+      if (!Array.isArray(o.item_list)) unmapped.add("order.item_list");
     }
+  }
+
+  /* ลายนิ้วมือรายการสินค้า — `null` แปลว่า **ยังไม่รู้** ⇒ ห้ามเอาไปเทียบ และห้ามเขียนทับ
+     ถ้ายุบให้เป็นสตริงว่าง ใบที่อ่านไม่ได้จะ "เปลี่ยน" ทุกรอบ แล้วไปลบของจริงทิ้งทุกรอบ */
+  for (const r of rows) {
+    r.fp = ลายนิ้วมือรายการ(r.items);
   }
 
   // ⚠️ เขียนเฉพาะใบที่เปลี่ยนจริง — เหตุผลเดียวกับตัวกระจก ZORT (โควตาเขียนของ D1)
   const prev = new Map(
-    (await coreQuery(`SELECT order_sn, status, amount, buyer, order_date FROM shopee_orders`)).map(
+    (await coreQuery(
+      `SELECT order_sn, status, amount, buyer, order_date, items_fp FROM shopee_orders`
+    )).map(
       (r) => [r.order_sn, r]
     )
   );
-  const changed = rows.filter((r) => {
-    const p = prev.get(r.sn);
-    return (
-      !p ||
-      String(p.status ?? "") !== r.status ||
-      num(p.amount) !== r.amount ||
-      String(p.buyer ?? "") !== r.buyer ||
-      String(p.order_date ?? "") !== r.day
-    );
-  });
+  const changed = rows.filter((r) => ต้องเขียนใหม่(prev.get(r.sn), r));
   const skipped = rows.length - changed.length;
 
   // 3) upsert — ฝังค่าด้วย esc() ก้อนละ 80 (กติกาเดียวกับตัวกระจก ZORT)
@@ -153,21 +213,30 @@ export async function syncShopeeOrders(days = 3) {
       .slice(i, i + 80)
       .map(
         (r) =>
-          `(${esc(r.sn)},${esc(r.status)},${r.amount},${esc(r.buyer)},${esc(r.day)},${r.ct},datetime('now'))`
+          `(${esc(r.sn)},${esc(r.status)},${r.amount},${esc(r.buyer)},${esc(r.day)},${r.ct},`
+          + `datetime('now'),`
+          // ไม่รู้รายการสินค้า ⇒ ส่งค่าเดิมกลับไป (ไม่มีค่าเดิม = NULL) **ห้ามส่ง '' ทับ**
+          + `${ค่าitems_fp(r, prev.get(r.sn))})`
       )
       .join(",");
     await coreQuery(
-      `INSERT INTO shopee_orders (order_sn,status,amount,buyer,order_date,create_time,updated_at)
+      `INSERT INTO shopee_orders (order_sn,status,amount,buyer,order_date,create_time,updated_at,items_fp)
        VALUES ${values}
        ON CONFLICT(order_sn) DO UPDATE SET
          status=excluded.status, amount=excluded.amount, buyer=excluded.buyer,
-         order_date=excluded.order_date, updated_at=excluded.updated_at`
+         order_date=excluded.order_date, updated_at=excluded.updated_at,
+         items_fp=excluded.items_fp`
     );
   }
-  // 4) รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน
+  /* 4) รายการสินค้า — เขียนใหม่เฉพาะใบที่เปลี่ยน
+     🔴 **B21 ภาคสอง** — ใบที่ยังไม่รู้รายการสินค้า (`items === null`) **ต้องไม่เข้าทั้ง
+        `DELETE` และ `INSERT`** ท่านี้เป็นลบแล้วใส่ใหม่ ⇒ ปล่อยเข้าไป = **ลบของจริงทิ้ง
+        แล้วใส่ความว่างแทน** ซึ่งแย่กว่าไม่ทำอะไรเลย (คลาส [[fixes-can-destroy-truth]]) */
   let itemRows = 0;
-  for (let i = 0; i < changed.length; i += 60) {
-    const chunk = changed.slice(i, i + 60);
+  const รู้รายการ = changed.filter((r) => r.items !== null);
+  const itemsUnknown = changed.length - รู้รายการ.length;
+  for (let i = 0; i < รู้รายการ.length; i += 60) {
+    const chunk = รู้รายการ.slice(i, i + 60);
     const snList = chunk.map((r) => esc(r.sn)).join(",");
     await coreQuery(`DELETE FROM shopee_order_items WHERE order_sn IN (${snList})`);
     const values = chunk
@@ -186,7 +255,17 @@ export async function syncShopeeOrders(days = 3) {
       itemRows += chunk.reduce((n, r) => n + (r.items?.length ?? 0), 0);
     }
   }
-  return { days, orders: rows.length, written: changed.length, skipped, itemRows };
+  /* ⚠️ `itemsUnknown` ต้องขึ้นรายงานเสมอ แม้เป็น 0 — ไม่งั้นวันที่มันไม่เป็น 0
+      จะไม่มีใครสังเกต เพราะช่องที่เพิ่งโผล่มาอ่านเหมือนของใหม่ ไม่ใช่ของผิดปกติ */
+  return {
+    days,
+    orders: rows.length,
+    written: changed.length,
+    skipped,
+    itemRows,
+    itemsUnknown,
+    unmapped: [...unmapped],
+  };
 }
 
 // สถานะที่ไม่นับเป็นยอดขาย — UNPAID ยังไม่จ่าย (ZORT ยังไม่รับเข้า) · CANCELLED ยกเลิก
