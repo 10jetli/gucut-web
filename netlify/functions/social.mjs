@@ -68,7 +68,19 @@ async function overLimit(s, ip, kind, max) {
   return false;
 }
 
-const readCounts = async (s) => (await s.get("counts", { type: "json" }).catch(() => null)) || {};
+/* 🔴 **B16 ขาอ่าน (แก้ 12 ต.ค. 2569)** — ทางเขียนแก้ไปแล้ว 14 ก.ย. แต่ทางอ่านยังกลืน
+   ⇒ อ่าน `counts` ไม่ได้ = ตอบ `{}` ⇒ **ฟีดขึ้น 0 หัวใจ 0 คอมเมนต์ทุกคลิป**
+   ⇒ และ `{}` จาก "ยังไม่มีใครกดหัวใจ" หน้าตาเหมือน `{}` จาก "อ่านไม่ได้" เป๊ะ
+   🔑 **ที่หนักกว่านั้นคือหัวแคช**: เส้น GET นี้ตอบพร้อม `s-maxage=60, stale-while-revalidate=300`
+      ⇒ การสะดุดครั้งเดียวถูกแจกต่อให้ลูกค้า **ทุกคน นานถึง 5 นาที** (คลาสเดียวกับ clip-shop B01)
+   ⚠️ ไม่โยน — ฟีดของลูกค้าต้องขึ้นได้ · ของที่เพิ่มคือ **ธงบอกว่าไม่รู้** + **ห้ามแคชความไม่รู้**
+   📌 และข้อที่น่าสังเกต: ตอนแก้ B10 (4 ต.ค.) ใส่ธงให้ `views` แล้ว แต่ `counts` ที่อยู่ใน
+      `Promise.all` **บรรทัดเดียวกัน** ไม่ได้ธง ⇒ แก้ครึ่งเดียวในนิพจน์เดียว
+      [[partial-coverage-reported-as-full]] */
+const readCounts = async (s) => {
+  try { return { counts: (await s.get("counts", { type: "json" })) || {}, unknown: false }; }
+  catch { return { counts: {}, unknown: true }; }
+};
 
 /* 🔴 B16 (แก้ 14 ก.ย. 2569 · gucut2 ยืนยันจากโค้ด): **ทางที่จะเขียนกลับห้ามใช้ readCounts**
    `counts` เป็นก้อนเดียวของทั้งร้าน ⇒ อ่านพลาดได้ {} ⇒ กดหัวใจคลิปเดียว = หัวใจ+จำนวนคอมเมนต์ทุกคลิปหาย
@@ -99,17 +111,31 @@ export default async function handler(req, context) {
   if (req.method === "GET") {
     const id = clean(url.searchParams.get("id"), 64);
     if (id) {
-      const list = (await s.get(`cmt/${id}`, { type: "json" }).catch(() => null)) || [];
-      return json({ comments: list }, 200, { "cache-control": "public, max-age=0, s-maxage=15" });
+      /* 🔴 B16 ขาอ่านคอมเมนต์ — เดิมกลืนเป็น `[]` ⇒ ใต้คลิปขึ้นว่า "ยังไม่มีความคิดเห็น"
+         ทั้งที่ของจริงมีอยู่ ⇒ ลูกค้าที่เคยเขียนไว้เห็นว่าข้อความตัวเองหาย
+         ⇒ ส่งธงขึ้นไปทุกครั้ง (แม้ false) และ **ห้ามแคชคำตอบที่แปลว่า "ไม่รู้"** */
+      let list = [];
+      let commentsUnknown = false;
+      try { list = (await s.get(`cmt/${id}`, { type: "json" })) || []; }
+      catch { commentsUnknown = true; }
+      return json({ comments: list, commentsUnknown }, 200, {
+        "cache-control": commentsUnknown ? "no-store" : "public, max-age=0, s-maxage=15",
+      });
     }
     // ยอดรวมทุกคลิป — แคชที่ edge 60 วิ ฟีดของลูกค้าคนถัดไปได้ทันทีไม่ต้องรอ
     /* 🔴 **B10 (แก้ 4 ต.ค. 2569)** — `readViews()` เดิมกลืน `list` ที่สะดุดเป็น `{}`
        ⇒ ฟีดคลิปขึ้น "0 คนดู" ทุกคลิป เหมือนไม่มีใครดูเลย
        ⚠️ เส้นนี้ **ยังต้องเสิร์ฟต่อ** (ฟีดของลูกค้าต้องขึ้นได้) ⇒ ไม่โยน
           แต่ต้องส่งธง `viewsUnknown` ขึ้นไปด้วย **ทุกครั้ง แม้เป็น false** */
-    const [counts, { views, unknown: viewsUnknown }] = await Promise.all([readCounts(s), readViews()]);
-    return json({ counts, views, viewsUnknown }, 200, {
-      "cache-control": "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
+    const [{ counts, unknown: countsUnknown }, { views, unknown: viewsUnknown }] =
+      await Promise.all([readCounts(s), readViews()]);
+    /* 🔑 **ห้ามแคชความไม่รู้** — ถ้าแคช การสะดุดเสี้ยววินาทีจะถูกแจกต่อนาน 5 นาที
+       ⇒ รู้ทั้งคู่ = แคชตามเดิม (ฟีดเร็ว) · ไม่รู้ข้างใดข้างหนึ่ง = ไม่แคช (รอบหน้าหายเอง) */
+    const ไม่รู้ = countsUnknown || viewsUnknown;
+    return json({ counts, views, viewsUnknown, countsUnknown }, 200, {
+      "cache-control": ไม่รู้
+        ? "no-store"
+        : "public, max-age=30, s-maxage=60, stale-while-revalidate=300",
     });
   }
 
