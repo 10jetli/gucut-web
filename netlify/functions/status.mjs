@@ -306,7 +306,20 @@ export default async function handler(req, context) {
       }
 
       const s = getStore({ name: "gucut-coupon", consistency: "eventual" });
-      const cached = await s.get("zort-stock", { type: "json" }).catch(() => null);
+      /* 🔴 **B19 พี่น้อง (แก้ 12 ต.ค. 2569)** — ท่าแก้ B19 ถูกใช้กับ `push-subs` ตัวเดียว
+         แต่ช่องอื่นในไฟล์นี้ยังกลืนเหมือนเดิม ⇒ ข้อความกลายเป็น **คำกล่าวอ้าง ไม่ใช่ "ไม่รู้"**
+         เดิม: อ่านแคชไม่ได้ ⇒ `cached = null` ⇒ ขึ้นว่า "ยังไม่เคยดึงสต็อกจากคลังสำเร็จ"
+         ⇒ เจ้าของร้านอ่านว่า **ตัวกวาดไม่เคยทำงาน** แล้วไปไล่หาเหตุที่ตัวกวาด
+           ทั้งที่ของจริงคือ **อ่านแคชไม่ได้** ⇒ ไล่ผิดที่ (แดงลวงที่ชี้ไปผิดจุด)
+         🔑 คลาสเดียวกับ B16 วันนี้: ใส่ธงให้ `views` แล้วแต่ `counts` ในนิพจน์เดียวกันไม่ได้ธง
+            ⇒ **ครอบไม่ครบในไฟล์เดียว** (partial-coverage-reported-as-full) */
+      let cached;
+      try { cached = await s.get("zort-stock", { type: "json" }); }
+      catch (e) {
+        return { warn: true, unknown: true,
+          note: "อ่านแคชสต็อกไม่ได้ ⇒ **ยังไม่รู้ว่าดึงสำเร็จล่าสุดเมื่อไหร่** (ไม่ได้แปลว่าไม่เคยสำเร็จ) · "
+            + String(e?.message ?? e).slice(0, 60) };
+      }
       if (!cached?.at) return { warn: true, note: "ฟีดตอบได้ แต่ยังไม่เคยดึงสต็อกจากคลังสำเร็จ" };
 
       const mins = Math.round((Date.now() - cached.at) / 60000);
@@ -516,7 +529,18 @@ export default async function handler(req, context) {
         : "";
 
       // 2. เคยยิงเข้าจริงหรือยัง — หมุดถูกจดตอนมีออเดอร์ผ่านเข้าไป
-      const last = await s.get("capi-last", { type: "json" }).catch(() => null);
+      /* 🔴 **B19 พี่น้อง (แก้ 12 ต.ค. 2569)** — เดิมอ่านหมุดไม่ได้ ⇒ `last = null`
+         ⇒ ขึ้นว่า "ยังไม่เคยยิงยอดขายจริงสักครั้ง" ซึ่งเป็น **คำกล่าวอ้าง** ไม่ใช่ "ไม่รู้"
+         ⇒ เจ้าของร้านอ่านว่าการต่อพิกเซลไม่เคยทำงาน แล้วไปตั้งค่าใหม่ทั้งที่ของจริงอาจยิงได้ทุกใบ
+         ⚠️ และตรงนี้แพงเป็นพิเศษ: การตั้งค่าใหม่คือการ **แตะโทเคนของจริง** ⇒ จังหวะที่ของดีจะเสีย */
+      let last;
+      try { last = await s.get("capi-last", { type: "json" }); }
+      catch (e) {
+        return { warn: true, unknown: true,
+          note: `โทเคนใช้ได้ · แต่**อ่านหมุดการยิงไม่ได้ ⇒ ยังไม่รู้ว่าเคยยิงสำเร็จหรือยัง** `
+            + `(ไม่ได้แปลว่าไม่เคยยิง — อย่าตั้งค่าใหม่จากข้อความนี้)${warnTest} · `
+            + String(e?.message ?? e).slice(0, 60) };
+      }
       if (!last?.at) {
         return {
           warn: true,
