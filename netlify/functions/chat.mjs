@@ -53,9 +53,20 @@ export default async function handler(req, context) {
   if (req.method === "GET" && asAdmin && !url.searchParams.get("cid")) {
     const { blobs } = await store.list();
     const rooms = [];
+    /* 🔴 **B13 ขาอ่าน (แก้ 12 ต.ค. 2569)** — เดิม `.catch(() => null)` แล้ว `continue`
+       ⇒ ห้องที่อ่านไม่ได้ **หายจากรายการของร้านโดยไม่มีตัวนับบอก**
+       ⇒ ลูกค้าในห้องนั้นทักมาแล้วไม่มีใครเห็น ⇒ ไม่ได้คำตอบ และร้านไม่รู้ว่าพลาด
+       🔑 ทิศต้องเป็น "แสดงเท่าที่อ่านได้ **แล้วบอกว่าอ่านไม่ได้กี่ห้อง**" ไม่ใช่โยนทั้งหน้า
+          (ร้านต้องตอบห้องที่อ่านได้ต่อไป) ⇒ กติกาเดียวกับ returns-feed/views ที่ทีมใช้อยู่
+       ⚠️ `null` ที่ไม่ใช่ error (คีย์หาย/เนื้อว่าง) ต่างจาก "อ่านไม่ได้" ⇒ นับแยกกัน */
+    let ห้องที่อ่านไม่ได้ = 0;
+    let ห้องว่างเปล่า = 0;
     for (const b of blobs) {
-      const t = await store.get(b.key, { type: "json" }).catch(() => null);
-      if (!t) continue;
+      let t;
+      try { t = await store.get(b.key, { type: "json" }); }
+      catch { ห้องที่อ่านไม่ได้++; continue; }
+      if (!t) { ห้องว่างเปล่า++; continue; }
+      if (!Array.isArray(t.messages)) { ห้องที่อ่านไม่ได้++; continue; }
       const last = t.messages[t.messages.length - 1];
       rooms.push({
         cid: t.cid, name: t.name, phone: t.phone, product: t.product,
@@ -65,7 +76,9 @@ export default async function handler(req, context) {
       });
     }
     rooms.sort((a, b) => (b.last?.at || 0) - (a.last?.at || 0));
-    return json({ rooms });
+    /* ตัวนับส่งออกเสมอ (0 ได้) — ตัวนับที่ไม่มีใครเห็น คือตัวนับที่ไม่มีใครเชื่อ
+       ⇒ จอหลังร้านเอาไปขึ้นเตือนได้เมื่อ > 0 (ฝั่งรับเตรียมช่องไว้ก่อน ไม่ต้อง deploy พร้อมกัน) */
+    return json({ rooms, ห้องที่อ่านไม่ได้, ห้องว่างเปล่า });
   }
 
   const cid = clean(url.searchParams.get("cid") || "", 40);
@@ -73,7 +86,21 @@ export default async function handler(req, context) {
   // ---------- อ่านบทสนทนา ----------
   if (req.method === "GET") {
     if (!/^[a-z0-9-]{8,40}$/.test(cid)) return json({ error: "bad cid" }, 400);
-    const t = await store.get(cid, { type: "json" }).catch(() => null);
+    /* 🔴 **B13 ขาอ่านบทสนทนา (แก้ 12 ต.ค. 2569)** — นี่คืออาการแรกในใบงาน "ข้อความเก่าหาย"
+       เดิม `.catch(() => null)` แล้วท้ายฟังก์ชัน `t || { cid, messages: [] }`
+       ⇒ อ่านไม่ได้ = ตอบ **บทสนทนาเปล่า พร้อม HTTP 200** ⇒ ลูกค้าเห็นห้องว่าง
+       ⇒ ข้อความที่ร้านตอบไว้ "หาย" ในสายตาลูกค้า และไม่มีอะไรบอกว่าอ่านไม่ได้
+       🔑 **และฝั่งลูกค้ามีสถานะรองรับอยู่แล้ว**: `ChatSheet.tsx` เขียนว่า
+          `if (!r.ok) throw` ⇒ `setDown(true)` ⇒ ขึ้นว่าระบบแชทมีปัญหา
+          ⇒ ⇒ การกลืนที่เซิร์ฟเวอร์ **ทำให้สถานะนั้นไม่เคยถูกใช้เลย**
+            (ทางถอยที่ฝั่งจอเตรียมไว้ ถูกฝั่งท่อปิดปากไว้โดยไม่มีใครรู้)
+       ⇒ อ่านไม่ได้ = 503 + ธง · `null` (ไม่มีคีย์) = ห้องใหม่จริง ⇒ ส่งบทสนทนาเปล่าได้ */
+    let t;
+    try { t = await store.get(cid, { type: "json" }); }
+    catch (e) {
+      return json({ error: "อ่านบทสนทนาไม่ได้ชั่วคราว — ข้อความเก่ายังอยู่ครบ ไม่ได้หาย",
+        อ่านไม่ได้: true, เหตุ: String(e?.message ?? e).slice(0, 80) }, 503);
+    }
     if (asAdmin && t) {
       // ร้านเปิดอ่านแล้ว = ทำเครื่องหมายว่าอ่านข้อความลูกค้าแล้ว
       let changed = false;
