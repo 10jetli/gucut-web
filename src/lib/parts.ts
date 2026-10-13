@@ -87,6 +87,8 @@ export const PARTS_MODELS: PartsModel[] = [
   { slug: "f382", ชื่อ: "MS 382", คำค้นร้าน: "MS382" },
   // ตระกูลที่สอง — Husqvarna (รหัสอะไหล่คนละรูปกับ STIHL: 503 74 67-02)
   { slug: "f288xp", ชื่อ: "288 XP", คำค้นร้าน: "288XP" },
+  // ตระกูลที่สาม — Zenoah (ตารางสองชุดต่อหน้า · รหัส 2880-12111 และแบบมีตัวอักษร 848C802101)
+  { slug: "f5200", ชื่อ: "5200", คำค้นร้าน: "5200" },
 ];
 export function หารุ่น(slug: string): PartsModel | undefined {
   return PARTS_MODELS.find((m) => m.slug === slug);
