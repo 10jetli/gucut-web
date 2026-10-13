@@ -30,12 +30,14 @@ export default function ProductDetail({
   related,
   crumbs,
   reviews,
+  แผนผัง,
 }: {
   product: Product;
   related: Product[];
   crumbs: { h: string; t: string }[];
   reviews?: ReactNode;   // บล็อกรีวิว render มาจากฝั่ง server
   specs?: ReactNode;     // คุณลักษณะ + เอกสาร + ตารางสเปก (server เช่นกัน)
+  แผนผัง?: ReactNode;    // ลิงก์ไปภาพแยกชิ้น — ขึ้นเฉพาะชิ้นที่จับคู่กับคู่มือแล้ว
 }) {
   // บอกช่องทางโฆษณาว่าลูกค้าเปิดดูสินค้าตัวไหน — ใช้ทำกลุ่มเป้าหมายและรีมาร์เก็ตติ้ง
   useEffect(() => {
@@ -215,6 +217,10 @@ export default function ProductDetail({
           </div>
         </section>
       )}
+
+      {/* ภาพแยกชิ้น — วางก่อนรีวิวโดยตั้งใจ
+          ลูกค้าถามว่า "ใช่ชิ้นนี้ไหม" ก่อนถามว่า "ของดีไหม" เสมอ */}
+      {แผนผัง}
 
       {/* รีวิวจริงจาก Shopee / Lazada / TikTok */}
       {reviews}

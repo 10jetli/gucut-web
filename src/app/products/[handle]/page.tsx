@@ -9,6 +9,7 @@ import { reviewItems } from "@/lib/reviews";
 import ProductSpecs from "@/components/ProductSpecs";
 import { detailOf, attrsOf } from "@/lib/details";
 import { availabilityของ, สถานะของสินค้า } from "@/lib/stock-state";
+import byskuRaw from "@/data/parts-bysku.json";
 
 export const dynamicParams = false;
 
@@ -105,6 +106,38 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
       })
     : null;
 
+  /* 🔗 ทางเข้าหน้าแผนผังอะไหล่ — ขึ้นเฉพาะชิ้นที่จับคู่กับคู่มือแล้ว
+     ดัชนีสร้างตอน build โดย scripts/gen-parts-bysku.mjs (ไม่ยิง API ตอนลูกค้าเปิดหน้า
+     เพราะหน้าสินค้าคือหน้าที่คนเข้ามากที่สุด ยิงทุกครั้ง = เผาเครดิต Netlify) */
+  const bysku = byskuRaw as Record<string, { รุ่น: string; ชื่อรุ่น: string; รหัส: string }[]>;
+  /* ⚠️ SKU อยู่ได้ทั้งระดับสินค้าและระดับตัวเลือก (v[].k) — ดูที่เดียวจะพลาดของที่มีหลายขนาด */
+  const skuทั้งหมด = [p.sku, ...p.v.map((x) => x.k)].filter(Boolean) as string[];
+  const รุ่นที่เจอ = Array.from(
+    new Map(
+      skuทั้งหมด.flatMap((k) => bysku[String(k).trim()] ?? []).map((x) => [x.รุ่น, x])
+    ).values()
+  );
+
+  const แผนผังBlock = รุ่นที่เจอ.length ? (
+    <section className="mt-2 bg-steel-800 px-3 py-3">
+      <p className="text-[13px] font-semibold text-ink">ไม่แน่ใจว่าใช่ชิ้นนี้ไหม?</p>
+      <p className="mt-0.5 text-[12px] leading-relaxed text-[#6b6b6b]">
+        เปิดภาพแยกชิ้นดูว่าอะไหล่ตัวนี้อยู่ตรงไหนของเครื่อง
+      </p>
+      <div className="mt-2 flex flex-wrap gap-2">
+        {รุ่นที่เจอ.map((m) => (
+          <a
+            key={m.รุ่น}
+            href={`/parts/${m.รุ่น}/`}
+            className="inline-flex items-center gap-1.5 rounded-lg border border-safety bg-white px-3 py-1.5 text-[13px] font-medium text-safety"
+          >
+            ดูแผนผัง {m.ชื่อรุ่น}
+          </a>
+        ))}
+      </div>
+    </section>
+  ) : null;
+
   return (
     <>
       <script
@@ -114,6 +147,7 @@ export default async function ProductPage({ params }: { params: Promise<{ handle
       <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(crumbLd)} />
       {clipLd && <script type="application/ld+json" dangerouslySetInnerHTML={ldScript(clipLd)} />}
       <ProductDetail
+        แผนผัง={แผนผังBlock}
         product={p}
         related={related}
         crumbs={crumbs}
