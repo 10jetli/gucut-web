@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import { articles } from "@/lib/articles";
 import { products, collections } from "@/lib/catalog";
+import { PARTS_MODELS } from "@/lib/parts";
 
 // sitemap สำหรับหน้าสินค้าทุกตัวในแคตตาล็อก + หมวดหมู่ทั้งหมด
 // ⚠️ ห้ามเขียนจำนวนเป็นเลขตายตัวตรงนี้ — โตทุกครั้งที่นำเข้าสินค้าใหม่ แล้วคอมเมนต์จะโกหกเงียบ ๆ
@@ -57,6 +58,18 @@ export default function sitemap(): MetadataRoute.Sitemap {
   }));
 
   // หน้ารีวิวทั้งหมด — เนื้อหาจากผู้ซื้อจริง Google ชอบ
+  /* แผนผังอะไหล่ — ไม่ได้อยู่ในเมนู (เหมือนบทความ) Google จึงต้องเจอจาก sitemap นี้เท่านั้น
+     ⚠️ รายชื่อรุ่นดึงจาก PARTS_MODELS ห้ามพิมพ์สำเนา — เพิ่มรุ่นใหม่แล้วจะตกรุ่นเงียบ ๆ */
+  const partsPages = [
+    { url: `${BASE}/parts/`, lastModified: now, changeFrequency: "monthly" as const, priority: 0.6 },
+    ...PARTS_MODELS.map((m) => ({
+      url: `${BASE}/parts/${encodeURIComponent(m.slug)}/`,
+      lastModified: now,
+      changeFrequency: "monthly" as const,
+      priority: 0.6,
+    })),
+  ];
+
   const reviewPages = products
     .filter((p) => p.rv)
     .map((p) => ({
@@ -66,5 +79,5 @@ export default function sitemap(): MetadataRoute.Sitemap {
       priority: 0.6,
     }));
 
-  return [...staticPages, ...policyPages, ...articlePages, ...collectionPages, ...productPages, ...reviewPages];
+  return [...staticPages, ...policyPages, ...articlePages, ...partsPages, ...collectionPages, ...productPages, ...reviewPages];
 }
