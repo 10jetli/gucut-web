@@ -10,6 +10,7 @@ import { licensedStock } from "./licensed-stock";
 import { สต็อกสดของ } from "./live-stock-baked";
 import { สถานะของสินค้า, ยังขายได้, สถานะจากค่า, สถานะของตัวเลือก, รวมสถานะ } from "./stock-state";
 import type { StockState } from "./stock-state";
+import { ล้างคำอธิบาย } from "./desc-clean.mjs";
 
 // ยอดขายจริงรวมทุกช่องทาง (Shopee/Lazada/TikTok/หน้าร้าน) — เจ้าของร้านกรอกเองที่
 // src/data/sold.json รูปแบบ { "<handle ของสินค้า>": 22300 }
@@ -23,6 +24,13 @@ export const products = (raw as unknown as Product[]).map((p) => {
   // สลับรูปมาใช้ของที่เก็บเอง (ถ้ามี) — ไม่ต้องพึ่ง Shopify CDN
   const out: Product = {
     ...p,
+    /* ตัดบุลเล็ต "ดาวน์โหลดอะไหล่" ออกจากคำอธิบาย (14 ต.ค. 2569)
+       ปุ่มดาวน์โหลดถูกเอาออกแล้วตามคำสั่งท่านประธาน ("ไม่จำเป็นละ เรามีแผนผัง")
+       ถ้าไม่ตัดข้อความด้วย จะเหลือบรรทัดที่ชวนให้โหลดของที่ไม่มีให้โหลดแล้ว
+       🔑 ตัดที่นี่ที่เดียว ⇒ หายพร้อมกันทั้งหน้าเว็บ · meta description · JSON-LD
+          ที่ส่งให้ Google · ฟีดสินค้า · llms-full.txt (ทุกตัวอ่าน p.d ตัวเดียวกัน)
+       ⚠️ ไม่แก้ products.json เพราะไฟล์นั้นมาจากการนำเข้า แก้ไปก็ถูกเขียนทับ */
+    d: ล้างคำอธิบาย(p.d),
     img: toLocal(p.img),
     imgs: p.imgs.map((u) => toLocal(u) as string),
     /* ของที่อยู่ในทะเบียนใบอนุญาต — ทับสต็อก **รายตัวเลือก** ด้วย

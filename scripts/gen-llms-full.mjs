@@ -13,6 +13,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { legalBlock } from "./lib/legal.mjs";
+/* ใช้ตัวล้างคำอธิบายตัวเดียวกับหน้าเว็บ (src/lib/catalog.ts) — ห้ามก๊อปเงื่อนไขมาไว้ที่นี่
+   ก๊อป = วันหนึ่งหน้าเว็บสะอาดแต่ไฟล์ที่ส่งให้ ChatGPT ยังโฆษณาของที่เอาออกไปแล้ว */
+import { ล้างคำอธิบาย } from "../src/lib/desc-clean.mjs";
 
 const root = process.cwd();
 const read = (p) => JSON.parse(fs.readFileSync(path.join(root, p), "utf8"));
@@ -61,7 +64,7 @@ const line = (p) => {
   if (p.v?.length > 1) bits.push(`มี ${p.v.length} ตัวเลือก`);
   bits.push(url(`/products/${encodeURI(p.h)}/`));
   let s = bits.join(" · ");
-  const d = clean(p.d).slice(0, 180);
+  const d = clean(ล้างคำอธิบาย(p.d)).slice(0, 180);
   if (d.length > 20) s += `\n  ${d}`;
   return s;
 };

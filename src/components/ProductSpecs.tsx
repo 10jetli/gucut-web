@@ -7,6 +7,17 @@ export default function ProductSpecs({ d, attrs }: { d?: Detail; attrs: [string,
   const hasAny = attrs.length > 0 || d?.specs?.length || d?.docs?.length || d?.steps?.length;
   if (!hasAny) return null;
 
+  /* ซ่อนลิงก์ไฟล์อะไหล่ — หน้า /parts/ ทำหน้าที่นี้แทนแล้ว (14 ต.ค. 2569)
+
+     กรองที่ตอนแสดงผล เพราะ details.json ถูกเขียนทับทุกครั้งที่รัน gen-details */
+
+  const เอกสารที่โชว์ = (d?.docs ?? []).filter(
+
+    (doc) => !/ดาวน์โหลดอะไหล่|คู่มืออะไหล่/.test(doc.label)
+
+  );
+
+
   return (
     <>
       {/* ตารางคุณลักษณะย่อ */}
@@ -31,13 +42,16 @@ export default function ProductSpecs({ d, attrs }: { d?: Detail; attrs: [string,
            หน้านั้นถ่ายบัตรแล้วกรอกให้หมด พิมพ์ได้เลย และมีใบรับรองแพทย์แถมมาด้วย
         ⚠️ เปลี่ยนที่ตอนแสดงผล ไม่ได้แก้ details.json
            เพราะไฟล์นั้นถูกเขียนทับทุกครั้งที่รัน gen-details — แก้ไปก็หายอยู่ดี
-        ⚠️ ลิงก์อื่น (คู่มืออะไหล่) ต้องคงไว้เหมือนเดิม
+        ⚠️ ลิงก์ "ดาวน์โหลดอะไหล่" **ถูกเอาออกแล้ว** 14 ต.ค. 2569 ตามคำสั่งท่านประธาน
+           ("ไม่จำเป็นละ เรามีแผนผัง") — แทนด้วยหน้า /parts/ ที่กดดูทีละชิ้น
+           พร้อมราคา สต็อก และใส่ตะกร้าได้เลย · ไฟล์ PDF ให้ได้แค่ภาพนิ่ง
+           ⚠️ อย่าเอากลับมา — คอมเมนต์เดิมตรงนี้เคยสั่งว่า "ต้องคงไว้"
       */}
-      {d?.docs && d.docs.length > 0 && (
+      {เอกสารที่โชว์.length > 0 && (
         <section className="mt-3 bg-steel-800 px-3 py-3">
           <SectionHead title="เอกสารดาวน์โหลด" bare />
           <ul className="space-y-2">
-            {d.docs.map((doc) => {
+            {เอกสารที่โชว์.map((doc) => {
               const isLz1 = /ลซ\.?\s*1|ใบอนุญาตให้มีเลื่อย/.test(doc.label);
               return (
               <li key={doc.url}>
