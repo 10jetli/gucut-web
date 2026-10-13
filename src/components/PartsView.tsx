@@ -586,13 +586,18 @@ function การ์ดอะไหล่({
   // ป้ายกลมมีสีพื้น — อ่านเร็วกว่าไอคอน+ตัวหนังสือตอนไล่สายตา 368 แถว
   // ⚠️ ทุกป้ายมี **ตัวหนังสือ** ไม่ใช่สีเพียว ๆ (คนตาบอดสีต้องอ่านได้)
   const ป้าย: Record<สภาพขาย, { คำ: string; คลาส: string }> = {
-    มีสินค้า: { คำ: "มีสินค้า", คลาส: "bg-safety text-white" },
-    หมด: { คำ: "ของหมด", คลาส: "bg-steel-700 text-ink-700" },
+    /* 🎨 ขัด UI 12 ต.ค. 2569 (ท่านประธานส่งภาพมาสั่ง "ออกแบบให้สวย ๆ")
+       ของเดิมป้าย "มีสินค้า" เป็นสีแบรนด์เต็ม ⇒ การ์ดเดียวมีแดง 3 จุด (ป้าย·ราคา·ปุ่ม+)
+       **แย่งกันเด่นจนไม่มีอะไรเด่น** และป้ายแดงอ่านเผิน ๆ เหมือนคำเตือน
+       🔑 หลัก: สีแบรนด์เข้มสงวนให้ "ของที่อยากให้กด/ให้เห็น" = ราคา กับ ปุ่ม + เท่านั้น
+          "มีสินค้า" เป็นเรื่องปกติ ⇒ ป้ายอ่อน (tint) พออ่านรู้ · "ของหมด" ต่างหากที่ต้องชัด */
+    มีสินค้า: { คำ: "มีสินค้า", คลาส: "bg-safety-tint text-safety" },
+    หมด: { คำ: "ของหมด", คลาส: "bg-carbon text-white" },
     /* 🔴 **เปลี่ยนคำ 12 ต.ค. 2569 — เจ้าของร้านสั่งเอง** ของเดิมเขียนว่า "ยังไม่ลงขาย"
        ⇒ ลูกค้าอ่านว่า **ร้านไม่ขายของชิ้นนี้** แล้วปิดหน้าไป
        ความจริงคือ *ร้านอาจมีของ แต่เรายังไม่ได้จับคู่รหัส* ⇒ เป็นเรื่องของเรา ไม่ใช่ของลูกค้า
        ⇒ คำที่ใช้ต้องชวนให้ถามต่อ ไม่ใช่ปิดประตู (คลาสเดียวกับ "ระบบถูก แต่สื่อสารผิด") */
-    ยังไม่ได้จับคู่: { คำ: "สอบถามร้าน", คลาส: "border border-safety bg-safety-tint text-safety" },
+    ยังไม่ได้จับคู่: { คำ: "สอบถามร้าน", คลาส: "border border-safety bg-white text-safety" },
     ยังอ่านไม่ได้: { คำ: "ยังอ่านราคาไม่ได้", คลาส: "border border-carbon bg-white text-carbon" },
   };
   const ติดป้าย = ท่อ === "กำลังถาม" && skuจับคู่
@@ -600,7 +605,13 @@ function การ์ดอะไหล่({
     : ป้าย[สภาพ];
 
   return (
-    <div className="overflow-hidden rounded-lg border border-steel-600 bg-white">
+    /* 🎨 ขีดสีแบรนด์ซ้ายมือ = แถวนี้ซื้อได้เลย — ตากวาด 368 แถวแล้วเจอของที่ซื้อได้ทันที
+       (แถวที่ซื้อไม่ได้ไม่มีขีด เงียบ ๆ ไป ไม่ต้องแย่งความสนใจ) */
+    <div
+      className={`overflow-hidden rounded-xl border bg-white shadow-[0_1px_4px_rgba(26,26,26,0.06)] ${
+        กดซื้อได้ ? "border-steel-700 border-l-[3px] border-l-safety" : "border-steel-700"
+      }`}
+    >
       <div className="flex gap-2.5 p-2.5">
         {/* รูปย่อจัตุรัส — lazy ตามค่าเริ่มต้นของ next/image (ห้ามใส่ priority ที่นี่
             เพราะรายการนี้ยาว 368 แถว ใส่แล้วจะแย่งเน็ตกับรูปที่ลูกค้าเห็นจริง) */}
@@ -648,7 +659,7 @@ function การ์ดอะไหล่({
             {/* ราคาไทยไม่มีทศนิยม (Price ใช้ toLocaleString ของ th-TH)
                 ⚠️ ไม่มีราคา **ห้ามพิมพ์ 0** — ใส่ `—` ตามกฎ "ไม่รู้ห้ามกลายเป็นศูนย์" */}
             {typeof ของ?.price === "number" ? (
-              <span className="text-[15px] font-extrabold text-safety">
+              <span className="text-[17px] font-extrabold leading-none text-safety">
                 <Price value={ของ.price} />
               </span>
             ) : (
@@ -664,17 +675,19 @@ function การ์ดอะไหล่({
             )}
 
             {กดซื้อได้ ? (
-              <div className="flex shrink-0 items-center gap-1">
+              /* 🎨 stepper เป็นแคปซูลเดียว ไม่ใช่สามชิ้นลอย ๆ (ขัด UI 12 ต.ค. 2569)
+                 เป้ากดยัง ≥44px ตามเดิม · ปุ่ม + เป็นสีแบรนด์เต็ม — จุดเด่นจุดเดียวของฝั่งขวา */
+              <div className="flex shrink-0 items-stretch overflow-hidden rounded-lg border border-steel-600">
                 <button
                   type="button"
                   onClick={() => onจำนวน(Math.max(0, จำนวน - 1))}
                   disabled={จำนวน <= 0}
                   aria-label={`ลดจำนวน ${row.รหัส}`}
-                  className="h-[44px] w-[44px] rounded-md border border-steel-600 text-[20px] font-bold text-carbon disabled:text-steel-700"
+                  className="h-[44px] w-[42px] bg-white text-[20px] font-bold text-carbon active:bg-steel-900 disabled:text-steel-600"
                 >
                   −
                 </button>
-                <span className="min-w-[28px] text-center text-[15px] font-bold tabular-nums text-carbon">
+                <span className="grid min-w-[40px] place-items-center border-x border-steel-600 bg-white text-[15px] font-bold tabular-nums text-carbon">
                   {จำนวน}
                 </span>
                 <button
@@ -683,7 +696,7 @@ function การ์ดอะไหล่({
                   disabled={จำนวน >= เพดาน}
                   aria-label={`เพิ่มจำนวน ${row.รหัส}`}
                   title={จำนวน >= เพดาน ? `มีของ ${เพดาน} ชิ้น` : undefined}
-                  className="h-[44px] w-[44px] rounded-md border border-safety bg-safety text-[20px] font-bold text-white disabled:border-steel-600 disabled:bg-white disabled:text-steel-700"
+                  className="h-[44px] w-[42px] bg-safety text-[20px] font-bold text-white active:bg-safety-dark disabled:bg-white disabled:text-steel-600"
                 >
                   +
                 </button>
@@ -694,30 +707,26 @@ function การ์ดอะไหล่({
                  ⚠️ สีของสภาพปิดใช้ **ตัวหนังสือเข้มบนเทาอ่อน** ไม่ใช่ขาวจาง ๆ
                     (ของจริง 12 ต.ค. 2569: ขาว + opacity 40% = 1.43:1 อ่านไม่ออก
                      ⇒ ปุ่มที่กดไม่ได้ ไม่ควรเป็นปุ่มที่อ่านไม่ได้) */
-              <div className="flex shrink-0 items-center gap-1" aria-hidden="true">
-                <span className="grid h-[44px] w-[44px] place-items-center rounded-md border border-steel-700 bg-steel-900 text-[20px] font-bold text-steel-300">
-                  −
-                </span>
-                <span className="min-w-[28px] text-center text-[15px] font-bold tabular-nums text-steel-300">0</span>
-                <span className="grid h-[44px] w-[44px] place-items-center rounded-md border border-steel-700 bg-steel-900 text-[20px] font-bold text-steel-300">
-                  +
-                </span>
-              </div>
+              /* 🎨 ขัด UI รอบสอง 12 ต.ค. 2569 — ท่านประธานดูหน้าจริงแล้วสั่ง "สวย ๆ"
+                 ของเดิม: แถวที่ขายไม่ได้โชว์ stepper ปลอม **บวก** ปุ่มแดงเต็มความกว้างอีกแถว
+                 ⇒ 263 จาก 368 แถวเป็นแบบนี้ ⇒ **หน้าเต็มไปด้วยสีแดงจนของที่ขายได้จริงจมหาย**
+                    และการ์ดที่ขายไม่ได้ยัง **สูงกว่า** การ์ดที่ขายได้ — ผิดลำดับความสำคัญ
+                 ⇒ ยุบสองอย่างเหลือปุ่มเดียว กะทัดรัด อยู่ตำแหน่งเดียวกับ stepper
+                    โครงการ์ดยังครบทุกช่อง (รูป · ชื่อ · รหัส · ราคา · ปุ่ม) ไม่ได้ยุบหาย */
+              <Link
+                href={`/account/?chat=1&q=${encodeURIComponent(
+                  `ขอสอบถามอะไหล่ ${ชื่อรุ่น} รหัส ${row.รหัส} ${row.ชื่อ}`,
+                )}`}
+                className="grid h-[44px] shrink-0 place-items-center rounded-lg border border-steel-600 px-3.5 text-[12.5px] font-bold text-carbon active:bg-steel-900"
+              >
+                ทักร้านถาม
+              </Link>
             )}
           </div>
 
-          {/* ชิ้นที่ซื้อจากเว็บยังไม่ได้ ต้องมี **ทางไปต่อ** ไม่ใช่ทางตัน
-              (เจ้าของร้านสั่ง: ป้าย "สอบถามร้าน" ต้องมาคู่กับปุ่มทักแชท) */}
-          {!กดซื้อได้ && (
-            <Link
-              href={`/account/?chat=1&q=${encodeURIComponent(
-                `ขอสอบถามอะไหล่ ${ชื่อรุ่น} รหัส ${row.รหัส} ${row.ชื่อ}`,
-              )}`}
-              className="mt-1.5 block rounded-md border border-safety py-2 text-center text-[12.5px] font-bold text-safety"
-            >
-              ทักร้านถามชิ้นนี้
-            </Link>
-          )}
+          {/* ℹ️ ปุ่มทักร้านย้ายไปอยู่แถวเดียวกับราคาแล้ว (ขัด UI รอบสอง 12 ต.ค. 2569)
+              เจ้าของร้านสั่งไว้ว่าป้าย "สอบถามร้าน" ต้องมาคู่กับทางทักแชท — **ยังมีครบ**
+              เปลี่ยนแค่ตำแหน่งกับน้ำหนักสี ไม่ได้เอาออก */}
         </div>
       </div>
     </div>
