@@ -150,19 +150,20 @@ fi
 #    command not found แล้ว **เดินต่อ** ⇒ ค่าที่อ่านต่อเป็นค่าว่างโดยไม่มีอะไรฟ้อง (bash -n ไม่จับ)
 #    📌 ผมเขียนรอบแรกเป็นชื่อไทยทั้งก้อน · ด่านคำสั่งของทีมจับได้ตอนจะรัน (คลาสนี้ครั้งที่ 5 ของวันนี้)
 log_bypass() {
-  local slot="$1" logf="scripts/lib/bypass-log.md"
+  local slot="$1" logf="${BYPASS_LOG:-scripts/lib/bypass-log.md}"
   [ -f "$logf" ] || return 0
   printf '| %s | `%s` | %s | %s |\n' \
     "$(TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M')" "$slot" \
     "$(git rev-parse --short HEAD 2>/dev/null || echo '?')" "${BYPASS_WHY:-ไม่ได้ให้เหตุ}" >> "$logf"
 }
 # 📊 **โชว์ทุกรอบ ไม่ใช่โชว์ตอนตก** — ของที่โชว์ตอนตกคือของที่ไม่มีใครอ่านตอนมันมีประโยชน์
-if [ -f scripts/lib/bypass-log.md ]; then
-  BYPASS_N=$(grep -cE '^\| 2[0-9]{3}-' scripts/lib/bypass-log.md 2>/dev/null || true)
+BYPASS_LOG_F="${BYPASS_LOG:-scripts/lib/bypass-log.md}"
+if [ -f "$BYPASS_LOG_F" ]; then
+  BYPASS_N=$(grep -cE '^\| 2[0-9]{3}-' "$BYPASS_LOG_F" 2>/dev/null || true)
   BYPASS_N=${BYPASS_N:-0}
   if [ "$BYPASS_N" -gt 0 ]; then
-    echo "   📝 ช่องข้ามด่านถูกใช้มาแล้ว **$BYPASS_N ครั้ง** (ดู scripts/lib/bypass-log.md)"
-    tail -2 scripts/lib/bypass-log.md | sed 's/^/      /'
+    echo "   📝 ช่องข้ามด่านถูกใช้มาแล้ว **$BYPASS_N ครั้ง** (ดู $BYPASS_LOG_F)"
+    tail -2 "$BYPASS_LOG_F" | sed 's/^/      /'
   fi
 fi
 
@@ -480,6 +481,35 @@ else
 fi
 HOOK_EOF
 chmod +x .git/hooks/pre-push
+
+# ── 🪝 **ฮุคตัวอื่นต้องถูกดูแลด้วย** (14 ต.ค. 2569) ──
+#    ฝั่งจอเจอว่าตัวติดตั้ง/ตัวตรวจของเขาดูแค่ pre-push ⇒ สำเนา pre-commit ใน .git/ เป็นของเก่า
+#    ⇒ **ตัวตรวจที่ตรวจของชิ้นเดียวในกองที่มีหลายชิ้น รายงานว่ากองนั้นเรียบร้อย**
+#    ⇒ ⇒ ตรวจฝั่งนี้แล้วหนักกว่าหนึ่งขั้น: `commit-msg` รันทุก commit **แต่ไม่มีต้นฉบับในรีโปเลย**
+#       หายแล้วสร้างใหม่ไม่ได้ · และไม่มีอะไรเทียบว่ามันเป็นตัวที่เราเขียนไว้
+for h in commit-msg; do
+  if [ -f "scripts/hooks/$h" ]; then
+    cp "scripts/hooks/$h" ".git/hooks/$h" && chmod +x ".git/hooks/$h"
+    echo "✅ ติดตั้งฮุค $h จาก scripts/hooks/$h"
+  fi
+done
+
+# 🪝 **พิมพ์ลายนิ้วมือของฮุคทุกตัวที่ติดตั้งอยู่** — ไม่ใช่แค่ตัวที่ตัวติดตั้งดูแล
+#    ⇒ ฮุคที่โผล่มาโดยไม่มีต้นฉบับ จะเห็นว่า "ไม่มีต้นฉบับ" ทุกครั้งที่รันตัวติดตั้ง
+for f in .git/hooks/*; do
+  case "$f" in *.sample) continue;; esac
+  [ -f "$f" ] || continue
+  h=$(basename "$f")
+  if [ -f "scripts/hooks/$h" ]; then
+    a=$(md5sum < "$f" | cut -c1-8); b=$(md5sum < "scripts/hooks/$h" | cut -c1-8)
+    [ "$a" = "$b" ] && echo "   🪝 $h $a ✅ ตรงกับ scripts/hooks/$h" \
+                    || echo "   🪝 $h $a 🔴 **ไม่ตรงกับ scripts/hooks/$h ($b)**"
+  elif [ "$h" = "pre-push" ]; then
+    echo "   🪝 $h $(md5sum < "$f" | cut -c1-8) ✅ สร้างจาก scripts/install-pre-push.sh"
+  else
+    echo "   🪝 $h $(md5sum < "$f" | cut -c1-8) ⚠️ **ไม่มีต้นฉบับในรีโป** ⇒ หายแล้วสร้างใหม่ไม่ได้"
+  fi
+done
 echo "✅ ติดตั้งด่านก่อน push แล้ว (.git/hooks/pre-push)"
 echo "   ข้ามทั้งด่าน:      SKIP_PREPUSH=1 git push"
 echo "   ข้ามเฉพาะความถี่:  ALLOW_FAST_PUSH=1 git push"
