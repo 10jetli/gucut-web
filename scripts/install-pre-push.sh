@@ -458,6 +458,41 @@ NOW=$(date +%s)
 MINGAP="${PUSH_MIN_GAP_MIN:-45}"
 LAST=$(git reflog show --date=unix "refs/remotes/origin/$BR" 2>/dev/null \
         | grep -m1 'update by push' | sed -n 's/.*@{\([0-9][0-9]*\)}.*/\1/p')
+
+# ── 🔎 **ตัวจับสภาพ "สมุดไม่ตรงกับ remote"** (15 ต.ค. 2569) ──
+# ของที่ทำให้ต้องมีตัวนี้: วัดซ้ำได้ด้วยคำสั่งเดียว **ไม่ใช่การแข่งจังหวะ**
+#   `git push <url> <branch>` (ไม่ใช้ชื่อ remote) ⇒ **remote ขยับจริง แต่ไม่มีรายการ
+#   `update by push` ในสมุดเลย** · วัดในรีโปทดลองแล้ว: รายการ 2 ⇒ 2 ใบ ขณะ remote ขยับ
+#   ⇒ flock ที่เพิ่งใส่ กันได้แค่ "push ซ้อน" ซึ่งเป็น **หนึ่งในหลายทาง** ที่สมุดจะหายรายการ
+# ⇒ ⇒ ด่านความถี่จะอ่านนาฬิกาเก่ากว่าความจริง = **ปล่อย push ที่ถี่เกินเกณฑ์** (ทิศแพง)
+# 🔑 ตัวแยกแยะ: remote อยู่ที่คอมมิตที่ **เรามีในเครื่องอยู่แล้ว** แต่สมุดไม่เคยจดว่า push
+#    (ถ้าเป็นคนอื่น/clone อื่น push เราจะยังไม่มีคอมมิตนั้น ⇒ ไม่เข้าเงื่อนไข ⇒ ไม่แจ้งลวง)
+# ⚠️ ขอบเขต: ยิง network หนึ่งครั้ง (~1 วิ) · อ่านไม่ได้ ⇒ **"ยังไม่รู้" ไม่ใช่ "ไม่มีปัญหา"**
+REMOTE_SHA=$(git ls-remote origin "refs/heads/$BR" 2>/dev/null | awk 'NR==1{print $1}')
+BOOK_MISSING=0
+if [ -n "${REMOTE_SHA:-}" ]; then
+  if ! git log -g --format='%H %gs' "refs/remotes/origin/$BR" 2>/dev/null \
+        | grep -q "^$REMOTE_SHA update by push"; then
+    git merge-base --is-ancestor "$REMOTE_SHA" HEAD 2>/dev/null && BOOK_MISSING=1
+  fi
+else
+  echo "ℹ️ อ่าน remote ด้วย ls-remote ไม่ได้ ⇒ ไม่ตรวจว่าสมุดตรงกับ remote ไหมรอบนี้ (ยังไม่รู้)"
+fi
+if [ "$BOOK_MISSING" = 1 ]; then
+  echo "⚠️ **สมุด reflog ไม่ตรงกับ remote** — remote อยู่ที่ ${REMOTE_SHA:0:8} ซึ่งมีในเครื่องเราแล้ว"
+  echo "   แต่ไม่มีรายการ 'update by push' ของคอมมิตนั้น ⇒ นาฬิกาจาก reflog **เก่ากว่าความจริง**"
+  # ทางถอยแคบ ๆ ที่ใช้ **เฉพาะตอนรู้แล้วว่าสมุดผิด**: เวลาจบรอบล่าสุดของด่านนี้เอง
+  # (เป็น "ของที่เราใส่ไว้เอง" ซึ่งปกติไม่ใช้ — แต่ตอนนี้ทิศของมันคืออนุรักษ์ = กันไว้ก่อน
+  #  และ push จะเกิดได้ก็ต่อเมื่อด่านจบแล้วเท่านั้น ⇒ ใช้เป็น "ไม่เก่ากว่านี้" ได้)
+  LAST_BOOK=$(awk -v repo="$PREPUSH_REPO" '{ if ($2!=repo) next; for(i=1;i<=NF;i++) if ($i=="เสร็จ") d=$1" "$(i+1) } END{ if(d!="") print d }' "$PREPUSH_LOG" 2>/dev/null)
+  if [ -n "${LAST_BOOK:-}" ]; then
+    LAST=$(date -d "$LAST_BOOK" +%s 2>/dev/null || echo "")
+    echo "   ⇒ ใช้เวลาจบรอบล่าสุดในสมุดของด่าน ($LAST_BOOK) แทน — ทิศอนุรักษ์"
+  else
+    LAST=""
+    echo "   ⇒ และสมุดของด่านอ่านไม่ได้ ⇒ **ยังไม่รู้** ⇒ ไม่ตัดสินเรื่องความถี่รอบนี้"
+  fi
+fi
 if [ -n "$LAST" ]; then
   DIFF=$(( (NOW - LAST) / 60 ))
   if [ "$DIFF" -lt "$MINGAP" ]; then
