@@ -425,6 +425,11 @@ if [ -n "$LAST" ]; then
   DIFF=$(( (NOW - LAST) / 60 ))
   if [ "$DIFF" -lt "$MINGAP" ]; then
     if [ "${ALLOW_FAST_PUSH:-}" = "1" ]; then
+      # 🔴 **ของเดิมไม่จดช่องนี้** — ผมเขียนในคอมมิต 78dd8270 ว่าทั้งสองช่องมีร่องรอย
+      #    ของจริง: ต่อสายไว้แค่ SKIP_PREPUSH ⇒ **คำกล่าวอ้างในคอมมิตของผมเกินจริง**
+      #    และผมเอาคำนั้นไปใช้อนุมานเหตุของ build ที่ล้ม (ว่า "ต้องเป็น --no-verify")
+      #    ⇒ ⇒ ตารางว่างอธิบายได้ด้วยช่องนี้เหมือนกัน ⇒ ข้ออนุมานนั้นใช้ไม่ได้
+      log_bypass "ALLOW_FAST_PUSH"
       echo "⏩ push ถี่ (ห่างจากครั้งก่อน $DIFF นาที) — ผ่านเพราะสั่ง ALLOW_FAST_PUSH=1"
     else
       AHEAD=$(git rev-list --count @{u}..HEAD 2>/dev/null || echo "?")
