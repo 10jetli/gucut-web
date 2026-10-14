@@ -109,6 +109,11 @@ test('สองช่องเงินเก่า (totalPaid/UnpaidAmount) ต
   const ฐานแท็บ = GRID.filter((x) => /pending/i.test(x.status)).reduce((a, x) => a + x.amount, 0);
   assert.notEqual(r.totalUnpaidAmount, ฐานแท็บ, 'ช่องเงินเก่าต้องไม่คิดจากฐานแถบแท็บ (เลขของทั้งชุดคู่กับแถวที่กรองแล้ว)');
   assert.equal(r.byPayStatusFiltered.find((x) => x.payStatus === 'Paid').amount, 1070);
+  /* 🔴 ช่องที่ประกาศในจดหมายต้องมีจริงในคำตอบ — ฝั่งจอจับได้ว่าผมเขียนว่าส่งแต่ไม่ส่ง
+     ⇒ จอต้องเทียบสองช่องเงินเก่ากับก้อนที่มันคิดมาได้เอง */
+  assert.ok(Array.isArray(r.byStatusFiltered), 'byStatusFiltered ต้องอยู่ในคำตอบ');
+  assert.equal(r.byStatusFiltered.find((x) => x.status === 'Pending').amount, 370, 'ต้องตรงกับ totalUnpaidAmount');
+  assert.equal(r.byStatusFiltered.find((x) => x.status === 'Success').amount, 1000);
 });
 
 test('payStatusesAll: อ่านไม่ได้ต้องเป็น null ไม่ใช่ []', async () => {
@@ -172,4 +177,5 @@ test('อ่านก้อนฐาน w ไม่ได้ ⇒ สองช่
   assert.equal(r.totalPaidAmount, 0);
   assert.equal(r.totalUnpaidAmount, 0);
   assert.equal(r.totalUnpaidAmountByPay, null, 'ช่องใหม่ยังเป็น null ตามสัญญาของมัน');
+  assert.equal(r.byStatusFiltered, null, 'อ่านก้อนไม่ได้ ⇒ null ห้ามเป็น [] (ไม่งั้นอ่านว่าไม่มีใบ)');
 });
