@@ -17,10 +17,20 @@ import { collections, inCollection, products, sellable } from "./catalog";
 import stillClips from "@/data/still-clips.json";
 import { videos } from "./videos";
 
-export type Level = "high" | "mid" | "low" | "ok";
+/* ══ 📖 **คำศัพท์ของผลตรวจ — ท่อเป็นเจ้าของนิยาม จอตามเสมอ** (14 ต.ค. 2569) ══════
+   🔴 ที่มา: จอ `1.gucut.com/web/seo` เคยนิยามเองว่า level = fix|improve|ok · cat = seo|speed|ai
+      ของจริงที่ท่อส่งคือ high|mid|low|ok และ seo|geo|speed ⇒ **ไม่ตรงกันสักค่า**
+      ผลคือจอ "ตกไปค่าท้ายสุดของ ternary" ⇒ ปัญหาระดับ high **ขึ้นจุดเขียวว่า "เรียบร้อย"** ทั้ง 15 ข้อ
+      แท็บที่หา cat==='ai' ว่างเปล่าตลอดกาล · และคะแนน GEO 89 มีใน API แต่จอไม่เคยแสดง
+   🔑 **ประกาศเป็นค่า แล้วให้ชนิดงอกจากค่า** (ไม่ใช่เขียนชนิดแล้วค่อยไล่พิมพ์ค่าซ้ำ)
+      ⇒ เพิ่มค่าใหม่ที่นี่ที่เดียว ชนิดตามทันที และสารบัญ (`gen-endpoints.mjs`) หยิบไปบอกฝั่งจอ
+   ⚠️ เรียง "หนักไปเบา" โดยตั้งใจ — ฝั่งจอใช้ลำดับนี้ไม่ได้ ต้องแม็ปเอง แต่คนอ่านโค้ดใช้ได้ */
+export const AUDIT_LEVELS = ["high", "mid", "low", "ok"] as const;
+export type Level = (typeof AUDIT_LEVELS)[number];
 
 /** สามด้านที่ตรวจ — แยกแท็บในหน้าหลังร้าน */
-export type Cat = "seo" | "geo" | "speed";
+export const AUDIT_CATS = ["seo", "geo", "speed"] as const;
+export type Cat = (typeof AUDIT_CATS)[number];
 
 export interface Finding {
   cat: Cat;

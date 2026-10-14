@@ -133,6 +133,46 @@ try {
     + `export const imageLadderNote = ${JSON.stringify("อ่านขั้นบันไดไม่ได้: " + String(e?.message ?? e).slice(0, 120))};\n`;
 }
 
+/* ══ 📖 **คำศัพท์ของผลตรวจ SEO/GEO — ส่งข้ามรีโปไปให้จอ** (14 ต.ค. 2569) ═════════
+   🔴 ของจริงที่เพิ่งเจอ: จอ `1.gucut.com/web/seo` นิยาม level/cat **เองคนละชุดกับท่อ**
+      ⇒ ปัญหาระดับ high 4 ข้อขึ้นจุดเขียวว่า "เรียบร้อย" · แท็บว่างตลอดกาล · คะแนน GEO 89 ไม่เคยโชว์
+      **ไม่มี error ไม่มีอะไรฟ้อง** เพราะ ternary ตกไปค่าท้ายสุดเสมอ
+   🔑 ท่อเป็นเจ้าของนิยาม (เป็นคนผลิตข้อมูล) ⇒ ประกาศออกไปทางสารบัญ แล้วด่านฝั่งจอเทียบได้ทุก build
+   🔑 ส่งสองชุดโดยตั้งใจ และมันตอบคนละคำถาม:
+      · `ประกาศ`  = ค่าที่ชนิดใน `src/lib/audit.ts` ยอมรับ (ของที่ *อาจ* ส่ง)
+      · `ที่พบจริง` = ค่าที่โผล่ใน `audit-data.json` รอบล่าสุด (ของที่ *ส่งแล้วจริง*)
+      ⇒ จอต้องรู้จักครบทั้งสองชุด · ชุดหลังคือชุดที่ **ทำให้จอเพี้ยนได้วันนี้**
+   🚫 อ่านไม่ได้ ⇒ `null` + note **ห้ามคืน `[]`** (ก้อนว่างอ่านว่า "ไม่มีคำศัพท์" ⇒ ด่านฝั่งจอเขียวฟรี) */
+let auditVocabText = "export const auditVocab = null;\n"
+  + "export const auditVocabNote = 'อ่านคำศัพท์ผลตรวจไม่ได้ ⇒ **ยังไม่รู้** ไม่ใช่ว่าไม่มี';\n";
+try {
+  const t = readFileSync(join(ราก, "src", "lib", "audit.ts"), "utf8");
+  const ดึง = (ชื่อ) => {
+    const m = t.match(new RegExp(`export const ${ชื่อ} = \\[([^\\]]*)\\] as const;`));
+    if (!m) return null;
+    const v = [...m[1].matchAll(/"([^"]+)"/g)].map((x) => x[1]);
+    return v.length ? v : null;
+  };
+  const cat = ดึง("AUDIT_CATS"), level = ดึง("AUDIT_LEVELS");
+  if (!cat || !level) throw new Error("หา AUDIT_CATS/AUDIT_LEVELS ในรูปที่คาดไว้ไม่เจอ (มีคนเปลี่ยนรูปแบบ?)");
+  let พบ = null;
+  try {
+    const d = JSON.parse(readFileSync(join(ราก, "netlify", "lib", "audit-data.json"), "utf8"));
+    const f = Array.isArray(d?.findings) ? d.findings : [];
+    พบ = {
+      cat: [...new Set(f.map((x) => x?.cat).filter(Boolean))].sort(),
+      level: [...new Set(f.map((x) => x?.level).filter(Boolean))].sort(),
+      scoreKeys: Object.keys(d?.scores ?? {}).sort(),
+      จำนวนข้อ: f.length,
+    };
+  } catch { /* ไม่มีไฟล์ก็ส่งเฉพาะชุดประกาศ — ไม่ทำให้ทั้งก้อนเป็น null */ }
+  auditVocabText = `export const auditVocab = ${JSON.stringify({ ประกาศ: { cat, level }, ที่พบจริง: พบ }, null, 1)};\n`
+    + "export const auditVocabNote = null;\n";
+} catch (e) {
+  auditVocabText = "export const auditVocab = null;\n"
+    + `export const auditVocabNote = ${JSON.stringify("อ่านคำศัพท์ผลตรวจไม่ได้: " + String(e?.message ?? e).slice(0, 120))};\n`;
+}
+
 const writeFields = {};
 try {
   const w = readFileSync(join(ราก, "netlify", "lib", "zort-write.mjs"), "utf8")
@@ -216,5 +256,6 @@ const ผลเขียน = เขียนถ้าเนื้อเปล�
   `export const writeFields = ${JSON.stringify(writeFields, null, 1)};\n`
   + writeGatesText
   + imageLadderText
+  + auditVocabText
 );
 console.log(`gen-endpoints: list ${เรียง.length} เส้น · เส้นพารามิเตอร์ (หยาบ) ${เส้นพารามิเตอร์.size} ชื่อ → netlify/lib/endpoints.mjs`);

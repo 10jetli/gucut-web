@@ -830,6 +830,13 @@ async function route(req, context) {
               แล้วด่านฝั่งจอจะเลิกเทียบโดยคิดว่าไม่มีอะไรให้เทียบ */
         imageLadder: t?.imageLadder ?? null,
         imageLadderNote: t?.imageLadderNote ?? (t ? null : "อ่าน endpoints.mjs ไม่ได้รอบนี้"),
+        /* 📖 คำศัพท์ของผลตรวจ SEO/GEO (เพิ่ม 14 ต.ค. 2569)
+           🔴 เหตุเดียวกับ imageLadder ข้างบน: `gen-endpoints.mjs` ใส่ลง endpoints.mjs แล้ว
+              แต่ถ้าเส้นนี้ไม่ส่งต่อ **ฝั่งจอจะไม่มีวันได้รับ** (เขาดึงผ่าน HTTP ไม่ได้อ่านไฟล์เรา)
+              ⇒ ของจริงที่มันกันได้: จอ /web/seo นิยาม level/cat เองคนละชุด ⇒ ปัญหาระดับ high
+                ขึ้นจุดเขียวว่า "เรียบร้อย" 15 ข้อ และคะแนน GEO 89 ไม่เคยโชว์ */
+        auditVocab: t?.auditVocab ?? null,
+        auditVocabNote: t?.auditVocabNote ?? (t ? null : "อ่าน endpoints.mjs ไม่ได้รอบนี้"),
         /* 🔖 **ช่องที่แต่ละเส้น "คืน"** — ครึ่งที่หายของการเทียบสองทาง (ใบ t_mu78mrcw · 19 ก.ย. 2569)
            `lists`/`paramRoutes` บอกว่าท่อ **มี** เส้นอะไร · เครื่องมือฝั่งจอบอกว่าจอ **ใช้** ช่องอะไร
            ตัวนี้บอกว่าท่อ **คืน** ช่องอะไร ⇒ ด่าน check-pipe-keys ฝั่งจอถอยมาใช้ตัวนี้ได้
