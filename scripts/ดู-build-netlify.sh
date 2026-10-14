@@ -7,6 +7,11 @@
 #    ถ้าเครื่องเขียนให้ มันจะกลายเป็น "มีคนยืนยันแล้ว" ทั้งที่ไม่มีใครไปดูสวิตช์จริง
 #    (ฝั่งจอปฏิเสธการเขียนเวลาใหม่เพื่อให้ด่านหายเตือน และนั่นถูก)
 set -u
+# ⚠️ **ชื่อตัวแปรในไฟล์นี้ต้องเป็น ASCII เท่านั้น — รวมในบล็อก python ที่ฝังอยู่**
+#    ด่าน `scripts/check-shell-varnames.mjs` อ่านไฟล์ `.sh` ทั้งไฟล์ และมันถูกที่ไม่แยกแยะ:
+#    คนอ่านไฟล์ .sh ก็แยกไม่ออกเหมือนกันว่าบรรทัดไหนเป็น bash บรรทัดไหนเป็น python
+#    🔴 ผมเหยียบข้อนี้ตอนเขียนไฟล์นี้ (14 ต.ค. 2569) และ **ด่านจับได้ตอน push** ⇒ ด่านทำงานถูก
+#    (ใบ bash-thai-varnames-fail-silently — ชื่อตัวแปรไทยใน bash ล้มเงียบ)
 TOKEN_FILE="$HOME/.netlify-token"
 [ -r "$TOKEN_FILE" ] || { echo "ไม่มี $TOKEN_FILE ⇒ ตรวจเองไม่ได้ ⇒ ยังถือว่าไม่รู้"; exit 2; }
 T=$(tr -d '\n' < "$TOKEN_FILE" | sed 's/.*=//')
@@ -24,14 +29,14 @@ print('3 ใบล่าสุด (ของจริงจาก Netlify ตอ
 for d in ds[:3]:
     print('  %-10s %-8s %s  %s วิ' % (d.get('state'), str(d.get('commit_ref'))[:8], str(d.get('created_at'))[:19], d.get('deploy_time') or '-'))
 now=datetime.datetime.now(datetime.timezone.utc)
-def อายุ(d):
+def age_s(d):
     try: return (now-datetime.datetime.fromisoformat(str(d.get('created_at')).replace('Z','+00:00'))).total_seconds()
     except Exception: return 1e9
-สด=[d for d in ds if อายุ(d)<86400]
+fresh=[d for d in ds if age_s(d)<86400]
 ok=('ready','building','uploading','processing')
-if any(str(d.get('state')) in ok for d in สด):
+if any(str(d.get('state')) in ok for d in fresh):
     print('⇒ **build ยังเปิดอยู่** (มีใบที่สร้างสำเร็จ/กำลังสร้างใน 24 ชม.)')
-elif สด:
+elif fresh:
     print('⇒ มีใบใน 24 ชม. แต่ไม่มีใบไหนสำเร็จ ⇒ **ไปดูสาเหตุที่ช่อง Deploys** ห้ามสรุปว่า build ถูกปิด')
 else:
     print('⇒ ไม่มี deploy ใน 24 ชม. ⇒ **ยังสรุปไม่ได้** (อาจไม่มีใคร push เลย ไม่ใช่ build ถูกปิด)')
