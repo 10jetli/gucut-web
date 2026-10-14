@@ -545,9 +545,9 @@ export async function listOrders(o = {}) {
        ⚠️ ส่ง **ก้อนทั้งก้อน** ด้วย (`byPayStatusFiltered`) ไม่ใช่แค่สองตัวเลขที่ท่อแปลชื่อค่าให้
           วันที่ ZORT เพิ่มค่าใหม่ (เช่น Partial Payment) จอจะเห็นเอง ไม่ต้องรอท่อไปเติมชื่อ */
     coreQuery(
-      `SELECT COALESCE(pay_status,'') AS pay_status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+      `SELECT COALESCE(pay_status,'') AS pay_status, status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders WHERE ${w.sql}
-       GROUP BY 1`,
+       GROUP BY 1,2`,
       w.params
     ).catch(() => null),
     /* ── อายุของข้อมูล ── ตารางชีพจรอาจยังไม่ถูกสร้าง (ต้องยิง ?init=1)
@@ -638,6 +638,23 @@ export async function listOrders(o = {}) {
   };
   const byStatus = foldTabs("status", "status");
   const byPayStatus = foldTabs("pay_status", "payStatus");
+  /* ตัวพับของ **ฐานที่กรองอยู่ (`w`)** — ก้อนเดียวกันมีสองแกน (pay_status × status)
+     ⇒ ใช้ตอบทั้ง `byPayStatusFiltered` และ **คืนขอบเขตให้สองช่องเงินเก่า** (ดูเหตุที่ตัวมันเอง) */
+  const foldFiltered = (col, out) => {
+    if (!Array.isArray(payRowsFiltered)) return null;
+    const m = new Map();
+    for (const r of payRowsFiltered) {
+      const k = String(r[col] ?? "");
+      const cur = m.get(k) || { orders: 0, amount: 0 };
+      cur.orders += Number(r.orders) || 0;
+      cur.amount += num(r.amount);
+      m.set(k, cur);
+    }
+    return [...m.entries()]
+      .map(([k, v]) => ({ [out]: k, orders: v.orders, amount: Math.round(v.amount * 100) / 100 }))
+      .sort((a, b) => b.orders - a.orders);
+  };
+  const byStatusFiltered = foldFiltered("status", "status");
 
   return {
     from,
@@ -699,8 +716,20 @@ export async function listOrders(o = {}) {
          ซึ่ง **แย่กว่าปัญหาเดิมที่กำลังแก้อยู่** — จับได้ตอนอ่านซ้ำก่อน commit)
         ⚠️ `byStatus` รวม Voided อยู่ด้วย ต่างจาก `totalAmount` ที่ตัดออกแล้ว
            ⇒ บวกจาก byStatus ตรง ๆ ไม่ได้ ต้องคัดสถานะเองทุกครั้ง */
+    /* 🔴 **คืนขอบเขตให้ช่องนี้ 14 ต.ค. 2569 — ผมเองทำมันเสียในคอมมิตก่อนหน้า**
+       ผมย้าย `byStatus` ไปฐานแถบแท็บ (ยกเว้น status+paystatus) และเขียนกำกับไว้ว่า
+       "ยังไม่พลิกความหมายโดยตั้งใจ" — **คำนั้นไม่จริงแล้วตอนที่ผมเขียน**
+       เพราะช่องนี้กับ `totalUnpaidAmount` คิดจาก `byStatus` ⇒ **ขอบเขตของมันถูกย้ายไปด้วย**
+       📏 ฝั่งจอวัดจับได้ภายในชั่วโมงเดียว: ยิงสามคำขอ (ไม่กรอง · `status=Voided` · `paystatus=Pending`)
+          ได้ **5,955,082 เท่ากันทั้งสามรอบ** ⇒ เลขของทั้งชุดถูกวางคู่กับแถวที่กรองแล้ว
+       🔑 **บทเรียนของผมเอง: ผมประกาศว่า "ไม่เปลี่ยน" โดยดูแค่มิติที่ผมกำลังคิดถึง (คอลัมน์)
+          แล้วเปลี่ยนมิติที่ผมไม่ได้ดู (ขอบเขต) ไปในคอมมิตเดียวกัน**
+          ⇒ คำว่า "ยังไม่พลิก" ต้องระบุว่าไม่พลิก *อะไร* ไม่งั้นมันคุ้มครองแค่สิ่งที่คนเขียนนึกถึง
+       ⇒ ตอนนี้คิดจาก `byStatusFiltered` (ฐาน `w` = ชุดเดียวกับแถว) ⇒ **ความหมายเดิม ขอบเขตเดิม**
+       ⚠️ ยังคิดจากคอลัมน์ `status` เหมือนเดิมโดยตั้งใจ (นั่นคือสิ่งที่ยังไม่พลิก) —
+          ใช้ `*ByPay` สำหรับเลขที่คิดจาก `pay_status` · ถอดช่องนี้เมื่อจอเลิกอ่านครบ */
     totalPaidAmount: Math.round(
-      (byStatus || []).reduce(
+      (byStatusFiltered || []).reduce(
         (s, x) => s + (/pending|void|cancel/i.test(String(x.status)) ? 0 : num(x.amount)),
         0
       )
@@ -724,7 +753,8 @@ export async function listOrders(o = {}) {
          ⚠️ **ยังไม่พลิกความหมายในรอบนี้โดยตั้งใจ** — จอที่อ่านช่องนี้อยู่จะเห็นตัวเลขเปลี่ยนเงียบ ๆ
             ให้ใช้ `byPayStatus` ข้างล่างเป็นแหล่งของ "ยอดที่เงินยังไม่เข้า" แล้วค่อยเลิกใช้ช่องนี้
             เมื่อจอเลิกอ่านครบ · **รอฝั่งจอ/ท่านประธานตัดสินว่าจะพลิกเมื่อไหร่** (กฎ: ห้ามเปลี่ยนความหมายเงียบ ๆ) */
-      (byStatus || []).reduce((s, x) => s + (/pending/i.test(String(x.status)) ? num(x.amount) : 0), 0)
+      /* ⚠️ ฐาน `byStatusFiltered` (ชุดที่กรองอยู่) — ดูเหตุเต็มที่ `totalPaidAmount` ข้างบน */
+      (byStatusFiltered || []).reduce((s, x) => s + (/pending/i.test(String(x.status)) ? num(x.amount) : 0), 0)
     ),
     /* 🔑 ธงความสามารถของ **ฐานแถบแท็บ** — เป็น **รายชื่อ ไม่ใช่ true/false** (ฝั่งจอขอ 14 ต.ค. 2569 และถูก)
        เหตุ: วันที่มิติที่สามมาอยู่บนแถบแท็บ จอรู้เองว่าฐานครอบถึงไหน **โดยไม่ต้องรอใครเปลี่ยนชื่อธง**
@@ -732,9 +762,7 @@ export async function listOrders(o = {}) {
     tabBase: { excludes: ["status", "paystatus"] },
     /* 💰 ยอดเงินตามสถานะชำระเงิน **ของชุดที่กรองอยู่** — ขอบเขตเดียวกับแถวในตาราง (`w`)
        ⚠️ อย่าสับกับ `byPayStatus` ข้างล่าง ซึ่งเป็นฐานของ *แถบแท็บ* (กว้างกว่า) */
-    byPayStatusFiltered: Array.isArray(payRowsFiltered)
-      ? payRowsFiltered.map((r) => ({ payStatus: String(r.pay_status ?? ""), orders: num(r.orders), amount: num(r.amount) }))
-      : null,
+    byPayStatusFiltered: foldFiltered("pay_status", "payStatus"),
     /* สองตัวที่ฝั่งจอขอใช้บนบรรทัดเงินตรง ๆ — คิดจากก้อนข้างบน ไม่ได้ยิงเพิ่ม
        ⚠️ `null` เมื่ออ่านก้อนไม่ได้ **ห้ามเป็น 0** ("ไม่รู้" ≠ "ไม่มีเงินค้าง" — ทิศที่แพงคือ 0 ปลอม) */
     totalUnpaidAmountByPay: Array.isArray(payRowsFiltered)

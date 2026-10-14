@@ -23,9 +23,16 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
   coreQuery: async (sql, params) => {
     const s = String(sql).replace(/\s+/g, ' ');
     seen.push({ s, params });
-    if (/GROUP BY 1,2/.test(s) && /pay_status/.test(s) && /COUNT\(\*\) AS orders/.test(s)) return GRID;
-    if (/SELECT COALESCE\(pay_status,''\) AS pay_status, COUNT\(\*\) AS orders/.test(s) && /GROUP BY 1$/.test(s))
-      return [{ pay_status: 'Paid', orders: 10, amount: 1000 }, { pay_status: 'Pending', orders: 3, amount: 300 }];
+    /* 🔴 ตัวตอบต้องยึด **หัว SELECT** ไม่ใช่แค่ GROUP BY — คำสั่งฐาน `w` ก็เป็น GROUP BY 1,2 เหมือนกัน
+       ⇒ เงื่อนไขกว้าง ๆ ที่มาก่อนจะกลืนคำสั่งอีกตัว แล้วเทสวัดของผิดก้อนแบบไม่มีอะไรฟ้อง
+       (เหยียบคลาสนี้ซ้ำครั้งที่สองในวันเดียว — ครั้งแรกคือตัวค้นคำสั่งแถบแท็บเมื่อเช้า) */
+    if (/^SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(s) && /GROUP BY 1,2$/.test(s)) return GRID;
+    if (/SELECT COALESCE\(pay_status,''\) AS pay_status, status, COUNT\(\*\) AS orders/.test(s) && /GROUP BY 1,2$/.test(s))
+      return [
+        { pay_status: 'Paid', status: 'Success', orders: 10, amount: 1000 },
+        { pay_status: 'Pending', status: 'Pending', orders: 3, amount: 300 },
+        { pay_status: 'Paid', status: 'Pending', orders: 2, amount: 70 },
+      ];
     if (/SELECT DISTINCT pay_status/.test(s)) return [{ pay_status: 'Paid' }, { pay_status: 'Pending' }, { pay_status: 'Voided' }];
     if (/SELECT DISTINCT status/.test(s)) return [{ status: 'Pending' }, { status: 'Success' }, { status: 'Voided' }, { status: 'Waiting' }];
     if (/COUNT\(\*\) AS c/.test(s)) return [{ c: 7748, s: 1 }];
@@ -74,6 +81,36 @@ for (const [ชื่อ, เรียก] of [['list=orders', listOrders], ['li
   });
 }
 
+test('เลขเงินตามสถานะชำระเงินต้องมาจากชุดที่กรองอยู่ (w) ไม่ใช่ฐานแถบแท็บ', async () => {
+  seen = [];
+  const r = await listOrders({ from: '2025-10-01', to: '2026-10-14', status: 'Success', store: 'z1' });
+  // คำสั่งของเลขเงินต้องกรอง status (เพราะเป็นชุดที่จอแสดง) — ต่างจากคำสั่งแถบแท็บที่ต้องไม่กรอง
+  const เงิน = seen.filter((x) => /SELECT COALESCE\(pay_status,''\) AS pay_status, status, COUNT\(\*\) AS orders/.test(x.s) && /GROUP BY 1,2$/.test(x.s));
+  assert.equal(เงิน.length, 1, 'คำสั่งเลขเงินต้องมีคำสั่งเดียว');
+  assert.match(เงิน[0].s, /(?<![\w])status = \?/, 'เลขเงินต้องอยู่ในขอบเขตเดียวกับแถว ⇒ ต้องกรองสถานะด้วย');
+  assert.doesNotMatch(tabSql().s, /(?<![\w])status = \?/, 'แถบแท็บต้องยังไม่กรองสถานะ');
+  // ค่าที่ได้ต้องมาจากก้อน ไม่ใช่จาก byPayStatus (ซึ่งกว้างกว่า)
+  assert.equal(r.totalUnpaidAmountByPay, 300);
+  assert.equal(r.totalPaidAmountByPay, 1070, 'Paid ต้องรวมทุก status ในฐาน w');
+  assert.deepEqual(r.byPayStatusFiltered.map((x) => x.payStatus).sort(), ['Paid', 'Pending']);
+  // byPayStatus (ฐานแท็บ) ต้องไม่เท่ากับก้อนที่กรองแล้ว — ถ้าเท่ากัน = ใช้ฐานเดียวกันผิด
+  assert.notEqual(r.byPayStatus.find((x) => x.payStatus === 'Pending').orders, r.byPayStatusFiltered.find((x) => x.payStatus === 'Pending').orders);
+});
+
+test('สองช่องเงินเก่า (totalPaid/UnpaidAmount) ต้องขยับตามตัวกรอง — ขอบเขต w ไม่ใช่ฐานแท็บ', async () => {
+  seen = [];
+  const r = await listOrders({ from: '2025-10-01', to: '2026-10-14', store: 'z1' });
+  // ก้อนฐาน w ของ mock: Success/Paid 1000 · Pending/Pending 300 · Pending/Paid 70
+  // totalPaidAmount = สถานะที่ไม่ใช่ pending/void/cancel = 1000
+  assert.equal(r.totalPaidAmount, 1000, 'คิดจากคอลัมน์ status ในฐาน w');
+  // totalUnpaidAmount = status pending = 300 + 70 = 370 (ไม่ใช่ของฐานแท็บซึ่งกว้างกว่า)
+  assert.equal(r.totalUnpaidAmount, 370);
+  // ⚠️ ค่าของฐานแท็บ (GRID) ให้เลขอื่น ⇒ ถ้าเท่ากับค่านั้น = ใช้ฐานผิด
+  const ฐานแท็บ = GRID.filter((x) => /pending/i.test(x.status)).reduce((a, x) => a + x.amount, 0);
+  assert.notEqual(r.totalUnpaidAmount, ฐานแท็บ, 'ช่องเงินเก่าต้องไม่คิดจากฐานแถบแท็บ (เลขของทั้งชุดคู่กับแถวที่กรองแล้ว)');
+  assert.equal(r.byPayStatusFiltered.find((x) => x.payStatus === 'Paid').amount, 1070);
+});
+
 test('payStatusesAll: อ่านไม่ได้ต้องเป็น null ไม่ใช่ []', async () => {
   seen = [];
   const r = await listOrders({ from: '2025-10-01', to: '2026-10-14', store: 'z1' });
@@ -97,30 +134,14 @@ test('payStatusesAll: อ่านไม่ได้ต้องเป็น nul
   assert.match(String(r2.payStatusesAllError), /อ่าน/);
 });
 
-test('เลขเงินตามสถานะชำระเงินต้องมาจากชุดที่กรองอยู่ (w) ไม่ใช่ฐานแถบแท็บ', async () => {
-  seen = [];
-  const r = await listOrders({ from: '2025-10-01', to: '2026-10-14', status: 'Success', store: 'z1' });
-  // คำสั่งของเลขเงินต้องกรอง status (เพราะเป็นชุดที่จอแสดง) — ต่างจากคำสั่งแถบแท็บที่ต้องไม่กรอง
-  const เงิน = seen.filter((x) => /SELECT COALESCE\(pay_status,''\) AS pay_status, COUNT\(\*\) AS orders/.test(x.s) && /GROUP BY 1$/.test(x.s));
-  assert.equal(เงิน.length, 1, 'คำสั่งเลขเงินต้องมีคำสั่งเดียว');
-  assert.match(เงิน[0].s, /(?<![\w])status = \?/, 'เลขเงินต้องอยู่ในขอบเขตเดียวกับแถว ⇒ ต้องกรองสถานะด้วย');
-  assert.doesNotMatch(tabSql().s, /(?<![\w])status = \?/, 'แถบแท็บต้องยังไม่กรองสถานะ');
-  // ค่าที่ได้ต้องมาจากก้อน ไม่ใช่จาก byPayStatus (ซึ่งกว้างกว่า)
-  assert.equal(r.totalUnpaidAmountByPay, 300);
-  assert.equal(r.totalPaidAmountByPay, 1000);
-  assert.deepEqual(r.byPayStatusFiltered.map((x) => x.payStatus).sort(), ['Paid', 'Pending']);
-  // byPayStatus (ฐานแท็บ) ต้องไม่เท่ากับก้อนที่กรองแล้ว — ถ้าเท่ากัน = ใช้ฐานเดียวกันผิด
-  assert.notEqual(r.byPayStatus.find((x) => x.payStatus === 'Pending').orders, r.byPayStatusFiltered.find((x) => x.payStatus === 'Pending').orders);
-});
-
 test('อ่านก้อนเลขเงินไม่ได้ ⇒ null ห้ามเป็น 0', async () => {
   mock.restoreAll();
   mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
     coreReady: () => true,
     coreQuery: async (sql) => {
       const s = String(sql).replace(/\s+/g, ' ');
-      if (/SELECT COALESCE\(pay_status,''\) AS pay_status, COUNT\(\*\) AS orders/.test(s) && /GROUP BY 1$/.test(s)) throw new Error('D1 ล่ม');
-      if (/GROUP BY 1,2/.test(s) && /SELECT status, COALESCE\(pay_status,''\)/.test(s)) return GRID;
+      if (/SELECT COALESCE\(pay_status,''\) AS pay_status, status, COUNT\(\*\) AS orders/.test(s) && /GROUP BY 1,2$/.test(s)) throw new Error('D1 ล่ม');
+      if (/^SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(s) && /GROUP BY 1,2$/.test(s)) return GRID;
       if (/COUNT\(\*\) AS c/.test(s)) return [{ c: 1, s: 1 }];
       return [];
     },
@@ -130,4 +151,25 @@ test('อ่านก้อนเลขเงินไม่ได้ ⇒ null �
   assert.equal(r.byPayStatusFiltered, null);
   assert.equal(r.totalUnpaidAmountByPay, null, '0 ปลอมอ่านว่า "ไม่มีเงินค้าง" ซึ่งเป็นทิศที่แพง');
   assert.equal(r.totalPaidAmountByPay, null);
+});
+
+test('อ่านก้อนฐาน w ไม่ได้ ⇒ สองช่องเงินเก่าต้องเป็น 0 ไม่ใช่เลขของฐานแท็บ', async () => {
+  mock.restoreAll();
+  mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
+    coreReady: () => true,
+    coreQuery: async (sql) => {
+      const s = String(sql).replace(/\s+/g, ' ');
+      if (/SELECT COALESCE\(pay_status,''\) AS pay_status, status, COUNT\(\*\) AS orders/.test(s) && /GROUP BY 1,2$/.test(s)) throw new Error('D1 ล่ม');
+      if (/^SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(s) && /GROUP BY 1,2$/.test(s)) return GRID;
+      if (/COUNT\(\*\) AS c/.test(s)) return [{ c: 1, s: 1 }];
+      return [];
+    },
+  } });
+  const mod = await import(`../../netlify/lib/core-orders.mjs?z=${Date.now()}`);
+  const r = await mod.listOrders({ from: '2025-10-01', to: '2026-10-14', store: 'z1' });
+  // 🔑 สองช่องเก่าเป็นตัวเลขเสมอ (สัญญาเดิมของมัน) ⇒ อ่านก้อนไม่ได้ ต้องได้ 0
+  //    ซึ่งต่างจาก *ByPay ที่เป็น null — ของเก่าเปลี่ยนชนิดตอนนี้จะทำจอที่อ่านอยู่พัง
+  assert.equal(r.totalPaidAmount, 0);
+  assert.equal(r.totalUnpaidAmount, 0);
+  assert.equal(r.totalUnpaidAmountByPay, null, 'ช่องใหม่ยังเป็น null ตามสัญญาของมัน');
 });
