@@ -5,7 +5,7 @@
 // ⚠️ อ่านไฟล์เคสไม่ได้ ⇒ **ตก** ไม่ใช่ข้ามเงียบ ๆ · พิมพ์ mtime ทุกรอบ (ของนอกรีโป)
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, writeFileSync, statSync, mkdtempSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, statSync, mkdtempSync, rmSync, existsSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -72,6 +72,16 @@ test("ด่านตัวนี้ต้องไม่อยู่ในส�
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   const สาย = ["prebuild", "postbuild", "test"].map((k) => String(pkg?.scripts?.[k] ?? "")).join(" ");
   assert.doesNotMatch(สาย, /check-chain-floor/, "check-chain-floor ต้องเรียกจากฮุคเท่านั้น");
+  /* 🔴 **สามสถานะ ไม่ใช่สองสถานะ** — ของเดิมอ่านฮุคตรง ๆ ⇒ ENOENT บนเครื่องที่ยังไม่ติดตั้งฮุค
+   *    ⇒ `npm test` ตก ⇒ prebuild ตก ⇒ **build ของ Netlify ล้มสองใบติดกัน (142dd282 · 3b23972a)**
+   *    🔑 ด่าน push จับไม่ได้เลย เพราะมันรันบน **เครื่องที่มีฮุคอยู่แล้วเสมอ**
+   *       ⇒ ⇒ "ผ่านบนเครื่องเรา ไม่ใช่ผ่าน" กลับด้าน: เทสยืนยัน **สภาพของเครื่องนักพัฒนา**
+   *          แล้วถูกเอาไปวางในสายที่รันบนเครื่อง build ซึ่งไม่มีสภาพนั้นโดยธรรมชาติ */
+  if (!existsSync(".git/hooks/pre-push")) {
+    console.log("   ⬜ คุมไม่ได้รอบนี้: ยังไม่ได้ติดตั้งฮุค (.git/hooks/pre-push ไม่มี) — ช่องว่าง ไม่ใช่ผลผ่าน");
+    console.log("      ⇒ ติดตั้งด้วย `bash scripts/install-pre-push.sh` แล้วเทสข้อนี้จะคุมได้");
+    return;
+  }
   const hook = readFileSync(".git/hooks/pre-push", "utf8");
   assert.match(hook, /check-chain-floor/, "ฮุคที่ติดตั้งอยู่ต้องเรียกมันจริง — ไม่ใช่มีแต่ไฟล์");
 });
