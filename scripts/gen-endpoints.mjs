@@ -165,7 +165,13 @@ try {
       scoreKeys: Object.keys(d?.scores ?? {}).sort(),
       จำนวนข้อ: f.length,
     };
-  } catch { /* ไม่มีไฟล์ก็ส่งเฉพาะชุดประกาศ — ไม่ทำให้ทั้งก้อนเป็น null */ }
+  } catch (e2) {
+    /* 🔴 **ห้ามปล่อยเป็น null เปล่า ๆ** — null ที่ไม่มีเหตุ อ่านว่า "ท่อไม่เคยส่งค่าอะไรเลย"
+       ของจริง 14 ต.ค. 2569: `audit-data.json` อยู่ใน .gitignore ⇒ บนเครื่อง build ของ Netlify
+       ยังไม่มีไฟล์ตอน gen-endpoints วิ่ง (gen-audit-json อยู่ท้ายสุดของสาย)
+       ⇒ สารบัญบนเว็บจริงได้ `ที่พบจริง: null` ทั้งที่ในเครื่องเราได้ครบ — **เครื่องเราหลอกเราเอง** */
+    พบ = { อ่านไม่ได้เพราะ: String(e2?.message ?? e2).slice(0, 120) };
+  }
   auditVocabText = `export const auditVocab = ${JSON.stringify({ ประกาศ: { cat, level }, ที่พบจริง: พบ }, null, 1)};\n`
     + "export const auditVocabNote = null;\n";
 } catch (e) {
