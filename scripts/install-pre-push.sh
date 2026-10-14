@@ -141,7 +141,32 @@ if [ -f "$FREEZE" ]; then
   fi
 fi
 
-[ "${SKIP_PREPUSH:-}" = "1" ] && { echo "⏭  ข้ามด่านวิศวกรรมตามที่สั่ง (วันหยุด deploy ยังบังคับอยู่)"; exit 0; }
+# ── 📝 **ช่องยกเว้นต้องมีร่องรอย** (14 ต.ค. 2569 · เกณฑ์สามข้อของคุณส้ม) ──
+#    ส่องช่องยกเว้นทุกช่องในรีโปแล้วพบว่า SKIP_PREPUSH / ALLOW_FAST_PUSH เป็นช่องที่
+#    **ทรงอำนาจที่สุด** แต่ไม่มีใครตรวจแทน · ไม่บังคับอธิบาย · ไม่โชว์ทุกรอบ
+#    ⇒ ⇒ ตามเกณฑ์นั้น **มันไม่ใช่ช่องยกเว้น มันคือรูที่มีเอกสารกำกับ**
+# 🚫 ไม่บล็อกการใช้ — เจตนาคือให้ "ข้าม" เป็นการตัดสินใจที่มีร่องรอย ไม่ใช่สิ่งที่ทำไม่ได้
+# 🔴 **ชื่อตัวแปร/ฟังก์ชันใน bash ต้องเป็น ASCII เท่านั้น** — ชื่อไทยทำให้ bash ตอบ
+#    command not found แล้ว **เดินต่อ** ⇒ ค่าที่อ่านต่อเป็นค่าว่างโดยไม่มีอะไรฟ้อง (bash -n ไม่จับ)
+#    📌 ผมเขียนรอบแรกเป็นชื่อไทยทั้งก้อน · ด่านคำสั่งของทีมจับได้ตอนจะรัน (คลาสนี้ครั้งที่ 5 ของวันนี้)
+log_bypass() {
+  local slot="$1" logf="scripts/lib/bypass-log.md"
+  [ -f "$logf" ] || return 0
+  printf '| %s | `%s` | %s | %s |\n' \
+    "$(TZ=Asia/Bangkok date '+%Y-%m-%d %H:%M')" "$slot" \
+    "$(git rev-parse --short HEAD 2>/dev/null || echo '?')" "${BYPASS_WHY:-ไม่ได้ให้เหตุ}" >> "$logf"
+}
+# 📊 **โชว์ทุกรอบ ไม่ใช่โชว์ตอนตก** — ของที่โชว์ตอนตกคือของที่ไม่มีใครอ่านตอนมันมีประโยชน์
+if [ -f scripts/lib/bypass-log.md ]; then
+  BYPASS_N=$(grep -cE '^\| 2[0-9]{3}-' scripts/lib/bypass-log.md 2>/dev/null || true)
+  BYPASS_N=${BYPASS_N:-0}
+  if [ "$BYPASS_N" -gt 0 ]; then
+    echo "   📝 ช่องข้ามด่านถูกใช้มาแล้ว **$BYPASS_N ครั้ง** (ดู scripts/lib/bypass-log.md)"
+    tail -2 scripts/lib/bypass-log.md | sed 's/^/      /'
+  fi
+fi
+
+[ "${SKIP_PREPUSH:-}" = "1" ] && { log_bypass "SKIP_PREPUSH"; echo "⏭  ข้ามด่านวิศวกรรมตามที่สั่ง (จดลง scripts/lib/bypass-log.md แล้ว · วันหยุด deploy ยังบังคับอยู่)"; exit 0; }
 
 echo "🚦 ด่านก่อน push — กัน build พังไม่ให้เผาเครดิต"
 
