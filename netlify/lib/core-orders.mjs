@@ -232,8 +232,21 @@ export async function listOrderFacets(o = {}) {
       ⚠️ ขอเองเท่านั้น — ตัวนี้มีจุดขายที่ "รอบน้อย" (คอมเมนต์หัวฟังก์ชัน) ไม่ขอ = ไม่ยิงเพิ่มสักรอบ
       ⚠️ ใบที่ไม่รู้คลัง (warehouse_code NULL/'' — ใบก่อน 1 ก.ย. 2569 ที่ยังไม่กวาดย้อนหลัง) รวมเป็นแถว code "" ของตัวเอง
          ⇒ จอไม่ต้องคิด "ยอดรวม − ผลรวมคลัง" เอง (คิดเองพังเงียบเมื่อมีคลังใหม่หรือขอบเขตไม่ตรงกัน) */
+  /* ฐานของ **แถบแท็บ** — ตัด `status` และ `paystatus` ออก (เหมือน `listOrders` เป๊ะ · 14 ต.ค. 2569)
+     🔴 ไฟล์นี้กำกับตัวเองไว้ข้างบนว่า **ต้องรับครบเท่า `list=orders`** ⇒ ของที่ `list=orders` ส่ง
+        แถบแท็บต้องส่งด้วย ไม่งั้น "ตัวเลขตอบคนละคำถามเมื่อจอกรองอยู่" ซึ่งเป็นกับดักเดิมของเส้นนี้ */
+  const wTabsF = buildWhere({
+    from,
+    to,
+    channel: o.channel || null,
+    q: o.q ? String(o.q).trim().slice(0, 60) : null,
+    includeCancelled: true,
+    source,
+    ...advancedFrom(o),
+    payStatus: null,
+  });
   const wantWarehouses = o.warehouses === true || o.warehouses === "1";
-  const [storeRows, byChannel, byWarehouse, retByWarehouse] = await Promise.all([
+  const [storeRows, byChannel, byWarehouse, retByWarehouse, tabGridF] = await Promise.all([
     coreQuery(
       `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders WHERE ${w.sql}
@@ -270,10 +283,39 @@ export async function listOrderFacets(o = {}) {
           w.params
         ).catch(() => null)
       : Promise.resolve(null),
-  ]);
+      /* 🔖 สองมิติของแถบแท็บจาก **คำสั่งเดียว** (status × pay_status) — เหตุผลเดียวกับใน `listOrders` */
+    coreQuery(
+      `SELECT status, COALESCE(pay_status,'') AS pay_status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${wTabsF.sql}
+       GROUP BY 1,2`,
+      wTabsF.params
+    ).catch(() => null),
+]);
   const retMap = retByWarehouse ? new Map(retByWarehouse.map((r) => [String(r.code ?? ""), r])) : null;
 
+    /* พับ status × pay_status → สองมิติ (null = อ่านไม่ได้ ⇒ จออ่านว่า "ไม่รู้" ห้ามเป็น []) */
+  const foldF = (col, out) => {
+    if (!Array.isArray(tabGridF)) return null;
+    const m = new Map();
+    for (const r of tabGridF) {
+      const kk = String(r[col] ?? "");
+      const cur = m.get(kk) || { orders: 0, amount: 0 };
+      cur.orders += Number(r.orders) || 0;
+      cur.amount += Number(r.amount) || 0;
+      m.set(kk, cur);
+    }
+    return [...m.entries()]
+      .map(([kk, v]) => ({ [out]: kk, orders: v.orders, amount: Math.round(v.amount * 100) / 100 }))
+      .sort((a, b) => b.orders - a.orders);
+  };
+
   return {
+    /* 🔑 ธงฐานแถบแท็บ + สองมิติ — **ต้องมาคู่กันเสมอ** (ฝั่งจอกำกับไว้: ข้อ 2 ห้ามมาคนเดียว)
+       แก้ `byStatus` ให้ตัด `paystatus` แต่ไม่ส่ง `tabBase` ⇒ จอยังซ่อนตัวเลขฟรี ๆ
+       และความหมายของช่องเปลี่ยนเงียบ ๆ สำหรับทุกคนที่อ่านมันอยู่ */
+    tabBase: { excludes: ["status", "paystatus"] },
+    byStatus: foldF("status", "status"),
+    byPayStatus: foldF("pay_status", "payStatus"),
     from, to,
     store: source,
     stores: storeRows.map((r) => ({
@@ -375,8 +417,15 @@ export async function listOrders(o = {}) {
          ไม่ต้องรอ ⇒ **ใส่ใน Promise.all เดียวกัน**
       ⚠️ ตัวที่อาจล้มได้ (core_meta ยังไม่ถูกสร้าง) ต้องมี .catch ของตัวเอง
          ไม่งั้นล้มตัวเดียวลากทั้งคำขอตาย — เดิมมันอยู่ใน try/catch แยก */
-  // แท็บสถานะ = ทุกตัวกรองยกเว้นสถานะ (รวมตัวกรองค้นหาขั้นสูง ไม่งั้นเลขในแท็บตอบคนละคำถามกับตาราง)
-  const wAll = buildWhere({ from, to, channel, q, includeCancelled: true, source, ...adv });
+  /* ฐานของ **แถบแท็บ** = ทุกตัวกรอง **ยกเว้น `status` และ ยกเว้น `paystatus`**
+     (รวมตัวกรองค้นหาขั้นสูงตัวอื่น ไม่งั้นเลขในแท็บตอบคนละคำถามกับตาราง)
+     🔴 **เหตุที่ต้องตัด `paystatus` ด้วย (เพิ่ม 14 ต.ค. 2569 · ฝั่งจอยิงพิสูจน์มาให้)**
+        สองมิติ (สถานะรายการ · สถานะชำระเงิน) อยู่บน **แถบแท็บเดียวกัน** ของจอ
+        ⇒ กดแท็บของมิติหนึ่ง **ต้องไม่เปลี่ยนเลขในวงเล็บของมิติอื่น** ไม่งั้นแท็บโกหก
+        ของจริงที่ฝั่งจอวัด: ส่ง `paystatus=Pending` เฉย ๆ ⇒ `byStatus` เหลือ 2 แถว
+        ⇒ แท็บ "ยกเลิก" (Voided 499) กับ "รอส่ง" (Waiting 1) อ่านได้ว่า **(0)** ทั้งที่มีของจริง
+     🔑 ของที่ส่งให้จอจึงต้องมี `tabBase.excludes` กำกับไปด้วยเสมอ — ดูเหตุผลที่ตัวมันเอง */
+  const wTabs = buildWhere({ from, to, channel, q, includeCancelled: true, source, ...adv, payStatus: null });
   /* 🔴 ตัวกรอง **ร้านเดียวล้วน** — ไม่มีวัน ไม่มีคำค้น ไม่มีช่องทาง ไม่ตัดใบยกเลิก
      ใช้ตอบคำถามเดียว: "ระบบนี้มีสถานะอะไรอยู่บ้าง" ⇒ จอทำแท็บครบได้โดยไม่ต้อง hardcode ชื่อ
      ⚠️ ห้ามเอา wAll มาใช้แทน — wAll ยังกรอง q/วัน ⇒ สถานะที่ไม่เจอในผลค้นจะหายไปทั้งปุ่ม
@@ -393,7 +442,7 @@ export async function listOrders(o = {}) {
         ⇒ คอมเมนต์ประกาศเจตนา ไม่ใช่หลักฐานว่าโค้ดทำตามนั้น (กฎเดียวกับที่เจอใน byStatus วันเดียวกัน) */
   const wStore = buildWhere({ from: "0001-01-01", to: "9999-12-31", includeCancelled: true, source });
   const [
-    sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, byStatus, statusesAllRows,
+    sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, tabGrid, statusesAllRows, payStatusesAllRows, payRowsFiltered,
     beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
   ] = await Promise.all([
     coreQuery(
@@ -446,11 +495,15 @@ export async function listOrders(o = {}) {
        ⚠️ **นับใบยกเลิกด้วยเสมอ** ไม่งั้นแท็บ "ยกเลิก" จะหายไปจากจอทั้งที่มีอยู่จริง
           (เจอจริง 2 ก.ย. 2569: มี Voided 44 ใบ แต่จอไม่มีแท็บให้กด)
           แท็บคือ "สารบัญ" ของข้อมูลทั้งหมด ไม่ใช่ผลของตัวกรองที่เลือกอยู่ */
+    /* 🔑 **หนึ่งรอบ D1 ตอบสามคำถาม** — `byStatus` · `byPayStatus` · ยอดค้างชำระแบบฐานเดิม
+       เหตุที่ไม่ยิงสองรอบ: D1 อยู่ไกล (0.3–0.5 วิ/รอบ) และ **เลขสองชุดที่มาจากคำสั่งต่างรอบ
+       จะไม่ตรงกันเมื่อมีใบเข้ามาระหว่างนั้น** ⇒ จอวางคู่กันแล้วดูเหมือนขัดแย้งกับตัวเอง
+       (กฎ `compare-within-one-response`) · ขนาดผล ≤ สถานะ × สถานะชำระ ≈ 20 แถว */
     coreQuery(
-      `SELECT status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
-       FROM orders WHERE ${wAll.sql}
-       GROUP BY status ORDER BY orders DESC`,
-      wAll.params
+      `SELECT status, COALESCE(pay_status,'') AS pay_status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${wTabs.sql}
+       GROUP BY 1,2`,
+      wTabs.params
     ),
     /* 🔴 **รายชื่อสถานะที่ "มีอยู่ในระบบ" — ไม่กรองอะไรเลยแม้แต่คำค้น** (เพิ่ม 18 ก.ย. 2569)
        ฝั่งจอเจอตอนใช้จอขายเป็นทางสำรองจริง (ZORT /Sell/list พัง 500 คืนนี้):
@@ -471,6 +524,31 @@ export async function listOrders(o = {}) {
     /* ⚠️ **null ไม่ใช่ []** — "ยิงไม่ได้" กับ "ไม่มีแถว" ต้องแยกกัน
         ถ้าคืน [] ปลายทางจะส่ง null เหมือนกันทั้งสองกรณี ⇒ ยุบสามสถานะเป็นสอง
         (ฝั่งจอขอข้อนี้มา และถูก — คอมเมนต์ข้างล่างเขียนสามสถานะไว้เอง แต่โค้ดทำได้แค่สอง) */
+    ).catch(() => null),
+    /* 🔖 **สารบัญสถานะชำระเงินของทั้งระบบ** (เพิ่ม 14 ต.ค. 2569 · ฝั่งจอขอ)
+       เหตุผลเดียวกับ `statusesAll` เป๊ะ: จอทำแท็บครบได้โดยไม่ hardcode ชื่อ
+       และวันที่ ZORT เพิ่มค่าใหม่ แท็บจะโผล่เอง ไม่ต้องรอใครไปเติม
+       📏 วัดจริง 14 ต.ค. (ฝั่งจอ · ร้าน z1 · 7,748 ใบ): Paid 7,057 · Voided 499 · Pending 168
+          · **ไม่มี `Partial Payment` สักใบทั้งปี** ⇒ hardcode 4 ค่าตาม ZORT = แท็บผีหนึ่งอัน
+       ⚠️ **null = อ่านไม่ได้ ห้ามเป็น []** (สามสถานะ เหมือน statusesAll) */
+    coreQuery(
+      `SELECT DISTINCT pay_status FROM orders WHERE ${wStore.sql} AND COALESCE(pay_status,'') <> ''
+       ORDER BY pay_status`,
+      wStore.params
+    ).catch(() => null),
+    /* 💰 **ยอดเงินแยกสถานะชำระเงิน ของ "ชุดที่กรองอยู่" (`w` — ชุดเดียวกับแถวในตาราง)**
+       🔴 เหตุที่ต้องมีทั้งตัวนี้และ `byPayStatus` ทั้งที่ชื่อคล้ายกัน (ฝั่งจอขอ 14 ต.ค. 2569 และถูก):
+          `byPayStatus` ใช้ฐานแถบแท็บ (ยกเว้น status + paystatus) ⇒ **ไม่ใช่ชุดที่จอแสดงอยู่**
+          เอาไปเขียนบรรทัดเงินตรง ๆ ⇒ ตอนอยู่แท็บ "สำเร็จ" เลข "ยังไม่จ่าย" จะเป็นของทุกสถานะ
+          ⇒ เลขสองขอบเขตวางคู่กันบนบรรทัดเดียว ซึ่งเป็นกฎที่เราห้ามกันเอง
+       ⇒ **ช่องที่ต่างขอบเขตต้องต่างชื่อ** และชื่อต้องบอกขอบเขต (…ByPay = ตามคอลัมน์ `pay_status`)
+       ⚠️ ส่ง **ก้อนทั้งก้อน** ด้วย (`byPayStatusFiltered`) ไม่ใช่แค่สองตัวเลขที่ท่อแปลชื่อค่าให้
+          วันที่ ZORT เพิ่มค่าใหม่ (เช่น Partial Payment) จอจะเห็นเอง ไม่ต้องรอท่อไปเติมชื่อ */
+    coreQuery(
+      `SELECT COALESCE(pay_status,'') AS pay_status, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+       FROM orders WHERE ${w.sql}
+       GROUP BY 1`,
+      w.params
     ).catch(() => null),
     /* ── อายุของข้อมูล ── ตารางชีพจรอาจยังไม่ถูกสร้าง (ต้องยิง ?init=1)
         ⇒ .catch คืนอาร์เรย์ว่าง **ห้ามให้ล้มลากทั้งคำขอ** */
@@ -542,6 +620,24 @@ export async function listOrders(o = {}) {
     changedAtUtc: chgRows?.[0]?.at ?? null,
     rangeChangedAtUtc: rngRows?.[0]?.at ?? null,
   };
+
+  /* พับตาราง `status × pay_status` ที่ยิงรอบเดียว ออกเป็นสองมิติของแถบแท็บ
+     ⚠️ บวกยอดด้วย `num()` ตัวเดียวกับที่ใช้ทั้งไฟล์ · ปัดครั้งเดียวตอนส่ง ไม่ปัดกลางทาง */
+  const foldTabs = (col, out) => {
+    const m = new Map();
+    for (const r of tabGrid || []) {
+      const k = String(r[col] ?? "");
+      const cur = m.get(k) || { orders: 0, amount: 0 };
+      cur.orders += Number(r.orders) || 0;
+      cur.amount += num(r.amount);
+      m.set(k, cur);
+    }
+    return [...m.entries()]
+      .map(([k, v]) => ({ [out]: k, orders: v.orders, amount: Math.round(v.amount * 100) / 100 }))
+      .sort((a, b) => b.orders - a.orders);
+  };
+  const byStatus = foldTabs("status", "status");
+  const byPayStatus = foldTabs("pay_status", "payStatus");
 
   return {
     from,
@@ -620,10 +716,39 @@ export async function listOrders(o = {}) {
     returnsSyncedAtUtc: retBeatRows?.[0]?.at ?? null,
     returnsSyncComplete: retBeatRows?.[0] ? String(retBeatRows[0].v) === "complete" : null,
     totalUnpaidAmount: Math.round(
+      /* 🔴 **ช่องนี้คิดจากคอลัมน์ `status` ไม่ใช่ `pay_status`** — ชื่ออ่านเหมือนคิดจากสถานะชำระเงิน แต่ไม่ใช่
+         📏 ฝั่งจอวัดของจริง 14 ต.ค. 2569 (z1 · อ่านครบ 7,748 ใบ = `total` เอง):
+            `status=Pending` **176** ใบ แต่ **23 ใบในนั้น `pay_status=Paid` (จ่ายแล้ว)** ⇒ ยอดนี้รวมเงินที่เก็บได้แล้ว
+            และกลับกัน **15 ใบที่ `status=Success` แต่ `pay_status=Pending` (ปิดใบแล้ว เงินยังไม่เข้า) ไม่ถูกนับเลย**
+            ⇒ ทิศที่แพงคือ 15 ใบนั้น: เงินที่ยังไม่ได้ และไม่มีใครเห็น
+         ⚠️ **ยังไม่พลิกความหมายในรอบนี้โดยตั้งใจ** — จอที่อ่านช่องนี้อยู่จะเห็นตัวเลขเปลี่ยนเงียบ ๆ
+            ให้ใช้ `byPayStatus` ข้างล่างเป็นแหล่งของ "ยอดที่เงินยังไม่เข้า" แล้วค่อยเลิกใช้ช่องนี้
+            เมื่อจอเลิกอ่านครบ · **รอฝั่งจอ/ท่านประธานตัดสินว่าจะพลิกเมื่อไหร่** (กฎ: ห้ามเปลี่ยนความหมายเงียบ ๆ) */
       (byStatus || []).reduce((s, x) => s + (/pending/i.test(String(x.status)) ? num(x.amount) : 0), 0)
     ),
+    /* 🔑 ธงความสามารถของ **ฐานแถบแท็บ** — เป็น **รายชื่อ ไม่ใช่ true/false** (ฝั่งจอขอ 14 ต.ค. 2569 และถูก)
+       เหตุ: วันที่มิติที่สามมาอยู่บนแถบแท็บ จอรู้เองว่าฐานครอบถึงไหน **โดยไม่ต้องรอใครเปลี่ยนชื่อธง**
+       (คลาสที่เจ็บมาแล้ว: เปลี่ยนความหมายค่าในสัญญาร่วม แล้วอีกฝั่งเทียบของเก่า ⇒ ผ่านฟรี) */
+    tabBase: { excludes: ["status", "paystatus"] },
+    /* 💰 ยอดเงินตามสถานะชำระเงิน **ของชุดที่กรองอยู่** — ขอบเขตเดียวกับแถวในตาราง (`w`)
+       ⚠️ อย่าสับกับ `byPayStatus` ข้างล่าง ซึ่งเป็นฐานของ *แถบแท็บ* (กว้างกว่า) */
+    byPayStatusFiltered: Array.isArray(payRowsFiltered)
+      ? payRowsFiltered.map((r) => ({ payStatus: String(r.pay_status ?? ""), orders: num(r.orders), amount: num(r.amount) }))
+      : null,
+    /* สองตัวที่ฝั่งจอขอใช้บนบรรทัดเงินตรง ๆ — คิดจากก้อนข้างบน ไม่ได้ยิงเพิ่ม
+       ⚠️ `null` เมื่ออ่านก้อนไม่ได้ **ห้ามเป็น 0** ("ไม่รู้" ≠ "ไม่มีเงินค้าง" — ทิศที่แพงคือ 0 ปลอม) */
+    totalUnpaidAmountByPay: Array.isArray(payRowsFiltered)
+      ? Math.round(payRowsFiltered.reduce((a, r) => a + (/pending/i.test(String(r.pay_status)) ? num(r.amount) : 0), 0))
+      : null,
+    totalPaidAmountByPay: Array.isArray(payRowsFiltered)
+      ? Math.round(payRowsFiltered.reduce((a, r) => a + (/^paid$/i.test(String(r.pay_status)) ? num(r.amount) : 0), 0))
+      : null,
     byChannel,
     byStatus,
+    /* 🔖 **มิติที่สองของแถบแท็บ: สถานะชำระเงิน** (เพิ่ม 14 ต.ค. 2569 ตามสัญญาข้อ 1 ที่ฝั่งจอขอ)
+       ฐาน **เดียวกับ `byStatus` เป๊ะ** (`wTabs`) และมาจาก **คำสั่ง D1 เดียวกัน** ⇒ ตรงกันโดยก่อสร้าง
+       ⇒ กดแท็บฝั่งสถานะ ไม่ทำให้เลขฝั่งชำระเงินขยับ และกลับกัน */
+    byPayStatus,
     /* 🔖 **สารบัญสถานะของทั้งระบบ (กรองแค่ร้าน)** — จอใช้ทำแท็บให้ครบโดยไม่ต้อง hardcode ชื่อ
        🔴 ที่มา 18 ก.ย. 2569: ฝั่งจอใช้จอขายเป็นทางสำรองจริงตอน ZORT /Sell/list พัง 500
           ค้นคำหนึ่งแล้ว **แท็บ "ยกเลิก" กับ "รอส่ง" หายไปทั้งปุ่ม** (5 แท็บ → 3 แท็บ)
@@ -636,6 +761,14 @@ export async function listOrders(o = {}) {
       ? statusesAllRows.map((r) => String(r.status))   // [] = ระบบไม่มีสถานะจริง ๆ (ตารางว่าง)
       : null,                                          // null = ยิงไม่ได้ ⇒ จอต้องอ่านว่า "ไม่รู้"
     statusesAllError: statusesAllRows === null ? "อ่านรายชื่อสถานะจากคลังเงาไม่ได้รอบนี้" : null,
+    /* 🔖 สารบัญสถานะชำระเงินของทั้งระบบ — เหตุผลเดียวกับ `statusesAll` เป๊ะ
+       📏 วัดจริง 14 ต.ค. (z1 · 7,748 ใบ): Paid 7,057 · Voided 499 · Pending 168
+          · **ไม่มี `Partial Payment` สักใบทั้งปี** ⇒ hardcode 4 ค่าตาม ZORT = ได้แท็บผีหนึ่งอัน
+       ⚠️ **null = อ่านไม่ได้ ห้ามเป็น []** (สามสถานะ: มีชื่อ+เจอ · มีชื่อ+ไม่เจอ=0 · ไม่มีรายชื่อ=ไม่รู้) */
+    payStatusesAll: Array.isArray(payStatusesAllRows)
+      ? payStatusesAllRows.map((r) => String(r.pay_status))
+      : null,
+    payStatusesAllError: payStatusesAllRows === null ? "อ่านรายชื่อสถานะชำระเงินจากคลังเงาไม่ได้รอบนี้" : null,
     /* ── ขอบเขต "ร้าน" ── จอใช้เขียนป้ายเองได้โดยไม่ต้องฮาร์ดโค้ดจำนวนร้าน
         store  = ร้านที่ถูกกรองอยู่ (null = ไม่ได้กรอง คือรวมทุกร้านที่มีในช่วงนี้)
         stores = ร้านที่มีบิลจริงในช่วงนี้ พร้อมยอดของแต่ละร้าน */

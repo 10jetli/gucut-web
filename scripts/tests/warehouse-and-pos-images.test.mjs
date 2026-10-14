@@ -24,7 +24,11 @@ const { listOrderFacets } = await import('../../netlify/lib/core-orders.mjs');
 test('orderfacets ไม่ขอ warehouses = ไม่ยิงเพิ่ม · ไม่มีคีย์', async () => {
   calls.length = 0;
   const r = await listOrderFacets({ from: '2026-09-01', to: '2026-09-15' });
-  assert.equal(calls.length, 2);
+  /* 🔁 14 ต.ค. 2569: 2 → 3 คำสั่ง — เพิ่มคำสั่งของ **แถบแท็บ** (status × pay_status รอบเดียว)
+     ของที่เทสนี้เฝ้าคือ "ไม่ขอ warehouses แล้วต้องไม่ยิงคำสั่งคลังเพิ่ม" ⇒ เจตนายังเดิม
+     ⚠️ เลขนี้จะโตทุกครั้งที่มีใครเพิ่มคำสั่ง ⇒ เช็คชื่อคำสั่งคลังไปด้วย ไม่ใช่เช็คแต่จำนวน */
+  assert.equal(calls.length, 3);
+  assert.equal(calls.filter((c) => /warehouse_code/.test(c.s)).length, 0, 'ไม่ขอคลัง = ต้องไม่มีคำสั่งที่แตะ warehouse_code');
   assert.equal('byWarehouse' in r, false);
 });
 

@@ -27,8 +27,18 @@ test('ยอดขายรวม: ทุกตัวกรองลง WHERE �
 test('แท็บสถานะใช้ตัวกรองใหม่ด้วย (ยกเว้นสถานะ) · ยอดหักคืนฝังเงื่อนไขชุดเดียวกัน', async () => {
   calls = [];
   await listOrders({ from: '2026-09-01', to: '2026-09-14', status: 'Success', ...ADV });
-  const tabs = calls.find((c) => /GROUP BY status ORDER BY orders DESC/.test(c.s));
-  assert.ok(tabs); assert.match(tabs.s, /EXISTS \(SELECT 1 FROM order_items/); assert.match(tabs.s, /pay_status = \?/);
+  /* 🔁 **แก้สัญญา 14 ต.ค. 2569 (gucut ท่อ) — เดิมเทสนี้บังคับว่าแท็บ *ต้อง* กรอง `pay_status`**
+     เหตุที่กลับข้าง: ฝั่งจอเอา **สถานะชำระเงินขึ้นเป็นแท็บบนแถบเดียวกับสถานะรายการ**
+     ⇒ กดแท็บของมิติหนึ่งแล้วเลขในวงเล็บของอีกมิติต้องไม่ขยับ (แท็บคือสารบัญ ไม่ใช่ผลของตัวกรอง)
+     ของจริงที่ฝั่งจอวัด: ส่ง `paystatus=Pending` เฉย ๆ ⇒ byStatus เหลือ 2 แถว
+     ⇒ แท็บ "ยกเลิก" (Voided 499) และ "รอส่ง" (Waiting 1) อ่านได้ว่า **(0)** ทั้งที่มีของจริง
+     ⚠️ เทสเดิม **ไม่ได้ผิดตอนเขียน** — มันตรึงสัญญาที่ยังไม่มีมิติที่สองบนแถบแท็บ
+        และมันทำงานถูกวันนี้: มันคือตัวที่จับได้ว่าผมเปลี่ยนสัญญาร่วม ⇒ แก้อย่างตั้งใจ ไม่ใช่ลบทิ้ง
+     ตัวกรองอื่น (เช่น `product` ⇒ EXISTS order_items) **ยังต้องอยู่ในฐานแท็บเหมือนเดิม** */
+  const tabs = calls.find((c) => /SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s));
+  assert.ok(tabs, 'ไม่เจอคำสั่งของแถบแท็บ');
+  assert.match(tabs.s, /EXISTS \(SELECT 1 FROM order_items/, 'ตัวกรองสินค้าต้องยังอยู่ในฐานแท็บ');
+  assert.doesNotMatch(tabs.s, /pay_status = \?/, 'ฐานแท็บต้องไม่กรองสถานะชำระเงิน (มิติที่สองของแถบเดียวกัน)');
   // (?<![\w]) กัน pay_status = ? ถูกนับเป็นการกรองสถานะ (รุ่นแรกของเทสต์นี้แดงหลอกเพราะตรงนี้)
   assert.doesNotMatch(tabs.s, /(?<![\w])status = \?/, 'แท็บต้องไม่กรองสถานะเอง');
   const ret = calls.find((c) => /FROM return_orders_v2/.test(c.s) && /EXISTS \(SELECT 1 FROM orders WHERE/.test(c.s));
@@ -51,5 +61,13 @@ test('ไม่ส่งตัวกรองใหม่ = เงื่อน�
 test('orderfacets รับตัวกรองชุดเดียวกัน', async () => {
   calls = [];
   await listOrderFacets({ from: '2026-09-01', to: '2026-09-14', ...ADV });
-  assert.ok(calls.filter((c) => /FROM orders WHERE/.test(c.s)).every((c) => /EXISTS \(SELECT 1 FROM order_items/.test(c.s) && /pay_status = \?/.test(c.s)));
+  /* 🔁 แก้พร้อมกับเทสข้างบน (14 ต.ค. 2569): คำสั่งของ **แถบแท็บ** ในเส้นนี้ก็ตัด `paystatus` ออกแล้ว
+     ⇒ แยกตรวจสองกลุ่ม: คำสั่งที่ตอบ "ของที่กรองอยู่" ต้องกรองครบ · คำสั่งแถบแท็บต้องไม่กรองสองมิตินั้น */
+  const เส้น = calls.filter((c) => /FROM orders WHERE/.test(c.s));
+  const แท็บ = เส้น.filter((c) => /SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s));
+  assert.equal(แท็บ.length, 1, 'แถบแท็บต้องยิงคำสั่งเดียว');
+  assert.doesNotMatch(แท็บ[0].s, /pay_status = \?/);
+  assert.ok(เส้น.filter((c) => !/SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s))
+    .every((c) => /EXISTS \(SELECT 1 FROM order_items/.test(c.s) && /pay_status = \?/.test(c.s)), 'เส้นที่ตอบของที่กรองอยู่ต้องรับตัวกรองครบ');
+  assert.ok(แท็บ[0].s.includes('EXISTS (SELECT 1 FROM order_items'), 'ตัวกรองสินค้าต้องยังอยู่ในฐานแท็บ');
 });
