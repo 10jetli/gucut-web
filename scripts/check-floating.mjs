@@ -32,6 +32,25 @@ import path from "node:path";
 const ROOTS = ["netlify/functions", "netlify/lib"];
 const WRITE_METHODS = new Set(["set", "setJSON", "delete"]);
 const SKIP_MARK = "ปล่อยลอย-ตั้งใจ";
+const ไฟล์ที่สแกนแล้ว = [];
+
+/* 📊 **ช่องยกเว้นต้องโชว์ทุกรอบ ไม่ใช่โชว์ตอนตก** (14 ต.ค. 2569 · เกณฑ์สามข้อของฝั่งจอ)
+ *    `ปล่อยลอย-ตั้งใจ` เป็นช่องยกเว้นรายบรรทัด: ใครตรวจแทน? **ไม่มี** · บังคับอธิบาย? **ไม่**
+ *    ⇒ เดิมไม่มีใครรู้ว่ามันถูกใช้กี่จุด ⇒ ช่องที่โตขึ้นเรื่อย ๆ โดยไม่มีใครเห็น
+ *    ⇒ ⇒ พิมพ์จำนวนจุดที่ใช้ทุกรอบ · **ไม่บล็อก** (ของที่ลงโทษพฤติกรรมที่จำเป็นจะถูกเลี่ยง) */
+function โชว์ช่องยกเว้น(ไฟล์ทั้งหมด) {
+  const ใช้ = [];
+  for (const f of ไฟล์ทั้งหมด) {
+    try {
+      const n = (fs.readFileSync(f, "utf8").match(new RegExp(SKIP_MARK, "g")) || []).length;
+      if (n) ใช้.push(`${f.replace(/^.*?(netlify|scripts|src)\//, "$1/")}×${n}`);
+    } catch {}
+  }
+  const รวม = ใช้.reduce((a, s) => a + Number(s.split("×")[1]), 0);
+  console.log(`   📝 ช่องยกเว้น "${SKIP_MARK}" ถูกใช้ **${รวม} จุด** ใน ${ใช้.length} ไฟล์${ใช้.length ? ": " + ใช้.join(" · ") : ""}`);
+  if (!ใช้.length) console.log(`      (0 จุด = ยังไม่มีใครใช้ช่องนี้ · ไม่ใช่ "ไม่มีช่อง")`);
+}
+
 
 function* mjsFiles(dir) {
   for (const f of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -95,6 +114,7 @@ for (const root of ROOTS) {
   นับไฟล์[root] = 0;
   for (const file of mjsFiles(root)) {
     นับไฟล์[root]++;
+    ไฟล์ที่สแกนแล้ว.push(file);
     const text = fs.readFileSync(file, "utf8");
     const lines = text.split("\n");
     const sf = ts.createSourceFile(file, text, ts.ScriptTarget.ES2022, true);
@@ -174,6 +194,7 @@ if (problems.length) {
   console.error(`ถ้าจำเป็นต้องปล่อยลอยจริง ๆ ให้คอมเมนต์ "${SKIP_MARK}" กำกับบรรทัดนั้น`);
   process.exit(1);
 }
+โชว์ช่องยกเว้น(ไฟล์ที่สแกนแล้ว);
 console.log(
   "check-floating: โค้ดเซิร์ฟเวอร์ไม่มี promise ปล่อยลอย ✓\n" +
   "   📏 สแกน " + Object.entries(นับไฟล์).map(([r, n]) => `${r} ${n} ไฟล์`).join(" · ") + "\n" +
