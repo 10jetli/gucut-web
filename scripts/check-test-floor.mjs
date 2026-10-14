@@ -13,7 +13,9 @@
 import { readFileSync, writeFileSync } from "node:fs";
 
 const logPath = process.argv[2];
-const FLOOR_FILE = "scripts/lib/พื้นจำนวนเทส.json";
+// รับพาธไฟล์พื้นทาง argv[3] ได้ — **มีไว้ให้เคสร่วมยิงใส่ไฟล์ชั่วคราว**
+// ⚠️ ถ้าไม่มีทางนี้ เคสร่วมจะต้องเขียนทับไฟล์พื้นจริง ⇒ เทสทำลายของที่มันตรวจ
+const FLOOR_FILE = process.argv[3] || "scripts/lib/พื้นจำนวนเทส.json";
 
 function อ่านจำนวนเทส(p) {
   const t = readFileSync(p, "utf8");
