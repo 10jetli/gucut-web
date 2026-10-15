@@ -71,3 +71,26 @@ test('orderfacets รับตัวกรองชุดเดียวกั�
     .every((c) => /EXISTS \(SELECT 1 FROM order_items/.test(c.s) && /pay_status = \?/.test(c.s)), 'เส้นที่ตอบของที่กรองอยู่ต้องรับตัวกรองครบ');
   assert.ok(แท็บ[0].s.includes('EXISTS (SELECT 1 FROM order_items'), 'ตัวกรองสินค้าต้องยังอยู่ในฐานแท็บ');
 });
+
+test('status หลายค่าใช้ IN และสะท้อน applied.status เป็นอาร์เรย์ครบทุกค่า', async () => {
+  calls = [];
+  const r = await listOrders({
+    from: '2026-07-01', to: '2026-10-15', source: 'z1',
+    status: 'Pending, Waiting', includeCancelled: true,
+  });
+  const sale = calls.find((c) => /SELECT COUNT\(\*\) AS c/.test(c.s));
+  assert.match(sale.s, /status IN \(\?,\?\)/);
+  assert.deepEqual(sale.params.filter((v) => v === 'Pending' || v === 'Waiting'), ['Pending', 'Waiting']);
+  assert.deepEqual(r.applied.status, ['Pending', 'Waiting']);
+});
+
+test('datetype=ship ให้ from/to กรอง ship_date จริง และประกาศว่า payment ยังไม่มีข้อมูล', async () => {
+  calls = [];
+  const r = await listOrders({ from: '2026-10-01', to: '2026-10-15', dateType: 'ship' });
+  const sale = calls.find((c) => /SELECT COUNT\(\*\) AS c/.test(c.s));
+  assert.match(sale.s, /ship_date >= \? AND ship_date <= \?/);
+  assert.doesNotMatch(sale.s, /order_date >= \?/);
+  assert.equal(r.applied.dateType, 'ship');
+  assert.deepEqual(r.dateTypesSupported, ['order', 'ship']);
+  assert.match(r.dateTypesUnavailable.payment, /ยังไม่มีคอลัมน์วันชำระเงิน/);
+});

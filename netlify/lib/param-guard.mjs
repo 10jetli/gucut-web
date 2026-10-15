@@ -45,6 +45,38 @@ export function badParamError(sp) {
     if (amin && amax && Number(amin) > Number(amax)) return `amountmin (${amin}) ต้องไม่มากกว่า amountmax (${amax})`;
     const cod = String(sp.get("cod") ?? "").trim();
     if (cod && cod !== "0" && cod !== "1") return `cod ต้องเป็น 1 (เก็บเงินปลายทาง) หรือ 0 (ไม่ใช่) (ได้มา "${cod.slice(0, 10)}")`;
+    if (sp.get("list") === "orders" || sp.get("list") === "orderfacets") {
+      const rawStatus = String(sp.get("status") ?? "");
+      if (rawStatus) {
+        const values = rawStatus.split(",");
+        if (values.length > 10) return `status รับได้สูงสุด 10 ค่า (ได้มา ${values.length} ค่า)`;
+        if (values.some((v) => !v.trim())) return "status หลายค่าต้องคั่นด้วยจุลภาคและห้ามมีค่าว่าง";
+        if (values.some((v) => v.trim().length > 60)) return "status แต่ละค่าต้องยาวไม่เกิน 60 ตัวอักษร";
+      }
+      const dateType = String(sp.get("datetype") ?? "").trim();
+      if (dateType && !["order", "ship"].includes(dateType)) {
+        return dateType === "payment"
+          ? "datetype=payment ยังใช้ไม่ได้ — กระจกยังไม่มีวันชำระเงินจาก ZORT (รองรับ order หรือ ship)"
+          : `datetype ต้องเป็น order หรือ ship (ได้มา "${dateType.slice(0, 20)}")`;
+      }
+    }
+  }
+  if (sp.get("list") === "stock") {
+    for (const k of ["sellmin", "sellmax", "buymin", "buymax"]) {
+      const v = String(sp.get(k) ?? "").trim();
+      if (v && !/^\d+(\.\d+)?$/.test(v)) return `${k} ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป (ได้มา "${v.slice(0, 20)}")`;
+    }
+    for (const [lo, hi] of [["sellmin", "sellmax"], ["buymin", "buymax"]]) {
+      const a = String(sp.get(lo) ?? "").trim();
+      const b = String(sp.get(hi) ?? "").trim();
+      if (a && b && Number(a) > Number(b)) return `${lo} (${a}) ต้องไม่มากกว่า ${hi} (${b})`;
+    }
+    const kind = String(sp.get("kind") ?? "").trim();
+    if (kind && !["goods", "service", "all"].includes(kind)) return `kind ต้องเป็น goods / service / all (ได้มา "${kind.slice(0, 20)}")`;
+    if (String(sp.get("warehouse") ?? "").trim()) return "warehouse ยังใช้กับ list=stock ไม่ได้ — กระจกไม่มียอดสต็อกรายคลัง";
+    if (String(sp.get("tag") ?? "").trim()) return "tag ยังใช้กับ list=stock ไม่ได้ — ตาราง products ยังไม่เก็บ Tag จาก ZORT";
+    const archived = String(sp.get("archived") ?? "").trim();
+    if (archived && archived !== "0") return "archived ยังใช้กับ list=stock ไม่ได้ — กระจกไม่เก็บสินค้าที่ถูกลบจาก ZORT";
   }
   return null;
 }

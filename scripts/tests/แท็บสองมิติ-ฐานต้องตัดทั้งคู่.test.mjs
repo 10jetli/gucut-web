@@ -87,8 +87,8 @@ test('เลขเงินตามสถานะชำระเงินต�
   // คำสั่งของเลขเงินต้องกรอง status (เพราะเป็นชุดที่จอแสดง) — ต่างจากคำสั่งแถบแท็บที่ต้องไม่กรอง
   const เงิน = seen.filter((x) => /SELECT COALESCE\(pay_status,''\) AS pay_status, status, COUNT\(\*\) AS orders/.test(x.s) && /GROUP BY 1,2$/.test(x.s));
   assert.equal(เงิน.length, 1, 'คำสั่งเลขเงินต้องมีคำสั่งเดียว');
-  assert.match(เงิน[0].s, /(?<![\w])status = \?/, 'เลขเงินต้องอยู่ในขอบเขตเดียวกับแถว ⇒ ต้องกรองสถานะด้วย');
-  assert.doesNotMatch(tabSql().s, /(?<![\w])status = \?/, 'แถบแท็บต้องยังไม่กรองสถานะ');
+  assert.match(เงิน[0].s, /(?<![\w])status IN \(\?\)/, 'เลขเงินต้องอยู่ในขอบเขตเดียวกับแถว ⇒ ต้องกรองสถานะด้วย');
+  assert.doesNotMatch(tabSql().s, /(?<![\w])status IN \(/, 'แถบแท็บต้องยังไม่กรองสถานะ');
   // ค่าที่ได้ต้องมาจากก้อน ไม่ใช่จาก byPayStatus (ซึ่งกว้างกว่า)
   assert.equal(r.totalUnpaidAmountByPay, 300);
   assert.equal(r.totalPaidAmountByPay, 1070, 'Paid ต้องรวมทุก status ในฐาน w');

@@ -33,7 +33,7 @@ for (const f of ['sortApplied', 'sortIgnored', 'sortsSupported']) {
   ok(`ส่งช่อง ${f}`, new RegExp(`${f}[,:]`).test(src))
 }
 ok('sortIgnored เป็น null เมื่อค่าที่ส่งมารองรับ', /sortIgnored\s*=\s*sortRaw\s*&&\s*!SORTS\[sortRaw\]\s*\?\s*sortRaw\s*:\s*null/.test(src))
-ok('ค่าที่ไม่รู้จัก ยังทำงานต่อได้ (ทางถอย qty) ไม่ใช่พังทั้งคำขอ', /SORTS\[sortRaw\]\s*\|\|\s*"cur\.qty ASC"/.test(src))
+ok('ค่าที่ไม่รู้จัก ยังทำงานต่อได้ (ทางถอย onhand) ไม่ใช่พังทั้งคำขอ', /SORTS\[sortRaw\]\s*\|\|\s*"p\.onhand ASC"/.test(src))
 
 console.log(fail ? `\n🔴 ตก ${fail} ข้อ` : '\n✅ ผ่านหมด')
 process.exit(fail ? 1 : 0)

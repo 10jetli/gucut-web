@@ -59,3 +59,21 @@ test('ค้นหาขั้นสูงรายการขาย: วัน
   assert.equal(badParamError(sp('list=orders&shipfrom=2026-09-01&shipto=2026-09-10&amountmin=99.5&amountmax=1000&cod=1')), null);
   assert.equal(badParamError(sp('list=orderfacets&cod=0')), null);
 });
+
+test('รายการขาย: status หลายค่าและชนิดวันที่ต้องปฏิเสธค่าที่แปลไม่ได้', () => {
+  assert.equal(badParamError(sp('list=orders&status=Pending,Waiting&datetype=ship')), null);
+  assert.match(badParamError(sp('list=orders&status=Pending,,Waiting')), /ห้ามมีค่าว่าง/);
+  assert.match(badParamError(sp(`list=orders&status=${Array.from({ length: 11 }, (_, i) => `S${i}`).join(',')}`)), /สูงสุด 10 ค่า/);
+  assert.match(badParamError(sp('list=orders&datetype=payment')), /ยังใช้ไม่ได้.*ยังไม่มีวันชำระเงิน/);
+  assert.match(badParamError(sp('list=orders&datetype=guess')), /order หรือ ship/);
+});
+
+test('คลัง: ช่วงราคาต้องเป็นเลขและช่องที่กระจกไม่มีต้องตีกลับ', () => {
+  assert.equal(badParamError(sp('list=stock&sellmin=0&sellmax=100000&buymin=0&buymax=100000&kind=all')), null);
+  assert.match(badParamError(sp('list=stock&sellmin=nope')), /sellmin ต้องเป็นตัวเลข/);
+  assert.match(badParamError(sp('list=stock&sellmin=20&sellmax=10')), /sellmin .* ต้องไม่มากกว่า sellmax/);
+  assert.match(badParamError(sp('list=stock&kind=unknown')), /kind ต้องเป็น/);
+  assert.match(badParamError(sp('list=stock&warehouse=KLD')), /ไม่มียอดสต็อกรายคลัง/);
+  assert.match(badParamError(sp('list=stock&tag=x')), /ยังไม่เก็บ Tag/);
+  assert.match(badParamError(sp('list=stock&archived=1')), /ไม่เก็บสินค้าที่ถูกลบ/);
+});

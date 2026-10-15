@@ -249,6 +249,28 @@ export async function listStock(o = {}) {
   const offset = bOffset.ใช้;
   const การบีบ = ก้อนการบีบ({ soldDays: bSold.บันทึก, limit: bLimit.บันทึก, offset: bOffset.บันทึก });
   const q = String(o.q ?? "").trim().slice(0, 60);
+  const code = String(o.code ?? "").trim().slice(0, 200);
+  const name = String(o.name ?? "").trim().slice(0, 200);
+  const ราคา = (key) => {
+    const raw = String(o[key] ?? "").trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : Number.NaN;
+  };
+  const sellMin = ราคา("sellMin");
+  const sellMax = ราคา("sellMax");
+  const buyMin = ราคา("buyMin");
+  const buyMax = ราคา("buyMax");
+  if ([sellMin, sellMax, buyMin, buyMax].some(Number.isNaN))
+    return { error: "ช่วงราคาต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป" };
+  if (sellMin !== null && sellMax !== null && sellMin > sellMax)
+    return { error: "sellmin ต้องไม่มากกว่า sellmax" };
+  if (buyMin !== null && buyMax !== null && buyMin > buyMax)
+    return { error: "buymin ต้องไม่มากกว่า buymax" };
+  /* สามช่องนี้มีบนจอ ZORT แต่กระจกยังไม่มีข้อมูล — ตีกลับดีกว่าคืนกองว่างที่ดูเหมือนกรองแล้ว */
+  if (String(o.warehouse ?? "").trim()) return { error: "warehouse ยังใช้ไม่ได้ — กระจกไม่มียอดสต็อกรายคลัง" };
+  if (String(o.tag ?? "").trim()) return { error: "tag ยังใช้ไม่ได้ — products ยังไม่เก็บ Tag จาก ZORT" };
+  if (!["", "0"].includes(String(o.archived ?? "").trim())) return { error: "archived ยังใช้ไม่ได้ — กระจกไม่เก็บสินค้าที่ถูกลบจาก ZORT" };
   /* 🔴 **ค่า sort ที่ไม่รู้จัก เคยกลายเป็น "เรียงตาม qty" เงียบ ๆ** (ฝั่งจอจับได้ 18 ก.ย. 2569
       ยิงเทียบทีละค่า: name · price · buy · available และค่ามั่ว ให้ลำดับเหมือน qty เป๊ะทุกตัว
       และเส้นนี้ไม่สะท้อน applied กลับมาเลย ⇒ **ปุ่มเรียงหลอก**)
@@ -260,8 +282,8 @@ export async function listStock(o = {}) {
      ⚠️ ค่าที่ไม่รู้จัก **ยังคงไม่ตีกลับเป็น error** เพราะจอเก่าอาจส่งค่าที่เลิกใช้มา
         แต่ต้องรายงานผ่าน `sortIgnored` ⇒ จอเขียนบอกได้ว่าปุ่มนั้นยังไม่รองรับ */
   const SORTS = {
-    qty: "cur.qty ASC",
-    qtydesc: "cur.qty DESC",
+    qty: "p.onhand ASC",
+    qtydesc: "p.onhand DESC",
     sold: "sold30 DESC",
     sku: "cur.sku ASC",
     name: "name ASC",
@@ -272,7 +294,7 @@ export async function listStock(o = {}) {
     availablelow: "avail ASC",
   };
   const sortRaw = String(o.sort ?? "").trim().slice(0, 20);
-  const sort = SORTS[sortRaw] || "cur.qty ASC";
+  const sort = SORTS[sortRaw] || "p.onhand ASC";
   const sortApplied = SORTS[sortRaw] ? sortRaw : "qty";
   const sortIgnored = sortRaw && !SORTS[sortRaw] ? sortRaw : null;
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
@@ -280,13 +302,13 @@ export async function listStock(o = {}) {
   //    เป็นกับดักเดียวกับแท็บ "ยกเลิก (44) แต่กดแล้วได้ 0" ในจอรายการขาย (2 ก.ย. 2569)
   const only =
     {
-      out: "cur.qty <= 0",
+      out: "p.onhand <= 0",
       /* ⚠️ **"ของหมด" กับ "ติดลบ" คนละความหมาย ห้ามอยู่ถังเดียวกัน** (ฝั่งจอชี้ 5 ก.ย. 2569)
           ของหมด (= 0) = เรื่องปกติของการขาย ไม่ต้องทำอะไร
           ติดลบ (< 0) = **ข้อมูลผิด** ขายออกมากกว่าที่บันทึกรับเข้า ต้องตามหา
           รวมกันเมื่อไหร่ ของที่ต้องตามจะจมอยู่ในกองของที่ปกติ (564 ของหมด · 15 ติดลบ) */
-      neg: "cur.qty < 0",
-      low: "cur.qty > 0 AND cur.qty <= 3",
+      neg: "p.onhand < 0",
+      low: "p.onhand > 0 AND p.onhand <= 3",
       // แท็บ เปิด/ปิดใช้งาน แบบ ZORT — ต้องกรองที่ฐานข้อมูล ไม่ใช่ที่จอ
       // ⚠️ กรองฝั่งจอจากข้อมูลที่แบ่งหน้ามาแล้ว = เลขหน้าผิดและตัวนับผิดทันทีที่มีของจริง
       //    (บั๊กเดียวกับแท็บที่เคยกรองแค่ 400 แถวแรก)
@@ -300,8 +322,9 @@ export async function listStock(o = {}) {
   //    "ของใกล้หมด"** จนสินค้าจริงที่ควรสั่งของถูกดันตกหน้า
   // ⚠️ **ไม่กรองทิ้งเงียบ ๆ** — คืนจำนวนมาด้วยเสมอ (`services`) ให้จอบอกได้ว่าซ่อนไปกี่ตัว
   //    กติกาเดียวกับ total/outOfStock: ตัวเลขบนแท็บต้องบอกได้ว่าแท็บอื่นมีอะไร
+  const kindRaw = String(o.kind ?? "").trim();
   const kind =
-    { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[o.kind] || "";
+    { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[kindRaw] || "";
 
   // 🛡️ บั๊ก A (13 ก.ย. 2569): only=/kind= ที่ "ส่งค่ามาแต่แปลไม่ออก" เดิมตกเงียบเป็น "ไม่กรอง"
   //    ⇒ คืนทั้งคลัง 2,672 แถว · คนขอ only=negative (คำที่เดาก่อนเสมอ เพราะช่องผลชื่อ `negative`)
@@ -311,8 +334,8 @@ export async function listStock(o = {}) {
   //    listStock คืน {error} ⇒ core.mjs (okJson r?.error?400) แปลงเป็น 400 ให้เอง
   if (o.only && !only)
     return { error: `ไม่รู้จักตัวกรอง only="${o.only}"`, accepts: ["out", "neg", "low", "active", "inactive"] };
-  if (o.kind && !kind)
-    return { error: `ไม่รู้จักตัวกรอง kind="${o.kind}"`, accepts: ["goods", "service"] };
+  if (kindRaw && !["goods", "service", "all"].includes(kindRaw))
+    return { error: `ไม่รู้จักตัวกรอง kind="${o.kind}"`, accepts: ["goods", "service", "all"] };
 
   // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
@@ -335,6 +358,12 @@ export async function listStock(o = {}) {
     filter += ` AND p.category = ?`;
     fParams.push(category);
   }
+  if (code) { filter += ` AND ${contains("cur.sku")}`; fParams.push(code); }
+  if (name) { filter += ` AND ${contains("p.name")}`; fParams.push(name); }
+  if (sellMin !== null) { filter += " AND cur.price >= ?"; fParams.push(sellMin); }
+  if (sellMax !== null) { filter += " AND cur.price <= ?"; fParams.push(sellMax); }
+  if (buyMin !== null) { filter += " AND p.purchase_price >= ?"; fParams.push(buyMin); }
+  if (buyMax !== null) { filter += " AND p.purchase_price <= ?"; fParams.push(buyMax); }
 
   const CTE = `
     WITH d AS (SELECT MAX(day) AS day FROM stock_snapshots),
@@ -362,19 +391,19 @@ export async function listStock(o = {}) {
     `${CTE}
      SELECT (SELECT day FROM d) AS day,
             COUNT(*) AS skus,
-            SUM(CASE WHEN cur.qty <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
-            SUM(CASE WHEN cur.qty > 0 AND cur.qty <= 3 THEN 1 ELSE 0 END) AS low,
+            SUM(CASE WHEN p.onhand <= 0 THEN 1 ELSE 0 END) AS out_of_stock,
+            SUM(CASE WHEN p.onhand > 0 AND p.onhand <= 3 THEN 1 ELSE 0 END) AS low,
             /* ติดลบ — นับตาม kind ที่เลือกอยู่ (goods/service) เหมือน outOfStock
                ⚠️ แถบเตือนต้องใช้ตัวนี้ **ห้ามนับจาก rows** เพราะ rows ชน limit ได้
                   แล้ววันที่ติดลบเกิน 200 รหัส แถบจะเขียน 200 แล้วหยุด โดยไม่มีอะไรฟ้อง */
-            SUM(CASE WHEN cur.qty < 0 THEN 1 ELSE 0 END) AS negative,
-            ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value,
+            SUM(CASE WHEN p.onhand < 0 THEN 1 ELSE 0 END) AS negative,
+            ROUND(COALESCE(SUM(p.onhand * cur.price),0),2) AS value,
             /* ⚠️ **ZORT คิดมูลค่าสต็อกจาก "ราคาทุน" ไม่ใช่ราคาขาย** (วัดเทียบแล้ว 3 ก.ย. 2569)
                 ราคาขายรวมได้ ฿26.7 ล้าน · ZORT โชว์ ฿16.4 ล้าน — ต่างกันสิบล้าน
                 จอที่เขียนว่า "มูลค่าสินค้าทั้งหมด" ต้องใช้ valueCost ไม่ใช่ value
                 ⚠️ และต้องบอกด้วยว่ากี่รหัสยังไม่มีราคาทุน ไม่งั้นยอดต่ำกว่าจริงเงียบ ๆ */
-            ROUND(COALESCE(SUM(cur.qty * COALESCE(p.purchase_price,0)),0),2) AS value_cost,
-            SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS no_cost
+            ROUND(COALESCE(SUM(p.onhand * COALESCE(p.purchase_price,0)),0),2) AS value_cost,
+            SUM(CASE WHEN p.onhand > 0 AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS no_cost
      FROM cur ${JOIN} WHERE 1=1 ${kind ? `AND ${kind}` : ""} ${filter}`,
     [sinceMod, ...fParams]
   ),
@@ -399,9 +428,9 @@ export async function listStock(o = {}) {
       : Promise.resolve(null),
     coreQuery(
     `${CTE}
-     SELECT cur.sku AS sku, cur.qty AS qty, cur.price AS price,
+     SELECT cur.sku AS sku, p.onhand AS qty, cur.qty AS snapshot_qty, cur.price AS price,
             COALESCE(sold.qty,0) AS sold30,
-            p.purchase_price AS buy, p.available AS avail, p.unit AS unit,
+            p.purchase_price AS buy, p.available AS avail, p.category AS category, p.unit AS unit,
             p.product_type AS ptype, p.active AS active, p.weight AS weight, p.image_path AS imagePath,
             CASE WHEN p.image_file_src = p.image_path THEN p.image_file ELSE NULL END AS imageFile,
             COALESCE((SELECT name FROM products WHERE sku = cur.sku AND name <> ''),
@@ -524,20 +553,52 @@ export async function listStock(o = {}) {
     pageRows = tagged.slice(offset, offset + limit);
   }
 
-  /* 🕘 ให้จอแคชตัวนับแท็บได้ — **เส้นนี้ต่างจากเส้นอื่น**: stock_snapshots ไม่มี updated_at
-     เก็บเป็น "ภาพถ่ายรายวัน" (คอลัมน์ day) ⇒ ได้ `changedDay` เป็นวัน ไม่ใช่เวลา ห้ามบวก 7
-     และไม่มีใครเก็บชีพจรของตารางนี้ ⇒ syncedAtKnown:false = ปกติ **ห้ามขึ้นเตือน** */
-  const freshness = await freshnessOf(coreQuery, { table: "stock_snapshots", dayCol: "day" });
+  /* 🕘 qty / available / category ของแถวมาจาก products จึงต้องให้ freshness หลักตามตารางนั้น
+     ห้ามใช้วันของ stock_snapshots อ้างว่าเลข onhand สดถึงวันนั้น — คนละแหล่งกัน
+     ส่วน day / sold / price ยังอิงภาพถ่ายรายวัน จึงส่ง snapshotFreshness แยก ห้ามยุบเป็นเวลาเดียว */
+  const [freshness, snapshotFreshness] = await Promise.all([
+    freshnessOf(coreQuery, { table: "products", metaKey: "sync_products" }),
+    freshnessOf(coreQuery, { table: "stock_snapshots", dayCol: "day" }),
+  ]);
   return {
     day,
     soldDays,
     freshness,
+    snapshotFreshness,
+    stockSources: {
+      qty: "products.onhand",
+      available: "products.available",
+      category: "products.category",
+      price: "stock_snapshots.price",
+      soldPeriodStartsAt: day,
+    },
     /* 🔴 **`applied` — เพิ่ม 19 ก.ย. 2569 · เส้นนี้ไม่มีมาก่อน** (เจอด้วยสารบัญช่องที่แต่ละเส้นคืน)
         วัดแล้วว่าเส้นนี้กรองด้วย q จริง (ยิง q=zz ⇒ 2,674 → 0) แต่คำตอบ **ไม่มีคีย์ q เลย**
         ⇒ จอโชว์ "1 รายการ" โดยไม่มีคำว่า "ที่ตรงกับคำค้น" ⇒ คนอ่านคิดว่าคลังมีของชิ้นเดียว
         ⚠️ ใช้ชื่อ `applied` ตามที่เส้นอื่นใช้ ห้ามคิดชื่อใหม่ · `sortApplied`/`sortIgnored` คงไว้
            (สองตัวนั้นตอบคำถามต่างกัน: เรียงอย่างไร ≠ กรองด้วยอะไร) */
-    applied: { q: q || null, only: only ? String(o.only) : null, kind: kind ? String(o.kind) : null, channel: channel || null, limit, offset },
+    applied: {
+      q: q || null,
+      code: code || null,
+      name: name || null,
+      sellMin,
+      sellMax,
+      buyMin,
+      buyMax,
+      category: category || null,
+      sort: sortApplied,
+      only: only ? String(o.only) : null,
+      kind: kindRaw || null,
+      channel: channel || null,
+      limit,
+      offset,
+    },
+    advancedFiltersSupported: ["code", "name", "sellmin", "sellmax", "buymin", "buymax", "kind", "category"],
+    advancedFiltersUnavailable: {
+      warehouse: "กระจกไม่มียอดสต็อกรายคลัง — ห้ามใช้ยอดรวมแทน",
+      tag: "ตาราง products ยังไม่เก็บ Tag จาก ZORT",
+      archived: "ตัวซิงก์เก็บเฉพาะสินค้าที่ยังไม่ถูกลบ",
+    },
     ...(การบีบ ?? {}),
     /* 🏷️ **แผนที่ป้ายของช่อง `src`** — ส่งมาที่เดียว ไม่ใช่ติดไปทุกแถว (2,674 แถว)
        🔑 ฝั่งจอขอ: แถว `mirror` ไม่มีคำอธิบาย ⇒ คนแพ็กของเห็นคำว่า "mirror" ซึ่งไม่บอกอะไรเขา
@@ -621,7 +682,8 @@ export async function listStock(o = {}) {
     rows: pageRows.map((r) => ({
       sku: r.sku,
       name: r.name || "",
-      qty: num(r.qty),
+      // `qty` คือ stock/onhand ของ ZORT · ห้ามหยิบภาพถ่าย `snapshot_qty` หรือ available มาแทน
+      qty: r.qty === null || r.qty === undefined ? null : num(r.qty),
       price: num(r.price),
       sold: num(r.sold30),
       // ⚠️ ราคาซื้อ 281 ตัวเป็น 0 จริง (ยังไม่ได้กรอกต้นทุน) — ส่ง null ไม่ใช่ 0
@@ -630,6 +692,8 @@ export async function listStock(o = {}) {
       // ⚠️ พร้อมขาย ≠ คงเหลือ จริง 155 ตัว (ของถูกจองไว้ในออเดอร์ที่ยังไม่ส่ง)
       //    null = ยังไม่มีในทะเบียน ให้จอแสดง "—" ห้ามเดาว่าเท่ากับ qty
       available: r.avail === null || r.avail === undefined ? null : num(r.avail),
+      // ชื่อตรงตัวจาก ZORT · '' = ZORT ไม่ได้จัดหมวด (ไม่เดาจากชื่อสินค้า)
+      category: r.category === null || r.category === undefined ? null : String(r.category),
       unit: r.unit || "",
       // ⚠️ null = ยังไม่ได้กรอกน้ำหนัก (669 จาก 2,898 เท่านั้นที่มี) — จอต้องขึ้น "—" ห้ามขึ้น 0
       weight: r.weight === null || r.weight === undefined ? null : num(r.weight),
@@ -637,8 +701,8 @@ export async function listStock(o = {}) {
       imagePath: r.imagePath === null || r.imagePath === undefined ? null : String(r.imagePath),
       // รูปย่อในถังเรา (ชื่อไฟล์ใต้ video.gucut.com/i/<128|256|384|640>/) — ส่งเฉพาะที่ย่อจากรูป ZORT ปัจจุบัน
       imageFile: r.imageFile ? String(r.imageFile) : null,
-      /* 🔑 **ที่มาของเลขพร้อมขาย** (ใบ t_mul363qv · ท่านประธานติ๊กสั่ง 28 ก.ย. 2569)
-         แถวนี้มาจาก **ภาพถ่ายสต็อกในคลังเงา** (กระจกของ ZORT) — ไม่ใช่ค่าสดจาก ZORT
+      /* 🔑 **ที่มาของเลขคงเหลือ** (ใบ t_mul363qv · ท่านประธานติ๊กสั่ง 28 ก.ย. 2569)
+         แถวนี้มาจาก **ทะเบียนสินค้าในคลังเงา** (`products.onhand` / `products.available`) — ไม่ใช่ค่าสดจาก ZORT
          แต่มีของอยู่กลุ่มหนึ่งที่ **ทะเบียนใบอนุญาตทับ ZORT โดยตั้งใจ** (เจ้าของร้านสั่ง 25 ก.ย. 2569:
          "ไม่เชื่อ zort ให้อิงตาม google ชีท") ⇒ เลื่อยกับบาร์ 30 รหัสนับเป็นเลขซีเรียล
          ⇒ จอที่เอาเลขนี้ไปเทียบกับ ZORT จะเห็นไม่ตรงแล้ว **สรุปว่าระบบเพี้ยน** ทั้งที่ตั้งใจ

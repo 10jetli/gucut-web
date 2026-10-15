@@ -39,7 +39,7 @@ import {
 } from "../lib/core-products.mjs";
 import { stockRecon, stockReconLog, listStock, listDeadStock, stockCard, channelGaps,
 } from "../lib/core-stock.mjs";
-import { listOrders, listOrderFacets, getOrder, listChannels, listLogistics,
+import { listOrders, listOrderFacets, getOrder, listChannels, listLogistics, statusValues,
 } from "../lib/core-orders.mjs";
 import { runBackup, backupStatus, restore } from "../lib/backup.mjs";
 import {
@@ -4677,6 +4677,15 @@ async function route(req, context) {
     if (p.get("list") === "stock") {
       const r = await listStock({
           q: p.get("q"),
+          code: p.get("code"),
+          name: p.get("name"),
+          sellMin: p.get("sellmin"),
+          sellMax: p.get("sellmax"),
+          buyMin: p.get("buymin"),
+          buyMax: p.get("buymax"),
+          warehouse: p.get("warehouse"),
+          tag: p.get("tag"),
+          archived: p.get("archived"),
           category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
           channel: p.get("channel"),
           only: p.get("only"),
@@ -4755,6 +4764,7 @@ async function route(req, context) {
           source: p.get("store"),
           // ⚠️ ต้องรับครบเท่า list=orders ไม่งั้นตัวเลขตอบคนละคำถามเมื่อจอกรองอยู่
           status: p.get("status"),
+          dateType: p.get("datetype"),
           q: p.get("q"),
           payStatus: p.get("paystatus"),
           cod: p.get("cod"),
@@ -4784,7 +4794,7 @@ async function route(req, context) {
         applied: Object.fromEntries(
           [
             ["from", p.get("from")], ["to", p.get("to")], ["channel", p.get("channel")],
-            ["store", p.get("store")], ["status", p.get("status")], ["q", p.get("q")],
+            ["store", p.get("store")], ["status", statusValues(p.get("status"))], ["dateType", p.get("datetype") || "order"], ["q", p.get("q")],
             ["payStatus", p.get("paystatus")], ["cod", p.get("cod")], ["product", p.get("product")],
             ["shipChannel", p.get("shipchannel")], ["shipFrom", p.get("shipfrom")],
             ["shipTo", p.get("shipto")], ["amountMin", p.get("amountmin")],
@@ -4810,6 +4820,7 @@ async function route(req, context) {
           // ชื่อช่องทางซ้ำกันข้ามร้านได้ (เช่น TIKTOK มีทั้ง z1 และ z2) ⇒ ต้องกรองร้านได้ด้วย
           source: p.get("store"),
           status: p.get("status"),
+          dateType: p.get("datetype"),
           q: p.get("q"),
           payStatus: p.get("paystatus"),
           cod: p.get("cod"),
