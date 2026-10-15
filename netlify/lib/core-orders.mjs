@@ -11,7 +11,7 @@
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
-import { isRealDay, CANCEL_WORDS } from "./param-guard.mjs";
+import { isRealDay, CANCEL_WORDS, เพดานช่วงวันของรายการขาย } from "./param-guard.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -727,6 +727,14 @@ export async function listOrders(o = {}) {
         ฝั่งจอจับได้ด้วยการยิงเทียบทีละคู่: `store=z1` ⇒ total 586 ✅ · `source=z1` ⇒ ไม่มีผล
         และเขาไม่แก้จอตามลูกศรของผม ⇒ ถ้าเชื่อผม จอที่ทำงานถูกอยู่จะพัง */
     appliedParamNames: { includeCancelled: "cancelled" },
+    /* 📏 **เพดานช่วงวันที่เส้นนี้บังคับ — ส่งออกมาให้จออ่าน ไม่ใช่ให้จอจำเลขเอง** (16 ต.ค. 2569)
+       🔴 ของจริงที่ทำให้ต้องมีช่องนี้: ฝั่งจอเอาเลขที่ผม **วัดได้** (654 วัน) ไปฝังในจอ 2 จุด
+          ภายในชั่วโมงเดียวกัน เพราะตอนนั้นท่อไม่มีอะไรให้อ่าน ⇒ เข้าใจได้ แต่เลขจะแยกร่างทันที
+          ที่ท่อขยับเพดาน และ **ไม่มีอะไรฟ้องเลย** (กฎ one-threshold-one-source · card-numbers-expire)
+       ⚠️ ส่ง `ช่วงวันที่แนะนำ` มาด้วย เพราะ **เพดานไม่ใช่เส้นที่ควรวิ่งไปจ่อ**
+          654 วันรอดที่ 7.7 วินาที จากขอบ ~15 วินาที ⇒ จอที่หุบช่วงเท่าเพดานพอดีจะช้าและจะล้มเองวันหนึ่ง
+       ⚠️ **เพิ่มช่องอย่างเดียว ไม่แตะค่าเดิม** (prepare-to-receive) ⇒ จอรุ่นเก่าไม่กระทบ */
+    ขอบเขตช่วงวัน: เพดานช่วงวันของรายการขาย,
     appliedNote:
       "ค่าที่เซิร์ฟเวอร์ใช้กรองจริง (null = ไม่ได้กรองด้วยช่องนั้น) · " +
       "⚠️ ชื่อคีย์ในนี้ไม่ใช่ชื่อพารามิเตอร์ทุกตัว — ดู appliedParamNames ก่อนส่งค่า · " +
