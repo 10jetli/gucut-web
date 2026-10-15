@@ -9,9 +9,9 @@
 // ⚠️ ค่าจากผู้ใช้ผูกด้วย ? เสมอ (ไม่ใช่ esc()) — ตัวเลขน้อย ไม่ชนเพดาน ~100 params ของ D1
 //    ต่างจากตัว sync ที่ยัดทีละร้อยแถวจนต้องฝังค่า
 import { coreQuery, coreReady } from "./coredb.mjs";
-import { contains } from "./sql-contains.mjs";
+import { contains, containsLit } from "./sql-contains.mjs";
 import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
-import { isRealDay } from "./param-guard.mjs";
+import { isRealDay, CANCEL_WORDS } from "./param-guard.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -27,8 +27,22 @@ export const STORES = {
 };
 export const storeName = (src) => STORES[String(src)]?.name ?? String(src ?? "-");
 
-const CANCEL_SQL =
-  `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
+/* ประโยคตัดกองใบยกเลิกออกจากประชากร — **สร้างจาก `CANCEL_WORDS` ที่เดียว**
+   (16 ต.ค. 2569) เดิมพิมพ์คำไว้ตรงนี้ชุดหนึ่ง แล้วด่านที่ `core.mjs` จะมีอีกชุด
+   ⇒ วันที่คำสองชุดต่างกัน จะได้ "ด่านบอกว่าถามได้ แต่ SQL ตัดออกไปแล้ว" = ตอบ 0 โดยไม่มีอะไรฟ้อง
+   ⚠️ คำพวกนี้เทียบแบบสตริงย่อยโดยตั้งใจ (รองรับการสะกดหลายแบบของ ZORT)
+   🔑 **เลิกใช้ `LIKE '%…%'` แล้ว ใช้ `instr` ผ่าน `containsLit`** — ด่าน `sql-contains-guard`
+      จับรูปนี้ได้ตอนผมเขียนครั้งแรกวันนี้ และมันถูก: รูปเครื่องหมายเปอร์เซ็นต์ครอบตัวแปร คือคลาสที่ทำให้
+      ชื่อไทย ≥17 ตัวชนเพดานรูปแบบ LIKE 50 ไบต์ของ D1 แล้วทุกจอตอบ 500 (15 ก.ย. 2569)
+      ⇒ ที่นี่คำมาจากค่าคงที่ จึงไม่ชนเพดานจริง **แต่เลือกไม่ใส่ ALLOW list**
+        เพราะ `instr` ไม่มีเพดานรูปแบบเลย ⇒ แก้ที่คลาส ดีกว่าขอยกเว้นเป็นราย ๆ
+      ⚠️ **ด่านนั้นอ่านทีละบรรทัดและข้ามเฉพาะบรรทัดที่ขึ้นต้นด้วย // หรือ \*** ⇒ มันจับ
+        **ข้อความในคอมเมนต์** ของย่อหน้านี้ด้วย (ผมโดนเองรอบนี้) ⇒ จึงเขียนรูปนั้นเป็นคำพูด
+        🚫 **ห้ามไปขยายด่านให้ข้ามคอมเมนต์เพื่อให้โค้ดตัวเองผ่าน** — ด่านนี้กันจอ 500 ทั้งระบบ
+          การผ่อนด่านเพราะ "ของเราปลอดภัย" คือวิธีที่ตาข่ายกลายเป็นของประดับ
+      📏 ความหมายเท่าเดิม: LIKE ของ SQLite ไม่สนตัวพิมพ์เล็กใหญ่กับ ASCII · `instr(lower(),lower())` ก็เช่นกัน
+        และกับอักษรไทย `lower()` ไม่เปลี่ยนอะไร ⇒ พฤติกรรมไม่ขยับทั้งสองภาษา */
+const CANCEL_SQL = CANCEL_WORDS.map((w) => `NOT (${containsLit("status", `'${w}'`)})`).join(" AND ");
 
 /* ⚠️ **ธงเตือน "เลขบนจอนี้ยังเชื่อไม่ได้"** — กลไกเดียวกับ marketplacesUnreliable
     ที่พิสูจน์แล้ววันนี้ว่าใช้ได้ (ใส่ตอนไม่แน่ใจ · ปลดตอนยืนยันได้ · จอไม่ต้องรู้จักอะไรเลย)

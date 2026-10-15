@@ -17,6 +17,7 @@ import { adminGate } from "../lib/admin-gate.mjs";
 import { withPagingHint } from "../lib/paging-hint.mjs";
 import { ขอบเขตของค่าที่ส่งไป } from "../lib/value-scope.mjs";
 import { ความปลอดภัยของเส้น } from "../lib/route-safety.mjs";
+import { isCancelLike } from "../lib/param-guard.mjs";   // แหล่งเดียวของคำว่า "ใบยกเลิก" (ใช้ร่วมกับ CANCEL_SQL)
 import { สัญญาของเส้น } from "../lib/list-contracts.mjs";
 import { coreQuery, coreReady, coreInit, withD1Meter, d1Stats, d1Info } from "../lib/coredb.mjs";
 // 📓 สมุดคำสั่งที่เปลี่ยนข้อมูล — ไฟล์นี้ตั้งใจไม่ลากสายพึ่งพา (ดูหัวไฟล์) จึง import ตรงได้
@@ -4775,6 +4776,29 @@ async function route(req, context) {
     const ธงยกเลิก = ธงจากค่า(p.get("cancelled"));
     if (ธงยกเลิก === null)
       return json({ error: `cancelled รับแค่ 1/0/true/false (ได้มา "${String(p.get("cancelled")).slice(0, 20)}")` }, 400);
+    /* 🔴 **คำขอที่ตอบ 0 โดยโครงสร้าง ต้องไม่ตอบ 0 เฉย ๆ** (16 ต.ค. 2569 · ใบ t_mva0li5s)
+       ของจริงที่กัดเช้านี้: ผมยิง `status=Voided` ได้ **0** แล้วเขียนลงจดหมายว่า
+       "Voided 0 ⇒ สี่กองรวมได้เท่า total พอดี ⇒ ไม่มีกองตกหล่น" **ผิดทั้งประโยค**
+       ของจริงมี **137 ใบ** · ที่ได้ 0 เพราะประชากรตั้งต้นตัดใบยกเลิกออกด้วย `CANCEL_SQL`
+       ⇒ ถามหาใบยกเลิก ในกองที่ไม่มีใบยกเลิก = **เซตว่างโดยนิยาม** ไม่ใช่ข้อค้นพบ
+       ⇒ และสี่กองที่ "รวมได้พอดี" ก็พอดีเพราะทุกกองถูกตัดเหมือนกัน ⇒ ไม่ได้พิสูจน์อะไรเลย
+       🔑 คำตอบ `0` ที่ดูสมเหตุสมผลและไม่มีอะไรกำกับ **แพงกว่า 400** — จอ/คนอ่านไปรายงานต่อได้ทันที
+       ⚠️ ไม่เลือกทาง "เปิด cancelled ให้เองเงียบ ๆ": มันจะทำให้รายงานเก่าที่เคยได้ 0
+          กลายเป็นเลขอื่นโดยไม่มีใครรู้ว่าทำไม และผู้เรียกจะไม่เคยรู้ว่าตัวเองขอขัดกัน
+       ℹ️ `applied.includeCancelled` มีอยู่แล้วและบอกความจริงไว้ครบ — แต่มันเป็นสองคีย์
+          ที่คนอ่านต้องเอามาต่อกันเอง และเช้านี้ผมเองก็ไม่ต่อ ⇒ ด่านจึงต้องอยู่ที่ทางเดิน */
+    if (p.get("list") === "orders" || p.get("list") === "orderfacets") {
+      const ค่าสถานะ = String(p.get("status") ?? "").split(",").map((v) => v.trim()).filter(Boolean);
+      if (ค่าสถานะ.length && !ธงยกเลิก && ค่าสถานะ.every(isCancelLike)) {
+        return json({
+          error:
+            `status=${ค่าสถานะ.join(",")} เป็นสถานะใบยกเลิกทั้งหมด แต่ไม่ได้ส่ง cancelled=1 ` +
+            "⇒ ประชากรตั้งต้นตัดใบยกเลิกออกไปแล้ว คำขอนี้จึงตอบ 0 **โดยโครงสร้าง** ไม่ใช่เพราะร้านไม่มีใบยกเลิก",
+          ทำแทน: `ใส่ cancelled=1 ด้วย — ช่วงเดียวกันของร้าน z1 มีใบยกเลิกอยู่จริง (วัด 16 ต.ค. 2569)`,
+          ต้องส่งcancelled: true,
+        }, 400);
+      }
+    }
     if (p.get("list") === "orderfacets") {
       return okJson({
         ...(await listOrderFacets({
