@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-10-12T02:06:59.573Z",
+  "generatedAt": "2026-10-15T20:29:15.031Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -571,6 +571,7 @@ export const ZORT_ARCH = {
     "order-finalize.mjs",
     "order-status.mjs",
     "ordercheck-shipping.mjs",
+    "param-guard.mjs",
     "peak.mjs",
     "pos.mjs",
     "product-image-mirror.mjs",
@@ -855,7 +856,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-10-12T02:06:59.573Z",
+    "at": "2026-10-15T20:29:15.032Z",
     "problems": [],
     "ok": true
   }
