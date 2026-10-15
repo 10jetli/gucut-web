@@ -83,6 +83,58 @@ export default async function handler(req, context) {
     let body;
     try { body = await req.json(); } catch { return json({ error: "bad json" }, 400); }
 
+    /* ── 📎 แนบของเข้าใบสั่งงาน — รูป + ข้อความยาว (15 ต.ค. 2569) ──
+       ท่านประธานสั่ง "ใส่รูปได้ด้วยสิ" · "ทำให้ใส่ข้อมูลได้"
+       ของเดิมใส่ไม่ได้จริง: หัวเรื่องตัดที่ 200 ตัวอักษร · note 300
+
+       🔴 **เก็บแยกคีย์ ห้ามยัดลงตัวรายการ** — กระดานถูกอ่านทุกครั้งที่ตัวจ่ายงานวิ่ง
+          (ทุก 10 นาที) และทุกครั้งที่เปิดจอ · ยัด base64 ลงไป = โหลดรูปทุกใบทุกรอบ
+          กติกาเดียวกับสลิปออเดอร์ · รูปลงเวลา · ใบ ลซ.๒
+       ⚠️ ตัวรายการเก็บแค่ **ตัวนับ** (hasDetail/imgs) เพื่อให้จอรู้ว่ามีของแนบโดยไม่ต้องโหลด */
+    if (body?.taskDetail || body?.taskImg) {
+      const s = store();
+      const KEY = "office/tasks";
+      /* ⚠️ ชื่อ `เลขใบ` ไม่ใช่ `id` โดยตั้งใจ — ด่าน `กระดานยกงานให้คนอื่นได้.test.mjs`
+         จับ **บรรทัดแรกที่ประกาศตัวแปรชื่อ id ด้วย text() เพดาน 40** แล้วเช็คว่ามี taskOwner
+         ⚠️ ห้ามเขียนรูปแบบนั้นลงในคอมเมนต์ด้วย — เทสอ่านซอร์สดิบ **คอมเมนต์ก็ถูกแมตช์**
+            (รอบแรกผมเขียนตัวอย่างไว้ตรงนี้ แล้วคอมเมนต์เองทำให้ด่านตก)
+         ตั้งชื่อ id ตรงนี้ = บรรทัดใหม่ไปแย่งแมตช์ ⇒ ด่านตกทั้งที่โค้ดจริงไม่ได้พัง
+         (เจอจริง 15 ต.ค. 2569 — ด่านทำงานถูกต้อง ผมเป็นคนไปขวางเอง) */
+      const เลขใบ = text(body.taskDetail || body.taskImg, 40);
+      if (!เลขใบ) return json({ error: "ต้องมี id ของงาน" }, 400);
+      const list = await s.get(KEY, { type: "json" }).catch(() => null);
+      /* 🔴 อ่านไม่ได้ **ห้ามถือว่าไม่มีงาน** — จะเขียนทับกระดานทั้งใบ (บทเรียนเดิมในไฟล์นี้) */
+      if (!Array.isArray(list)) return json({ error: "อ่านกระดานไม่ได้ ไม่แนบของ" }, 503);
+      const row = list.find((x) => x.id === เลขใบ);
+      if (!row) return json({ error: "ไม่พบงานนี้", id: เลขใบ }, 404);
+
+      if (body.taskDetail) {
+        const d = typeof body.detail === "string" ? body.detail.trim().slice(0, 4000) : "";
+        if (!d) return json({ error: "detail ว่าง" }, 400);
+        await s.set(`office/det/${เลขใบ}`, d);
+        row.hasDetail = true;
+        await s.setJSON(KEY, list);
+        return json({ ok: true, id: เลขใบ, ยาว: d.length });
+      }
+
+      /* รูป — รับ data URL จากเบราว์เซอร์ (ย่อมาแล้วฝั่งจอ)
+         ⚠️ จำกัดขนาดที่เซิร์ฟเวอร์ด้วย **ห้ามเชื่อว่าจอย่อมาให้แล้ว**
+            ยิงตรงมาก็ได้ · 3MB base64 ≈ 2.2MB ไฟล์จริง พอสำหรับภาพหน้าจอเต็มจอ */
+      const raw = typeof body.image === "string" ? body.image : "";
+      const m = raw.match(/^data:(image\/(?:png|jpeg|jpg|webp|gif));base64,(.+)$/);
+      if (!m) return json({ error: "ต้องเป็น data URL ของรูป (png/jpeg/webp/gif)" }, 400);
+      if (m[2].length > 3_000_000) return json({ error: "รูปใหญ่เกิน 3MB — ย่อก่อนส่ง" }, 413);
+      const n = (Number(row.imgs) || 0) + 1;
+      if (n > 6) return json({ error: "แนบได้สูงสุด 6 รูปต่อใบ" }, 400);
+      const bin = Uint8Array.from(atob(m[2]), (c) => c.charCodeAt(0));
+      /* ⚠️ ต้อง await — Netlify แช่แข็งฟังก์ชันทันทีที่ตอบ promise ลอยตายกลางทาง
+         (กติกาเหล็กในโปรเจกต์นี้ · scripts/check-floating.mjs บังคับอยู่) */
+      await s.set(`office/img/${เลขใบ}/${n}`, bin, { metadata: { ชนิด: m[1] } });
+      row.imgs = n;
+      await s.setJSON(KEY, list);
+      return json({ ok: true, id: เลขใบ, รูปที่: n });
+    }
+
     /* ── กระดานงานของเจ้าของร้าน (สั่ง 8 ก.ย. 2569: "ใส่งานที่ผมต้องทำลงด้วย") ──
        เก็บที่เซิร์ฟเวอร์เพื่อให้ **AI เป็นคนเพิ่ม/ติ๊กจบตามเหตุการณ์จริง** ไม่ใช่
        รายการที่พิมพ์ตายไว้ในจอ — รายการแบบนั้นจะค้างเก่าเงียบ ๆ ทันทีที่โลกขยับ
@@ -343,6 +395,33 @@ export default async function handler(req, context) {
 
   if (req.method === "GET") {
     const s = store();
+    /* 📎 ขาอ่านของที่แนบไว้ — ให้ agent กับจอหยิบไปดูได้
+       🔑 แยกเส้นจากคำตอบหลัก เพราะคำตอบหลักถูกเรียกทุก 10 นาทีโดยตัวจ่ายงาน
+          ของแนบจึงต้อง **ไม่ติดไปด้วย** ไม่งั้นก็เท่ากับยัดลงตัวรายการตั้งแต่แรก */
+    {
+      const u = new URL(req.url);
+      const det = u.searchParams.get("detail");
+      if (det) {
+        const d = await s.get(`office/det/${det.slice(0, 40)}`).catch(() => null);
+        /* ⚠️ ไม่มี ⇒ 404 ไม่ใช่สตริงว่าง — "ไม่มีของแนบ" กับ "อ่านไม่ได้" ต้องแยกออกจากกัน */
+        if (d == null) return json({ error: "ไม่มีรายละเอียดของใบนี้" }, 404);
+        return json({ ok: true, id: det, detail: d });
+      }
+      const img = u.searchParams.get("img");
+      if (img) {
+        const n = Math.max(1, Math.min(6, Number(u.searchParams.get("n")) || 1));
+        const r = await s.getWithMetadata(`office/img/${img.slice(0, 40)}/${n}`, { type: "arrayBuffer" })
+          .catch(() => null);
+        if (!r || !r.data) return json({ error: "ไม่มีรูปนี้" }, 404);
+        return new Response(r.data, {
+          headers: {
+            "content-type": String(r.metadata?.ชนิด || "image/jpeg"),
+            /* รูปที่แนบแล้วไม่เปลี่ยนอีก — แคชยาวได้ · ส่วนตัวเสมอ ห้าม public */
+            "cache-control": "private, max-age=86400",
+          },
+        });
+      }
+    }
     // อ่านทีละคีย์ตามรายชื่อที่รู้จัก — ไม่ใช้ list() เพราะรายชื่อคงที่และสั้น
     const agents = [];
     await Promise.all(
