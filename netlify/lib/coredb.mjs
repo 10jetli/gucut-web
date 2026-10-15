@@ -241,6 +241,24 @@ export async function coreInit() {
           "กรองด้วยคอลัมน์ที่ไม่มีดัชนี" ทำให้คำขอที่ควรเบากลับตายที่ 15 วินาที
           ⇒ เขียนเส้นใหม่ที่กรองด้วยคอลัมน์ใหม่ ต้องถามทุกครั้งว่าคอลัมน์นั้นมีดัชนีไหม */
     `CREATE INDEX IF NOT EXISTS idx_orders_status_source ON orders(status, source)`,
+    /* ⚡⚡ สามดัชนีของใบ t_mva3nwuf (16 ต.ค. 2569) — ไล่จาก **ของจริงที่อ่านได้** ว่าคำขอเดียว
+       ของ `list=orders` ยิง 17 คำสั่ง (วัดจากหัว `x-d1-count`) แล้วแต่ละตัวทำอะไร:
+         · 8 ตัวผูกกับช่วงวันของผู้ใช้ ⇒ กว้างขึ้นก็หนักขึ้นตามตรง
+         · **4 ตัวไล่ทั้งตารางทุกคำขอ ไม่ว่าช่วงวันแคบแค่ไหน** ⇒ ต้นทุนคงที่ที่จ่ายฟรีทุกครั้ง
+         · 3 ตัวอ่าน core_meta (ถูก) · 2 ตัวนับใบคืน
+       🔴 **ตัวที่น่ากลัวที่สุดคือสองตัวที่จับคู่ใบคืนกับใบขายด้วย `number`**
+          `WHERE EXISTS (SELECT 1 FROM orders WHERE orders.number = return_orders_v2.reference …)`
+          และ `NOT EXISTS (… o.number = r.reference …)` — **ตาราง orders ไม่มีดัชนีของ `number` เลย**
+          ⇒ ทุกแถวใบคืนต้องไล่หาในใบขายทั้งตาราง = คูณกันสองตาราง (O(n×m))
+       📏 ฐานเทียบก่อนเติม (ช่วง 2 ปี · 3 นัด เอาค่ากลาง · วัดที่ช่วงที่ **ไม่ติดเพดาน**
+          เพราะค่าที่ติดขอบกระพริบจนเทียบก่อน-หลังไม่ได้ — บทเรียนของวันเดียวกันนี้):
+            พิน store=z1 ⇒ 7.8 · 7.4 · 7.4 วิ (กลาง **7.4**) · 12,852 ใบ
+            ไม่พินร้าน   ⇒ 9.6 · 7.8 · 7.8 วิ (กลาง **7.8**) · 22,129 ใบ
+       ⚠️ ดัชนีมีต้นทุนฝั่งเขียนด้วย — ตัวซิงก์เขียนเฉพาะใบที่เปลี่ยน ⇒ ยอมรับได้
+          แต่ **ห้ามเติมดัชนีเพิ่มโดยไม่มีคำสั่งที่ใช้มันจริงและเลขก่อน-หลังกำกับ** */
+    `CREATE INDEX IF NOT EXISTS idx_orders_number_source ON orders(number, source)`,
+    `CREATE INDEX IF NOT EXISTS idx_orders_pay_status ON orders(pay_status)`,
+    `CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON orders(updated_at)`,
     `CREATE TABLE IF NOT EXISTS order_items (
       order_id TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
       qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0,
