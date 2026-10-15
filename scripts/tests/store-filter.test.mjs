@@ -91,7 +91,14 @@ test('core.mjs ไม่เหลือจุดที่ปัดค่าร�
   // +2 เส้นใบโอน 15 ก.ย. 2569 (ใบ t_mu2pfve9) — ใช้ตัวแปร st ไม่ใช่ storeParsed จึงไม่เพิ่มยอดบรรทัดล่าง
   // +2 เส้นใบคืน 15 ก.ย. 2569 (syncreturns · list=returnorders)
   // +3 ใบซื้อ/ใบเสนอราคา 15 ก.ย. 2569 (syncpurchases · ด่าน STORE_LISTS · ?purchase=)
-  assert.equal(single.length, 10, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders · syncpurchases · STORE_LISTS · purchase');
+  // +1 เส้น ?reserved=1 (16 ต.ค. 2569 · ใบ t_mva2nls5) — ของที่ถูกจองในใบค้าง รายรหัส
+  //    🔑 ด่านนี้จับผมได้ตอนเขียนครั้งแรก และจับถูก: ฉบับแรกผมเขียน
+  //       `store ? parseSingleStore(...) : { source: "" }` ⇒ **ข้ามตัวแปลงกลางเมื่อไม่ส่ง store**
+  //       แล้วตั้งความหมาย "ว่าง = รวมสองร้าน" เอาเอง ซึ่งผิดเนื้อเรื่อง (z1/z2 เป็นบัญชี ZORT แยกกัน
+  //       ⇒ ผลรวมสองร้านเอาไปเทียบจอ ZORT ของร้านไหนก็ไม่ได้) ⇒ แก้เป็นเรียกตัวแปลงกลางเสมอ
+  //    ⚠️ เลขนี้เป็น **หมุดนับ** ⇒ เพิ่มเส้นที่ใช้ตัวแปลงกลางเมื่อไหร่ ด่านจะร้องทุกครั้ง
+  //       นั่นคือเจตนาของมัน (ให้คนมาอ่านว่าเส้นใหม่ใช้ตัวแปลงจริงไหม) **ห้ามขยับเลขโดยไม่เขียนที่มา**
+  assert.equal(single.length, 11, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders · syncpurchases · STORE_LISTS · purchase · reserved');
   assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
   assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
 });

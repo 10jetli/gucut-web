@@ -233,6 +233,14 @@ export async function coreInit() {
           ฝั่งจอเป็นคนส่งข้อมูลที่ทำให้เห็น (เขาเปิดจอจริงได้ 200 สองนัด 59,788 ใบ ไม่ล้ม)
           ⇒ อาการ "ช่วงกว้างล้ม" กับต้นเหตุ "ไม่มีดัชนีของ source" คนละเรื่องกัน */
     `CREATE INDEX IF NOT EXISTS idx_orders_source_date ON orders(source, order_date)`,
+    /* ⚡ ดัชนี (สถานะ, ร้าน) — เติม 16 ต.ค. 2569 พร้อมเส้น `?reserved=1` (ใบ t_mva2nls5)
+       เส้นนั้นกรองด้วย `status IN ('Pending','Waiting')` **โดยไม่มีช่วงวัน** (ตั้งใจ — ของที่ถูกจอง
+       คือใบที่ยังไม่จบ ไม่ว่าเก่าแค่ไหน) ⇒ ถ้าไม่มีดัชนีของ `status` ฐานต้องไล่อ่านทั้งตาราง
+       📏 ใบค้างมีราว 298 ใบ จากทั้งตาราง ~58,000 ⇒ **0.5%** ⇒ ดัชนีช่วยมาก
+       🔑 เติมพร้อมกันกับเส้นที่ใช้มันโดยตั้งใจ — บทเรียนวันเดียวกันนี้คือ
+          "กรองด้วยคอลัมน์ที่ไม่มีดัชนี" ทำให้คำขอที่ควรเบากลับตายที่ 15 วินาที
+          ⇒ เขียนเส้นใหม่ที่กรองด้วยคอลัมน์ใหม่ ต้องถามทุกครั้งว่าคอลัมน์นั้นมีดัชนีไหม */
+    `CREATE INDEX IF NOT EXISTS idx_orders_status_source ON orders(status, source)`,
     `CREATE TABLE IF NOT EXISTS order_items (
       order_id TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
       qty REAL NOT NULL DEFAULT 0, amount REAL NOT NULL DEFAULT 0,

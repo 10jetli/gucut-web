@@ -4672,6 +4672,31 @@ async function route(req, context) {
         })),
       });
     }
+    /* GET ?reserved=1[&store=z1][&sku=00894][&limit=N] — ของที่ถูกจองในใบค้าง รายรหัส
+       อ่านอย่างเดียว · คำสั่งเดียว GROUP BY sku · ไม่มีช่วงวันโดยตั้งใจ (ใบ t_mva2nls5)
+       ⚠️ เลขนี้ **ยังไม่ใช่สูตร available ของจอ ZORT** — ดูคำเตือนในคำตอบ (ช่อง 🚫 ห้ามใช้ทำอะไร) */
+    if (url.searchParams.get("reserved")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { parseSingleStore } = await import("../lib/core-orders.mjs");
+      /* ⚠️ ชื่อพารามิเตอร์คือ `store` — `source` เป็นชื่อช่องในคำตอบ (แผลเดิมของรีโปนี้) */
+      if (url.searchParams.has("source") && !url.searchParams.has("store"))
+        return json({ error: "ตัวกรองร้านชื่อ store= — source เป็นชื่อช่องในคำตอบ" }, 400);
+      /* 🔴 **เรียกตัวแปลงกลางเสมอ ห้ามข้ามเมื่อไม่ส่ง store** (ด่าน store-filter จับตอนเขียนครั้งแรก)
+         ฉบับแรกผมเขียน `store ? parseSingleStore(...) : { source: "" }` ⇒ ว่าง = รวมสองร้าน
+         ซึ่ง **ผมคิดเอาเอง** และผิดเนื้อเรื่อง: z1/z2 เป็นบัญชี ZORT แยกกัน
+         ⇒ ผลรวมสองร้านเอาไปเทียบกับจอ ZORT ของร้านไหนก็ไม่ได้ = เลขที่ไม่มีใครใช้ได้
+         ⇒ ใช้ค่าตั้งต้นเดียวกับเส้นพี่น้อง (ว่าง = z1) และ **ประกาศ `defaulted` กลับไป**
+            เพื่อให้จอแยก "ผู้ใช้เลือก z1" ออกจาก "ไม่ได้เลือก แล้วท่อเลือกให้" */
+      const st = parseSingleStore(url.searchParams.get("store"));
+      if (st.error) return json({ error: st.error }, 400);
+      const { reservedBySku } = await import("../lib/core-stock.mjs");
+      return okJson(await reservedBySku({
+        source: st.source,
+        storeDefaulted: st.defaulted === true,
+        sku: url.searchParams.get("sku"),
+        limit: url.searchParams.get("limit"),
+      }));
+    }
     if (url.searchParams.get("stockcompare")) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       return json({ ok: true, stock: await shopeeStockCompare() });
