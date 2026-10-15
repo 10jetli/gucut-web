@@ -45,6 +45,21 @@ export function badParamError(sp) {
     if (amin && amax && Number(amin) > Number(amax)) return `amountmin (${amin}) ต้องไม่มากกว่า amountmax (${amax})`;
     const cod = String(sp.get("cod") ?? "").trim();
     if (cod && cod !== "0" && cod !== "1") return `cod ต้องเป็น 1 (เก็บเงินปลายทาง) หรือ 0 (ไม่ใช่) (ได้มา "${cod.slice(0, 10)}")`;
+    if (sp.get("list") === "orders" || sp.get("list") === "orderfacets") {
+      const rawStatus = String(sp.get("status") ?? "");
+      if (rawStatus) {
+        const values = rawStatus.split(",");
+        if (values.length > 10) return `status รับได้สูงสุด 10 ค่า (ได้มา ${values.length} ค่า)`;
+        if (values.some((v) => !v.trim())) return "status หลายค่าต้องคั่นด้วยจุลภาคและห้ามมีค่าว่าง";
+        if (values.some((v) => v.trim().length > 60)) return "status แต่ละค่าต้องยาวไม่เกิน 60 ตัวอักษร";
+      }
+      const dateType = String(sp.get("datetype") ?? "").trim();
+      if (dateType && !["order", "ship"].includes(dateType)) {
+        return dateType === "payment"
+          ? "datetype=payment ยังใช้ไม่ได้ — กระจกยังไม่มีวันชำระเงินจาก ZORT (รองรับ order หรือ ship)"
+          : `datetype ต้องเป็น order หรือ ship (ได้มา "${dateType.slice(0, 20)}")`;
+      }
+    }
   }
   return null;
 }

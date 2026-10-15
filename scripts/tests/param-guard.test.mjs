@@ -59,3 +59,11 @@ test('ค้นหาขั้นสูงรายการขาย: วัน
   assert.equal(badParamError(sp('list=orders&shipfrom=2026-09-01&shipto=2026-09-10&amountmin=99.5&amountmax=1000&cod=1')), null);
   assert.equal(badParamError(sp('list=orderfacets&cod=0')), null);
 });
+
+test('รายการขาย: status หลายค่าและชนิดวันที่ต้องปฏิเสธค่าที่แปลไม่ได้', () => {
+  assert.equal(badParamError(sp('list=orders&status=Pending,Waiting&datetype=ship')), null);
+  assert.match(badParamError(sp('list=orders&status=Pending,,Waiting')), /ห้ามมีค่าว่าง/);
+  assert.match(badParamError(sp(`list=orders&status=${Array.from({ length: 11 }, (_, i) => `S${i}`).join(',')}`)), /สูงสุด 10 ค่า/);
+  assert.match(badParamError(sp('list=orders&datetype=payment')), /ยังใช้ไม่ได้.*ยังไม่มีวันชำระเงิน/);
+  assert.match(badParamError(sp('list=orders&datetype=guess')), /order หรือ ship/);
+});

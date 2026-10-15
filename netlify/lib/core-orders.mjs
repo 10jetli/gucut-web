@@ -108,8 +108,21 @@ export function parseZ1OnlyStore(raw) {
 }
 export const Z1_ONLY_SCOPE = { store: "z1", storeScope: "เฉพาะร้าน z1 — ยังไม่ได้ดึงเอกสารของร้าน z2 เข้าระบบ" };
 
-function buildWhere({ from, to, channel, status, q, includeCancelled, source, payStatus, cod, product, shipChannel, shipFrom, shipTo, amountMin, amountMax, number, customer, tag, createUser, warehouse }) {
-  const where = ["order_date >= ?", "order_date <= ?"];
+/** สถานะหนึ่งค่าหรือหลายค่าคั่นด้วยจุลภาค → รายการไม่ซ้ำสำหรับ SQL IN (...)
+ *  รูป array เป็นส่วนหนึ่งของสัญญา `applied.status` เพื่อให้จอพิสูจน์ได้ว่าท่อใช้ครบทุกค่า */
+export function statusValues(raw) {
+  const values = (Array.isArray(raw) ? raw : String(raw ?? "").split(","))
+    .map((v) => String(v).trim())
+    .filter(Boolean)
+    .map((v) => v.slice(0, 60));
+  return values.length ? [...new Set(values)].slice(0, 10) : null;
+}
+
+function buildWhere({ from, to, dateType = "order", channel, status, q, includeCancelled, source, payStatus, cod, product, shipChannel, shipFrom, shipTo, amountMin, amountMax, number, customer, tag, createUser, warehouse }) {
+  /* ZORT ให้ช่วงวันเดียวกันเลือกความหมายได้ · ตอนนี้กระจกมีวันใบกับวันส่งจริง
+     ส่วนวันชำระยังไม่มีคอลัมน์ ⇒ ด่านพารามิเตอร์ปฏิเสธก่อนมาถึงตรงนี้ ห้ามถอยเป็น order เงียบ ๆ */
+  const dateColumn = dateType === "ship" ? "ship_date" : "order_date";
+  const where = [`${dateColumn} >= ?`, `${dateColumn} <= ?`];
   const params = [from, to];
   /* ⚠️ **ต้องกรองร้านได้** — กระจกเก็บสองร้าน (z1 ศีตกาล · z2 ceojet)
       และ **ชื่อช่องทางซ้ำกันข้ามร้าน** เช่น "TIKTOK" มีทั้งใน z1 (737 ใบ) และ z2 (58 ใบ)
@@ -127,9 +140,10 @@ function buildWhere({ from, to, channel, status, q, includeCancelled, source, pa
   // กรองตามสถานะ — จอฝั่งเราทำแท็บสถานะแบบ ZORT (ทั้งหมด/รอโอน/สำเร็จ/ยกเลิก)
   // ⚠️ เทียบแบบตรงตัวเท่านั้น ไม่ใช้ LIKE — ค่าที่มาจากตัวเลือกบนจอ ไม่ใช่คำค้นอิสระ
   //    ใช้ LIKE เมื่อไหร่ "Success" จะไปลากคำอื่นที่มีคำนี้ประกอบมาด้วยแบบเงียบ ๆ
-  if (status) {
-    where.push("status = ?");
-    params.push(status);
+  const statuses = statusValues(status);
+  if (statuses?.length) {
+    where.push(`status IN (${statuses.map(() => "?").join(",")})`);
+    params.push(...statuses);
   }
   if (q) {
     /* tracking_no เพิ่ม 7 ก.ย. 2569 (ฝั่งจอขอ) — ผัง ZORT ให้แพ็คด้วยการยิง
@@ -220,6 +234,7 @@ export async function listOrderFacets(o = {}) {
   const w = buildWhere({
     from,
     to,
+    dateType: o.dateType || "order",
     channel: o.channel || null,
     status: o.status || null,
     q: o.q ? String(o.q).trim().slice(0, 60) : null,
@@ -238,6 +253,7 @@ export async function listOrderFacets(o = {}) {
   const wTabsF = buildWhere({
     from,
     to,
+    dateType: o.dateType || "order",
     channel: o.channel || null,
     q: o.q ? String(o.q).trim().slice(0, 60) : null,
     includeCancelled: true,
@@ -399,14 +415,16 @@ export async function listOrders(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const channel = String(o.channel ?? "").slice(0, 60) || null;
-  const status = String(o.status ?? "").slice(0, 60) || null;
+  const status = String(o.status ?? "").slice(0, 620) || null;
+  const statuses = statusValues(status);
+  const dateType = o.dateType === "ship" ? "ship" : "order";
   const q = String(o.q ?? "").trim().slice(0, 60) || null;
   const includeCancelled = !!o.includeCancelled;
   // รับเฉพาะค่าที่รู้จัก — ค่าแปลกปลอมให้เป็น null (ไม่กรอง) ดีกว่าเอาไปยัดลง SQL
   const source = parseStore(o.source).source ?? null;
   const adv = advancedFrom(o);
 
-  const w = buildWhere({ from, to, channel, status, q, includeCancelled, source, ...adv });
+  const w = buildWhere({ from, to, dateType, channel, status: statuses, q, includeCancelled, source, ...adv });
 
   /* ⚠️ **ยิง D1 พร้อมกัน ห้ามเรียงกัน** (แก้ 5 ก.ย. 2569)
       ของเดิมยิง D1 **10 รอบเรียงกัน** ในคำขอเดียว ⇒ วัดจริงได้ 4.5 วินาที
@@ -425,7 +443,7 @@ export async function listOrders(o = {}) {
         ของจริงที่ฝั่งจอวัด: ส่ง `paystatus=Pending` เฉย ๆ ⇒ `byStatus` เหลือ 2 แถว
         ⇒ แท็บ "ยกเลิก" (Voided 499) กับ "รอส่ง" (Waiting 1) อ่านได้ว่า **(0)** ทั้งที่มีของจริง
      🔑 ของที่ส่งให้จอจึงต้องมี `tabBase.excludes` กำกับไปด้วยเสมอ — ดูเหตุผลที่ตัวมันเอง */
-  const wTabs = buildWhere({ from, to, channel, q, includeCancelled: true, source, ...adv, payStatus: null });
+  const wTabs = buildWhere({ from, to, dateType, channel, q, includeCancelled: true, source, ...adv, payStatus: null });
   /* 🔴 ตัวกรอง **ร้านเดียวล้วน** — ไม่มีวัน ไม่มีคำค้น ไม่มีช่องทาง ไม่ตัดใบยกเลิก
      ใช้ตอบคำถามเดียว: "ระบบนี้มีสถานะอะไรอยู่บ้าง" ⇒ จอทำแท็บครบได้โดยไม่ต้อง hardcode ชื่อ
      ⚠️ ห้ามเอา wAll มาใช้แทน — wAll ยังกรอง q/วัน ⇒ สถานะที่ไม่เจอในผลค้นจะหายไปทั้งปุ่ม
@@ -662,6 +680,9 @@ export async function listOrders(o = {}) {
     limit,
     offset,
     status,
+    dateType,
+    dateTypesSupported: ["order", "ship"],
+    dateTypesUnavailable: { payment: "กระจกยังไม่มีคอลัมน์วันชำระเงินจาก ZORT — ไม่ถอยไปใช้วันของใบแทน" },
     advancedFilters: adv, // ค่าที่ใช้กรองจริง (null = ไม่กรอง) — จอเช็คก่อนเขียนว่ากรองแล้ว
     /* 🔴 **`applied` — เพิ่ม 19 ก.ย. 2569 · เส้นนี้ไม่มีมาก่อนเลยทั้งที่เป็นเส้นที่ใหญ่ที่สุด**
         เจอด้วยสารบัญ "ช่องที่แต่ละเส้นคืน": 11 เส้นส่ง `applied` · เส้นนี้กับ list=stock ไม่ส่ง
@@ -673,7 +694,7 @@ export async function listOrders(o = {}) {
         ⚠️ `advancedFilters` ยังอยู่และยังเป็นแหล่งของตัวกรองขั้นสูง — `applied` ไม่ทับมัน
            แต่ชี้ไปหามันด้วย เพื่อให้จอไม่ต้องเดาว่าตัวกรองขั้นสูงอยู่ไหน */
     applied: {
-      q, channel, status, store: source, from, to, limit, offset,
+      q, channel, status: statuses, store: source, from, to, dateType, limit, offset,
       includeCancelled,
       advancedFilters: "ดูคีย์ advancedFilters — ตัวกรองขั้นสูงอยู่ที่นั่น (null = ไม่ได้กรอง)",
     },
