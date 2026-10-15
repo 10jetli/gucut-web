@@ -67,3 +67,13 @@ test('รายการขาย: status หลายค่าและชน�
   assert.match(badParamError(sp('list=orders&datetype=payment')), /ยังใช้ไม่ได้.*ยังไม่มีวันชำระเงิน/);
   assert.match(badParamError(sp('list=orders&datetype=guess')), /order หรือ ship/);
 });
+
+test('คลัง: ช่วงราคาต้องเป็นเลขและช่องที่กระจกไม่มีต้องตีกลับ', () => {
+  assert.equal(badParamError(sp('list=stock&sellmin=0&sellmax=100000&buymin=0&buymax=100000&kind=all')), null);
+  assert.match(badParamError(sp('list=stock&sellmin=nope')), /sellmin ต้องเป็นตัวเลข/);
+  assert.match(badParamError(sp('list=stock&sellmin=20&sellmax=10')), /sellmin .* ต้องไม่มากกว่า sellmax/);
+  assert.match(badParamError(sp('list=stock&kind=unknown')), /kind ต้องเป็น/);
+  assert.match(badParamError(sp('list=stock&warehouse=KLD')), /ไม่มียอดสต็อกรายคลัง/);
+  assert.match(badParamError(sp('list=stock&tag=x')), /ยังไม่เก็บ Tag/);
+  assert.match(badParamError(sp('list=stock&archived=1')), /ไม่เก็บสินค้าที่ถูกลบ/);
+});

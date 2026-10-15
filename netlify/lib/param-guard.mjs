@@ -61,5 +61,22 @@ export function badParamError(sp) {
       }
     }
   }
+  if (sp.get("list") === "stock") {
+    for (const k of ["sellmin", "sellmax", "buymin", "buymax"]) {
+      const v = String(sp.get(k) ?? "").trim();
+      if (v && !/^\d+(\.\d+)?$/.test(v)) return `${k} ต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป (ได้มา "${v.slice(0, 20)}")`;
+    }
+    for (const [lo, hi] of [["sellmin", "sellmax"], ["buymin", "buymax"]]) {
+      const a = String(sp.get(lo) ?? "").trim();
+      const b = String(sp.get(hi) ?? "").trim();
+      if (a && b && Number(a) > Number(b)) return `${lo} (${a}) ต้องไม่มากกว่า ${hi} (${b})`;
+    }
+    const kind = String(sp.get("kind") ?? "").trim();
+    if (kind && !["goods", "service", "all"].includes(kind)) return `kind ต้องเป็น goods / service / all (ได้มา "${kind.slice(0, 20)}")`;
+    if (String(sp.get("warehouse") ?? "").trim()) return "warehouse ยังใช้กับ list=stock ไม่ได้ — กระจกไม่มียอดสต็อกรายคลัง";
+    if (String(sp.get("tag") ?? "").trim()) return "tag ยังใช้กับ list=stock ไม่ได้ — ตาราง products ยังไม่เก็บ Tag จาก ZORT";
+    const archived = String(sp.get("archived") ?? "").trim();
+    if (archived && archived !== "0") return "archived ยังใช้กับ list=stock ไม่ได้ — กระจกไม่เก็บสินค้าที่ถูกลบจาก ZORT";
+  }
   return null;
 }

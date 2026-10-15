@@ -249,6 +249,28 @@ export async function listStock(o = {}) {
   const offset = bOffset.ใช้;
   const การบีบ = ก้อนการบีบ({ soldDays: bSold.บันทึก, limit: bLimit.บันทึก, offset: bOffset.บันทึก });
   const q = String(o.q ?? "").trim().slice(0, 60);
+  const code = String(o.code ?? "").trim().slice(0, 200);
+  const name = String(o.name ?? "").trim().slice(0, 200);
+  const ราคา = (key) => {
+    const raw = String(o[key] ?? "").trim();
+    if (!raw) return null;
+    const n = Number(raw);
+    return Number.isFinite(n) && n >= 0 ? n : Number.NaN;
+  };
+  const sellMin = ราคา("sellMin");
+  const sellMax = ราคา("sellMax");
+  const buyMin = ราคา("buyMin");
+  const buyMax = ราคา("buyMax");
+  if ([sellMin, sellMax, buyMin, buyMax].some(Number.isNaN))
+    return { error: "ช่วงราคาต้องเป็นตัวเลขตั้งแต่ 0 ขึ้นไป" };
+  if (sellMin !== null && sellMax !== null && sellMin > sellMax)
+    return { error: "sellmin ต้องไม่มากกว่า sellmax" };
+  if (buyMin !== null && buyMax !== null && buyMin > buyMax)
+    return { error: "buymin ต้องไม่มากกว่า buymax" };
+  /* สามช่องนี้มีบนจอ ZORT แต่กระจกยังไม่มีข้อมูล — ตีกลับดีกว่าคืนกองว่างที่ดูเหมือนกรองแล้ว */
+  if (String(o.warehouse ?? "").trim()) return { error: "warehouse ยังใช้ไม่ได้ — กระจกไม่มียอดสต็อกรายคลัง" };
+  if (String(o.tag ?? "").trim()) return { error: "tag ยังใช้ไม่ได้ — products ยังไม่เก็บ Tag จาก ZORT" };
+  if (!["", "0"].includes(String(o.archived ?? "").trim())) return { error: "archived ยังใช้ไม่ได้ — กระจกไม่เก็บสินค้าที่ถูกลบจาก ZORT" };
   /* 🔴 **ค่า sort ที่ไม่รู้จัก เคยกลายเป็น "เรียงตาม qty" เงียบ ๆ** (ฝั่งจอจับได้ 18 ก.ย. 2569
       ยิงเทียบทีละค่า: name · price · buy · available และค่ามั่ว ให้ลำดับเหมือน qty เป๊ะทุกตัว
       และเส้นนี้ไม่สะท้อน applied กลับมาเลย ⇒ **ปุ่มเรียงหลอก**)
@@ -300,8 +322,9 @@ export async function listStock(o = {}) {
   //    "ของใกล้หมด"** จนสินค้าจริงที่ควรสั่งของถูกดันตกหน้า
   // ⚠️ **ไม่กรองทิ้งเงียบ ๆ** — คืนจำนวนมาด้วยเสมอ (`services`) ให้จอบอกได้ว่าซ่อนไปกี่ตัว
   //    กติกาเดียวกับ total/outOfStock: ตัวเลขบนแท็บต้องบอกได้ว่าแท็บอื่นมีอะไร
+  const kindRaw = String(o.kind ?? "").trim();
   const kind =
-    { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[o.kind] || "";
+    { goods: "COALESCE(p.product_type,0) = 0", service: "COALESCE(p.product_type,0) = 1" }[kindRaw] || "";
 
   // 🛡️ บั๊ก A (13 ก.ย. 2569): only=/kind= ที่ "ส่งค่ามาแต่แปลไม่ออก" เดิมตกเงียบเป็น "ไม่กรอง"
   //    ⇒ คืนทั้งคลัง 2,672 แถว · คนขอ only=negative (คำที่เดาก่อนเสมอ เพราะช่องผลชื่อ `negative`)
@@ -311,8 +334,8 @@ export async function listStock(o = {}) {
   //    listStock คืน {error} ⇒ core.mjs (okJson r?.error?400) แปลงเป็น 400 ให้เอง
   if (o.only && !only)
     return { error: `ไม่รู้จักตัวกรอง only="${o.only}"`, accepts: ["out", "neg", "low", "active", "inactive"] };
-  if (o.kind && !kind)
-    return { error: `ไม่รู้จักตัวกรอง kind="${o.kind}"`, accepts: ["goods", "service"] };
+  if (kindRaw && !["goods", "service", "all"].includes(kindRaw))
+    return { error: `ไม่รู้จักตัวกรอง kind="${o.kind}"`, accepts: ["goods", "service", "all"] };
 
   // ⚠️ ต้องค้นชื่อจาก **ทะเบียนสินค้า** ด้วย ไม่ใช่จาก order_items อย่างเดียว
   //    คลังมี 2,672 รหัส แต่เคยขายจริงแค่ ~500 ⇒ ค้นจาก order_items อย่างเดียว
@@ -335,6 +358,12 @@ export async function listStock(o = {}) {
     filter += ` AND p.category = ?`;
     fParams.push(category);
   }
+  if (code) { filter += ` AND ${contains("cur.sku")}`; fParams.push(code); }
+  if (name) { filter += ` AND ${contains("p.name")}`; fParams.push(name); }
+  if (sellMin !== null) { filter += " AND cur.price >= ?"; fParams.push(sellMin); }
+  if (sellMax !== null) { filter += " AND cur.price <= ?"; fParams.push(sellMax); }
+  if (buyMin !== null) { filter += " AND p.purchase_price >= ?"; fParams.push(buyMin); }
+  if (buyMax !== null) { filter += " AND p.purchase_price <= ?"; fParams.push(buyMax); }
 
   const CTE = `
     WITH d AS (SELECT MAX(day) AS day FROM stock_snapshots),
@@ -550,13 +579,25 @@ export async function listStock(o = {}) {
            (สองตัวนั้นตอบคำถามต่างกัน: เรียงอย่างไร ≠ กรองด้วยอะไร) */
     applied: {
       q: q || null,
+      code: code || null,
+      name: name || null,
+      sellMin,
+      sellMax,
+      buyMin,
+      buyMax,
       category: category || null,
       sort: sortApplied,
       only: only ? String(o.only) : null,
-      kind: kind ? String(o.kind) : null,
+      kind: kindRaw || null,
       channel: channel || null,
       limit,
       offset,
+    },
+    advancedFiltersSupported: ["code", "name", "sellmin", "sellmax", "buymin", "buymax", "kind", "category"],
+    advancedFiltersUnavailable: {
+      warehouse: "กระจกไม่มียอดสต็อกรายคลัง — ห้ามใช้ยอดรวมแทน",
+      tag: "ตาราง products ยังไม่เก็บ Tag จาก ZORT",
+      archived: "ตัวซิงก์เก็บเฉพาะสินค้าที่ยังไม่ถูกลบ",
     },
     ...(การบีบ ?? {}),
     /* 🏷️ **แผนที่ป้ายของช่อง `src`** — ส่งมาที่เดียว ไม่ใช่ติดไปทุกแถว (2,674 แถว)

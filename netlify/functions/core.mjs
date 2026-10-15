@@ -4677,6 +4677,15 @@ async function route(req, context) {
     if (p.get("list") === "stock") {
       const r = await listStock({
           q: p.get("q"),
+          code: p.get("code"),
+          name: p.get("name"),
+          sellMin: p.get("sellmin"),
+          sellMax: p.get("sellmax"),
+          buyMin: p.get("buymin"),
+          buyMax: p.get("buymax"),
+          warehouse: p.get("warehouse"),
+          tag: p.get("tag"),
+          archived: p.get("archived"),
           category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
           channel: p.get("channel"),
           only: p.get("only"),

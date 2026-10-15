@@ -29,3 +29,13 @@ test('ความสดของคงเหลืออิง products แล�
   assert.match(src, /available:\s*"products\.available"/)
   assert.match(src, /category:\s*"products\.category"/)
 })
+
+test('ค้นรหัส/ชื่อแยกและช่วงราคาทำใน SQL ก่อนแบ่งหน้า', () => {
+  assert.match(src, /contains\("cur\.sku"\)/)
+  assert.match(src, /contains\("p\.name"\)/)
+  assert.match(src, /cur\.price >= \?/)
+  assert.match(src, /cur\.price <= \?/)
+  assert.match(src, /p\.purchase_price >= \?/)
+  assert.match(src, /p\.purchase_price <= \?/)
+  assert.match(src, /advancedFiltersUnavailable/)
+})
