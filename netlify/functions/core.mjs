@@ -4590,7 +4590,12 @@ async function route(req, context) {
         "warehousecode",
         "isCOD",
       ]);
-      const HEADER_PROBE = new Set(["tag", "agent", "createdby", "createusername", "createuserid", "paymentdate", "reference", "reference2", "warehousecode"]);
+      /* ⚠️ **รายชื่อตรงตัวเท่านั้น** (เหตุเดียวกับ SAFE ข้างบน — regex เคยทำชื่อ/ที่อยู่ลูกค้าหลุด 4 ก.ย. 2569)
+         ➕ 16 ต.ค. 2569 — เติม **ช่องวัน** เพราะ ZORT ส่งมา 115 ช่อง แต่กระจกเก็บ `order_date` อยู่ช่องเดียว
+            ⇒ จอขายของเราจึงกรองตามวันแบบที่ ZORT ทำไม่ได้ (`datetype=create` ตอบ 400 อยู่ทุกวันนี้)
+            🔑 ช่องวันไม่ใช่ข้อมูลส่วนบุคคล และเส้นนี้คืน **ชื่อช่อง + จำนวนใบที่มีค่า ไม่คืนค่า** */
+      const HEADER_PROBE = new Set(["tag", "agent", "createdby", "createusername", "createuserid", "paymentdate", "reference", "reference2", "warehousecode",
+        "createdatetime", "successDate", "receivedate", "shippingdate", "updatedatetime", "expiredate"]);
       const hasValue = (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0);
       const filledCounts = (objs) => {
         const out = {};
@@ -4622,7 +4627,22 @@ async function route(req, context) {
       }
       return json({
         ok: true,
-        note: `เฉพาะใบที่ยังไม่ success/void ย้อน ${back} วัน · คืนแค่ฟิลด์ที่เกี่ยวกับสถานะ`,
+        /* 🔴 **ป้ายขอบเขตต้องอยู่ติดเลขของมันเอง** (แก้ 16 ต.ค. 2569)
+           หมายเหตุเดิมเขียนว่า "เฉพาะใบที่ยังไม่ success/void" ซึ่ง **จริงแค่สามช่อง**
+           (`guess` · `pendingRows` · `statusFields` ที่คิดจาก `rows`)
+           ส่วน `allFieldNames` · `headerFieldsFilled` · `itemFieldsFilled` คิดจาก `list` = **ทุกใบที่สแกน**
+           ⇒ ใครอ่านป้ายเดิมแล้วไปวัด `successDate` จะได้ 0 แล้วสรุปว่า "ZORT ไม่ส่งช่องนี้"
+             ทั้งที่ประชากรที่ป้ายบอกไว้ **ตัดใบ success ออกไปแล้วตั้งแต่ต้น**
+             (ผมเกือบสรุปผิดเองรอบนี้ ⇒ ป้ายรายช่องจึงต้องมี ไม่ใช่ป้ายรวมใบเดียว) */
+        note: `ย้อน ${back} วัน · **ประชากรไม่เท่ากันทุกช่อง ดู ขอบเขตรายช่อง**`,
+        "ขอบเขตรายช่อง": {
+          guess: "เฉพาะใบที่ยังไม่ success/void",
+          pendingRows: "เฉพาะใบที่ยังไม่ success/void",
+          statusFields: "เฉพาะใบที่ยังไม่ success/void",
+          allFieldNames: "ทุกใบที่สแกน (ชื่อช่องของใบแรก)",
+          headerFieldsFilled: "ทุกใบที่สแกน",
+          itemFieldsFilled: "ทุกบรรทัดสินค้าของทุกใบที่สแกน",
+        },
         daysBack: back,
         ordersScanned: list.length,
         truncated,
