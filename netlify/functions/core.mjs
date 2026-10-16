@@ -3859,7 +3859,29 @@ async function route(req, context) {
                     COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
                       AND substr(f.firstDay,1,7) < substr(o.order_date,1,7)
                       THEN TRIM(o.customer) END) AS repeatCustomers,
-                    SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) = '' THEN 1 ELSE 0 END) AS unnamedOrders
+                    SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) = '' THEN 1 ELSE 0 END) AS unnamedOrders,
+                    /* 💰 ยอดขายรายกลุ่ม (ฝั่งจอขอ 16 ต.ค. 2569) — ZORT /Dashboard/ContactReport
+                       มีตัวสลับ "จำนวนลูกค้า / ยอดขาย" (salestypeoption) จอเรามีได้แค่จำนวน
+                       🔑 **ทำในคำสั่งเดิม ไม่ยิงเพิ่มสักรอบ** — เลขสองชุดที่มาจากคนละคำสั่ง
+                          มีโอกาสไม่ตรงกันเองโดยไม่มีใครรู้ (กติกาเดิมของไฟล์นี้)
+                       🔴 **สี่กอง ไม่ใช่สาม** — `unknownSales` คือแถวที่ *มีชื่อ* แต่ JOIN หาวันซื้อแรก
+                          ไม่เจอ (f.firstDay เป็น NULL) ⇒ ตกไม่เข้าทั้ง new และ repeat
+                          ตามตรรกะมันไม่ควรเกิด แต่ "ไม่ควรเกิด" ไม่ใช่ "ไม่เกิด"
+                          ⇒ ให้กองนี้มีที่ยืน **ไม่งั้นยอดจะหายเงียบ ๆ แล้วสามกองบวกไม่เท่ายอดเดือน** */
+                    ROUND(COALESCE(SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND substr(f.firstDay,1,7) = substr(o.order_date,1,7)
+                      THEN o.amount ELSE 0 END),0),2) AS newSales,
+                    ROUND(COALESCE(SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND substr(f.firstDay,1,7) < substr(o.order_date,1,7)
+                      THEN o.amount ELSE 0 END),0),2) AS repeatSales,
+                    ROUND(COALESCE(SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) = ''
+                      THEN o.amount ELSE 0 END),0),2) AS unnamedSales,
+                    ROUND(COALESCE(SUM(CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND f.firstDay IS NULL
+                      THEN o.amount ELSE 0 END),0),2) AS unknownSales,
+                    COUNT(DISTINCT CASE WHEN TRIM(COALESCE(o.customer,'')) <> ''
+                      AND f.firstDay IS NULL THEN TRIM(o.customer) END) AS unknownCustomers,
+                    ROUND(COALESCE(SUM(o.amount),0),2) AS totalSales
              FROM orders o
              LEFT JOIN (
                SELECT TRIM(customer) AS name, MIN(order_date) AS firstDay
@@ -3876,8 +3898,23 @@ async function route(req, context) {
             newCustomers: num2(r.newCustomers),
             repeatCustomers: num2(r.repeatCustomers),
             unnamedOrders: num2(r.unnamedOrders),
+            /* ⚠️ `unnamed` มีแต่ยอด/ใบ **ไม่มีจำนวนคน** — ใบไม่ระบุชื่อนับคนไม่ได้
+               (ตรงกับ groupTotals.unnamed.customers = null ที่ส่งไปแล้ว) */
+            unknownCustomers: num2(r.unknownCustomers),
+            newSales: num2(r.newSales),
+            repeatSales: num2(r.repeatSales),
+            unnamedSales: num2(r.unnamedSales),
+            unknownSales: num2(r.unknownSales),
+            /* 🔑 ส่งยอดรวมของเดือนมาด้วย ⇒ จอ **ตรวจเองได้ในคำตอบเดียว** ว่าสี่กองบวกครบไหม
+               ไม่ต้องไปหาเลขจากคำขออื่นมาเทียบ (ซึ่งอาจคนละรอบซิงก์แล้วดูเหมือนไม่ตรง) */
+            totalSales: num2(r.totalSales),
           }));
         })(),
+        monthlyScope:
+          "ต่อเดือน: newSales + repeatSales + unnamedSales + unknownSales = totalSales ของเดือนนั้น (ตรวจได้ในคำตอบเดียว) · " +
+          "newCustomers/repeatCustomers นับเป็น **คน** (คนเดียวนับครั้งเดียวต่อเดือน) ส่วน unnamedOrders นับเป็น **ใบ** ⇒ **ห้ามบวกข้ามหน่วย** · " +
+          "unknownSales/unknownCustomers = มีชื่อแต่หาวันซื้อแรกไม่เจอ — ปกติเป็น 0 แต่ถ้าโผล่ขึ้นมาแปลว่าตาราง JOIN เพี้ยน **อย่าซ่อน** · " +
+          "ยอดทุกช่องตัดใบยกเลิกออกแล้ว แต่ยังรวมใบที่ยังไม่จ่าย (เหมือน totalAmount ของ list=orders)",
         /* ขอบเขตประวัติ — จอต้องบอกว่า "ใหม่" นับจากข้อมูลที่เริ่มเมื่อไหร่ ไม่ใช่ตั้งแต่เปิดร้านจริง */
         historyFrom: (await coreQuery(`SELECT MIN(order_date) AS d FROM orders`).catch(() => [{}]))[0]?.d ?? null,
         note:
