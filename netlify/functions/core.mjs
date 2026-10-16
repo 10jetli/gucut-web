@@ -4891,8 +4891,15 @@ async function route(req, context) {
          ➕ 16 ต.ค. 2569 — เติม **ช่องวัน** เพราะ ZORT ส่งมา 115 ช่อง แต่กระจกเก็บ `order_date` อยู่ช่องเดียว
             ⇒ จอขายของเราจึงกรองตามวันแบบที่ ZORT ทำไม่ได้ (`datetype=create` ตอบ 400 อยู่ทุกวันนี้)
             🔑 ช่องวันไม่ใช่ข้อมูลส่วนบุคคล และเส้นนี้คืน **ชื่อช่อง + จำนวนใบที่มีค่า ไม่คืนค่า** */
+      /* ➕ 16 ต.ค. 2569 — เติม **จังหวัด + ชื่อผู้ซื้อบนมาร์เก็ตเพลส** เพื่อตอบคำถามที่กระจกตอบไม่ได้
+            🔑 ใช้แยกสองเหตุที่หน้าตาเหมือนกันเป๊ะเมื่อตารางจังหวัดโหว่:
+               (ก) **ZORT ไม่ได้ส่งช่องนั้นมาสำหรับใบส่วนใหญ่** กับ (ข) **ตัวซิงก์ของเราทำหาย**
+               ถ้าวัดแต่ฝั่งกระจก สองเหตุนี้ให้เลขเดียวกัน แล้วเราจะไปแก้ผิดฝั่ง
+            🔒 เส้นนี้คืน **ชื่อช่อง + จำนวนใบที่มีค่า ไม่คืนค่า** ⇒ ไม่มีที่อยู่/ชื่อผู้ซื้อหลุดออกมา
+               (ต่างจาก SAFE ข้างบนที่คืนตัวอย่างค่า — **ห้ามเอาช่องพวกนี้ไปใส่ใน SAFE**) */
       const HEADER_PROBE = new Set(["tag", "agent", "createdby", "createusername", "createuserid", "paymentdate", "reference", "reference2", "warehousecode",
-        "createdatetime", "successDate", "receivedate", "shippingdate", "updatedatetime", "expiredate"]);
+        "createdatetime", "successDate", "receivedate", "shippingdate", "updatedatetime", "expiredate",
+        "shippingprovince", "customerprovince", "integrationCustomer", "integrationCustomerId"]);
       const hasValue = (v) => v != null && v !== "" && !(Array.isArray(v) && v.length === 0);
       const filledCounts = (objs) => {
         const out = {};
