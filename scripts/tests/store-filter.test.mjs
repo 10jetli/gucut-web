@@ -96,11 +96,18 @@ test('core.mjs ไม่เหลือจุดที่ปัดค่าร�
   //       `store ? parseSingleStore(...) : { source: "" }` ⇒ **ข้ามตัวแปลงกลางเมื่อไม่ส่ง store**
   //       แล้วตั้งความหมาย "ว่าง = รวมสองร้าน" เอาเอง ซึ่งผิดเนื้อเรื่อง (z1/z2 เป็นบัญชี ZORT แยกกัน
   //       ⇒ ผลรวมสองร้านเอาไปเทียบจอ ZORT ของร้านไหนก็ไม่ได้) ⇒ แก้เป็นเรียกตัวแปลงกลางเสมอ
+  // +1 เส้น ?cards=1 (16 ต.ค. 2569) — การ์ดหน้าแรกแบบ ZORT ยิง D1 คำสั่งเดียว
+  //    ที่มา: ฝั่งจอวัดว่าการ์ดหน้าแรกต้องยิง list=orders แบบไม่ใส่ช่วงวัน = 17 คำสั่ง ~7 วิ ต่อการเปิดจอ
+  //    🔑 เส้นนี้ใช้ `parseSingleStore` เพราะการ์ดเป็นของ **ร้านเดียว** — `all` ต้อง 400
+  //       (ยอดรวมสองร้านเอาไปเทียบการ์ด ZORT ของร้านไหนก็ไม่ได้ · เหตุผลเดียวกับ ?reserved=1)
+  //    ⚠️ ขยับหมุดนี้เป็นครั้งที่ 6 ใน 8 วัน — ไม่ใช่ความผิดของหมุด แต่แปลว่าเส้นใหม่เกิดถี่
+  //       ถ้าวันหนึ่งคนเริ่มขยับเลขโดยไม่อ่าน ด่านนี้จะกลายเป็นพิธีกรรม ⇒ ให้เปลี่ยนเป็นนับ
+  //       "เส้นที่รับ store แต่ **ไม่** ผ่านตัวแปลงกลาง ต้องเป็น 0" ซึ่งไม่โตตามงาน
   //    ⚠️ เลขนี้เป็น **หมุดนับ** ⇒ เพิ่มเส้นที่ใช้ตัวแปลงกลางเมื่อไหร่ ด่านจะร้องทุกครั้ง
   //       นั่นคือเจตนาของมัน (ให้คนมาอ่านว่าเส้นใหม่ใช้ตัวแปลงจริงไหม) **ห้ามขยับเลขโดยไม่เขียนที่มา**
-  assert.equal(single.length, 11, 'ordercheck · pending · cardguess · synctransfers · list=transfers · syncreturns · list=returnorders · syncpurchases · STORE_LISTS · purchase · reserved');
+  assert.equal(single.length, 12, 'ordercheck · pending · cardguess · cards · synctransfers · list=transfers · syncreturns · list=returnorders · syncpurchases · STORE_LISTS · purchase · reserved');
   assert.equal(multi.length, 2, 'daily/bycustomer · monthly');
-  assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 5);
+  assert.equal((src.match(/if \(storeParsed\.error\) return json\(\{ error: storeParsed\.error \}, 400\);/g) || []).length, 6);
 });
 
 test('parseZ1OnlyStore: ว่าง/z1 = z1 · z2/all/ค่าแปลก = error ห้ามตอบของ z1 ในชื่อร้านอื่น', async () => {

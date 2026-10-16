@@ -4,6 +4,7 @@
 //   GET /api/core?sync=1&days=30  กระจกย้อนหลัง N วัน (backfill · สูงสุด 60)
 //   GET /api/core?blankwhere=1     ใบที่ integration_status ว่าง อยู่ช่องทาง/ร้าน/เดือนไหน + เขียนเมื่อไหร่
 //   GET /api/core?pending=1        งานค้างจริง vs ใบผี (ช่องทางที่ปิดไปแล้ว) · store=z1|z2
+//   GET /api/core?cards=1          การ์ดหน้าแรกแบบ ZORT — คำสั่งเดียว ทั้งประวัติ · store=z1|z2
 //   GET /api/core?monthly=1&months=6  ยอดขายรายเดือน (คิดที่ฐาน · จอไม่ต้องดึงแถวมานับเอง)
 //   GET /api/core?daily=1&days=90      ยอดขายรายวัน · ?bycustomer=1  ยอดรายลูกค้า
 //   GET /api/core?tokens=1         ต่ออายุ token มาร์เก็ตเพลสเดี๋ยวนั้น (ตัวจริงวิ่งวันละครั้ง)
@@ -3955,6 +3956,73 @@ async function route(req, context) {
       return okJson(raw === "all"
         ? await zortOrderCountForMonthAll(ym)
         : await zortOrderCountForMonth(ym, raw, { detail }));
+    }
+
+    /* ── 🃏 การ์ดหน้าแรกแบบ ZORT (/Dashboard/Initial) — **คำสั่งเดียว ทั้งประวัติ** ──
+       เหตุที่ต้องมีเส้นนี้ (ฝั่งจอขอ 16 ต.ค. 2569): การ์ดของ ZORT นับ **ทุกช่วงเวลา**
+       จอจึงต้องยิง `list=orders` ที่ไม่ใส่ช่วงวัน = 17 คำสั่ง D1 **ทุกครั้งที่เปิดหน้าแรก**
+       วัดจริงฝั่งจอ: ต้องยิง 2 คำขอ รวม ~7 วินาที ต่อการเปิดจอหนึ่งครั้ง
+       ⇒ เส้นนี้ยิง **คำสั่งเดียว** คืนตาราง (สถานะ × สถานะชำระเงิน) ทั้งร้าน
+          แล้วการ์ดทุกใบคิดจากตารางนั้นฝั่งนี้ — เพิ่มการ์ดใหม่ไม่ต้องเพิ่มคำสั่ง
+
+       🔑 **ส่งตารางดิบไปด้วย ไม่ใช่ส่งแต่เลขการ์ด** — นิยามการ์ดของ ZORT ยังไม่นิ่ง
+          (วันนี้การ์ด "ค้างโอนสินค้า" ของ ZORT เองยังไม่ตรงกับรายการของ ZORT เอง: 132 vs 95)
+          ถ้าท่อส่งแต่เลขสรุป วันที่นิยามเปลี่ยนจะต้องรอ deploy ท่อ ⇒ ส่ง `grid` ไปด้วย
+          จอจึงลองนิยามใหม่ได้เองโดยไม่ต้องรอใคร
+       ⚠️ **ไม่ตัดใบยกเลิกทิ้งในคำสั่ง** — Voided เป็นค่าหนึ่งใน `status`/`pay_status`
+          ซ่อนมันคือการตัดสินใจแทนคนอ่าน · การ์ดแต่ละใบประกาศเองว่ากรองอะไรออก */
+    if (url.searchParams.get("cards")) {
+      const { coreQuery } = await import("../lib/coredb.mjs");
+      /* ร้านเดียวต่อคำขอ — การ์ดของ ZORT เป็นของร้านนั้น ๆ · all ⇒ 400 ไม่ใช่เหมารวมเงียบ ๆ */
+      const storeParsed = (await import("../lib/core-orders.mjs")).parseSingleStore(url.searchParams.get("store"));
+      if (storeParsed.error) return json({ error: storeParsed.error }, 400);
+      const store = storeParsed.source;
+      const t0 = Date.now();
+      const gridRows = await coreQuery(
+        `SELECT COALESCE(NULLIF(TRIM(status),''),'(ไม่ระบุ)') AS status,
+                COALESCE(NULLIF(TRIM(pay_status),''),'(ไม่ระบุ)') AS payStatus,
+                COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
+         FROM orders WHERE source = ? GROUP BY 1,2`,
+        [store]
+      ).catch((e) => ({ error: String(e?.message || e).slice(0, 160) }));
+      if (!Array.isArray(gridRows)) return json({ ok: false, ...gridRows }, 502);
+      const num2 = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
+      const grid = gridRows.map((r) => ({
+        status: String(r.status), payStatus: String(r.payStatus),
+        orders: num2(r.orders), amount: num2(r.amount),
+      }));
+      /** รวมช่องที่เข้าเงื่อนไข — คืน `null` เมื่อไม่มีช่องไหนเข้าเลย
+       *  🔑 **`null` ไม่ใช่ 0** — "ไม่มีช่องที่ชื่อตรงเลย" มักแปลว่า **ชื่อสถานะเปลี่ยน**
+       *     ไม่ใช่ว่างานค้างหมดไป · ส่ง 0 = การ์ดขึ้นเลขสวยในวันที่นิยามพัง */
+      const รวม = (ok) => {
+        const เข้า = grid.filter((g) => ok(g));
+        if (!เข้า.length) return null;
+        return {
+          orders: เข้า.reduce((a, g) => a + g.orders, 0),
+          amount: Math.round(เข้า.reduce((a, g) => a + g.amount, 0) * 100) / 100,
+          ช่องที่นับ: เข้า.map((g) => `${g.status} / ${g.payStatus}`),
+        };
+      };
+      const ค้างชำระ = ["Pending", "Partial Payment"];
+      const ยังไม่จบ = ["Pending", "Waiting"];
+      return json({
+        ok: true,
+        store,
+        ขอบเขต: "ทั้งประวัติของร้านนี้ — **ไม่มีช่วงวัน** (การ์ดของ ZORT นับทุกช่วงเวลา) · ตัวเลขเปลี่ยนทุกครั้งที่กระจกซิงก์",
+        grid,
+        gridNote: "ทุกคู่ (สถานะ × สถานะชำระเงิน) ที่มีจริง **รวมใบยกเลิกด้วย** — การ์ดข้างล่างเป็นการกรองจากตารางนี้ · อยากได้นิยามอื่นให้คิดจาก grid เองได้เลย ไม่ต้องรอท่อ deploy",
+        การ์ด: {
+          ค้างชำระเงิน: รวม((g) => g.status === "Success" && ค้างชำระ.includes(g.payStatus)),
+          ค้างโอนสินค้า: รวม((g) => ยังไม่จบ.includes(g.status) && g.payStatus === "Paid"),
+        },
+        นิยามการ์ด: {
+          ค้างชำระเงิน: "status = Success และ pay_status ∈ (Pending, Partial Payment) — ตรงกับที่ ZORT /Sell/list?dt=1 แสดง (ฝั่งจอเทียบแล้ว 16 ต.ค.: 27 ใบ 56,522 ตรงเป๊ะ)",
+          ค้างโอนสินค้า: "status ∈ (Pending, Waiting) และ pay_status = Paid — 🔴 **ยังไม่ตรงกับ ZORT** ฝั่งจอวัด 16 ต.ค.: เราได้ 40 ใบ · รายการของ ZORT เอง 95 ใบ · การ์ดของ ZORT เอง 132 ใบ (ZORT ไม่ตรงกับตัวเองด้วย) ⇒ เลขนี้คือ **นิยามของเรา** ยังไม่ใช่เลขของ ZORT ห้ามติดป้ายว่าตรงกัน",
+          "🚫 ห้ามทำ": "ห้ามเอา null ไปแสดงเป็น 0 — null แปลว่าไม่มีคู่สถานะที่ชื่อตรงเลย ซึ่งมักคือชื่อสถานะเปลี่ยน ไม่ใช่งานค้างหมดไป",
+        },
+        คำสั่งD1: 1,
+        วินาที: Math.round((Date.now() - t0) / 100) / 10,
+      });
     }
 
     if (url.searchParams.get("pending")) {

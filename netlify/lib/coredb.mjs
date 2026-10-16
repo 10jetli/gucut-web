@@ -258,6 +258,14 @@ export async function coreInit() {
           แต่ **ห้ามเติมดัชนีเพิ่มโดยไม่มีคำสั่งที่ใช้มันจริงและเลขก่อน-หลังกำกับ** */
     `CREATE INDEX IF NOT EXISTS idx_orders_number_source ON orders(number, source)`,
     `CREATE INDEX IF NOT EXISTS idx_orders_pay_status ON orders(pay_status)`,
+    /* 🃏 ดัชนีคลุมของเส้น `?cards=1` (16 ต.ค. 2569) — ครบทุกคอลัมน์ที่คำสั่งนั้นแตะ
+       `SELECT status, pay_status, COUNT(*), SUM(amount) FROM orders WHERE source=? GROUP BY 1,2`
+       ⇒ มี source นำหน้า (ตัวกรอง) ตามด้วยสองคอลัมน์ที่จัดกลุ่ม และ amount ที่ต้องบวก
+       ⇒ ตั้งใจให้เป็น **index-only scan** ไม่ต้องแตะแถวจริงสักแถว
+       ⚠️ ยังไม่ได้วัดตอนเขียน — ดัชนีสร้างด้วย `?init=1` ไม่ใช่ตอน deploy
+          ⇒ **ใครเห็น deploy เขียวแล้วเชื่อว่าดัชนีมีแล้วจะเชื่อผิด** (บทเรียน 16 ต.ค. เช้า)
+          ผลวัดจริงต้องเติมตรงนี้หลังรัน init แล้วเท่านั้น ห้ามเขียนตัวเลขที่ยังไม่ได้วัด */
+    `CREATE INDEX IF NOT EXISTS idx_orders_source_status_pay ON orders(source, status, pay_status, amount)`,
     `CREATE INDEX IF NOT EXISTS idx_orders_updated_at ON orders(updated_at)`,
     `CREATE TABLE IF NOT EXISTS order_items (
       order_id TEXT NOT NULL, line INTEGER NOT NULL, sku TEXT, name TEXT,
