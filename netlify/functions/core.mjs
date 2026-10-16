@@ -1454,7 +1454,7 @@ async function route(req, context) {
     if (url.searchParams.has("zortproductcost")) {
       if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
       const { zortProductCost } = await import("../lib/zort-write.mjs");
-      return okJson(await zortProductCost(url.searchParams.get("zortproductcost")));
+      return okJson(await zortProductCost(url.searchParams.get("zortproductcost"), { costq: url.searchParams.get("costq") }));
     }
     if (url.searchParams.has("zortproductfields")) {
       const { zortProductFields } = await import("../lib/zort-write.mjs");

@@ -1291,7 +1291,7 @@ export async function zortProductFields(skuIn) {
  *  ⚠️ ยังไม่เอาไปคิด `valueZortStyle` ในรอบนี้ — ต้องเห็นชื่อช่องจริงก่อน แล้วค่อยต่อ
  *     (รอบนี้ผมเพิ่งเจ็บกับการสรุปชื่อ/กฎจากตัวอย่างเดียวมาแล้วหนึ่งครั้ง)
  */
-export async function zortProductCost(skuIn) {
+export async function zortProductCost(skuIn, opt = {}) {
   const sku = txt(skuIn, 60);
   if (!sku) return { ok: false, error: "ต้องระบุ sku" };
   const headers = creds();
@@ -1299,7 +1299,25 @@ export async function zortProductCost(skuIn) {
   /* ลองหลายรูปพารามิเตอร์ — ไม่รู้ว่าเส้นนี้รับชื่ออะไร ⇒ ลองแล้วรายงานทุกแบบที่ลอง
      🔑 **รายงานทั้งที่สำเร็จและที่ไม่สำเร็จ** ไม่ใช่คืนแบบที่สำเร็จแบบเดียว
         ไม่งั้นรอบหน้าจะไม่มีใครรู้ว่าแบบอื่นถูกลองแล้วหรือยัง */
-  const แบบที่ลอง = [`searchsku=${encodeURIComponent(sku)}`, `sku=${encodeURIComponent(sku)}`, `id=${encodeURIComponent(sku)}`];
+  /* 📏 วัดแล้ว 16 ต.ค. 2569 ~23:5x: ทั้งสามรูปแรก (searchsku · sku · id) ได้ **HTTP 200 แต่ 0 แถว**
+     ทั้งกับรหัสข้อความ (00068) และ id ตัวเลข (21521953)
+     ⇒ เส้นมีจริงและรับ GET แต่เรายัง **ไม่รู้ชื่อพารามิเตอร์ที่มันต้องการ**
+     🔑 แทนที่จะ deploy ใหม่ทุกครั้งที่เดารูปเพิ่ม ⇒ ให้ผู้เรียก **ส่งรูปของตัวเองมาได้** ด้วย `costq=`
+        ⇒ ไล่ลองได้ไม่จำกัดโดยไม่กินเครดิต deploy เลย
+     🔒 ปลอดภัยโดยโครงสร้าง: เส้นปลายทาง **ตรึงไว้ที่ `Product/GetProductCost` เท่านั้น**
+        และเป็น **GET** เท่านั้น ⇒ ส่งอะไรมาก็เขียนข้อมูลไม่ได้
+     ⚠️ กันพาเราไปเส้นอื่น: ตัดอักขระที่เปลี่ยนเส้นทาง/เติมพารามิเตอร์แปลก (`/ ? # &` และช่องว่าง)
+        และจำกัดความยาว ⇒ ส่งได้แค่ `ชื่อ=ค่า` เดี่ยว ๆ */
+  const เพิ่มเอง = String(opt?.costq ?? "").trim().replace(/[\/?#&\s]/g, "").slice(0, 80);
+  const แบบที่ลอง = [
+    `searchsku=${encodeURIComponent(sku)}`,
+    `sku=${encodeURIComponent(sku)}`,
+    `id=${encodeURIComponent(sku)}`,
+    `productid=${encodeURIComponent(sku)}`,
+    `productId=${encodeURIComponent(sku)}`,
+    `productcode=${encodeURIComponent(sku)}`,
+    ...(เพิ่มเอง ? [เพิ่มเอง] : []),
+  ];
   const ผล = [];
   for (const q of แบบที่ลอง) {
     let r;
