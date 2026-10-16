@@ -2879,8 +2879,16 @@ async function route(req, context) {
           )
         : byCategory
         ? await coreQuery(
+            /* 💰 ยอดค้างจ่ายรายหมวด (ฝั่งจอขอ 16 ต.ค. 2569 — เทียบ ZORT SalesReport)
+               ✅ คิดใน **คิวรีเดิมตัวเดียวกัน** ไม่เพิ่มรอบอ่านเลย
+               ⚠️ อ่านจาก `o.pay_status` (สถานะการจ่ายเงิน) ไม่ใช่ `o.status` (สถานะเอกสาร)
+                  🔴 **ต่างจาก `by=month` ในเส้นเดียวกันนี้ ซึ่งใช้ `o.status`** ⇒ ชื่อช่องเหมือนกันแต่ฐานต่างกัน
+                     ประกาศไว้ใน `zortStyleScope` แล้ว · ยังไม่ยุบรวมเพราะ by=month ขึ้นเว็บไปแล้ว
+                     เปลี่ยนเงียบ ๆ = จอที่เทียบเลขเก่าเพี้ยนโดยไม่มีอะไรฟ้อง (ต้องวัดว่าต่างกันจริงไหมก่อน) */
             `SELECT COALESCE(NULLIF(p.category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS category,
                     SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
+                    SUM(CASE WHEN LOWER(COALESCE(o.pay_status,'')) LIKE 'pending%' THEN oi.qty ELSE 0 END) AS unpaidQty,
+                    ROUND(COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.pay_status,'')) LIKE 'pending%' THEN oi.amount ELSE 0 END),0),2) AS unpaidAmount,
                     COUNT(DISTINCT oi.sku) AS skus, COUNT(DISTINCT o.id) AS orders
              FROM order_items oi JOIN orders o ON o.id = oi.order_id
              LEFT JOIN products p ON p.sku = oi.sku
@@ -2893,6 +2901,8 @@ async function route(req, context) {
         : await coreQuery(
             `SELECT oi.sku, MAX(oi.name) AS name,
                     SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount,
+                    SUM(CASE WHEN LOWER(COALESCE(o.pay_status,'')) LIKE 'pending%' THEN oi.qty ELSE 0 END) AS unpaidQty,
+                    ROUND(COALESCE(SUM(CASE WHEN LOWER(COALESCE(o.pay_status,'')) LIKE 'pending%' THEN oi.amount ELSE 0 END),0),2) AS unpaidAmount,
                     MAX(COALESCE(p.category,'')) AS category
              FROM order_items oi JOIN orders o ON o.id = oi.order_id
              LEFT JOIN products p ON p.sku = oi.sku
@@ -2935,7 +2945,23 @@ async function route(req, context) {
         amountScope: byMonth
           ? "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** · " +
             "อยากได้เฉพาะเงินที่ได้รับจริง ให้ใช้ amount − unpaidAmount ของเดือนนั้น"
-          : "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่าย** (รายตัวยังไม่ได้แยกยอดค้างจ่าย)",
+          : "amount = ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบที่ยังไม่จ่ายและยังไม่หักใบคืน** · ยอดค้างจ่ายรายแถวอยู่ที่ unpaidAmount (คิดจาก pay_status)",
+        /* 🔴 **ของที่กระจกตอบไม่ได้ ต้องบอกว่าตอบไม่ได้ ไม่ใช่ตอบ 0** (ฝั่งจอขอ 16 ต.ค. 2569)
+           ฝั่งจอขอ returnedQty/returnedAmount ต่อแถว เพราะพิสูจน์แล้วว่า ZORT หักใบคืน **ทั้งชิ้นและเงิน**
+           (เลื่อยยนต์ NEWWAVE ต่าง 1 ชิ้น · โซ่ NEWWAVE ต่าง 357.5 ชิ้น)
+           🔴 **แต่กระจกเก็บใบคืนไว้แค่หัวใบ ไม่มีบรรทัดสินค้า** — ตาราง return_orders_v2 มีแต่
+              (number · reference · amount · status) · ตัวที่อ่านบรรทัดได้ (?returnskus=) **ยิงสด ZORT ทีละใบ**
+              ไม่ได้เก็บลงกระจก ⇒ แจกแจงลงรายสินค้า/รายหมวด **ทำไม่ได้จากข้อมูลที่มีวันนี้**
+           ⇒ ส่ง null + เหตุ **ห้ามส่ง 0** · 0 คือคำยืนยันว่า "หมวดนี้ไม่มีของถูกคืน" ซึ่งเราไม่ได้วัด
+              แล้วจอจะเอาไปหักแล้วได้ยอดที่ดูตรงกับ ZORT มากขึ้นแต่ผิดอยู่
+           ⇒ และ qtyZortStyle/salesZortStyle ก็ต้อง null ด้วย — **ส่วนประกอบตัวใดไม่รู้ ผลลัพธ์ต้องไม่รู้**
+           ✅ ระดับ **ช่องทาง** ทำได้แล้ว (list=orderfacets&zortstyle=1) เพราะหัวใบคืนผูกกับใบขายได้ตรง ๆ */
+        returnedPerRow: null,
+        zortStyleScope:
+          "unpaidQty/unpaidAmount ต่อแถว = ของใบที่ **pay_status ขึ้นต้นด้วย Pending** (ฐานเดียวกับ byChannel ของ list=orderfacets) · " +
+          "⚠️ **ต่างจาก unpaidAmount ของ by=month ในเส้นเดียวกันนี้ ซึ่งคิดจาก `status`** — ชื่อเหมือนกันแต่ฐานต่างกัน ยังไม่ยุบรวมเพราะ by=month ขึ้นเว็บไปแล้ว · " +
+          "🔴 returnedQty/returnedAmount/qtyZortStyle/salesZortStyle **รายแถว = ยังทำไม่ได้** (returnedPerRow: null) เพราะกระจกเก็บใบคืนแค่หัวใบ ไม่มีบรรทัดสินค้า ⇒ **ห้ามอ่านความว่างนี้เป็น 0** · " +
+          "ระดับช่องทางใช้ได้แล้วที่ list=orderfacets&zortstyle=1 (พิสูจน์ตรงเป๊ะรายช่อง 16 ต.ค. 2569)",
         ...(byMonth ? {} : {
           categoryScope: "หมวด = หมวดสินค้าในคลัง ZORT (ตาราง products ผูกด้วย sku · ไม่แยกร้าน) · " +
             "sku ที่คลังไม่รู้จักหรือยังไม่จัดหมวด = " + (byCategory ? "(ยังไม่ได้จัดหมวดใน ZORT)" : "ค่าว่าง"),
@@ -5033,6 +5059,11 @@ async function route(req, context) {
           buyMin: p.get("buymin"),
           buyMax: p.get("buymax"),
           warehouse: p.get("warehouse"),
+          /* 💰 ยอดแบบ ZORT ต่อช่องทาง (ฝั่งจอขอ 16 ต.ค. 2569) — **ยิงคิวรีใบคืนเฉพาะเมื่อขอ**
+             เส้นนี้เปิดบ่อยที่สุดในระบบ ⇒ ของเสริมต้องไม่กินรอบอ่านของทุกคำขอ
+             ไม่ส่งมา ⇒ byChannel **ไม่มีคีย์** returnedAmount/salesZortStyle เลย (ท่าเดียวกับ byWarehouse)
+             ⇒ จอแยก "ยังไม่ได้ขอ" (ไม่มีคีย์) ออกจาก "ขอแล้วอ่านไม่ได้" (null) ได้ */
+          zortStyle: p.get("zortstyle"),
           tag: p.get("tag"),
           archived: p.get("archived"),
           category: p.get("category"), // กดจากชื่อหมวดในจอหมวดหมู่ (เหมือน ZORT)
@@ -5151,6 +5182,11 @@ async function route(req, context) {
           tag: p.get("tag"),
           createUser: p.get("createuser"),
           warehouse: p.get("warehouse"),
+          /* 💰 ยอดแบบ ZORT ต่อช่องทาง (ฝั่งจอขอ 16 ต.ค. 2569) — **ยิงคิวรีใบคืนเฉพาะเมื่อขอ**
+             เส้นนี้เปิดบ่อยที่สุดในระบบ ⇒ ของเสริมต้องไม่กินรอบอ่านของทุกคำขอ
+             ไม่ส่งมา ⇒ byChannel **ไม่มีคีย์** returnedAmount/salesZortStyle เลย (ท่าเดียวกับ byWarehouse)
+             ⇒ จอแยก "ยังไม่ได้ขอ" (ไม่มีคีย์) ออกจาก "ขอแล้วอ่านไม่ได้" (null) ได้ */
+          zortStyle: p.get("zortstyle"),
           /* 🔴 **ค่าที่แปลไม่ออกต้องตีกลับ ไม่ใช่ตกเป็น false เงียบ ๆ** (แก้ 19 ก.ย. 2569)
              เดิม `=== "1"` ⇒ ส่ง `cancelled=maybe` ได้ `includeCancelled:false`
              ⇒ คนที่ตั้งใจรวมใบยกเลิกได้ยอดที่ไม่รวม **โดยไม่มีอะไรฟ้อง**
@@ -5207,6 +5243,11 @@ async function route(req, context) {
           tag: p.get("tag"),
           createUser: p.get("createuser"),
           warehouse: p.get("warehouse"),
+          /* 💰 ยอดแบบ ZORT ต่อช่องทาง (ฝั่งจอขอ 16 ต.ค. 2569) — **ยิงคิวรีใบคืนเฉพาะเมื่อขอ**
+             เส้นนี้เปิดบ่อยที่สุดในระบบ ⇒ ของเสริมต้องไม่กินรอบอ่านของทุกคำขอ
+             ไม่ส่งมา ⇒ byChannel **ไม่มีคีย์** returnedAmount/salesZortStyle เลย (ท่าเดียวกับ byWarehouse)
+             ⇒ จอแยก "ยังไม่ได้ขอ" (ไม่มีคีย์) ออกจาก "ขอแล้วอ่านไม่ได้" (null) ได้ */
+          zortStyle: p.get("zortstyle"),
           limit: p.get("limit"),
           offset: p.get("offset"),
           /* 🔴 **ค่าที่แปลไม่ออกต้องตีกลับ ไม่ใช่ตกเป็น false เงียบ ๆ** (แก้ 19 ก.ย. 2569)

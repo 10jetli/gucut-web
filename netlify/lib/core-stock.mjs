@@ -842,6 +842,18 @@ export async function listDeadStock(o = {}) {
     : months
       ? ถอยเดือนปฏิทิน(day, months)
       : new Date(new Date(`${day}T00:00:00Z`).getTime() - days * 864e5).toISOString().slice(0, 10);
+  /* 🔴 **ขอบรวมวันตัดหรือไม่ — ต่างกันหนึ่งวัน และวัดแล้วว่ามีผลจริง** (16 ต.ค. 2569)
+     📏 วัดบนเว็บจริง: months=3 ⇒ cut 2026-07-16 · แถวบนสุดขายล่าสุด **15 ก.ค.**
+        แต่จอ ZORT แถวบนสุดคือ **16 ก.ค.** ⇒ ZORT **นับวันตัดรวมเข้าไปด้วย**
+        (ยืนยันอีกทาง: before=2026-07-17 ⇒ แถวบนสุด 16 ก.ค. ตรงกับ ZORT เป๊ะ · ต่างกัน 2 รหัส)
+     ⇒ `months` = **รวมวันตัด** (<=) ให้ตรง ZORT ตามที่ฝั่งจอขอ
+     ⇒ `before` = **ไม่รวม** (<) เพราะชื่อมันบอกว่า "ก่อนวันนี้" · และฝั่งจอวัดเทียบกับ ZORT
+        ด้วยความหมายนี้ไปแล้ว เปลี่ยนตอนนี้จะทำให้เลขที่เขาจดไว้กลายเป็นผิดเงียบ ๆ
+     ⇒ `days` = ไม่รวม (ของเดิม ไม่แตะ) — จอที่ใช้อยู่จะได้เลขเท่าเดิมทุกบาท
+     🔑 **ส่งกติกาออกไปเป็นช่องของตัวเอง (`cutRule`) ห้ามให้จอเดาจากชื่อพารามิเตอร์**
+        ความต่างหนึ่งวันนี้คือของที่มองไม่เห็นจากตัวเลขผลลัพธ์ */
+  const รวมวันตัด = Boolean(months) && !beforeRaw;
+  const ตัวเทียบวันจม = รวมวันตัด ? "<=" : "<";
   const cutFrom = beforeRaw
     ? "before ที่ผู้เรียกส่งมา (ชนะ months และ days)"
     : months
@@ -876,26 +888,42 @@ export async function listDeadStock(o = {}) {
             ROUND(COALESCE(SUM(CASE WHEN ${ดีแล้ว} THEN cur.qty * cur.price END),0),2) AS value,
             SUM(CASE WHEN COALESCE(cur.qty,0) <= 0 THEN 1 ELSE 0 END) AS qtyNotPositive,
             SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.product_type,'') = 'Service' THEN 1 ELSE 0 END) AS serviceType,
-            SUM(CASE WHEN ${ดีแล้ว} AND s.last_sold IS NULL THEN 1 ELSE 0 END) AS neverSold
+            SUM(CASE WHEN ${ดีแล้ว} AND s.last_sold IS NULL THEN 1 ELSE 0 END) AS neverSold,
+            /* 🔑 **นับในกองจมเท่านั้น ไม่ใช่ทั้งคลัง** — list=stock รายงาน noCostSkus ของทั้งคลัง (41)
+               ซึ่งตอบคนละคำถาม · ตัวหารของเรื่องนี้คือ "กองจม" ⇒ ต้องนับในกองจม */
+            SUM(CASE WHEN ${ดีแล้ว} AND COALESCE(p.purchase_price,0) <= 0 THEN 1 ELSE 0 END) AS noCostInPile,
+            ROUND(COALESCE(SUM(CASE WHEN ${ดีแล้ว} AND COALESCE(p.purchase_price,0) > 0
+                 THEN cur.qty * p.purchase_price END),0),2) AS costValueTotal
      FROM stock_snapshots cur
      LEFT JOIN products p ON p.sku = cur.sku
      LEFT JOIN (SELECT sku, MAX(o.order_date) AS last_sold
                 FROM order_items i JOIN orders o ON o.id = i.order_id
                 GROUP BY sku) s ON s.sku = cur.sku
      WHERE cur.day = ${esc(day)}
-       AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})`
+       AND (s.last_sold IS NULL OR s.last_sold ${ตัวเทียบวันจม} ${esc(cut)})`
   ),
     coreQuery(
+    /* 💰 **มูลค่าตามต้นทุน** (ฝั่งจอขอ 16 ต.ค. 2569 · หลังพิสูจน์ว่า ZORT คิดด้วยต้นทุน)
+       📏 หลักฐาน: รหัส 00068 คงเหลือ 590 · ราคาขาย 50 · ต้นทุน 20 ⇒ 590 × 20 = 11,800
+          = เลขบนจอ ZORT เป๊ะ (ของเราโชว์ 29,500 เพราะคูณราคาขาย)
+       🔴 **ไม่มีต้นทุน ⇒ null ห้ามเป็น 0** — 0 บาทคือคำยืนยันว่า "ของกองนี้ไม่มีมูลค่า"
+          ส่วน null คือ "คิดไม่ได้เพราะยังไม่มีต้นทุน" · สองอย่างนี้ต่างกันคนละเรื่อง
+          และ 0 จะถูกเอาไปรวมเป็นยอดแล้วทำให้มูลค่ากองต่ำกว่าจริงแบบดูสมเหตุสมผล
+       ⚠️ ต้นทุน 0 ในฐานหมายถึง "ยังไม่ได้กรอก" ไม่ใช่ของแจก ⇒ นับเป็นไม่มีต้นทุนเหมือน null
+          (กติกาเดียวกับ no_cost ของเส้น list=stock ในไฟล์นี้) */
     `SELECT cur.sku AS sku, COALESCE(NULLIF(p.name,''), cur.name) AS name,
             COALESCE(p.category,'') AS category, s.last_sold AS lastSoldAt,
-            cur.qty AS onhand, ROUND(cur.qty * cur.price, 2) AS value, cur.price AS price
+            cur.qty AS onhand, ROUND(cur.qty * cur.price, 2) AS value, cur.price AS price,
+            p.purchase_price AS cost,
+            CASE WHEN COALESCE(p.purchase_price,0) > 0
+                 THEN ROUND(cur.qty * p.purchase_price, 2) END AS costValue
      FROM stock_snapshots cur
      LEFT JOIN products p ON p.sku = cur.sku
      LEFT JOIN (SELECT sku, MAX(o.order_date) AS last_sold
                 FROM order_items i JOIN orders o ON o.id = i.order_id
                 GROUP BY sku) s ON s.sku = cur.sku
      WHERE cur.day = ${esc(day)} AND ${where}
-       AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})
+       AND (s.last_sold IS NULL OR s.last_sold ${ตัวเทียบวันจม} ${esc(cut)})
      ORDER BY ${เรียงได้[sort]}
      LIMIT ${limit} OFFSET ${offset}`
   ),
@@ -942,6 +970,13 @@ export async function listDeadStock(o = {}) {
     },
     excludedScope: `นับด้วยจุดตัดเดียวกับ total (${cut}) · กองที่กติกาของเราตัดออก **ห้ามบวกเข้า total** · เอาไว้เทียบกับจำนวนบนจอ ZORT /Dashboard/ProductReport ซึ่งต้องอ่านด้วยตาและกำกับวันที่เสมอ`,
     neverSold: num(sum?.neverSold), // ในจำนวน total นี้ กี่ตัวที่ไม่เคยมีใบขายเลย
+    /* 💰 มูลค่ากองจมสองแบบในคำตอบเดียว — จอเลือกคอลัมน์ได้ และเทียบ ZORT ได้ตรง
+       ⚠️ `costValueTotal` **ไม่รวมรหัสที่ไม่มีต้นทุน** (คิดไม่ได้) ⇒ ต้องอ่านคู่กับ `noCostInPile` เสมอ
+          ไม่งั้นจะอ่านว่า "กองจมมีมูลค่าเท่านี้" ทั้งที่มี noCostInPile รหัสที่ยังไม่ถูกนับเลย */
+    costValueTotal: num(sum?.costValueTotal),
+    noCostInPile: num(sum?.noCostInPile),
+    costScope: `costValue ต่อแถว = คงเหลือ × ต้นทุน · **null = ยังไม่มีต้นทุน คิดไม่ได้ (ไม่ใช่ 0 บาท)** · costValueTotal ไม่รวม ${num(sum?.noCostInPile)} รหัสที่ไม่มีต้นทุน ⇒ อ่านคู่กับ noCostInPile เสมอ · 📏 ZORT คิดมูลค่าสินค้าจมด้วยต้นทุน (พิสูจน์ 16 ต.ค. 2569: รหัส 00068 คงเหลือ 590 × ต้นทุน 20 = 11,800 ตรงกับจอ ZORT) และ **ไม่แสดงรหัสที่ไม่มีต้นทุนเลย** (00011 · 00013) ⇒ ของเราแสดงแต่ติดป้ายไว้`,
+    cutRule: `นับว่าจม เมื่อ ขายล่าสุด ${ตัวเทียบวันจม} ${cut}${รวมวันตัด ? " (**รวมวันตัด** แบบ ZORT)" : " (ไม่รวมวันตัด)"} หรือไม่เคยมีใบขายเลย`,
     historyFrom, // ออเดอร์เก่าสุดที่คลังเงามี
     enoughHistory, // false = ประวัติสั้นกว่าช่วงที่ถาม **จอห้ามแสดงรายการ**
     note: enoughHistory
