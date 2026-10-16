@@ -394,6 +394,19 @@ export async function coreInit() {
     `ALTER TABLE orders ADD COLUMN tag TEXT`,
     `ALTER TABLE orders ADD COLUMN create_user TEXT`,
     `ALTER TABLE orders ADD COLUMN warehouse_code TEXT`,
+    /* จังหวัด + ชื่อผู้ซื้อบนมาร์เก็ตเพลส — จอรายงานลูกค้าของ ZORT ใช้ (ฝั่งจอขอ 16 ต.ค. 2569)
+       📏 วัดก่อนลงมือ: ZORT ส่งหัวใบ 115 ช่อง และมี `shippingprovince` · `customerprovince` ·
+          `integrationCustomer` อยู่จริง (ยิง ?zortfields=1&days=30 · 616 ใบ · คืนชื่อช่อง ไม่คืนค่า)
+       🔒 **เก็บแค่ระดับจังหวัด** — ไม่เก็บบ้านเลขที่/ถนน/ตำบล/อำเภอ/รหัสไปรษณีย์
+          ZORT ส่งมาครบทุกชั้น แต่จอต้องการแค่ก้อนรวมรายจังหวัด ⇒ เก็บเท่าที่ใช้
+          (ที่อยู่เต็มของลูกค้าไม่มีเหตุให้อยู่ในกระจก และยิ่งเก็บยิ่งต้องเฝ้า)
+       ⚠️ เก็บ **สองช่องแยก ไม่ยุบเป็นช่องเดียว** — จะได้ตอบได้ว่าจังหวัดมาจากที่อยู่ส่งของ
+          หรือถอยไปใช้ที่อยู่ลูกค้า (ทางถอยต้องประกาศตัวเมื่อถูกใช้ — fallbacks-must-announce)
+       ⚠️ ต่อท่อใน core-sync.mjs แล้วทั้ง INSERT และตัวเทียบ `same` — **ใบเก่าที่นิ่งแล้ว
+          จะว่างตลอดกาลถ้าไม่กวาดย้อนหลัง** ด้วย ?sync=1&from=&to= (new-columns-need-backfill) */
+    `ALTER TABLE orders ADD COLUMN ship_province TEXT`,
+    `ALTER TABLE orders ADD COLUMN cust_province TEXT`,
+    `ALTER TABLE orders ADD COLUMN mkp_customer TEXT`,
     // ทะเบียนสินค้า — ฟิลด์ที่จอสินค้าต้องใช้ให้เหมือน ZORT
     `ALTER TABLE products ADD COLUMN purchase_price REAL`, // ราคาซื้อ (ต้นทุน)
     /* ━━ ประวัติราคาซื้อรายวัน — ขั้นที่ 1 ของนิยาม "ถัวเฉลี่ยเคลื่อนที่" (ท่านประธานสั่ง 4 ต.ค. 2569) ━━

@@ -186,7 +186,8 @@ export async function syncOrders(days = 3, range = {}) {
       (
         await coreQuery(
           `SELECT id, channel, status, amount, customer, order_date, tracking_no, pay_status, integration_status,
-                  bill_discount, ship_amount, tag, create_user, warehouse_code FROM orders
+                  bill_discount, ship_amount, tag, create_user, warehouse_code,
+                  ship_province, cust_province, mkp_customer FROM orders
            WHERE source = ? AND order_date >= ? AND order_date <= ?`,
           [st.tag, after, before]
         )
@@ -214,6 +215,10 @@ export async function syncOrders(days = 3, range = {}) {
         String(p.tag ?? "") === tagText(o.tag) &&
         String(p.create_user ?? "") === String(o.createusername ?? "").slice(0, 80) &&
         String(p.warehouse_code ?? "") === String(o.warehousecode ?? "").slice(0, 40) &&
+        // ⚠️ สามช่องนี้ต้องอยู่ในตัวเทียบ ไม่งั้นใบนิ่งไม่เคยได้ค่า (new-columns-need-backfill)
+        String(p.ship_province ?? "") === String(o.shippingprovince ?? "").slice(0, 60) &&
+        String(p.cust_province ?? "") === String(o.customerprovince ?? "").slice(0, 60) &&
+        String(p.mkp_customer ?? "") === String(o.integrationCustomer ?? "").slice(0, 120) &&
         num(p.bill_discount) === num(o.discountamount) &&
         num(p.ship_amount) === num(o.shippingamount)
       );
@@ -237,13 +242,17 @@ export async function syncOrders(days = 3, range = {}) {
           `${o.isCOD ? 1 : 0},${esc(String(o.paymentstatus ?? "").slice(0, 40))},` +
           `${esc(String(o.integrationStatus ?? "").slice(0, 40))},` +
           `${num(o.discountamount)},${num(o.shippingamount)},` +
-          `${esc(tagText(o.tag))},${esc(String(o.createusername ?? "").slice(0, 80))},${esc(String(o.warehousecode ?? "").slice(0, 40))})`
+          `${esc(tagText(o.tag))},${esc(String(o.createusername ?? "").slice(0, 80))},${esc(String(o.warehousecode ?? "").slice(0, 40))},` +
+          `${esc(String(o.shippingprovince ?? "").slice(0, 60))},` +
+          `${esc(String(o.customerprovince ?? "").slice(0, 60))},` +
+          `${esc(String(o.integrationCustomer ?? "").slice(0, 120))})`
         )
         .join(",");
       await coreQuery(
         `INSERT INTO orders (id,source,number,channel,status,amount,customer,order_date,updated_at,
                              tracking_no,ship_channel,ship_name,ship_date,is_cod,pay_status,integration_status,
-                             bill_discount,ship_amount,tag,create_user,warehouse_code)
+                             bill_discount,ship_amount,tag,create_user,warehouse_code,
+                             ship_province,cust_province,mkp_customer)
          VALUES ${values}
          ON CONFLICT(id) DO UPDATE SET
            channel=excluded.channel, status=excluded.status, amount=excluded.amount,
@@ -252,7 +261,9 @@ export async function syncOrders(days = 3, range = {}) {
            ship_name=excluded.ship_name, ship_date=excluded.ship_date, is_cod=excluded.is_cod,
            pay_status=excluded.pay_status, integration_status=excluded.integration_status,
            bill_discount=excluded.bill_discount, ship_amount=excluded.ship_amount,
-           tag=excluded.tag, create_user=excluded.create_user, warehouse_code=excluded.warehouse_code`
+           tag=excluded.tag, create_user=excluded.create_user, warehouse_code=excluded.warehouse_code,
+           ship_province=excluded.ship_province, cust_province=excluded.cust_province,
+           mkp_customer=excluded.mkp_customer`
       );
     }
 

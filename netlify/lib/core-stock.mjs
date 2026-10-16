@@ -774,6 +774,24 @@ export async function stockReconLog(days = 14) {
  *  ⚠️ ZORT ไม่มีฟิลด์ "วันขายล่าสุด" ในสินค้า (ตรวจครบ 30 ฟิลด์แล้ว 3 ก.ย. 2569)
  *     ทางเดียวคือไล่จากใบขาย — จึงต้องมีประวัติในมือก่อนเท่านั้น
  */
+/** ถอยหลัง n **เดือนปฏิทิน** จากวันฐาน (YYYY-MM-DD) — ไม่ใช่ n × 30 วัน
+ *
+ *  ⚠️ **อยู่ระดับโมดูลและส่งออก** เพื่อให้ด่านนำเข้ามาปลูกบั๊กได้จริง
+ *     ฝังไว้ในฟังก์ชันเส้น = ทดสอบได้แค่อ่านซอร์สเป็นข้อความ ซึ่งเขียวได้ตอนพฤติกรรมตาย
+ *  ⚠️ **วันที่ 31 ถอยไปเดือนที่ไม่มีวันที่ 31 ต้องหนีบเป็นวันสุดท้ายของเดือนนั้น**
+ *     `new Date(Date.UTC(y, m-1-n, 31))` จะเด้งข้ามไปเดือนถัดไปเงียบ ๆ
+ *     (31 มี.ค. ถอย 1 เดือน ⇒ ต้องได้ 28/29 ก.พ. ไม่ใช่ 2/3 มี.ค. — ซึ่งทำให้จุดตัด
+ *      **ขยับไปข้างหน้า** แล้วรายการจมหายไปหลายแถวโดยยอดรวมยังดูสมเหตุสมผล)
+ */
+export function ถอยเดือนปฏิทิน(ฐาน, n) {
+  const [y, m, d] = String(ฐาน).split("-").map(Number);
+  const เป้า = new Date(Date.UTC(y, m - 1 - n, 1));
+  const วันสุดท้าย = new Date(Date.UTC(เป้า.getUTCFullYear(), เป้า.getUTCMonth() + 1, 0)).getUTCDate();
+  return new Date(Date.UTC(เป้า.getUTCFullYear(), เป้า.getUTCMonth(), Math.min(d, วันสุดท้าย)))
+    .toISOString()
+    .slice(0, 10);
+}
+
 export async function listDeadStock(o = {}) {
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   /* 🗜️ บีบพร้อมบอกเหตุ — เหตุผลเดียวกับ listStock (ดูหัวไฟล์ `บีบค่า.mjs`)
@@ -798,23 +816,73 @@ export async function listDeadStock(o = {}) {
   if (!day) return { note: "ยังไม่มีภาพถ่ายสต็อกในคลังเรา" };
 
   const historyFrom = histRows[0]?.f || null;
-  // ⚠️ นับวันจาก "วันที่ถ่ายสต็อก" ไม่ใช่วันนี้ — สองค่านี้ไม่จำเป็นต้องเป็นวันเดียวกัน
-  const cut = new Date(new Date(`${day}T00:00:00Z`).getTime() - days * 864e5)
-    .toISOString()
-    .slice(0, 10);
+  /* 📅 **จุดตัดแบบปฏิทิน** (ฝั่งจอขอ 16 ต.ค. 2569 · วัดจอ ZORT /Dashboard/ProductReport)
+     ZORT ตัดที่ "วันเดียวกันของ N เดือนก่อน" ไม่ใช่ "ถอยหลัง N × 30 วัน"
+     📏 ของจริงที่ฝั่งจอวัดมา: เปิดจอ 16 ต.ค. ช่วง 3 เดือน ⇒ แถวบนสุดขายล่าสุด 16 ก.ค.
+        ส่วน days=90 ของเราตัดที่ 18 ก.ค. ⇒ **ต่างกันสองวัน**
+     🔑 คลาสเดิมที่เคยกัด `?monthly=` และ `?bycustomer=`: **เดือนปฏิทิน ≠ เดือน × 30/31 วัน**
+        ทางที่ถูกคือให้ผู้เรียกบอกขอบมาเอง เพราะขอบมาจากจอ ZORT ไม่ใช่สูตรที่เราคิดเองได้
+     ⚠️ ลำดับความสำคัญ: `before` (ขอบตรง ๆ) > `months` (เดือนปฏิทิน) > `days` (ถอยหลังวัน)
+        และต้อง **ประกาศว่าใช้ตัวไหน** ใน `cutFrom` ไม่งั้นจอส่ง months ไปแล้วได้ days เงียบ ๆ
+     ⚠️ วันผิดรูป ⇒ **คืน error** ห้ามถอยไปใช้ days เงียบ ๆ (จอจะเทียบผิดทั้งหน้าโดยไม่มีอะไรฟ้อง) */
+  const beforeRaw = String(o.before ?? "").trim();
+  if (beforeRaw && !(/^\d{4}-\d{2}-\d{2}$/.test(beforeRaw) && !Number.isNaN(Date.parse(beforeRaw)))) {
+    return { error: `before ต้องเป็นวันจริงรูป YYYY-MM-DD (ได้มา "${beforeRaw.slice(0, 20)}")` };
+  }
+  const monthsRaw = String(o.months ?? "").trim();
+  if (monthsRaw && !/^\d{1,3}$/.test(monthsRaw)) {
+    return { error: `months ต้องเป็นจำนวนเดือนเต็ม 1-120 (ได้มา "${monthsRaw.slice(0, 20)}")` };
+  }
+  const months = monthsRaw ? Math.max(1, Math.min(120, parseInt(monthsRaw, 10))) : null;
+  /* ถอยหลังเป็นเดือนปฏิทินจาก **วันที่ถ่ายสต็อก** (ไม่ใช่วันนี้ — สองค่านี้ไม่จำเป็นต้องตรงกัน)
+     ⚠️ วันที่ 31 ถอยไปเดือนที่ไม่มีวันที่ 31 ⇒ JS เด้งไปเดือนถัดไป ⇒ ต้องหนีบให้อยู่วันสุดท้ายของเดือนนั้น
+        (เช่น 31 มี.ค. ถอย 1 เดือน ต้องได้ 28/29 ก.พ. ไม่ใช่ 2/3 มี.ค.) */
+  const cut = beforeRaw
+    ? beforeRaw
+    : months
+      ? ถอยเดือนปฏิทิน(day, months)
+      : new Date(new Date(`${day}T00:00:00Z`).getTime() - days * 864e5).toISOString().slice(0, 10);
+  const cutFrom = beforeRaw
+    ? "before ที่ผู้เรียกส่งมา (ชนะ months และ days)"
+    : months
+      ? `months=${months} — เดือนปฏิทินถอยจากวันถ่ายสต็อก ${day} ⇒ ใช้เทียบกับ ZORT ได้`
+      : `นับถอยหลัง ${days} วันจากวันถ่ายสต็อก ${day} — ⚠️ **ไม่ใช่เดือนปฏิทิน** จะเทียบกับ ZORT ต้องส่ง months หรือ before มาเอง`;
   const enoughHistory = Boolean(historyFrom) && historyFrom <= cut;
+
+  /* 🔀 ลำดับ — ZORT เรียง "วันที่ขายล่าสุด" ใหม่→เก่า · ของเราเดิมเรียงมูลค่ามาก→น้อย
+     ⚠️ ของที่ไม่เคยมีใบขายเลย (last_sold IS NULL) ไว้ท้ายสุดเสมอ **และเขียนกำกับ**
+        ไม่งั้นจอจะเห็นแถวว่างกองบนสุดแล้วคิดว่าข้อมูลพัง
+     ⚠️ ทุกแบบต้องมีตัวตัดสินเสมอกัน (sku) ไม่งั้นแบ่งหน้าแล้วได้แถวซ้ำ/หายโดยยอดรวมยังดูปกติ */
+  const เรียงได้ = { value: "(cur.qty * cur.price) DESC, cur.sku", lastsold: "s.last_sold IS NULL, s.last_sold DESC, cur.sku" };
+  const sortRaw = String(o.sort ?? "").trim().toLowerCase();
+  if (sortRaw && !Object.hasOwn(เรียงได้, sortRaw)) {
+    return { error: `sort รับได้เฉพาะ ${Object.keys(เรียงได้).join(" | ")} (ได้มา "${sortRaw.slice(0, 20)}")` };
+  }
+  const sort = sortRaw || "value";
 
   const where = `cur.qty > 0 AND COALESCE(p.product_type,'') <> 'Service'`;
   // ⚠️ สองตัวนี้ใช้เงื่อนไขชุดเดียวกัน ต่างกันแค่ "นับ" กับ "ดึงแถว" ⇒ ไม่ต้องรอกัน
-  const [sumRows, rows] = await Promise.all([
+  const ดีแล้ว = `cur.qty > 0 AND COALESCE(p.product_type,'') <> 'Service'`;
+  const [sumRows, rows, นอกภาพถ่าย] = await Promise.all([
     coreQuery(
-    `SELECT COUNT(*) AS c, ROUND(COALESCE(SUM(cur.qty * cur.price),0),2) AS value
+    /* 🔎 **นับเหตุที่ "ไม่ได้นับ" มาด้วยในคำสั่งเดียวกัน** (ฝั่งจอขอวัดเหตุ 16 ต.ค. 2569)
+       ที่มา: จอ ZORT /Dashboard/ProductReport ช่วง 3 เดือน ≈ 1,931–1,940 รายการ · ของเรา 1,543
+       ⇒ ขาด ~390 **ยังไม่รู้เหตุ** ⇒ เขียนตัววัดไว้ในเส้นเลย ไม่ใช่ไปยิงสคริปต์ครั้งเดียวแล้วลืม
+       🔑 **เทียบเลขต้องอยู่ในคำตอบเดียวกัน** — เลขสองชุดที่มาจากคนละคำขอจะดูขัดกันเอง
+          ทุกครั้งที่วัดคร่อมรอบถ่ายสต็อก (compare-within-one-response)
+       🔴 ตัวหารของ "ขาดไปเท่าไหร่" คือเลขบนจอ ZORT ซึ่ง **คนอ่านด้วยตา** ⇒ ท่อห้ามเขียนตัวเลขนั้นไว้
+          ท่อส่งแต่กองที่ตัวเองตัดออก แล้วให้คนเทียบ (เลขที่วัดด้วยมือต้องมีวันที่กำกับเสมอ) */
+    `SELECT SUM(CASE WHEN ${ดีแล้ว} THEN 1 ELSE 0 END) AS c,
+            ROUND(COALESCE(SUM(CASE WHEN ${ดีแล้ว} THEN cur.qty * cur.price END),0),2) AS value,
+            SUM(CASE WHEN COALESCE(cur.qty,0) <= 0 THEN 1 ELSE 0 END) AS qtyNotPositive,
+            SUM(CASE WHEN cur.qty > 0 AND COALESCE(p.product_type,'') = 'Service' THEN 1 ELSE 0 END) AS serviceType,
+            SUM(CASE WHEN ${ดีแล้ว} AND s.last_sold IS NULL THEN 1 ELSE 0 END) AS neverSold
      FROM stock_snapshots cur
      LEFT JOIN products p ON p.sku = cur.sku
      LEFT JOIN (SELECT sku, MAX(o.order_date) AS last_sold
                 FROM order_items i JOIN orders o ON o.id = i.order_id
                 GROUP BY sku) s ON s.sku = cur.sku
-     WHERE cur.day = ${esc(day)} AND ${where}
+     WHERE cur.day = ${esc(day)}
        AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})`
   ),
     coreQuery(
@@ -828,8 +896,15 @@ export async function listDeadStock(o = {}) {
                 GROUP BY sku) s ON s.sku = cur.sku
      WHERE cur.day = ${esc(day)} AND ${where}
        AND (s.last_sold IS NULL OR s.last_sold < ${esc(cut)})
-     ORDER BY (cur.qty * cur.price) DESC, cur.sku
+     ORDER BY ${เรียงได้[sort]}
      LIMIT ${limit} OFFSET ${offset}`
+  ),
+    /* 🔴 **กองที่เราไม่มีทางเห็นเลย** — สินค้าในทะเบียนที่ไม่มีแถวในภาพถ่ายสต็อกวันนั้น
+       ของพวกนี้หลุดออกจากจอเราตั้งแต่ JOIN แรก ไม่ว่าจะจมหรือไม่ ⇒ เป็นผู้ต้องสงสัยอันดับแรก
+       ของส่วนต่างกับ ZORT · นับเก็บไว้ให้คนเทียบ **ไม่เอาไปบวกเข้า total เอง** */
+    coreQuery(
+    `SELECT COUNT(*) AS c FROM products p
+     WHERE NOT EXISTS (SELECT 1 FROM stock_snapshots cur WHERE cur.sku = p.sku AND cur.day = ${esc(day)})`
   ),
   ]);
   const sum = sumRows[0];
@@ -842,10 +917,31 @@ export async function listDeadStock(o = {}) {
     applied: { days, limit, offset },    ...(การบีบ ?? {}),    day,
     days,
     cut, // ขายครั้งสุดท้ายก่อนวันนี้ = ถือว่าจม
+    cutFrom, // ⚠️ จอต้องอ่านช่องนี้ ไม่ใช่เดาว่าค่าที่ส่งไปถูกใช้
+    months,
+    before: beforeRaw || null,
+    /* 🔀 **ลำดับที่ใช้จริง ไม่ใช่ลำดับที่ขอมา** — จอส่ง sort ที่ท่อไม่รู้จักแล้วได้ของเดิมเงียบ ๆ
+       คือปุ่มหลอก (เส้นนี้ตีกลับค่าที่ไม่รู้จักแล้ว แต่ช่องนี้ยังต้องมีไว้ให้จอยืนยัน) */
+    sortApplied: sort,
+    sortOptions: Object.keys(เรียงได้),
+    sortNote: sort === "lastsold"
+      ? "วันขายล่าสุด ใหม่→เก่า (ลำดับเดียวกับจอ ZORT) · ของที่ไม่เคยมีใบขายเลยอยู่ท้ายสุด"
+      : "มูลค่าคงคลังมาก→น้อย (ค่าเดิมของเส้นนี้ — ไม่ใช่ลำดับของ ZORT)",
     total: num(sum?.c),
     value: num(sum?.value),
     limit,
     offset,
+    /* 🔎 ก้อนวัดเหตุส่วนต่างกับจอ ZORT — **กองที่กติกาของเราตัดออก** (เพิ่ม 16 ต.ค. 2569)
+       ทุกกองนับด้วยจุดตัดเดียวกับ `total` ⇒ เทียบกันได้ตรง ๆ ในคำตอบเดียว
+       ⚠️ **ห้ามบวกเข้า `total`** — นี่คือของที่เราตัดออกโดยตั้งใจ ไม่ใช่ของที่ตกหล่น
+          จะเอาไปรวมต้องรู้ก่อนว่า ZORT นับมันด้วยจริงไหม ซึ่งยังไม่ได้พิสูจน์ */
+    excludedCandidates: {
+      qtyNotPositive: num(sum?.qtyNotPositive), // คงเหลือ ≤ 0 (รวมติดลบ) — เรากรองออกด้วย cur.qty > 0
+      serviceType: num(sum?.serviceType),       // สินค้าประเภทบริการ — เรากรองออก
+      productsWithoutSnapshot: num(นอกภาพถ่าย?.[0]?.c), // ไม่มีแถวในภาพถ่ายวันนั้น ⇒ หลุดตั้งแต่ JOIN
+    },
+    excludedScope: `นับด้วยจุดตัดเดียวกับ total (${cut}) · กองที่กติกาของเราตัดออก **ห้ามบวกเข้า total** · เอาไว้เทียบกับจำนวนบนจอ ZORT /Dashboard/ProductReport ซึ่งต้องอ่านด้วยตาและกำกับวันที่เสมอ`,
+    neverSold: num(sum?.neverSold), // ในจำนวน total นี้ กี่ตัวที่ไม่เคยมีใบขายเลย
     historyFrom, // ออเดอร์เก่าสุดที่คลังเงามี
     enoughHistory, // false = ประวัติสั้นกว่าช่วงที่ถาม **จอห้ามแสดงรายการ**
     note: enoughHistory

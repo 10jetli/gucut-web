@@ -18,6 +18,11 @@ globalThis.fetch = async () => ({ ok: true, status: 200, json: async () => ({ li
   number: 'SO-TAG-1', status: 'Success', amount: 100, saleschannel: 'ทดสอบ', customername: 'ลูกค้า',
   orderdateString: '14/09/2026', discountamount: 0, shippingamount: 0,
   tag: ['VIP', ' ส่งด่วน ', { x: 1 }], createusername: 'แอดมินหน้าร้าน', warehousecode: 'W0001',
+  /* 16 ต.ค. 2569 — จังหวัด + ชื่อผู้ซื้อบนมาร์เก็ตเพลส (จอรายงานลูกค้า ZORT)
+     📏 ยืนยันว่า ZORT ส่งสามช่องนี้มาจริงด้วย ?zortfields=1&days=30 (616 ใบ · คืนชื่อช่อง ไม่คืนค่า)
+     ⚠️ ตั้งค่า shippingprovince กับ customerprovince **ให้ต่างกัน** เพื่อให้ด่านจับได้
+        ถ้าใครสลับลำดับทางถอยในตัวซิงก์ (ซึ่งจะทำให้ตารางจังหวัดเพี้ยนทั้งจอ) */
+  shippingprovince: 'หนองคาย', customerprovince: 'อุดรธานี', integrationCustomer: 'shopee_user_1',
   list: [{ sku: 'A', name: 'ของ A', number: 1, pricepernumber: 100, totalprice: 100 }],
 }] }) });
 
@@ -37,11 +42,28 @@ test('ซิงก์เขียน tag · create_user · warehouse_code ทั
   assert.equal(r.stores.z1.written, 1);
   const ins = sqls.find((c) => /INSERT INTO orders/.test(c.s));
   assert.ok(ins);
-  assert.match(ins.s, /bill_discount,ship_amount,tag,create_user,warehouse_code\)/);
-  assert.match(ins.s, /'VIP, ส่งด่วน','แอดมินหน้าร้าน','W0001'\)/);
+  /* 🔑 **ห้ามผูกสมอกับวงเล็บปิด** — ของเดิมเขียน `warehouse_code\)` แล้วแดงทันที
+     ตอนเพิ่มคอลัมน์ที่สี่ ทั้งที่สามคอลัมน์ที่ด่านนี้เฝ้ายังอยู่ครบ
+     ⇒ สมอที่พังเพราะ "มีของเพิ่ม" ทำให้คนรอบหน้าคิดว่าตัวเองทำของเดิมพัง */
+  assert.match(ins.s, /bill_discount,ship_amount,tag,create_user,warehouse_code[,)]/);
+  assert.match(ins.s, /'VIP, ส่งด่วน','แอดมินหน้าร้าน','W0001'[,)]/);
   for (const c of ['tag', 'create_user', 'warehouse_code']) assert.match(ins.s, new RegExp(`${c}=excluded\\.${c}`));
   const prev = sqls.find((c) => /SELECT id, channel, status/.test(c.s));
-  assert.match(prev.s, /tag, create_user, warehouse_code FROM orders/);
+  assert.match(prev.s, /tag, create_user, warehouse_code[,\s]/);
+});
+
+test('ซิงก์เขียนจังหวัด + ชื่อมาร์เก็ตเพลส ทั้ง INSERT · ON CONFLICT · ตัวอ่านของเดิม', async () => {
+  const ins = sqls.find((c) => /INSERT INTO orders/.test(c.s));
+  assert.ok(ins);
+  assert.match(ins.s, /ship_province,cust_province,mkp_customer\)/);
+  // ⚠️ ค่าต้องไปถึง VALUES จริง ไม่ใช่มีแต่ชื่อคอลัมน์ (คลาส "คอลัมน์ว่างตลอดกาล")
+  assert.match(ins.s, /'หนองคาย','อุดรธานี','shopee_user_1'\)/);
+  for (const c of ['ship_province', 'cust_province', 'mkp_customer'])
+    assert.match(ins.s, new RegExp(`${c}=excluded\\.${c}`));
+  /* 🔑 ต้องอยู่ใน SELECT ที่อ่านของเดิมมาเทียบด้วย — ไม่งั้น `same()` เทียบกับ undefined
+     แล้วใบนิ่งจะถูกตัดสินว่า "เปลี่ยนทุกรอบ" (เผาโควตาเขียน) หรือ "ไม่เปลี่ยนเลย" (ค่าว่างตลอดกาล) */
+  const prev = sqls.find((c) => /SELECT id, channel, status/.test(c.s));
+  assert.match(prev.s, /ship_province, cust_province, mkp_customer FROM orders/);
 });
 
 test('ตัวเทียบ same() มีสามช่องใหม่ (ไม่งั้นใบนิ่งไม่เคยได้ค่า)', () => {
@@ -50,6 +72,10 @@ test('ตัวเทียบ same() มีสามช่องใหม่ (�
   assert.match(body, /String\(p\.tag \?\? ""\) === tagText\(o\.tag\)/);
   assert.match(body, /String\(p\.create_user \?\? ""\) === String\(o\.createusername \?\? ""\)\.slice\(0, 80\)/);
   assert.match(body, /String\(p\.warehouse_code \?\? ""\) === String\(o\.warehousecode \?\? ""\)\.slice\(0, 40\)/);
+  // 16 ต.ค. 2569 — สามช่องใหม่ต้องอยู่ในตัวเทียบด้วย (new-columns-need-backfill)
+  assert.match(body, /String\(p\.ship_province \?\? ""\) === String\(o\.shippingprovince \?\? ""\)/);
+  assert.match(body, /String\(p\.cust_province \?\? ""\) === String\(o\.customerprovince \?\? ""\)/);
+  assert.match(body, /String\(p\.mkp_customer \?\? ""\) === String\(o\.integrationCustomer \?\? ""\)/);
 });
 
 test('list=orders / orderfacets กรอง tag · ผู้สร้าง · คลัง + สะท้อนค่า', async () => {
