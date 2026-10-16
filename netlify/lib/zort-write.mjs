@@ -1272,6 +1272,63 @@ export async function zortProductFields(skuIn) {
     note: "ชื่อช่อง+ชนิดที่ ZORT ส่งมาจริง (ไม่คืนค่า) · ช่องที่ไม่โผล่อาจเป็นเพราะสินค้าตัวนี้ไม่ได้กรอก ไม่ใช่ ZORT ไม่มีช่อง" };
 }
 
+/** 💰 ตัวอ่าน **ต้นทุนคงเหลือเฉลี่ย** ของ ZORT — อ่านอย่างเดียว (ฝั่งจอขอ 16 ต.ค. 2569 ค่ำ)
+ *
+ *  🔴 ที่มา: จอสินค้าจมของ ZORT คิดมูลค่า = คงเหลือ × **ต้นทุนคงเหลือเฉลี่ย**
+ *     ฝั่งจอเปิดหน้ารายละเอียดสินค้าของ ZORT **3 ตัว** แล้วยืนยัน 3/3:
+ *       05067 คงเหลือ 185 · เฉลี่ย 150 (ขาย 150 · ซื้อ 37) ⇒ 27,750 ตรงจอ
+ *       04347 คงเหลือ  25 · เฉลี่ย  20 (ขาย  20 · ซื้อ 10) ⇒    500 ตรงจอ
+ *       00068 คงเหลือ 590 · เฉลี่ย  20 (ขาย  50 · ซื้อ 20) ⇒ 11,800 ตรงจอ
+ *     ⇒ ที่ "ราคาขายตรง 5/6" เป็นเพราะ **ต้นทุนเฉลี่ยบังเอิญเท่าราคาขาย** ในหลายตัว
+ *     ⇒ และ `purchase_price` ที่กระจกเก็บคือ **ราคาซื้อ** (37/10/20) = คนละช่อง
+ *
+ *  📏 `Product/GetProducts` มี 30 ช่อง และ **ไม่มีช่องต้นทุนเฉลี่ยเลย** (ยิง ?zortproductfields= แล้ว)
+ *     แต่กวาดคู่ 72 คู่พบว่า **`Product/GetProductCost` มีจริงและรับ GET** (16 ต.ค. 2569)
+ *     ⇒ เส้นนี้ไปถามเส้นนั้น แล้วคืน **ชื่อช่อง + ชนิด + ค่าของช่องที่เป็นตัวเลข**
+ *        (ต้นทุนเป็นข้อมูลธุรกิจของร้านเอง ไม่ใช่ข้อมูลบุคคล · และต้องเห็นค่าถึงจะยืนยัน 590×20 ได้)
+ *
+ *  ⚠️ **อ่านอย่างเดียว GET เท่านั้น** · ถามไม่สำเร็จ ⇒ `unknown: true` **ห้ามแปลว่า "ZORT ไม่มีช่องนี้"**
+ *  ⚠️ ยังไม่เอาไปคิด `valueZortStyle` ในรอบนี้ — ต้องเห็นชื่อช่องจริงก่อน แล้วค่อยต่อ
+ *     (รอบนี้ผมเพิ่งเจ็บกับการสรุปชื่อ/กฎจากตัวอย่างเดียวมาแล้วหนึ่งครั้ง)
+ */
+export async function zortProductCost(skuIn) {
+  const sku = txt(skuIn, 60);
+  if (!sku) return { ok: false, error: "ต้องระบุ sku" };
+  const headers = creds();
+  if (!headers) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT ที่ Netlify" };
+  /* ลองหลายรูปพารามิเตอร์ — ไม่รู้ว่าเส้นนี้รับชื่ออะไร ⇒ ลองแล้วรายงานทุกแบบที่ลอง
+     🔑 **รายงานทั้งที่สำเร็จและที่ไม่สำเร็จ** ไม่ใช่คืนแบบที่สำเร็จแบบเดียว
+        ไม่งั้นรอบหน้าจะไม่มีใครรู้ว่าแบบอื่นถูกลองแล้วหรือยัง */
+  const แบบที่ลอง = [`searchsku=${encodeURIComponent(sku)}`, `sku=${encodeURIComponent(sku)}`, `id=${encodeURIComponent(sku)}`];
+  const ผล = [];
+  for (const q of แบบที่ลอง) {
+    let r;
+    try {
+      r = await fetch(`${BASE}/Product/GetProductCost?${q}&limit=5`, { headers, signal: AbortSignal.timeout(12000) });
+    } catch (e) { ผล.push({ q, error: String(e?.message || e).slice(0, 80) }); continue; }
+    if (!r.ok) { ผล.push({ q, http: r.status }); continue; }
+    let j = null;
+    try { j = await r.json(); } catch { ผล.push({ q, error: "ตอบไม่ใช่ JSON" }); continue; }
+    const list = Array.isArray(j?.list) ? j.list : Array.isArray(j) ? j : j && typeof j === "object" ? [j] : [];
+    const hit = list.find((x) => String(x?.sku ?? "").trim() === sku) || list[0] || null;
+    const ชนิด = (v) => (v === null ? "null" : Array.isArray(v) ? `array(${v.length})` : typeof v);
+    ผล.push({
+      q, http: r.status, แถวที่ได้: list.length,
+      ช่อง: hit ? Object.fromEntries(Object.keys(hit).sort().map((k) => [k, ชนิด(hit[k])])) : null,
+      /* คืนค่าของช่องที่เป็นตัวเลข/สตริงตัวเลข เพื่อยืนยันสูตร คงเหลือ × เฉลี่ย ได้จริง */
+      ค่าที่เป็นตัวเลข: hit
+        ? Object.fromEntries(Object.entries(hit).filter(([, v]) =>
+            typeof v === "number" || (typeof v === "string" && v !== "" && Number.isFinite(Number(v)))))
+        : null,
+    });
+  }
+  return {
+    ok: ผล.some((x) => x.ช่อง),
+    sku, แบบที่ลอง: ผล,
+    note: "อ่านอย่างเดียว · คืนชื่อช่อง+ชนิด+ค่าที่เป็นตัวเลข · **ถามไม่สำเร็จ ≠ ZORT ไม่มีช่องนี้**",
+  };
+}
+
 /* ทีละ 10 ขนาน × 2 รอบ × เพดาน 8 วิ = ไม่เกิน ~16 วิ (เพดานฟังก์ชัน 26 วิ) ⇒ ขอได้ครั้งละ 20 รหัส */
 export const LABEL_MAX = 20;
 export async function zortProductLabels(skusIn) {

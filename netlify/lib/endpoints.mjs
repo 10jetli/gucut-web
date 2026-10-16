@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-10-16T04:22:04.701Z";
+export const generatedAt = "2026-10-16T13:58:16.879Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -177,6 +177,7 @@ export const paramRoutes = [
  "zortpo",
  "zortpoid",
  "zortproduct",
+ "zortproductcost",
  "zortproductfields",
  "zortwarehouse",
  "zortwebhook"
@@ -230,6 +231,7 @@ export const routeMethod = {
  "updatestock": "write",
  "deleteproduct": "write",
  "envcheck": "readonly",
+ "zortproductcost": "readonly",
  "zortproductfields": "unknown",
  "zortproduct": "readonly",
  "zortpo": "readonly",

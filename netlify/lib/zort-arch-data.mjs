@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-10-16T12:49:22.357Z",
+  "generatedAt": "2026-10-16T14:01:54.992Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -103,6 +103,14 @@ export const ZORT_ARCH = {
     {
       "endpoint": "Product/DeleteProduct",
       "kind": "write",
+      "files": [
+        "netlify/lib/zort-write.mjs"
+      ],
+      "module": "Product"
+    },
+    {
+      "endpoint": "Product/GetProductCost",
+      "kind": "read",
       "files": [
         "netlify/lib/zort-write.mjs"
       ],
@@ -331,12 +339,13 @@ export const ZORT_ARCH = {
       "endpoints": [
         "Product/AddProduct",
         "Product/DeleteProduct",
+        "Product/GetProductCost",
         "Product/GetProductDetail",
         "Product/GetProducts",
         "Product/UpdateProduct",
         "Product/UpdateProductImage"
       ],
-      "reads": 2,
+      "reads": 3,
       "writes": 4
     },
     {
@@ -858,7 +867,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-10-16T12:49:22.357Z",
+    "at": "2026-10-16T14:01:54.993Z",
     "problems": [],
     "ok": true
   }

@@ -1448,6 +1448,14 @@ async function route(req, context) {
        ⚠️ **คืนแค่ชื่อช่อง+ชนิด ไม่คืนค่า** · ต่างจาก ?zortproduct= ซึ่งคัดช่องเหลือ 10 ช่องก่อนคืน
           ⇒ เส้นนั้นใช้ตอบว่า "ต้นทางมีอะไร" ไม่ได้ (เกือบสรุปผิดมาแล้ววันเดียวกัน)
        ⚠️ GET อ่านอย่างเดียวเท่านั้น ห้ามทำเป็น POST */
+    /* GET ?zortproductcost=<sku> ⇒ ชื่อช่อง+ค่าตัวเลขจาก Product/GetProductCost — **อ่านอย่างเดียว**
+       หาช่อง "ต้นทุนคงเหลือเฉลี่ย" ที่จอสินค้าจมของ ZORT ใช้คิดมูลค่า (ฝั่งจอยืนยัน 3/3 จากหน้าจอจริง)
+       📏 Product/GetProducts ไม่มีช่องนี้ (30 ช่อง) แต่กวาดคู่ 72 คู่พบ Product/GetProductCost มีจริง */
+    if (url.searchParams.has("zortproductcost")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { zortProductCost } = await import("../lib/zort-write.mjs");
+      return okJson(await zortProductCost(url.searchParams.get("zortproductcost")));
+    }
     if (url.searchParams.has("zortproductfields")) {
       const { zortProductFields } = await import("../lib/zort-write.mjs");
       return okJson(await zortProductFields(url.searchParams.get("zortproductfields")));
