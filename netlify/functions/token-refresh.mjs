@@ -55,11 +55,30 @@ export async function refreshAllTokens() {
       const ms = Number(t.expiresAt || 0);
       const sec = Number(t.expireAt || 0);
       const expiresMs = ms > 0 ? ms : sec > 0 ? sec * 1000 : 0;
+      const hoursLeft = expiresMs ? Math.floor((expiresMs - Date.now()) / 3600e3) : null;
+      /* 🔴 **"ได้ token กลับมา" ไม่เท่ากับ "ต่ออายุสำเร็จ"** (แก้ 16 ต.ค. 2569)
+         ของจริง: Lazada หมดอายุไป 10 วัน แต่ไฟล์นี้รายงาน `ok:true connected:true`
+         ทุกคืนตลอด 10 คืน เพราะมันตัดสินจาก "มี accessToken ไหม" อย่างเดียว
+         ⇒ งานกันตายที่รายงานว่ารอดทุกคืนขณะที่ของตายไปแล้ว **แย่กว่าไม่มีงานนี้เลย**
+            เพราะมันกินที่ของการเฝ้าจริง (a-watcher-that-gives-up-must-say-so-out-loud)
+         🔑 ตัวตัดสินใหม่มีสองขา และ **ขาที่สองไม่ขึ้นกับผู้ให้บริการรายไหน**:
+            · ขา 1: ตัวต่ออายุบอกเองว่าล้ม (`refreshError`) — ตอนนี้มีแต่ Lazada ที่ติดป้ายนี้
+            · ขา 2: **เวลาที่เหลือติดลบ** — จริงกับทุกเจ้า ต่อให้เจ้าใหม่ลืมติดป้าย
+              ⇒ เจ้าที่เพิ่มเข้ามาวันหลังได้ตาข่ายนี้ฟรี ไม่ต้องไปแก้ที่นี่อีก */
+      const ต่ออายุล้ม = t.refreshError || (hoursLeft !== null && hoursLeft < 0);
       out[p.key] = {
-        ok: true,
+        ok: !ต่ออายุล้ม,
         connected: true,
+        ...(ต่ออายุล้ม
+          ? {
+              why: t.refreshError
+                ? `ต่ออายุไม่สำเร็จ: ${t.refreshError}`
+                : `token หมดอายุไปแล้ว ${Math.abs(hoursLeft)} ชม. และยังต่ออายุไม่ได้`,
+              refreshErrorAt: t.refreshErrorAt || null,
+            }
+          : {}),
         // ชั่วโมงที่เหลือ — ปัดลง เพื่อไม่ให้ 0.9 ชม. อ่านเป็น 1 · ไม่รู้วันหมดอายุ = null ไม่ใช่ 0
-        hoursLeft: expiresMs ? Math.floor((expiresMs - Date.now()) / 3600e3) : null,
+        hoursLeft,
         expiresAtUtc: expiresMs ? new Date(expiresMs).toISOString() : null,
         account: t.account || null,
       };

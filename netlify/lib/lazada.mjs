@@ -95,8 +95,22 @@ export async function validToken() {
   if (Number(t.expiresAt || 0) - Date.now() > 864e5) return t;
   try {
     return await refresh(t);
-  } catch {
-    return t; // ต่ออายุไม่ได้ก็ลองใช้ตัวเดิมไปก่อน — ดีกว่าตัดขาดทันที
+  } catch (e) {
+    /* 🔴 **เดิมบรรทัดนี้เขียนว่า `catch { return t }` เฉย ๆ — กลืนเหตุผลทิ้ง**
+       ของจริงที่มันทำให้เกิด (ฝั่งจอจับได้ 16 ต.ค. 2569):
+       · token หมดอายุตั้งแต่ 6 ต.ค. ⇒ **10 วัน** ที่ต่ออายุล้มทุกคืน
+       · แต่ `validToken()` คืนตัวเดิมออกไปเงียบ ๆ ⇒ ผู้เรียกเห็น "มี token"
+       · ⇒ งานตามเวลา `token-refresh` รายงาน **ok:true connected:true ทุกคืน 10 คืนติด**
+       · ⇒ จอสถานะขึ้น "เชื่อมแล้ว 312 ms" ⇒ **ข่าวดีปลอม**
+       🔑 Shopee/TikTok ไม่เป็นเพราะ `validToken()` ของสองเจ้านั้น **ปล่อย error ลอยขึ้นไป**
+          ⇒ ตัวเรียกจับแล้วรายงาน `ok:false` ⇒ ความต่างอยู่ที่ `catch` ตัวนี้ตัวเดียว
+       ⇒ ยังคืนตัวเดิม (ไม่ตัดขาดทันที ตามเจตนาเดิม) **แต่ติดป้ายเหตุผลไปด้วยเสมอ**
+          ทางถอยที่ไม่ประกาศตัว จะกลายเป็นทางหลักโดยไม่มีใครตัดสินใจ (fallbacks-must-announce) */
+    return {
+      ...t,
+      refreshError: String(e?.message || e).slice(0, 200),
+      refreshErrorAt: new Date().toISOString(),
+    };
   }
 }
 

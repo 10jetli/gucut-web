@@ -201,12 +201,24 @@ async function lazada() {
   // ⚠️ token อายุแค่ 7 วัน — ต้องบอกวันหมดอายุบนจอ ไม่งั้นวันที่มันหลุดจะดูเหมือนระบบพังเฉย ๆ
   const exp = tokenExpiry(t);
   const left = exp.tokenHoursLeft === null ? null : Math.floor(exp.tokenHoursLeft / 24);
+  /* 🔴 **คำตอบเดียวกันเคยขัดกันเอง** (แก้ 16 ต.ค. 2569 · ฝั่งจอจับได้)
+     ของจริง: `connected: true` + `detail: "เชื่อมแล้ว"` อยู่ในก้อนเดียวกับ
+     `tokenExpired: true` และ `tokenHoursLeft: -249` ⇒ คนอ่านเชื่อช่องไหนก็ได้
+     และ `connected` คือช่องที่คนอ่านก่อน ⇒ **ข่าวดีปลอม**
+     🔑 `connected: true` เคยแปลว่า "มีแถว token เก็บไว้" ซึ่งไม่ใช่คำถามที่ใครถาม
+        คำถามจริงคือ "คุยกับเขาได้ไหม" ⇒ หมดอายุแล้ว = คุยไม่ได้ = `false`
+     ⚠️ ยังเป็นสามสถานะเหมือนเดิม: true / false / null (null = ยังไม่รู้) */
+  const หมดอายุแล้ว = exp.tokenExpired === true;
   return {
-    connected: true,
+    connected: !หมดอายุแล้ว,
     ...exp,
-    detail:
-      `เชื่อมแล้ว · ${t.account || "ร้าน"}` +
-      (left === null ? "" : ` · token เหลือ ${left} วัน`),
+    ...(t.refreshError ? { refreshError: t.refreshError, refreshErrorAt: t.refreshErrorAt ?? null } : {}),
+    detail: หมดอายุแล้ว
+      ? `🔴 token หมดอายุแล้ว ${left === null ? "" : `${Math.abs(left)} วัน`} · ${t.account || "ร้าน"}` +
+        (t.refreshError ? ` · ต่ออายุไม่สำเร็จ: ${t.refreshError}` : " · ต่ออายุอัตโนมัติไม่สำเร็จ") +
+        " — ต้องให้เจ้าของร้านกดอนุญาตใหม่ที่ /api/lazada/auth ถ้าต่ออายุเองไม่ได้แล้ว"
+      : `เชื่อมแล้ว · ${t.account || "ร้าน"}` +
+        (left === null ? "" : ` · token เหลือ ${left} วัน`),
   };
 }
 
