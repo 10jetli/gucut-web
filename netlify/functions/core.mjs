@@ -3584,8 +3584,30 @@ async function route(req, context) {
       if (storeParsed.error) return json({ error: storeParsed.error }, 400);
       const store = storeParsed.source;
       const days = Math.max(1, Math.min(400, parseInt(url.searchParams.get("days") ?? "90", 10) || 90));
-      const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-      const from = new Date(Date.now() + 7 * 3600e3 - days * 864e5).toISOString().slice(0, 10);
+      /* 📅 **รับ from/to ด้วย ไม่ใช่มีแต่ `days`** (เพิ่ม 16 ต.ค. 2569 · ฝั่งจอขอ)
+         เหตุ: ZORT คิด "3 เดือน" เป็น **เดือนตามปฏิทิน** (เปิดจอ 16 ต.ค. ZORT เริ่มที่ 1 ก.ค.)
+         ส่วน `days=90` คือ **นับถอยหลัง 90 วัน** ⇒ เริ่ม 18 ก.ค. ⇒ ขาดครึ่งเดือนแรก
+         ⇒ จอเอาเลขไปเทียบกับ ZORT ไม่ได้ ทั้งที่ทั้งสองฝั่งเขียนว่า "3 เดือน" เหมือนกัน
+         🔑 คลาสเดิมที่เคยกัดเส้น `?monthly=`: **เดือนปฏิทิน ≠ เดือน × 31 วัน**
+            คราวนั้นแก้ด้วยการนับเดือนจริง · คราวนี้ทางที่ถูกคือ **ให้คนเรียกบอกขอบมาเอง**
+            เพราะขอบของ ZORT มาจากจอเขา ไม่ใช่สูตรที่เราคำนวณเองได้
+         ⚠️ วันผิดรูป ⇒ **400** ห้ามถอยไปใช้ `days` เงียบ ๆ — เงียบ = จอส่ง from ไปแล้ว
+            เชื่อว่าได้ช่วงนั้น ทั้งที่ได้ 90 วันนับถอย ⇒ เทียบผิดทั้งหน้าโดยไม่มีอะไรฟ้อง */
+      const วันรูปถูก = (v) => /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v));
+      const fromRaw = String(url.searchParams.get("from") ?? "").trim();
+      const toRaw = String(url.searchParams.get("to") ?? "").trim();
+      for (const [ชื่อวัน, v] of [["from", fromRaw], ["to", toRaw]]) {
+        if (v && !วันรูปถูก(v)) {
+          return json({ error: `${ชื่อวัน} ต้องเป็นวันจริงรูป YYYY-MM-DD (ได้มา "${v.slice(0, 20)}")` }, 400);
+        }
+      }
+      const ใช้ช่วงที่ส่งมา = !!(fromRaw || toRaw);
+      const today = toRaw || new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
+      const from = fromRaw || new Date(Date.parse(today) - days * 864e5).toISOString().slice(0, 10);
+      if (from > today) {
+        return json({ error: `from (${from}) อยู่หลัง to (${today}) — ช่วงนี้ว่างโดยโครงสร้าง จึงตีกลับแทนการตอบ 0` }, 400);
+      }
+      const วันในช่วง = Math.round((Date.parse(today) - Date.parse(from)) / 864e5);
       const CANCEL = `status NOT LIKE '%cancel%' AND status NOT LIKE '%void%' AND status NOT LIKE '%ยกเลิก%'`;
       const where = [`order_date >= ?`, `order_date <= ?`, CANCEL];
       const params = [from, today];
@@ -3599,7 +3621,13 @@ async function route(req, context) {
         store: store || "ทั้ง 2 ร้าน",
         from,
         to: today,
-        days,
+        /* 🔑 **จำนวนวันของช่วงที่ใช้จริง ไม่ใช่เลขที่ผู้เรียกส่งมา**
+           ส่ง from/to มาแล้ว `days` ที่ส่งมาไม่มีผล ⇒ คืนเลขที่ส่งมาทั้งที่ไม่ได้ใช้
+           = สองช่องในคำตอบเดียวกันขัดกันเอง แล้วคนอ่านเชื่อช่องผิด */
+        days: วันในช่วง,
+        ช่วงมาจาก: ใช้ช่วงที่ส่งมา
+          ? "from/to ที่ผู้เรียกส่งมา (ชนะ days) — ใช้เทียบกับ ZORT ที่คิดเป็นเดือนปฏิทินได้"
+          : `นับถอยหลัง ${days} วันจากวันนี้ (เวลาไทย) — ⚠️ **ไม่ใช่เดือนปฏิทิน** จะเทียบกับ ZORT ต้องส่ง from/to มาเอง`,
         excludes: "ตัดใบยกเลิกออกแล้ว (เงื่อนไขเดียวกับจอรายการขาย)",
       };
 
