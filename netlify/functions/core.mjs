@@ -1640,13 +1640,31 @@ async function route(req, context) {
       if (req.method !== "GET") return json({ error: "ต้องเป็น GET" }, 405);
       const { zortProductLabels } = await import("../lib/zort-write.mjs");
       const r = await zortProductLabels(url.searchParams.get("productlabels"));
-      /* 🔴 **ห้ามเอา `r.ok` (จำนวน) ไปตีเป็นจริง/เท็จ** (แก้ 19 ก.ย. 2569)
-         ของเดิม: ส่ง 5 ใบ สำเร็จ 3 ล้ม 2 ⇒ `ok` = 3 = truthy ⇒ **ตอบ 200 แล้วกลืนใบที่ล้ม**
-         และรูปคำตอบของ PEAK เปลี่ยน ⇒ `ok: 0, failed: []` ⇒ ตอบ **400** = "คำขอคุณผิด"
-         ⇒ ชี้ไปผิดทาง คนจะไปไล่หาว่ากรอกอะไรผิด ทั้งที่เราอ่านคำตอบเขาไม่ได้เอง
-         ⇒ ตัดสินจาก `สรุป` ซึ่งมีความหมายเดียว (ดู lib/peak.mjs) */
-      const รหัส = r.สรุป === "สำเร็จครบทุกใบ" ? 200 : r.สรุป === "อ่านคำตอบของ PEAK ไม่ได้" ? 502 : 502;
-      return json(r, รหัส);
+      /* 🔴 **เส้นนี้ตอบ 502 มาตลอด แม้ตอนสำเร็จครบ** (ฝั่งจอแจ้ง 16 ต.ค. 2569 21:3x · แก้ทันที)
+         เหตุ: ตรรกะรหัสตอบถูก **คัดลอกมาจากเส้น PEAK** ทั้งก้อนพร้อมคอมเมนต์
+           `r.สรุป === "สำเร็จครบทุกใบ" ? 200 : r.สรุป === "อ่านคำตอบของ PEAK ไม่ได้" ? 502 : 502`
+         แต่ `zortProductLabels` **ไม่เคยคืนช่อง `สรุป`** (คืน ok · complete · rows · missing · failed)
+         ⇒ `undefined` ตกท้ายเป็น **502 ทุกครั้ง** ⇒ Cloudflare แทนเนื้อด้วยหน้า error ของตัวเอง
+         ⇒ ⇒ จอบาร์โค้ด **ไม่เคยรู้เลยว่าสินค้าตัวไหนมีบาร์โค้ด** ตั้งแต่วันที่คัดลอกมา
+         🔑 คลาส: **ตัดสินผลจากช่องที่ฟังก์ชันอื่นคืน** — ช่องที่ไม่มีอยู่จริงอ่านได้เป็น undefined
+            แล้วตกไปทางที่เขียนไว้ท้ายสุด โดยไม่มีอะไรฟ้องเลย (เทส/build มองไม่เห็น)
+         ⇒ ตัดสินจากช่องที่ **ตัวนี้คืนจริง** เท่านั้น · และยิงของจริงยืนยันหลัง deploy
+         ⚠️ `missing` (ZORT ไม่มีรหัสนี้) **ไม่ใช่ความล้มเหลว** — เป็นคำตอบ ⇒ ยังเป็น 200
+            ความล้มเหลวคือ `failed` (ถาม ZORT ไม่สำเร็จ = ไม่รู้) */
+      const ล้ม = Array.isArray(r.failed) ? r.failed.length : 0;
+      const ได้แถว = Array.isArray(r.rows) ? r.rows.length : 0;
+      /* อ่านไม่ได้เลยสักรหัส ⇒ 502 (ต้นทางมีปัญหา ไม่ใช่คำขอผิด)
+         อ่านได้บางส่วน ⇒ 200 + ประกาศ `partial`/`failedParts` **เพิ่มอย่างเดียว ไม่พลิก ok**
+           (ท่าที่ตกลงกับฝั่งจอไว้แล้วใน CLAUDE.md สำหรับเคสผลบางส่วน)
+         ⚠️ ห้ามตอบ 502 ตอนได้แถวมาบ้าง — จอจะทิ้งแถวที่ใช้ได้ทั้งหมด */
+      const รหัส = ล้ม === 0 ? 200 : ได้แถว === 0 ? 502 : 200;
+      return json(
+        ล้ม > 0 && ได้แถว > 0
+          ? { ...r, partial: true, failedParts: r.failed,
+              partialNote: `อ่านได้ ${ได้แถว} รหัส · ถาม ZORT ไม่สำเร็จ ${ล้ม} รหัส ⇒ **รหัสที่ล้มคือ "ไม่รู้" ไม่ใช่ "ไม่มีบาร์โค้ด"** ห้ามพิมพ์ฉลากให้รหัสที่ล้ม` }
+          : r,
+        รหัส
+      );
     }
     if (url.searchParams.get("productimage")) {
       if (req.method !== "POST") return json({ error: "ต้องเป็น POST" }, 405);
@@ -2810,6 +2828,16 @@ async function route(req, context) {
       let filter = "";
       if (sku) { filter = "AND oi.sku = ?"; params.push(sku); }
       if (warehouse) { filter += " AND o.warehouse_code = ?"; params.push(warehouse); }
+      /* 🏷️ `category=` — ยอดขายของ **หมวดเดียว** (ฝั่งจอขอ 16 ต.ค. 2569 · หน้ารายละเอียดหมวดแบบ ZORT
+         ต้องโชว์ "สินค้าขายดีย้อนหลังของหมวดนี้" วันนี้/7 วัน/1 เดือน/3 เดือน)
+         ⚠️ เทียบ **ตรงตัวหลังตัดช่องว่างหัวท้าย** ห้ามใช้ LIKE/instr — ชื่อหมวดคนตั้งเอง
+            และมีหมวดที่ชื่อขึ้นต้นเหมือนกัน (เช่น "โซ่ NEWWAVE" กับ "โซ่ NEWWAVE ไทเทเนียม")
+            ⇒ ใช้สตริงย่อย = หมวดหนึ่งจะดูดยอดของอีกหมวดเข้ามาเงียบ ๆ (no-substring-classification)
+         ⚠️ หมวดมาจาก `products` ผูกด้วย sku **ไม่แยกร้าน** (เหมือน categoryScope ที่ประกาศไว้แล้ว)
+         ⚠️ ค่าที่ไม่ตรงหมวดใดเลย ⇒ ได้ 0 แถว ซึ่ง **ถูกต้อง** แต่จอต้องแยกจาก "ไม่ได้กรอง"
+            ⇒ สะท้อนค่าที่ใช้กลับไปใน `applied.category` เสมอ */
+      const category = String(url.searchParams.get("category") ?? "").trim().slice(0, 120);
+      if (category) { filter += " AND TRIM(COALESCE(p.category,'')) = ?"; params.push(category); }
       /* store= (16 ก.ย. 2569 · ใบ t_mu2wjql1) — เทียบกับ ZORT ต้องแยกร้าน (บัญชี ZORT บน Chrome = z1)
          ⚠️ ไม่ส่ง = รวมทุกร้านเหมือนเดิม (จอเดิมเลขไม่เปลี่ยน) · ค่าอื่นนอกจาก z1/z2/all/ว่าง = 400 */
       const storeRaw = String(url.searchParams.get("store") ?? "").trim();
@@ -2937,7 +2965,7 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store, sort: sortRaw || null },
+        applied: { sku: sku || null, category: category || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store, sort: sortRaw || null },
         /* 🔑 บอก **ลำดับที่ใช้จริง** ไม่ใช่แค่สะท้อนค่าที่ส่งมา — ไม่ส่ง sort ก็ยังต้องรู้ว่าเรียงด้วยอะไร
            (จอต้องเขียนบนหัวตารางว่า "เรียงตาม…" และเขียนผิดเมื่อไหร่คนอ่านตัดสินใจผิดตาม) */
         sortApplied: byMonth ? "month" : byCategory ? (sortRaw === "qty" ? "qty" : "amount") : (sortRaw === "amount" ? "amount" : "qty"),
