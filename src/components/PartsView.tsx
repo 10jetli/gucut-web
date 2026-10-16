@@ -141,6 +141,39 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
     [g],
   );
 
+  /* ── 🔗 มาจากหน้าสินค้า: `?g=<ตัวอักษรกลุ่ม>&n=<เลขในผัง>` ──
+     หน้าสินค้าส่งตำแหน่งมาให้ **เฉพาะตำแหน่งที่มันยืนยันแล้วว่ามีในคู่มือเล่มนี้**
+     (ดู `ตรวจตำแหน่งในคู่มือ` ใน lib/parts-fits.mjs) — แต่ที่นี่ยังต้องตรวจซ้ำ
+     เพราะลิงก์เป็นของที่ใครก็พิมพ์เองได้ และลิงก์เก่าค้างในแชท/บุ๊กมาร์กได้เสมอ
+
+     ⚠️ **ต้องอ่านใน useEffect ห้ามอ่านตอนสร้าง state** — หน้านี้ถูก build เป็น HTML ล่วงหน้า
+        ตอน build ไม่มี `window` ⇒ lazy initializer จะพังทั้งหน้า (กติกาเดียวกับหน้า QR ของ Beam)
+     ⚠️ หาไม่เจอ = **ไม่ทำอะไรเลย** หน้าต้องเปิดได้ปกติ ไม่ใช่ 404 และไม่ใช่เด้งกลุ่มมั่ว
+     🔑 วิ่งรอบเดียวต่อรุ่น (dep = doc.รหัสรุ่น) ไม่ผูกกับ `กลุ่มที่เลือก`
+        ไม่งั้นลูกค้ากดเปลี่ยนกลุ่มแล้ว effect จะลากกลับมากลุ่มเดิมทุกครั้ง
+        (คลาสเดียวกับบทเรียน "ปุ่มกรองเด้งกลับเพราะ effect โหลดทับ") */
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    let q: URLSearchParams;
+    try {
+      q = new URLSearchParams(window.location.search);
+    } catch {
+      return;
+    }
+    const ตัวอักษร = (q.get("g") ?? "").trim().toUpperCase();
+    const เลขที่ขอ = (q.get("n") ?? "").trim().toUpperCase();
+    if (!ตัวอักษร) return;
+    const gi = doc.กลุ่ม.findIndex((x) => String(x.ตัวอักษร ?? "").toUpperCase() === ตัวอักษร);
+    if (gi < 0) return;
+    setกลุ่ม(gi);
+    if (!เลขที่ขอ) return;
+    const rows = doc.กลุ่ม[gi].อะไหล่.filter((r) => String(r.เลข ?? "").toUpperCase() === เลขที่ขอ);
+    // เลขที่ไม่มีในกลุ่มนี้ ⇒ อยู่กลุ่มที่ถูกแล้วก็พอ **ห้ามเปิดแผ่นเปล่า**
+    if (!rows.length) return;
+    setเน้น(rows[0].เลข);
+    setเลือก(rows);
+  }, [doc.รหัสรุ่น, doc.กลุ่ม]);
+
   // เปลี่ยนกลุ่มแล้วเลื่อนภาพกลับไปมุมซ้ายบน ไม่งั้นค้างอยู่ตำแหน่งเดิมของกลุ่มก่อน
   useEffect(() => {
     กรอบ.current?.scrollTo({ left: 0, top: 0 });
