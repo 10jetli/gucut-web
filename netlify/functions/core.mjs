@@ -4934,6 +4934,11 @@ async function route(req, context) {
         // รายชื่อช่องทางต้องมาจากขอบเขตเดียวกับผลลัพธ์ ไม่งั้นเลือกได้แต่ได้ 0 ใบ
         listChannels(p.get("store")),
       ]);
+      /* 🛑 ตัวกรองที่ว่างโดยโครงสร้าง ⇒ `listOrders` คืน `{error}` ⇒ ต้องเป็น **400 ไม่ใช่ 200**
+         (ของเดิมเส้นนี้ตอบ 200 เสมอ ⇒ error จะไหลขึ้นจอเป็นก้อนที่ไม่มี rows/total
+          ซึ่งจอกัน `Array.isArray` ไว้แล้ววาด "ไม่มีข้อมูล" อย่างสงบ = เงียบอีกแบบหนึ่ง)
+         ⚠️ ห้ามใส่ `ok: true` ลงไปในคำตอบที่เป็น error — สองคีย์นี้ขัดกันเอง */
+      if (orders?.error) return json({ ok: false, ...orders }, 400);
       return json({ ok: true, ...orders, channels });
     }
 

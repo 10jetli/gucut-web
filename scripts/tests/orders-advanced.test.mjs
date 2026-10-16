@@ -13,12 +13,21 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
 const { listOrders, listOrderFacets } = await import('../../netlify/lib/core-orders.mjs');
 const ADV = { payStatus: 'Paid', cod: '1', product: '00313', shipChannel: 'flash', shipFrom: '2026-09-01', shipTo: '2026-09-10', amountMin: '100', amountMax: '5000', number: 'SO-2026', tag: 'VIP', createUser: 'แอดมิน', warehouse: 'W0001', customer: 'สมชาย' };
 
+/* 🔁 **แก้สัญญา 16 ต.ค. 2569 (gucut ท่อ) — `pay_status = ?` กลายเป็น `pay_status IN (?)`**
+   เหตุ: ฝั่งจอทำการ์ด "ค้างชำระเงิน" ของ ZORT ซึ่งรวม Pending + Partial Payment
+   ส่ง `paystatus=Pending,Partial Payment` แล้วได้ **200 total 0 เงียบ ๆ**
+   เพราะโค้ดเอาสตริงทั้งก้อนไปเทียบเท่ากับค่าในช่อง ⇒ ไม่มีวันตรง
+   ⇒ แตกหลายค่าด้วย `statusValues` ตัวเดียวกับที่ `status` ใช้มานานแล้ว
+   ⚠️ เทสนี้ **ไม่ได้ผิดตอนเขียน** และมันทำงานถูกวันนี้ — มันคือตัวที่จับได้ว่าผมเปลี่ยนรูป SQL ร่วม
+      ⇒ แก้ค่าคาดหวังอย่างตั้งใจ **และคงพลังแยกแยะไว้**: ถ้า payStatus หลุดออกจาก WHERE
+        หรือกลับไปเป็นค่าเดียว เทสนี้ยังแดงเหมือนเดิม (ไม่ได้ผ่อนเป็น /pay_status/ ลอย ๆ
+        ซึ่งจะเขียวฟรีจากคำว่า pay_status ในท่อน SELECT ของแถบแท็บ) */
 test('ยอดขายรวม: ทุกตัวกรองลง WHERE พร้อมพารามิเตอร์ครบ', async () => {
   calls = [];
   const r = await listOrders({ from: '2026-09-01', to: '2026-09-14', ...ADV });
   const sale = calls.find((c) => /SELECT COUNT\(\*\) AS c, ROUND\(COALESCE\(SUM\(amount\),0\),2\) AS s\s+FROM orders WHERE/.test(c.s));
   assert.ok(sale);
-  for (const re of [/pay_status = \?/, /is_cod = 1/, /EXISTS \(SELECT 1 FROM order_items oi WHERE oi\.order_id = orders\.id AND \(instr\(lower\(oi\.sku\)/, /instr\(lower\(ship_channel\)/, /COALESCE\(ship_date,''\) <> ''/, /ship_date >= \?/, /ship_date <= \?/, /amount >= \?/, /amount <= \?/, /instr\(lower\(number\)/, /instr\(lower\(customer\)/])
+  for (const re of [/pay_status IN \(\?\)/, /is_cod = 1/, /EXISTS \(SELECT 1 FROM order_items oi WHERE oi\.order_id = orders\.id AND \(instr\(lower\(oi\.sku\)/, /instr\(lower\(ship_channel\)/, /COALESCE\(ship_date,''\) <> ''/, /ship_date >= \?/, /ship_date <= \?/, /amount >= \?/, /amount <= \?/, /instr\(lower\(number\)/, /instr\(lower\(customer\)/])
     assert.match(sale.s, re);
   for (const v of ['Paid', '00313', 'flash', '2026-09-01', '2026-09-10', 100, 5000, 'SO-2026', 'สมชาย']) assert.ok(sale.params.includes(v), `ต้องมีพารามิเตอร์ ${v}`);
   assert.deepEqual(r.advancedFilters, { ...ADV, amountMin: 100, amountMax: 5000 });
@@ -38,7 +47,7 @@ test('แท็บสถานะใช้ตัวกรองใหม่ด�
   const tabs = calls.find((c) => /SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s));
   assert.ok(tabs, 'ไม่เจอคำสั่งของแถบแท็บ');
   assert.match(tabs.s, /EXISTS \(SELECT 1 FROM order_items/, 'ตัวกรองสินค้าต้องยังอยู่ในฐานแท็บ');
-  assert.doesNotMatch(tabs.s, /pay_status = \?/, 'ฐานแท็บต้องไม่กรองสถานะชำระเงิน (มิติที่สองของแถบเดียวกัน)');
+  assert.doesNotMatch(tabs.s, /pay_status IN \(/, 'ฐานแท็บต้องไม่กรองสถานะชำระเงิน (มิติที่สองของแถบเดียวกัน)');
   // (?<![\w]) กัน pay_status = ? ถูกนับเป็นการกรองสถานะ (รุ่นแรกของเทสต์นี้แดงหลอกเพราะตรงนี้)
   assert.doesNotMatch(tabs.s, /(?<![\w])status = \?/, 'แท็บต้องไม่กรองสถานะเอง');
   const ret = calls.find((c) => /FROM return_orders_v2/.test(c.s) && /EXISTS \(SELECT 1 FROM orders WHERE/.test(c.s));
@@ -66,9 +75,9 @@ test('orderfacets รับตัวกรองชุดเดียวกั�
   const เส้น = calls.filter((c) => /FROM orders WHERE/.test(c.s));
   const แท็บ = เส้น.filter((c) => /SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s));
   assert.equal(แท็บ.length, 1, 'แถบแท็บต้องยิงคำสั่งเดียว');
-  assert.doesNotMatch(แท็บ[0].s, /pay_status = \?/);
+  assert.doesNotMatch(แท็บ[0].s, /pay_status IN \(/);
   assert.ok(เส้น.filter((c) => !/SELECT status, COALESCE\(pay_status,''\) AS pay_status/.test(c.s))
-    .every((c) => /EXISTS \(SELECT 1 FROM order_items/.test(c.s) && /pay_status = \?/.test(c.s)), 'เส้นที่ตอบของที่กรองอยู่ต้องรับตัวกรองครบ');
+    .every((c) => /EXISTS \(SELECT 1 FROM order_items/.test(c.s) && /pay_status IN \(\?\)/.test(c.s)), 'เส้นที่ตอบของที่กรองอยู่ต้องรับตัวกรองครบ');
   assert.ok(แท็บ[0].s.includes('EXISTS (SELECT 1 FROM order_items'), 'ตัวกรองสินค้าต้องยังอยู่ในฐานแท็บ');
 });
 

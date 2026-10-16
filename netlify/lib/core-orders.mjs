@@ -173,7 +173,19 @@ function buildWhere({ from, to, dateType = "order", channel, status, q, includeC
      ข้อมูลมีในกระจกอยู่แล้วแต่ท่อไม่เคยรับ · ทุกตัวอยู่ในตัวสร้างเงื่อนไขตัวนี้ตัวเดียว ⇒ ยอดขาย · แถว · ยอดหักคืน · แท็บ ใช้ชุดเดียวกัน
      📏 รูปค่าจริง (วัด 15 ก.ย. 200 ใบ): ship_date = YYYY-MM-DD หรือ '' (ยังไม่ส่ง) · is_cod 1/0 · pay_status Paid/Voided/Pending
         · ship_channel สะกดหลายแบบ ("Flash Express" · "Flash express" · "Drop-off: Flash Express, …") ⇒ ใช้ contains ไม่ใช่ = */
-  if (payStatus) { where.push("pay_status = ?"); params.push(payStatus); }
+  /* 🔴 **รับหลายค่าคั่นจุลภาคเหมือน `status`** (แก้ 16 ต.ค. 2569 · ฝั่งจอยิงจับได้)
+     ของเดิม `pay_status = ?` กับสตริงดิบ ⇒ `paystatus=Pending,Partial Payment`
+     กลายเป็นการหาแถวที่ช่องนั้นมีค่าเท่ากับ **"Pending,Partial Payment" ทั้งก้อน**
+     ซึ่งไม่มีวันมี ⇒ ตอบ **200 total 0 เงียบ ๆ** = หน้าตาเหมือน "ร้านไม่มีใบแบบนี้"
+     📏 ของจริงที่ฝั่งจอเจอ: การ์ด ZORT "ค้างชำระเงิน" ต้องรวม Pending + Partial Payment
+        เขาจึงต้องยิงสองคำขอแยกแล้วบวกเอง (~7 วิต่อการเปิดจอหนึ่งครั้ง)
+     🔑 คลาสเดียวกับที่ `status` แก้ไปแล้ว — **สองช่องที่ตอบคำถามแบบเดียวกัน
+        ต้องรับค่ารูปเดียวกัน** ไม่งั้นคนเรียกต้องจำว่าช่องไหนรับหลายค่าได้ */
+  const payStatuses = statusValues(payStatus);
+  if (payStatuses?.length) {
+    where.push(`pay_status IN (${payStatuses.map(() => "?").join(",")})`);
+    params.push(...payStatuses);
+  }
   if (cod === "1") where.push("is_cod = 1");
   if (cod === "0") where.push("COALESCE(is_cod,0) = 0");
   if (product) {
@@ -346,6 +358,14 @@ export async function listOrderFacets(o = {}) {
     tabBase: { excludes: ["status", "paystatus"] },
     byStatus: foldF("status", "status"),
     byPayStatus: foldF("pay_status", "payStatus"),
+    /* เส้นนี้รับ `paystatus` หลายค่าได้เหมือน `list=orders` เพราะใช้ `buildWhere` ตัวเดียวกัน
+       🔴 **แต่ไม่มีด่านตีกลับค่าที่ร้านไม่เคยมี** — ต่างจาก `list=orders` โดยตั้งใจ
+          ด่านนั้นต้องใช้รายชื่อ pay_status ที่มีจริง ซึ่ง `list=orders` ได้มาฟรีอยู่แล้ว
+          ส่วนเส้นนี้ขายที่ "รอบน้อย" ⇒ เพิ่มคำสั่งอีกรอบเพื่อด่าน = ทำลายเหตุผลที่เส้นนี้มีอยู่
+       ⇒ **พิมพ์ค่าผิดบนเส้นนี้ยังได้ 0 เงียบ ๆ** · อยากได้คำตอบที่ตีกลับให้ยิง `list=orders`
+          (เขียนไว้ตรงนี้เพราะความเงียบของเส้นนี้อ่านได้ว่า "ตรวจแล้วผ่าน" ซึ่งไม่จริง) */
+    payStatusValues: statusValues(advancedFrom(o).payStatus),
+    payStatusValuesNote: "ค่าที่ท่อแตกออกมาใช้จริง — เส้นนี้ไม่ตีกลับค่าที่ร้านไม่เคยมี (ดู list=orders)",
     from, to,
     store: source,
     stores: storeRows.map((r) => ({
@@ -615,6 +635,39 @@ export async function listOrders(o = {}) {
     ).catch(() => null),
     coreQuery(`SELECT v, at FROM core_meta WHERE k = 'sync_returns'`).catch(() => null),
   ]);
+
+  /* 🛑 **ค่าที่ไม่มีวันมีในฐาน ต้องตีกลับ ไม่ใช่ตอบ 0** (เพิ่ม 16 ต.ค. 2569)
+     คลาสเดียวกับด่าน `status=Voided` + ประชากรที่ตัดใบยกเลิกไปแล้ว (15 ต.ค.):
+     คำขอที่ **ว่างโดยโครงสร้าง** ถ้าตอบ `0` เลขนั้นจะถูกส่งต่อไปขึ้นจอ/รายงาน
+     แล้วไม่มีใครรู้ว่ามันแปลว่า "ไม่มี" หรือ "ถามผิด" — ส่วน 400 ไปต่อไม่ได้
+     📏 ที่มา: `paystatus=Pending,Partial Payment` เคยตอบ 200 total 0 เงียบ ๆ
+        (แก้ที่ buildWhere แล้ว) ⇒ ที่เหลือคือ **พิมพ์ค่าผิด** ซึ่งยังเงียบอยู่
+     🔑 เทียบกับรายชื่อค่าที่มีจริงในร้านนี้ (payStatusesAllRows) ไม่ใช่รายชื่อที่เราเขียนตายไว้
+     ⚠️ **อ่านรายชื่อไม่ได้ ⇒ ไม่ตัดสิน** — "ยังไม่รู้" ต้องไม่ตกไปเป็น "ไม่ผ่าน"
+        (ทิศของแดงลวงแพงกว่า เพราะคนลงมือแก้ตาม) */
+  const payStatusesWanted = statusValues(adv.payStatus);
+  /* 🔴 **รายชื่อว่าง ⇒ ไม่ตัดสิน** (เทส `orders-advanced` จับได้ตอนเขียนด่านนี้ 16 ต.ค. 2569)
+     `[]` แปลว่า "ยิงแล้วไม่มีแถว" ซึ่งเกิดได้จริงเมื่อกระจกของร้านนั้นยังไม่มีใบสักใบ
+     (ร้านใหม่ · ตารางเพิ่งสร้าง · ซิงก์รอบแรกยังไม่จบ) ⇒ ถ้าตัดสินด้วยรายชื่อว่าง
+     **ทุกค่าจะกลายเป็น "ไม่รู้จัก" แล้วตีกลับ 400 ทั้งหมด** ทั้งที่คำตอบที่ถูกคือ 0 ใบ
+     ⇒ เงื่อนไขของด่านนี้คือ "มีรายชื่อให้เทียบจริง ๆ" ไม่ใช่แค่ "อ่านไม่ error"
+     🔑 คลาสเดียวกับ `[]` กับ `null` ที่ไล่กันมาทั้งเดือน: **"ถามแล้วไม่มี" ไม่ใช่ "เทียบได้แล้วไม่ผ่าน"** */
+  if (payStatusesWanted?.length && Array.isArray(payStatusesAllRows) && payStatusesAllRows.length) {
+    const มีจริง = new Set(payStatusesAllRows.map((r) => String(r.pay_status)));
+    const ไม่รู้จัก = payStatusesWanted.filter((v) => !มีจริง.has(v));
+    if (ไม่รู้จัก.length) {
+      return {
+        error:
+          `paystatus มีค่าที่ร้านนี้ไม่เคยมี: ${ไม่รู้จัก.join(", ")} — ` +
+          `คำขอนี้ว่างโดยโครงสร้าง จึงตีกลับแทนการตอบ 0 (ค่าที่มีจริง: ${[...มีจริง].join(" · ")})`,
+        paystatusที่ส่งมา: payStatusesWanted,
+        paystatusที่ไม่รู้จัก: ไม่รู้จัก,
+        payStatusesAll: [...มีจริง],
+        ขอบเขตของรายชื่อ: "ค่าที่มีอยู่จริงในคลังเงาของร้านที่พิน (ไม่ผูกช่วงวัน/ช่องทาง) — ค่าที่อยู่ในรายชื่อแต่ไม่มีในช่วงที่กรอง ยังตอบ 0 ตามปกติ",
+      };
+    }
+  }
+
   const sum = sumRows?.[0];
 
   /* ⚠️ **ต้องรวมชื่อช่องทางที่สะกดต่างกันก่อนคิดเกณฑ์** (ฝั่งจอชี้ 4 ก.ย. 2569)
@@ -698,6 +751,10 @@ export async function listOrders(o = {}) {
     dateTypesSupported: ["order", "ship"],
     dateTypesUnavailable: { payment: "กระจกยังไม่มีคอลัมน์วันชำระเงินจาก ZORT — ไม่ถอยไปใช้วันของใบแทน" },
     advancedFilters: adv, // ค่าที่ใช้กรองจริง (null = ไม่กรอง) — จอเช็คก่อนเขียนว่ากรองแล้ว
+    /* 🔑 **เพิ่มช่องใหม่ ไม่แปลงรูปของเดิม** — `advancedFilters.payStatus` ยังเป็นสตริงดิบเหมือนเดิม
+       ⇒ จอที่อ่านอยู่ไม่พังตอนท่อขึ้นก่อน และจะสลับมาใช้ช่องนี้เมื่อไหร่ก็ได้ (prepare-to-receive)
+       ช่องนี้ตอบคำถาม "ท่อแตกค่าออกเป็นกี่ค่า และใช้ครบไหม" ซึ่งสตริงดิบตอบไม่ได้ */
+    payStatusValues: statusValues(adv.payStatus),
     /* 🔴 **`applied` — เพิ่ม 19 ก.ย. 2569 · เส้นนี้ไม่มีมาก่อนเลยทั้งที่เป็นเส้นที่ใหญ่ที่สุด**
         เจอด้วยสารบัญ "ช่องที่แต่ละเส้นคืน": 11 เส้นส่ง `applied` · เส้นนี้กับ list=stock ไม่ส่ง
         ⇒ **วัดแล้วว่าเส้นนี้กรองด้วย q จริง** (ยิง q=zz ⇒ total 868 → 0)
