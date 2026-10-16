@@ -331,7 +331,7 @@ const ธงเปิด = (v) => v === true || v === "1" || v === "true";
  *  ⚠️ อ่านตารางใบคืนไม่ได้ ⇒ `returnedAmount`/`salesZortStyle` เป็น **null ห้ามเป็น 0**
  *     0 = "ไม่มีใบคืน" ซึ่งเป็นคำยืนยันที่เราไม่ได้วัด · null = "ยังไม่รู้"
  */
-async function ยอดรายช่องทาง(w, { ขอยอดแบบzort = false } = {}) {
+async function ยอดรายช่องทาง(w, { ขอยอดแบบzort = false, from = null, to = null, source = null } = {}) {
   /* 💸 **คิวรีใบคืนยิงเฉพาะเมื่อขอ** — จอรายการขายเปิดบ่อยที่สุดในระบบ
      🔴 รอบแรกผมยิงมันทุกคำขอ แล้ว **ด่านเดิมของ orderfacets จับได้ทันที** (เทส 3 ข้อแดง)
         ด่านนั้นมีไว้เพราะเส้นนี้ตั้งใจไม่ยิงอะไรเกินที่ถูกขอ (งบเวลา + โควตาอ่านของ D1)
@@ -353,22 +353,47 @@ async function ยอดรายช่องทาง(w, { ขอยอดแ�
        ⚠️ จัดกองตาม **ช่องทางของใบขาย** ให้แถวตรงกับ byChannel — ใบคืนไม่มีช่องช่องทางของตัวเอง
        ⚠️ ตัวกรองของใบขายอยู่ใน EXISTS เพื่อให้ `${w.sql}` อ้างชื่อ `orders` ได้ตามเดิม
           (เขียนเป็น JOIN แล้วต้องไปเติมคำนำหน้าให้ทุกคอลัมน์ในสตริงที่คนอื่นสร้าง = เปราะ) */
-    ขอยอดแบบzort ? coreQuery(
-      `SELECT (SELECT channel FROM orders WHERE orders.number = r.reference AND orders.source = r.source LIMIT 1) AS channel,
+    /* 🔴 **ฐานวันที่ของใบคืน — ผมเลือกผิดรอบแรก และยิงของจริงจับได้** (16 ต.ค. 2569)
+       สองนิยามที่ให้เลขต่างกัน:
+         ① "ใบคืนที่ **ออก** ในช่วงนี้"           ← กรองด้วย `r.return_date`
+         ② "ใบคืนของ **ใบขาย** ที่อยู่ในช่วงนี้"  ← กรองด้วย `order_date` (รอบแรกผมใช้อันนี้)
+       📏 วัดบนเว็บจริง (z1 · ส.ค. 2569) แล้วเทียบจอ ZORT — **สามสัญญาณชี้ไปทางเดียวกัน**:
+          · ข้อ ① ให้ Shopee 9,611 · Lazada 1,664.50 ⇒ หักแล้ว **ตรงจอ ZORT ทั้งคู่เป๊ะ**
+          · ข้อ ② ให้ Shopee 7,178 · Lazada 1,586 ⇒ **ไม่ตรงทั้งคู่**
+          · ข้อ ② ยังไปหัก TIKTOK อีก 170 ทั้งที่จอ ZORT ของ TIKTOK **ตรงเป๊ะโดยไม่มีการหัก**
+          ⇒ **ZORT หักใบคืนตามวันที่ออกใบคืน** ⇒ ใช้ข้อ ①
+       🔑 เทสของผมเขียวทั้งที่ฐานผิด เพราะมันป้อนข้อมูลปลอมที่ไม่มีมิติ "วันของใบคืน" อยู่เลย
+          ⇒ ตัวปลอมมองไม่เห็นมิติที่ตัวเองไม่มี · ของแบบนี้จับได้ด้วยการยิงของจริงเท่านั้น
+       ⚠️ ตัวกรองร้านยังต้องใช้ (ใบคืนของ z1 กับ z2 คนละบริบท) แต่ **ไม่ใช้ตัวกรองอื่นของใบขาย**
+          เพราะถ้าจอกรองช่องทางอยู่ ใบคืนต้องยังถูกจัดกองตามช่องทางของใบขายตามปกติ
+       ⚠️ ใบคืนที่หาใบขายต้นทางไม่เจอ จัดกองตามช่องทางไม่ได้ ⇒ นับแยกไว้ที่ `returnsUnmatched`
+          **ห้ามให้มันหายเงียบ** ไม่งั้นผลรวมรายช่องจะน้อยกว่ายอดคืนจริงโดยไม่มีใครรู้ */
+    ขอยอดแบบzort && from && to ? coreQuery(
+      `SELECT (SELECT channel FROM orders o WHERE o.number = r.reference AND o.source = r.source LIMIT 1) AS channel,
               COUNT(*) AS retOrders, ROUND(COALESCE(SUM(r.amount),0),2) AS retAmount
        FROM return_orders_v2 r
-       WHERE EXISTS (SELECT 1 FROM orders WHERE orders.number = r.reference AND orders.source = r.source AND ${w.sql})
+       WHERE r.return_date >= ? AND r.return_date <= ?
+         ${source ? "AND r.source = ?" : ""}
          AND COALESCE(r.status,'') NOT LIKE '%void%' AND COALESCE(r.status,'') NOT LIKE '%cancel%'
        GROUP BY 1`,
-      w.params
+      source ? [from, to, source] : [from, to]
     ).catch(() => null) : Promise.resolve(undefined),
   ]);
   /* 🔑 สามสถานะ ไม่ใช่สอง: undefined = **ไม่ได้ขอ** (คีย์จะไม่โผล่เลย) ·
      null = ขอแล้วแต่อ่านตารางใบคืนไม่ได้ (จอขึ้น "ไม่รู้") · ตัวเลข = วัดได้จริง
      ⇒ จอแยก "ยังไม่ได้ขอ" ออกจาก "ขอแล้วแต่พัง" ได้ ซึ่งเป็นสองเรื่องที่ต้องทำต่างกัน */
-  const คืนของช่อง = ret === undefined ? undefined : ret ? new Map(ret.map((x) => [String(x.channel ?? ""), x])) : null;
-  if (คืนของช่อง === undefined) return rows;   // ไม่ได้ขอ ⇒ **ไม่มีคีย์** (ท่าเดียวกับ byWarehouse)
-  return rows.map((r) => {
+  /* แถวที่ `channel` เป็น null = หาใบขายต้นทางไม่เจอ ⇒ จัดกองไม่ได้ · แยกออกมาประกาศ */
+  const จับคู่ไม่ได้ = ret ? ret.filter((x) => x.channel === null || x.channel === undefined) : null;
+  const คืนของช่อง = ret === undefined ? undefined
+    : ret ? new Map(ret.filter((x) => x.channel !== null && x.channel !== undefined).map((x) => [String(x.channel), x])) : null;
+  /* 🔴 **ห้ามเก็บไว้บน property ของฟังก์ชัน** — นั่นคือค่าระดับโมดูล ⇒ คำขอที่เข้ามาพร้อมกัน
+     จะเขียนทับกันเงียบ ๆ แล้วจอได้เลขของคำขออื่น (คลาสเดียวกับที่ห้ามอ่าน-บวก-เขียนกลับใน Blobs)
+     ⇒ คืนออกไปเป็นค่าของคำขอนั้นเอง */
+  const ยอดจับคู่ไม่ได้ = จับคู่ไม่ได้
+    ? { count: จับคู่ไม่ได้.reduce((a, x) => a + num(x.retOrders), 0), amount: Math.round(จับคู่ไม่ได้.reduce((a, x) => a + num(x.retAmount), 0) * 100) / 100 }
+    : null;
+  if (คืนของช่อง === undefined) return { rows, unmatched: undefined };   // ไม่ได้ขอ ⇒ **ไม่มีคีย์** (ท่าเดียวกับ byWarehouse)
+  const แถว = rows.map((r) => {
     const ค = คืนของช่อง?.get(String(r.channel ?? ""));
     const returnedAmount = คืนของช่อง ? num(ค?.retAmount) : null;
     return {
@@ -382,6 +407,7 @@ async function ยอดรายช่องทาง(w, { ขอยอดแ�
         : Math.round((num(r.amount) - num(r.unpaidAmount) - returnedAmount) * 100) / 100,
     };
   });
+  return { rows: แถว, unmatched: ยอดจับคู่ไม่ได้ };
 }
 
 export async function listOrderFacets(o = {}) {
@@ -424,14 +450,14 @@ export async function listOrderFacets(o = {}) {
     payStatus: null,
   });
   const wantWarehouses = o.warehouses === true || o.warehouses === "1";
-  const [storeRows, byChannel, byWarehouse, retByWarehouse, tabGridF] = await Promise.all([
+  const [storeRows, ช่องทางดิบ, byWarehouse, retByWarehouse, tabGridF] = await Promise.all([
     coreQuery(
       `SELECT source, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
        FROM orders WHERE ${w.sql}
        GROUP BY source ORDER BY source`,
       w.params
     ),
-    ยอดรายช่องทาง(w, { ขอยอดแบบzort: ธงเปิด(o.zortStyle) }),
+    ยอดรายช่องทาง(w, { ขอยอดแบบzort: ธงเปิด(o.zortStyle), from, to, source }),  // คืน { rows, unmatched }
     wantWarehouses
       ? coreQuery(
           `SELECT COALESCE(warehouse_code,'') AS code, COUNT(*) AS orders, ROUND(COALESCE(SUM(amount),0),2) AS amount
@@ -509,12 +535,15 @@ export async function listOrderFacets(o = {}) {
     storeScope: source
       ? `เฉพาะร้าน ${storeName(source)}`
       : "ทุกร้านที่มีบิลในช่วงนี้ — จอนับจาก stores.length เอง ห้ามเขียนจำนวนร้านตายตัว",
-    byChannel,
+    byChannel: ช่องทางดิบ.rows,
+    /* กองใบคืนที่หาใบขายต้นทางไม่เจอ ⇒ จัดกองรายช่องทางไม่ได้ · **ประกาศไว้ ห้ามให้หายเงียบ**
+       ไม่งั้นผลรวมรายช่องจะน้อยกว่ายอดคืนจริงโดยไม่มีใครรู้ · undefined = ไม่ได้ขอ · null = อ่านไม่ได้ */
+    ...(ช่องทางดิบ.unmatched === undefined ? {} : { returnsUnmatched: ช่องทางดิบ.unmatched }),
     /* 🏷️ ป้ายขอบเขตของสามช่องใหม่ — **จอต้องอ่านป้าย ไม่ใช่เดาจากชื่อช่อง** */
     byChannelScope:
       "amount = ยอดหัวใบ ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบค้างจ่ายและยังไม่หักใบคืน** (ของเดิม ไม่เปลี่ยน) · " +
       "unpaidAmount = ยอดของใบที่ **pay_status ขึ้นต้นด้วย Pending** (ไม่ใช่ status ซึ่งเป็นสถานะเอกสาร) · " +
-      "returnedAmount = ใบคืน (ไม่รวมใบคืนที่ยกเลิก) ของใบขายที่อยู่ในตัวกรองนี้ จับคู่ return_orders_v2.reference = orders.number และ source ตรงกัน · จัดกองตามช่องทางของ **ใบขาย** · " +
+      "returnedAmount = ใบคืน (ไม่รวมใบคืนที่ยกเลิก) ที่ **ออกในช่วงวันนี้** (return_date) ของร้านเดียวกัน จัดกองตามช่องทางของ **ใบขายที่ใบคืนอ้างถึง** · 📏 ฐานวันที่นี้พิสูจน์แล้วว่าตรงกับ ZORT (16 ต.ค. 2569 · z1 ส.ค.): หักแล้วได้ Shopee 178,926 · Lazada 189,187.20 · Shopify 9,602 ตรงจอทั้งสามช่อง ส่วนฐาน “ใบคืนของใบขายในช่วงนี้” ให้ 7,178/1,586 ซึ่งไม่ตรง และยังไปหัก TIKTOK ทั้งที่ ZORT ไม่หัก · ใบคืนที่หาใบขายต้นทางไม่เจออยู่ใน returnsUnmatched **ไม่ถูกหักออกจากช่องใด** · " +
       "salesZortStyle = amount − unpaidAmount − returnedAmount ⇒ **นิยามที่ตรงกับจอ ZORT SalesReport** " +
       "(พิสูจน์ 16 ต.ค. 2569 · z1 1–31 ส.ค.: ส่วนต่าง 17,865.50 = ค้างจ่าย 6,590.00 + ใบคืน 11,275.50 ตรงเป๊ะรายช่องทั้งสามช่อง) · " +
       "🔴 returnedAmount/salesZortStyle = **null แปลว่าอ่านตารางใบคืนไม่ได้ ไม่ใช่ไม่มีใบคืน** ห้ามอ่านเป็น 0",
@@ -633,7 +662,7 @@ export async function listOrders(o = {}) {
         ⇒ คอมเมนต์ประกาศเจตนา ไม่ใช่หลักฐานว่าโค้ดทำตามนั้น (กฎเดียวกับที่เจอใน byStatus วันเดียวกัน) */
   const wStore = buildWhere({ from: "0001-01-01", to: "9999-12-31", includeCancelled: true, source });
   const [
-    sumRows, rows, chanStats, statusCountsRaw, byChannel, storeRows, tabGrid, statusesAllRows, payStatusesAllRows, payRowsFiltered,
+    sumRows, rows, chanStats, statusCountsRaw, ช่องทางดิบ, storeRows, tabGrid, statusesAllRows, payStatusesAllRows, payRowsFiltered,
     beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
   ] = await Promise.all([
     coreQuery(
@@ -668,7 +697,7 @@ export async function listOrders(o = {}) {
       w.params
     ),
     // ยอดแยกช่องทางของ "ช่วงที่กรองอยู่" — ZORT ไม่มีให้ดูในจอเดียว แต่ร้านถามบ่อย
-    ยอดรายช่องทาง(w, { ขอยอดแบบzort: ธงเปิด(o.zortStyle) }),
+    ยอดรายช่องทาง(w, { ขอยอดแบบzort: ธงเปิด(o.zortStyle), from, to, source }),  // คืน { rows, unmatched }
     /* ยอดแยก "ร้าน" ของช่วงที่กรองอยู่ (ฝั่งจอขอ 5 ก.ย. 2569)
         ส่งรายการร้านที่มีอยู่จริง ไม่ใช่ประโยคสำเร็จรูป ⇒ ร้านที่สามโผล่มา ป้ายเปลี่ยนเอง */
     coreQuery(
@@ -1014,12 +1043,15 @@ export async function listOrders(o = {}) {
     totalPaidAmountByPay: Array.isArray(payRowsFiltered)
       ? Math.round(payRowsFiltered.reduce((a, r) => a + (/^paid$/i.test(String(r.pay_status)) ? num(r.amount) : 0), 0))
       : null,
-    byChannel,
+    byChannel: ช่องทางดิบ.rows,
+    /* กองใบคืนที่หาใบขายต้นทางไม่เจอ ⇒ จัดกองรายช่องทางไม่ได้ · **ประกาศไว้ ห้ามให้หายเงียบ**
+       ไม่งั้นผลรวมรายช่องจะน้อยกว่ายอดคืนจริงโดยไม่มีใครรู้ · undefined = ไม่ได้ขอ · null = อ่านไม่ได้ */
+    ...(ช่องทางดิบ.unmatched === undefined ? {} : { returnsUnmatched: ช่องทางดิบ.unmatched }),
     /* 🏷️ ป้ายขอบเขตของสามช่องใหม่ — **จอต้องอ่านป้าย ไม่ใช่เดาจากชื่อช่อง** */
     byChannelScope:
       "amount = ยอดหัวใบ ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบค้างจ่ายและยังไม่หักใบคืน** (ของเดิม ไม่เปลี่ยน) · " +
       "unpaidAmount = ยอดของใบที่ **pay_status ขึ้นต้นด้วย Pending** (ไม่ใช่ status ซึ่งเป็นสถานะเอกสาร) · " +
-      "returnedAmount = ใบคืน (ไม่รวมใบคืนที่ยกเลิก) ของใบขายที่อยู่ในตัวกรองนี้ จับคู่ return_orders_v2.reference = orders.number และ source ตรงกัน · จัดกองตามช่องทางของ **ใบขาย** · " +
+      "returnedAmount = ใบคืน (ไม่รวมใบคืนที่ยกเลิก) ที่ **ออกในช่วงวันนี้** (return_date) ของร้านเดียวกัน จัดกองตามช่องทางของ **ใบขายที่ใบคืนอ้างถึง** · 📏 ฐานวันที่นี้พิสูจน์แล้วว่าตรงกับ ZORT (16 ต.ค. 2569 · z1 ส.ค.): หักแล้วได้ Shopee 178,926 · Lazada 189,187.20 · Shopify 9,602 ตรงจอทั้งสามช่อง ส่วนฐาน “ใบคืนของใบขายในช่วงนี้” ให้ 7,178/1,586 ซึ่งไม่ตรง และยังไปหัก TIKTOK ทั้งที่ ZORT ไม่หัก · ใบคืนที่หาใบขายต้นทางไม่เจออยู่ใน returnsUnmatched **ไม่ถูกหักออกจากช่องใด** · " +
       "salesZortStyle = amount − unpaidAmount − returnedAmount ⇒ **นิยามที่ตรงกับจอ ZORT SalesReport** " +
       "(พิสูจน์ 16 ต.ค. 2569 · z1 1–31 ส.ค.: ส่วนต่าง 17,865.50 = ค้างจ่าย 6,590.00 + ใบคืน 11,275.50 ตรงเป๊ะรายช่องทั้งสามช่อง) · " +
       "🔴 returnedAmount/salesZortStyle = **null แปลว่าอ่านตารางใบคืนไม่ได้ ไม่ใช่ไม่มีใบคืน** ห้ามอ่านเป็น 0",

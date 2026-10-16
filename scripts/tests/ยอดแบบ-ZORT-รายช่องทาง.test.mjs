@@ -20,7 +20,12 @@ mock.module("../../netlify/lib/coredb.mjs", { namedExports: {
     calls.push({ s: String(sql), params });
     if (/FROM return_orders_v2/.test(String(sql))) {
       if (ใบคืนพัง) throw new Error("อ่านตารางใบคืนไม่ได้");
-      return [{ channel: "Shopee-gucut", retOrders: 12, retAmount: 9611 }];
+      /* 🔑 คืนกองที่ **จับคู่ใบขายไม่ได้** มาด้วย (channel = null) — ของจริงมีได้
+         ถ้าตัวคิดกลืนมันเงียบ ๆ ผลรวมรายช่องจะน้อยกว่ายอดคืนจริงโดยไม่มีใครรู้ */
+      return [
+        { channel: "Shopee-gucut", retOrders: 12, retAmount: 9611 },
+        { channel: null, retOrders: 2, retAmount: 500 },
+      ];
     }
     if (/GROUP BY channel/.test(String(sql))) {
       return [
@@ -89,4 +94,37 @@ test("ป้ายขอบเขตต้องบอกนิยามคร�
   assert.match(r.byChannelScope, /pay_status/);
   assert.match(r.byChannelScope, /amount − unpaidAmount − returnedAmount/);
   assert.match(r.byChannelScope, /ห้ามอ่านเป็น 0/);
+});
+
+
+/* ══ ฐานวันที่ของใบคืน — ข้อที่เทสชุดแรกของผม **มองไม่เห็นเลย** ══
+   🔴 ของจริง 16 ต.ค. 2569: ผมเขียนตัวคิดด้วยฐาน "ใบคืนของใบขายที่อยู่ในช่วงนี้" (order_date)
+      เทส 5 ข้อเขียวหมด · build ผ่าน · push ขึ้นเว็บ · แล้ว **ยิงของจริงเทียบจอ ZORT ตรงแค่ 1/3 ช่อง**
+   🔑 เหตุที่เทสมองไม่เห็น: ตัวปลอมของผมคืนแถวใบคืนที่ **ไม่มีมิติ "วันที่ออกใบคืน" อยู่เลย**
+      ⇒ ตัวปลอมมองไม่เห็นมิติที่ตัวเองไม่มี · เทสจึงยืนยันได้แค่ "ตัวคิดบวกเลขถูก"
+   ⇒ ด่านสองข้อนี้ตรึง **ฐานวันที่** ไว้ ไม่ใช่ตรึงผลบวก */
+test("ใบคืนต้องกรองด้วย return_date (ฐานที่ ZORT ใช้) ไม่ใช่วันของใบขาย", async () => {
+  calls.length = 0;
+  await listOrderFacets({ from: "2026-08-01", to: "2026-08-31", store: "z1", zortStyle: "1" });
+  const q = calls.find((c) => /FROM return_orders_v2/.test(c.s));
+  assert.ok(q, "ขอยอดแบบ ZORT แล้วต้องมีคิวรีใบคืน");
+  assert.match(q.s, /r\.return_date >= \?\s+AND r\.return_date <= \?/,
+    "ZORT หักใบคืนตามวันที่ออกใบคืน — พิสูจน์แล้วด้วยของจริง 3 สัญญาณ");
+  /* 🚫 ห้ามกลับไปผูกกับช่วงวันของใบขาย — นั่นคือฐานที่วัดแล้วไม่ตรง ZORT
+     (ให้ Shopee 7,178 แทน 9,611 และไปหัก TIKTOK ทั้งที่ ZORT ไม่หัก) */
+  assert.ok(!/order_date/.test(q.s), "คิวรีใบคืนต้องไม่ถูกจำกัดด้วยวันของใบขาย");
+  assert.deepEqual(q.params.slice(0, 2), ["2026-08-01", "2026-08-31"], "ต้องส่งช่วงวันของใบคืนเข้าไปจริง");
+});
+
+test("ใบคืนที่หาใบขายต้นทางไม่เจอ ต้องประกาศ ไม่ใช่หายเงียบ", async () => {
+  const r = await listOrderFacets({ from: "2026-08-01", to: "2026-08-31", store: "z1", zortStyle: "1" });
+  assert.deepEqual(r.returnsUnmatched, { count: 2, amount: 500 });
+  // และต้องไม่ถูกยัดเข้าช่องใดช่องหนึ่ง
+  const รวมรายช่อง = r.byChannel.reduce((a, x) => a + (x.returnedAmount ?? 0), 0);
+  assert.equal(รวมรายช่อง, 9611, "กองที่จับคู่ไม่ได้ห้ามไปโผล่ในช่องใด");
+});
+
+test("ไม่ได้ขอ ⇒ ไม่มีคีย์ returnsUnmatched เลย (ต่างจาก null)", async () => {
+  const r = await listOrderFacets({ from: "2026-08-01", to: "2026-08-31", store: "z1" });
+  assert.equal("returnsUnmatched" in r, false);
 });
