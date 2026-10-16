@@ -1235,7 +1235,7 @@ export async function getQuotationDetail(id, raw = false) {
  *  ⚠️ ถามไม่สำเร็จ ⇒ `unknown: true` **ห้ามแปลว่า "ZORT ไม่มีช่องนี้"**
  */
 export async function zortReturnLineFields(days) {
-  if (!creds()) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  if (!headers()) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const back = Math.max(1, Math.min(400, num(days) || 60));
   /* 🔑 ใช้ตัวกลาง `วันไทยย้อน()` **ไม่เขียน + 7 ชม. ด้วยมือ**
      ⇒ ด่านนับหนี้จับผมได้ทันทีตอนเขียนมือ (กองโตจาก 44 เป็น 45) และมันถูก:
@@ -1245,7 +1245,7 @@ export async function zortReturnLineFields(days) {
   let res;
   try {
     res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=200`, {
-      headers: creds(), signal: AbortSignal.timeout(15000),
+      headers: headers(), signal: AbortSignal.timeout(15000),
     });
   } catch (e) {
     return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
@@ -1267,7 +1267,7 @@ export async function zortReturnLineFields(days) {
   for (const r of ตัวอย่าง) {
     for (const [k, v] of Object.entries(r)) หัวใบ[k] = ชนิด(v);
     const d = await fetch(`${BASE}/ReturnOrder/GetReturnOrderDetail?id=${encodeURIComponent(r?.id)}`, {
-      headers: creds(), signal: AbortSignal.timeout(12000),
+      headers: headers(), signal: AbortSignal.timeout(12000),
     }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
     const rows = Array.isArray(d?.list) ? d.list : null;
     if (!rows) { อ่านไม่ได้ += 1; continue; }
