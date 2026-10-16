@@ -1,7 +1,7 @@
 // สร้างอัตโนมัติโดย scripts/gen-zort-arch.mjs ตอน build — **ห้ามแก้ด้วยมือ**
 // แก้ที่นี่จะถูกเขียนทับรอบหน้า และทำให้ผัง ZORT ในหลังร้านโกหกจนกว่าจะมีคนสังเกต
 export const ZORT_ARCH = {
-  "generatedAt": "2026-10-15T20:29:15.031Z",
+  "generatedAt": "2026-10-16T06:42:02.488Z",
   "calls": [
     {
       "endpoint": "Bundle/AddBundle",
@@ -87,6 +87,7 @@ export const ZORT_ARCH = {
       "files": [
         "netlify/functions/core.mjs",
         "netlify/lib/core-sync.mjs",
+        "netlify/lib/zort-archived-probe.mjs",
         "netlify/lib/zort-order.mjs"
       ],
       "module": "Order"
@@ -856,7 +857,7 @@ export const ZORT_ARCH = {
     }
   },
   "selfCheck": {
-    "at": "2026-10-15T20:29:15.032Z",
+    "at": "2026-10-16T06:42:02.489Z",
     "problems": [],
     "ok": true
   }
