@@ -209,7 +209,9 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
   };
 
   if (!g) return null;
-  const จับคู่แล้ว = (รหัส: string) => map[คีย์อะไหล่(รหัส)];
+  /* รับค่าว่างได้ — แถวที่คู่มือไม่ให้รหัสมาก็ต้องถามได้ว่า "จับคู่แล้วหรือยัง"
+     คำตอบคือ "ยัง" (ไม่มีรหัสก็จับคู่ไม่ได้) ซึ่งถูกต้องตามความหมาย ไม่ใช่การกลบปัญหา */
+  const จับคู่แล้ว = (รหัส: string | null | undefined) => map[คีย์อะไหล่(รหัส)];
 
   return (
     <div className={`mx-auto w-full ${SHELL_W} pb-24`}>
@@ -574,7 +576,12 @@ function แผ่นอะไหล่({
                   {row.ชื่อ || "ไม่มีชื่อในคู่มือ"}
                 </p>
                 <p className="mt-1 text-[13px] tabular-nums text-steel-300">
-                  รหัสอะไหล่ <span className="font-semibold text-carbon">{row.รหัส || "—"}</span>
+                  {/* ⚠️ ไม่มีรหัส **ต้องเขียนว่าไม่มี** ห้ามปล่อยขีดเดียวให้อ่านเหมือนช่องว่างธรรมดา
+                      ช่างเอาไปสั่งของต่อ — "ไม่มีรหัส" กับ "ลืมใส่" คนละเรื่องกันสำหรับเขา */}
+                  รหัสอะไหล่{" "}
+                  <span className="font-semibold text-carbon">
+                    {row.รหัส || "— คู่มือไม่ได้ให้รหัสแถวนี้"}
+                  </span>
                   {row.จำนวน ? ` · ใช้ ${row.จำนวน} ตัว` : ""}
                 </p>
 
@@ -683,7 +690,7 @@ function การ์ดอะไหล่({
           className="relative h-[72px] w-[72px] shrink-0 overflow-hidden rounded-md border border-steel-700 bg-white"
         >
           {ของ?.image ? (
-            <Image src={ของ.image} alt={ของ.title || row.ชื่อ || row.รหัส} fill sizes="72px" className="object-contain" />
+            <Image src={ของ.image} alt={ของ.title || row.ชื่อ || row.รหัส || "อะไหล่"} fill sizes="72px" className="object-contain" />
           ) : (
             <span className="grid h-full w-full place-items-center text-[20px] font-bold text-steel-300">
               {row.เลข}
