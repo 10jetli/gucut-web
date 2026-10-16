@@ -2837,7 +2837,20 @@ async function route(req, context) {
          ⚠️ ค่าที่ไม่ตรงหมวดใดเลย ⇒ ได้ 0 แถว ซึ่ง **ถูกต้อง** แต่จอต้องแยกจาก "ไม่ได้กรอง"
             ⇒ สะท้อนค่าที่ใช้กลับไปใน `applied.category` เสมอ */
       const category = String(url.searchParams.get("category") ?? "").trim().slice(0, 120);
-      if (category) { filter += " AND TRIM(COALESCE(p.category,'')) = ?"; params.push(category); }
+      /* 🔴 **สตริง `filter` ตัวนี้ถูกใช้ร่วมกัน 4 คิวรี และสองตัวไม่ได้ JOIN ตาราง `products`**
+         (`by=month` และตัวนับ `totalSkus`) ⇒ เขียน `p.category` ลงไปตรง ๆ = **no such column: p.category**
+         📏 ของจริง: ฝั่งจอยิง 22:4x ได้ HTTP 500 · D1 ตอบ no such column at offset 305
+            ⇒ ผมเพิ่มตัวกรองลงสตริงที่ใช้ร่วมกัน **โดยดูแค่คิวรีที่ผมกำลังอ่านอยู่**
+         🔑 กฎ: **เงื่อนไขที่หย่อนลงสตริงที่ใช้ร่วมกัน ต้องใช้ได้กับทุกคิวรีที่กินสตริงนั้น**
+            ไม่ใช่กับคิวรีที่เราเผอิญเปิดดู
+         ⇒ ใช้ `EXISTS` ที่พาตารางของตัวเองมาด้วย ⇒ ใช้ได้ทุกคิวรีโดยไม่ต้องพึ่ง JOIN ข้างนอก
+            (และได้ของแถม: `by=month` กรองรายหมวดได้ด้วย ซึ่งเดิมทำไม่ได้)
+         🚫 ทางที่ **ไม่เลือก**: แยกตัวแปรแล้วเติมเฉพาะคิวรีที่ JOIN ไว้ — จะทำให้ `totalSkus`
+            นับทั้งคลังขณะที่แถวถูกกรอง = **เลขหัวตารางโกหกแบบดูสมเหตุสมผล** */
+      if (category) {
+        filter += " AND EXISTS (SELECT 1 FROM products pc WHERE pc.sku = oi.sku AND TRIM(COALESCE(pc.category,'')) = ?)";
+        params.push(category);
+      }
       /* store= (16 ก.ย. 2569 · ใบ t_mu2wjql1) — เทียบกับ ZORT ต้องแยกร้าน (บัญชี ZORT บน Chrome = z1)
          ⚠️ ไม่ส่ง = รวมทุกร้านเหมือนเดิม (จอเดิมเลขไม่เปลี่ยน) · ค่าอื่นนอกจาก z1/z2/all/ว่าง = 400 */
       const storeRaw = String(url.searchParams.get("store") ?? "").trim();
