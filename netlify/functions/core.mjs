@@ -1888,6 +1888,13 @@ async function route(req, context) {
       const { zortDocCoverage } = await import("../lib/zort-write.mjs");
       return okJson(await zortDocCoverage());
     }
+    /* GET ?returnlinefields=1[&days=N] ⇒ ชื่อช่องของบรรทัดสินค้าในใบคืน (ไม่คืนค่า) — **อ่านอย่างเดียว**
+       ใบ t_mvb743co: ต้องรู้ชื่อช่องก่อนออกแบบตาราง · ที่สำคัญสุดคือ **มีช่องยอดเงินต่อบรรทัดไหม** */
+    if (url.searchParams.get("returnlinefields")) {
+      if (req.method !== "GET") return json({ error: "เส้นนี้ GET เท่านั้น (อ่านอย่างเดียว)" }, 405);
+      const { zortReturnLineFields } = await import("../lib/core-purchases.mjs");
+      return okJson(await zortReturnLineFields(url.searchParams.get("days")));
+    }
     if (url.searchParams.get("returnskus")) {
       const { returnsBySku } = await import("../lib/core-purchases.mjs");
       return okJson(await returnsBySku(url.searchParams.get("days")));

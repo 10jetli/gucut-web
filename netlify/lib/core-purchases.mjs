@@ -1197,6 +1197,66 @@ export async function getQuotationDetail(id, raw = false) {
  *    ⚠️ ใบไหนดึงไม่ได้ = **นับแยกไว้ที่ `unreadable` ห้ามนับเป็นศูนย์**
  *       ไม่งั้นรหัสที่อยู่ในใบนั้นจะดูเหมือนไม่เคยถูกคืน ซึ่งตรงข้ามกับความจริง
  */
+/** 🔎 **ชื่อช่องของ "บรรทัดสินค้าในใบคืน" ที่ ZORT ส่งมาจริง — คืนชื่อช่อง+ชนิด ไม่คืนค่า**
+ *
+ *  🔴 ที่มา 17 ต.ค. 2569 · ท่านประธานติ๊กใบ t_mvb743co (เก็บบรรทัดใบคืนเข้ากระจก)
+ *     ใบนั้นปลดสองงานพร้อมกัน: returnedQty/returnedAmount **รายสินค้า/รายหมวด**
+ *     และยอดเดือนรายหมวดที่ยังสูงกว่า ZORT
+ *
+ *  🔑 **ออกแบบตารางก่อนรู้ชื่อช่อง = เดา** — และวันที่ 16 ต.ค. ผมเจ็บจากการเดา/สรุปเร็ว 7 ครั้ง
+ *     ⇒ ขั้นแรกต้องเป็นการ **วัด** เสมอ: ถาม ZORT ว่าบรรทัดใบคืนมีช่องอะไร
+ *     ⚠️ ที่สำคัญที่สุดคือ **มีช่องยอดเงินต่อบรรทัดไหม** — ถ้าไม่มี คำถามเรื่องยอดเดือนจะตอบไม่ได้
+ *        ด้วยตารางนี้ และต้องรู้ก่อนลงมือ ไม่ใช่รู้หลังสร้างตารางเสร็จ
+ *
+ *  ⚠️ **GET อ่านอย่างเดียว** · คืนชื่อช่อง+ชนิด **ไม่คืนค่า** (ใบคืนมีชื่อลูกค้า ⇒ ค่าไม่ควรออกมา)
+ *  ⚠️ ถามไม่สำเร็จ ⇒ `unknown: true` **ห้ามแปลว่า "ZORT ไม่มีช่องนี้"**
+ */
+export async function zortReturnLineFields(days) {
+  if (!creds()) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT" };
+  const back = Math.max(1, Math.min(400, num(days) || 60));
+  const since = new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
+  let res;
+  try {
+    res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=200`, {
+      headers: creds(), signal: AbortSignal.timeout(15000),
+    });
+  } catch (e) {
+    return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ: ${String(e?.message || e).slice(0, 120)}` };
+  }
+  if (!res.ok) return { ok: false, unknown: true, error: `ถาม ZORT ไม่สำเร็จ (HTTP ${res.status})` };
+  const data = await res.json().catch(() => null);
+  const list = Array.isArray(data?.list) ? data.list : null;
+  if (!list) return { ok: false, unknown: true, error: "ZORT ตอบรูปที่อ่านไม่ได้ (ไม่มี list)" };
+  const inRange = list.filter(
+    (r) => String(r?.returnorderdateString ?? r?.returnorderdate ?? "").slice(0, 10) >= since
+  );
+  const ตัวอย่าง = inRange.slice(0, 3);
+  if (!ตัวอย่าง.length) return { ok: true, found: false, since, listLength: list.length,
+    note: "ไม่มีใบคืนในช่วงนี้ — **ไม่ได้แปลว่า ZORT ไม่มีช่องเหล่านั้น** ลองขยาย days" };
+  const ชนิด = (v) => (v === null ? "null" : Array.isArray(v) ? `array(${v.length})` : typeof v);
+  const หัวใบ = {};
+  const บรรทัด = {};
+  let อ่านไม่ได้ = 0;
+  for (const r of ตัวอย่าง) {
+    for (const [k, v] of Object.entries(r)) หัวใบ[k] = ชนิด(v);
+    const d = await fetch(`${BASE}/ReturnOrder/GetReturnOrderDetail?id=${encodeURIComponent(r?.id)}`, {
+      headers: creds(), signal: AbortSignal.timeout(12000),
+    }).then((x) => (x.ok ? x.json() : null)).catch(() => null);
+    const rows = Array.isArray(d?.list) ? d.list : null;
+    if (!rows) { อ่านไม่ได้ += 1; continue; }
+    for (const it of rows) for (const [k, v] of Object.entries(it)) บรรทัด[k] = ชนิด(v);
+  }
+  /* 🔑 ชี้ตรง ๆ ว่าช่องที่ **จำเป็นต่อการตอบคำถามเรื่องเงิน** มีหรือไม่
+     ⇒ คนอ่านไม่ต้องไปไล่เองในรายชื่อยาว ๆ แล้วเผลอสรุปว่ามี */
+  const มีช่องเงิน = ["totalprice", "price", "pricepernumber", "amount", "total"].filter((k) => k in บรรทัด);
+  return {
+    ok: true, found: true, since, ใบที่สุ่มดู: ตัวอย่าง.length, อ่านรายละเอียดไม่ได้: อ่านไม่ได้,
+    ช่องหัวใบ: หัวใบ, ช่องบรรทัด: บรรทัด,
+    ช่องยอดเงินต่อบรรทัดที่พบ: มีช่องเงิน,
+    note: "ชื่อช่อง+ชนิดที่ ZORT ส่งมาจริง (ไม่คืนค่า) · ช่องที่ไม่โผล่อาจเป็นเพราะใบที่สุ่มมาไม่ได้กรอก ไม่ใช่ ZORT ไม่มีช่อง",
+  };
+}
+
 export async function returnsBySku(daysRaw = 90) {
   const h = headers();
   if (!h) return { error: "ยังไม่ได้ตั้งรหัส ZORT" };
