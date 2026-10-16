@@ -119,7 +119,24 @@ export async function syncPurchases(opt = {}) {
       id: String(p?.id ?? "").trim().slice(0, 60),
       number: String(p?.number ?? "").trim().slice(0, 60),
       vendor: String(p?.customername ?? "").trim().slice(0, 160),
-      date: String(p?.purchaseorderdate ?? "").slice(0, 10),
+      /* 🔴 **บั๊กจริง: ใบซื้อเป็นสายเดียวที่หั่นวันจากเวลา UTC ดิบ** (แก้ 17 ต.ค. 2569 · ใบ t_mvb743q3)
+         📏 ฝั่งจอเทียบบัตรสต็อกกับหน้าสินค้า ZORT (00068) แล้วเจอ **วันเลื่อนหนึ่งวันบางแถว**
+            ZORT 14 ม.ค. / 5 ม.ค. / 22 ธ.ค. · ของเรา 13 ม.ค. / 4 ม.ค. / 21 ธ.ค. · แถวขายตรง
+         🔎 ไล่แล้วพบว่าบัตรสต็อกมีสามสาย และ **สายซื้อเป็นตัวเดียวที่ไม่แปลงเป็นวันไทย**:
+            · ขาย  → `orderDay()` อ่าน `orderdateString` (รูปไทยอยู่แล้ว + แปลง พ.ศ.)  ✅
+            · ปรับ → `date(at,'+7 hours')` ใน SQL                                      ✅
+            · ซื้อ → `String(p.purchaseorderdate).slice(0,10)` = **หั่นจาก UTC**        🔴
+         ⇒ ใบที่สร้างช่วงเช้าไทย (00:00–06:59 = วันก่อนหน้าใน UTC) ถูกบันทึกเป็น **วันก่อนหน้า**
+           ตรงกับอาการที่ฝั่งจอเห็นเป๊ะ (บางแถวเลื่อน บางแถวตรง)
+         🔑 รูปเดียวกับบั๊ก `orderdate` ที่แก้ไปก่อนหน้า — ไฟล์มีตัวแปลงวันไทยของตัวเองอยู่แล้ว
+            (`thaiDayFromUtc` import ไว้แล้วในไฟล์นี้) **แต่ช่องข้าง ๆ ยังใช้ UTC**
+            ⇒ เอกสารใบเดียวมีสองมาตรฐาน (คำเตือนนี้เขียนอยู่ใน thaiday.mjs แล้ว)
+         ✅ `thaiDayFromUtc` ปลอดภัยทั้งสองรูป: วันล้วน "2026-09-14" ⇒ วันเดิม ·
+            มีเวลา "2026-09-14 17:30" ⇒ 2026-09-15 (วันไทย) · แปลงไม่ได้ ⇒ **null ไม่ใช่วันมั่ว**
+         ⚠️ **ตัวเลขจะขยับ**: ใบซื้อที่สร้างเช้าไทยจะเลื่อนไปวันที่ถูกต้อง ⇒ ยอดซื้อรายวัน/รายเดือน
+            ของวันคาบเกี่ยวจะเปลี่ยน · นี่คือ **การแก้ให้ถูก ไม่ใช่ของเสียใหม่** แต่ต้องประกาศ
+            ไม่ใช่เปลี่ยนเงียบ ๆ (ตัวเทียบ `same()` จะเห็นว่าเปลี่ยน ⇒ กวาดทับให้เองรอบถัดไป) */
+      date: thaiDayFromUtc(p?.purchaseorderdate) ?? "",
       status: String(p?.status ?? "").slice(0, 40),
       amount: num(p?.amount),
       pay: String(p?.paymentstatus ?? "").slice(0, 40),
@@ -470,7 +487,13 @@ export async function syncTransfers(days = 90, opt = {}) {
     if (!list.length) { nextPage = null; break; }
     let hitOld = false;
     for (const t of list) {
-      const date = String(t?.transferdate ?? "").slice(0, 10);
+      /* 🔴 **คลาสเดียวกับใบซื้อ — ด่านระดับคลาสจับได้ 17 ต.ค. 2569**
+         ผมแก้ใบซื้อแล้วเขียนด่านเฝ้า "ทุกช่องวันในไฟล์นี้" ⇒ ด่านฟ้องว่า `transferdate`
+         ก็หั่นจาก UTC ดิบอยู่ **สองจุด** ทั้งที่ไม่มีใครรายงาน
+         🔑 กฎของทีม: **เจอหนึ่งตัว = เจอคลาส** ⇒ ด่านที่เฝ้าคลาสจึงมีค่ากว่าด่านที่เฝ้าเคส
+         ⚠️ ใบโอนที่สร้างเช้าไทยจะเลื่อนไปวันที่ถูกต้อง ⇒ ตัวเลขรายวันของวันคาบเกี่ยวเปลี่ยน
+            = **การแก้ให้ถูก ต้องประกาศ ไม่เปลี่ยนเงียบ ๆ** */
+      const date = thaiDayFromUtc(t?.transferdate) ?? "";
       if (date && date < since) { hitOld = true; continue; }
       const id = String(t?.id ?? "").trim().slice(0, 60);
       if (!id) continue;
@@ -714,7 +737,7 @@ export async function getTransferDetail(id) {
     live: true,
     number: String(t.number ?? ""),
     status: String(t.status ?? ""),
-    date: String(t.transferdate ?? "").slice(0, 10),
+    date: thaiDayFromUtc(t.transferdate) ?? "",   // วันไทย — เหตุเดียวกับตัวซิงก์ข้างบน
     from: String(t.fromwarehousecode ?? ""),
     to: String(t.towarehousecode ?? ""),
     // เลขพัสดุ — ZORT ผูกไว้ตั้งแต่ต้นทาง (จอรับสินค้าของ ZORT ค้นด้วยเลขนี้ได้)
