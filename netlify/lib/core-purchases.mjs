@@ -17,7 +17,7 @@ import { รวมแถว, เลขหรือไม่รู้ } from "./�
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
-import { thaiDayFromUtc } from "./thaiday.mjs";
+import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
 import { markSync, freshnessOf } from "./core-freshness.mjs";
 import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
@@ -1214,7 +1214,11 @@ export async function getQuotationDetail(id, raw = false) {
 export async function zortReturnLineFields(days) {
   if (!creds()) return { ok: false, error: "ยังไม่ได้ตั้งรหัส ZORT" };
   const back = Math.max(1, Math.min(400, num(days) || 60));
-  const since = new Date(Date.now() + 7 * 3600e3 - back * 864e5).toISOString().slice(0, 10);
+  /* 🔑 ใช้ตัวกลาง `วันไทยย้อน()` **ไม่เขียน + 7 ชม. ด้วยมือ**
+     ⇒ ด่านนับหนี้จับผมได้ทันทีตอนเขียนมือ (กองโตจาก 44 เป็น 45) และมันถูก:
+       บั๊ก `orderdate` ในอดีตเกิดใน **ไฟล์ที่มีตัวบวก 7 ของตัวเองอยู่แล้ว**
+     ⚠️ ตัวกลางยังกันอีกชั้นที่ผมไม่ได้กัน: ค่าที่แปลว่า "ไม่รู้" (null/"") จะ **ไม่กลายเป็นวันนี้** */
+  const since = วันไทยย้อน(back);
   let res;
   try {
     res = await fetch(`${BASE}/ReturnOrder/GetReturnOrders?limit=200`, {
