@@ -18,7 +18,11 @@ test('topproducts — by ค่าที่ไม่รู้จักตอบ 
 test('topproducts by=category — join หมวดจาก products และรวมตามหมวด', () => {
   assert.ok(catQ.length > 50, 'ต้องมีกิ่ง byCategory');
   assert.match(catQ, /LEFT JOIN products p ON p\.sku = oi\.sku/);
-  assert.match(catQ, /GROUP BY 1 ORDER BY amount DESC/);
+  /* 🔁 16 ต.ค. 2569: ลำดับย้ายไปตัวแปร `เรียงรายหมวด` เพราะเส้นนี้รับ `sort=` แล้ว
+     ⚠️ **ค่าปริยายของรายหมวดยังเป็น amount เหมือนเดิม** — ข้อนั้นถูกตรึงไว้ที่
+        `scripts/tests/topproducts-เรียงตามยอดเงิน.test.mjs` (ปลูกบั๊กพิสูจน์แล้ว)
+     ที่นี่จึงตรึงแค่ว่า "ลำดับมาจากตัวแปรที่คุมค่าปริยายไว้" ไม่ใช่ค่าที่ผู้ใช้ส่งมาตรง ๆ */
+  assert.match(catQ, /GROUP BY 1 ORDER BY \$\{เรียงรายหมวด\}/);
   assert.match(catQ, /\(ยังไม่ได้จัดหมวดใน ZORT\)/);
 });
 

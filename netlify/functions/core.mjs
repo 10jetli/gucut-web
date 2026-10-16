@@ -2815,6 +2815,31 @@ async function route(req, context) {
       }
       const byMonth = byRaw === "month";
       const byCategory = byRaw === "category";
+      /* sort= — เรียงตามยอดเงินหรือจำนวน (ฝั่งจอขอ 16 ต.ค. 2569)
+         เหตุ: ตาราง "สินค้าขายดีย้อนหลัง" ในจอ /Warehouse/Details ของ ZORT **เรียงตามยอดขาย**
+         (อ่านจอ 16 ต.ค.: 13,135 > 13,000 > 6,601) ส่วนเส้นนี้เรียงตามจำนวนมาตลอด
+         🔑 **ฝั่งจอเรียงเองไม่ได้** และเขาไม่ทำ ซึ่งถูกแล้ว — เรียงใหม่เฉพาะหน้าที่ได้มา
+            = เรียงกองที่ถูกตัดมาแล้ว ⇒ อันดับข้ามหน้าผิด (display-limits-cant-decide)
+            ⇒ การเรียงต้องเกิดที่ ORDER BY เท่านั้น
+         ⚠️ ค่าปริยาย **ไม่เปลี่ยนของเดิม**: รายสินค้า = qty · รายหมวด = amount (เหมือนก่อนหน้านี้)
+         ⚠️ ค่าที่ไม่รู้จัก ⇒ 400 ห้ามตกไปใช้ค่าปริยายเงียบ ๆ (ท่าเดียวกับ by= ข้างบน)
+            เมินเงียบ = จอส่งค่าไปแล้วเชื่อว่าเรียงแล้ว ทั้งที่ไม่ได้เรียง = ปุ่มหลอก
+         ⚠️ `by=month` เรียงตามเดือนเสมอ (เป็นแกนเวลาของกราฟ) ⇒ ส่ง sort มาด้วย = 400
+            ไม่ใช่รับแล้วเมิน — คนส่งต้องรู้ว่ามันไม่มีผล */
+      const sortRaw = String(url.searchParams.get("sort") ?? "");
+      if (sortRaw && sortRaw !== "amount" && sortRaw !== "qty") {
+        return json({ error: `sort รับแค่ amount หรือ qty (ได้มา "${sortRaw.slice(0, 20)}")` }, 400);
+      }
+      if (sortRaw && byMonth) {
+        return json({ error: "by=month เรียงตามเดือนเสมอ (แกนเวลาของกราฟ) — ส่ง sort มาด้วยไม่ได้ ถอด sort ออกหรือเอา by=month ออก" }, 400);
+      }
+      /* 🔑 **ต้องมีตัวตัดสินเสมอกัน (tiebreaker) ไม่งั้นไล่หน้าแล้วแถวซ้ำ/หาย**
+         SQLite ไม่รับประกันลำดับของแถวที่คีย์เรียงเท่ากัน ⇒ LIMIT/OFFSET คนละหน้า
+         อาจได้แถวเดิมซ้ำหรือข้ามไปเลย **โดยยอดรวมยังดูสมเหตุสมผล**
+         เส้นนี้เคยโดนคลาสนี้มาแล้ว (19 ก.ย. — nextOffset ที่ไล่แล้วได้แถวซ้ำ 15 จาก 20)
+         คราวนั้นเหตุคือไม่มี OFFSET · คราวนี้คือ ORDER BY ไม่ unique ⇒ อาการเดียวกัน คนละต้นเหตุ */
+      const เรียงรายสินค้า = `${sortRaw === "amount" ? "amount" : "qty"} DESC, oi.sku`;
+      const เรียงรายหมวด = `${sortRaw === "qty" ? "qty" : "amount"} DESC, category`;
       const items = byMonth
         ? await coreQuery(
             /* 🔴 **แยก "ที่ได้เงินแล้ว" ออกจาก "ยังไม่จ่าย" ในคิวรีเดียว** (6 ก.ย. 2569)
@@ -2853,7 +2878,7 @@ async function route(req, context) {
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
                ${filter}
-             GROUP BY 1 ORDER BY amount DESC LIMIT ${limit} OFFSET ${offset}`,
+             GROUP BY 1 ORDER BY ${เรียงรายหมวด} LIMIT ${limit} OFFSET ${offset}`,
             params
           )
         : await coreQuery(
@@ -2865,7 +2890,7 @@ async function route(req, context) {
              WHERE o.order_date >= ? AND o.order_date <= ?
                AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
                ${filter}
-             GROUP BY oi.sku ORDER BY qty DESC LIMIT ${limit} OFFSET ${offset}`,
+             GROUP BY oi.sku ORDER BY ${เรียงรายสินค้า} LIMIT ${limit} OFFSET ${offset}`,
             params
           );
       // จำนวนรหัสทั้งหมดในเงื่อนไขเดียวกับรายสินค้า — มีเฉพาะโหมดรายสินค้า (รายเดือน/หมวดไม่ใช่รายรหัส)
@@ -2885,7 +2910,13 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store },
+        applied: { sku: sku || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store, sort: sortRaw || null },
+        /* 🔑 บอก **ลำดับที่ใช้จริง** ไม่ใช่แค่สะท้อนค่าที่ส่งมา — ไม่ส่ง sort ก็ยังต้องรู้ว่าเรียงด้วยอะไร
+           (จอต้องเขียนบนหัวตารางว่า "เรียงตาม…" และเขียนผิดเมื่อไหร่คนอ่านตัดสินใจผิดตาม) */
+        sortApplied: byMonth ? "month" : byCategory ? (sortRaw === "qty" ? "qty" : "amount") : (sortRaw === "amount" ? "amount" : "qty"),
+        sortNote: byMonth
+          ? "by=month เรียงตามเดือนเสมอ (แกนเวลา) — เส้นนี้ไม่รับ sort ในโหมดนี้"
+          : "ค่าปริยาย: รายสินค้า = qty · รายหมวด = amount (ของเดิม ไม่เปลี่ยน) · ส่ง sort=amount|qty เพื่อเปลี่ยน · มีตัวตัดสินเสมอกันแล้ว ไล่หน้าได้โดยแถวไม่ซ้ำ",
         storeScope: store ? `เฉพาะร้าน ${store}` : "ทุกร้านรวมกัน",
         ...(totalSkus === null ? {} : { totalSkus, complete: items.length >= totalSkus }),
         /* 🔑 **ตัวเลขเงินต้องมีป้ายบอกขอบเขตเสมอ** — บทเรียน 6 ก.ย. 2569

@@ -1,7 +1,7 @@
 // ⚠️ ไฟล์นี้ถูกสร้างอัตโนมัติโดย scripts/gen-endpoints.mjs — ห้ามแก้มือ
 // ที่มาของรายชื่อ: `get("list") === "…"` ในซอร์สของ netlify/functions/core.mjs (แหล่งเดียว)
 // 🚫 ห้ามเอาไปใช้ตัดสินว่าเส้นไหนเปิด/ปิด — ใช้เขียนข้อความบอกทาง และให้ด่านฝั่งจอเทียบเท่านั้น
-export const generatedAt = "2026-10-15T23:12:09.756Z";
+export const generatedAt = "2026-10-16T04:22:04.701Z";
 export const source = "netlify/functions/core.mjs (get(\"list\") === \"…\")";
 export const lists = [
  "branches",
@@ -50,6 +50,7 @@ export const paramRoutes = [
  "blocked",
  "bundleitems",
  "cardguess",
+ "cards",
  "categoryvalues",
  "channelcompare",
  "clearpolicyerrors",
@@ -319,6 +320,7 @@ export const routeMethod = {
  "monthly": "unknown",
  "returnorder": "unknown",
  "zortmonthly": "unknown",
+ "cards": "unknown",
  "pending": "unknown",
  "cardguess": "readonly",
  "blankwhere": "readonly",

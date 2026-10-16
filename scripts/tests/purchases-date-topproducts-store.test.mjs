@@ -47,5 +47,9 @@ test('core.mjs: purchases ส่ง from/to · param-guard ตรวจวัน
   assert.match(tp, /if \(storeRaw && !\["z1", "z2", "all"\]\.includes\(storeRaw\)\) \{\s*return json\(\{ error:[\s\S]*?\}, 400\);/);
   assert.match(tp, /if \(store\) \{ filter \+= " AND o\.source = \?"; params\.push\(store\); \}/);
   assert.ok(tp.indexOf('if (store) { filter') < tp.indexOf('const items = byMonth'), 'ต้องเติม filter ก่อนยิงคิวรี');
-  assert.match(tp, /warehouse: warehouse \|\| null, store \}/);
+  /* 🔁 16 ต.ค. 2569: ผ่อนจาก `store }` เป็น `store` ที่ตามด้วยจุลภาคหรือปีกกา
+     เหตุ: เพิ่ม `sort` ต่อท้าย `applied` ⇒ ของเดิมแดงทั้งที่ `store` ยังถูกสะท้อนครบ
+     🔑 **ยังแยกแยะได้เหมือนเดิม** — ถอด `store` ออกจาก `applied` เมื่อไหร่ยังแดง
+        (ไม่ได้ผ่อนเป็น /store/ ลอย ๆ ซึ่งจะเขียวฟรีจากคำว่า store ที่มีเต็มไปหมดในเส้นนี้) */
+  assert.match(tp, /warehouse: warehouse \|\| null, store[,}]/);
 });
