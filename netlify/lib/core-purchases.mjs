@@ -1008,6 +1008,18 @@ export async function listPurchaseItems(o = {}) {
   const by = String(o.by ?? "").trim() || "sku";
   const byErr = purchaseByError(by);
   if (byErr) return { store, error: byErr };
+  /* 📈 `series=day|month` — กราฟเส้นต่อหมวดตามช่วงเวลา (ฝั่งจอขอ 16 ต.ค. 2569 · ใบ t_mvb7r7zc)
+     🔑 **คืนรูปเดียวกับเส้นยอดขายเป๊ะ** [{period, category, amount, qty}]
+        ⇒ จอใช้ตัววาดกราฟตัวเดียวทั้งจอยอดขายและยอดซื้อ · และรูปที่ใช้ร่วมกันคือ **ตัวตรวจในตัว**
+     ⚠️ ใช้ได้กับ by=category เท่านั้น (รายสินค้า × รายวัน = หลายแสนแถว) · ค่าอื่นตีกลับ ไม่เมินเงียบ
+     ⚠️ ชนเพดาน ⇒ **ตีกลับพร้อมทางออกที่ทำได้** ห้ามตัดเงียบ (กติกาเดิมของไฟล์นี้:
+        บรรทัดสรุปถูก + ตารางไม่ครบ = อันตรายกว่าตัวเลขผิดตรง ๆ) */
+  const series = String(o.series ?? "").trim().toLowerCase();
+  if (series && !["day", "month"].includes(series))
+    return { store, error: `series รับได้เฉพาะ day | month (ได้มา "${series.slice(0, 20)}")` };
+  if (series && by !== "category")
+    return { store, error: "series= ใช้ได้กับ by=category เท่านั้น — รายสินค้า × รายวันคือหลายแสนแถว" };
+  const เพดานแถวกราฟ = 20000;
   const dateSql = `${from ? ` AND po.po_date >= ${esc(from)}` : ""}${to ? ` AND po.po_date <= ${esc(to)}` : ""}`;
   const qSql = q ? ` AND (${containsLit("i.sku", esc(q))} OR ${containsLit("i.name", esc(q))})` : "";
   // ⚠️ บรรทัดสรุป กับ แถว ต้องใช้เงื่อนไขชุดเดียวกันเสมอ (บทเรียน 4 ก.ย. — สรุปถูก ตารางไม่ครบ)
@@ -1052,6 +1064,25 @@ export async function listPurchaseItems(o = {}) {
       และคอลัมน์ % คิดจากผลรวมของ 200 แถวที่แสดง ไม่ใช่ยอดในบรรทัดสรุป
       ⇒ คนละฐานกันเงียบ ๆ · ไม่มีอะไรดูขัดตาเลย
       ⇒ ส่ง total · shown · truncated · applied ไปด้วยเสมอ **ห้ามตัดเงียบ** */
+  /* 📈 คิวรีกราฟ — จัดกลุ่ม (ช่วงเวลา × หมวด) · ตัวตัดสินเสมอกันสองชั้นเหมือนฝั่งยอดขาย
+     ⚠️ ดึงเพดาน+1 เพื่อ **รู้ว่าชนเพดาน** แล้วตีกลับ */
+  const seriesRows = series
+    ? await coreQuery(
+        `SELECT ${series === "day" ? "po.po_date" : "substr(po.po_date,1,7)"} AS period,
+                COALESCE(NULLIF(p.category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS category,
+                SUM(i.qty) AS qty, ROUND(SUM(i.qty * i.price),2) AS amount
+         FROM purchase_order_items_v2 i
+         LEFT JOIN purchase_orders_v2 po ON po.id = i.po_id
+         LEFT JOIN products p ON p.sku = i.sku
+         WHERE ${where}
+         GROUP BY 1,2 ORDER BY period, category
+         LIMIT ${เพดานแถวกราฟ + 1}`
+      )
+    : null;
+  if (seriesRows && seriesRows.length > เพดานแถวกราฟ) {
+    return { store, error: `ช่วงนี้ได้เกิน ${เพดานแถวกราฟ} แถว (ช่วงเวลา × หมวด) — ขอแคบช่วงลง หรือใช้ series=month`,
+      seriesCap: เพดานแถวกราฟ, hint: series === "day" ? "ลอง series=month กับช่วงเดิม" : "แคบช่วงวันลง" };
+  }
   const shown = rows.length;
   const total = groupExpr ? num(sum?.groups) : num(sum?.skus);
   return {
@@ -1065,7 +1096,16 @@ export async function listPurchaseItems(o = {}) {
     by,
     excludesCancelled: true, // รวมเฉพาะใบซื้อที่ไม่ได้ยกเลิก (ตาม ZORT)
     dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
-    applied: { q: q || null, limit, offset, from, to, by },
+    applied: { q: q || null, limit, offset, from, to, by, series: series || null },
+    /* 📈 ไม่ขอ series ⇒ **ไม่มีคีย์เลย** (ไม่ใช่ [] ซึ่งอ่านได้ว่า "ขอแล้วไม่มีข้อมูล") */
+    ...(seriesRows ? { series: seriesRows.map((r) => ({
+      period: r.period, category: r.category, qty: num(r.qty), amount: num(r.amount),
+    })) } : {}),
+    ...(seriesRows ? { seriesScope:
+      `หนึ่งแถว = (ช่วงเวลา × หมวด) · period = ${series === "day" ? "YYYY-MM-DD" : "YYYY-MM"} · ` +
+      "**ช่วงเวลาที่ไม่มียอดจะไม่มีแถว** ⇒ จอต้องเติมช่องว่างเอง · " +
+      "amount = qty × ราคาต่อหน่วยในใบซื้อ · นับเฉพาะใบซื้อที่ไม่ได้ยกเลิก (ตาม ZORT) · " +
+      "🔑 **รูปเดียวกับ list=topproducts&by=category&series=** ⇒ จอใช้ตัววาดกราฟตัวเดียวสองหน้าได้" } : {}),
     limit,
     offset,
     rows,

@@ -2377,6 +2377,7 @@ async function route(req, context) {
           from: url.searchParams.get("from"),
           to: url.searchParams.get("to"),
           by: url.searchParams.get("by"),
+          series: url.searchParams.get("series"),
         })),
         ...listStore,
       });
@@ -2837,6 +2838,7 @@ async function route(req, context) {
          ⚠️ ค่าที่ไม่ตรงหมวดใดเลย ⇒ ได้ 0 แถว ซึ่ง **ถูกต้อง** แต่จอต้องแยกจาก "ไม่ได้กรอง"
             ⇒ สะท้อนค่าที่ใช้กลับไปใน `applied.category` เสมอ */
       const category = String(url.searchParams.get("category") ?? "").trim().slice(0, 120);
+
       /* 🔴 **สตริง `filter` ตัวนี้ถูกใช้ร่วมกัน 4 คิวรี และสองตัวไม่ได้ JOIN ตาราง `products`**
          (`by=month` และตัวนับ `totalSkus`) ⇒ เขียน `p.category` ลงไปตรง ๆ = **no such column: p.category**
          📏 ของจริง: ฝั่งจอยิง 22:4x ได้ HTTP 500 · D1 ตอบ no such column at offset 305
@@ -2873,6 +2875,26 @@ async function route(req, context) {
       }
       const byMonth = byRaw === "month";
       const byCategory = byRaw === "category";
+      /* 📈 `series=day|month` — กราฟเส้นต่อหมวดตามช่วงเวลา แบบจอ ZORT (ฝั่งจอขอ 16 ต.ค. 2569
+         ทั้งฝั่งยอดขายและยอดซื้อ · ท่านประธานติ๊กสั่งใบ t_mvb7r7zc)
+         🔑 **คืนรูปเดียวกับเส้นยอดซื้อเป๊ะ** [{period, category, amount, qty}]
+            ⇒ จอใช้ตัววาดกราฟตัวเดียวสองหน้า · และ **รูปที่ใช้ร่วมกันคือตัวตรวจในตัว**
+              (เอาตัววาดตัวเดียวมาวางเทียบสองจอได้ตรง ๆ ⇒ ข้างไหนเพี้ยนเห็นทันที)
+         ⚠️ ใช้ได้กับ `by=category` เท่านั้น — รายสินค้า × รายวัน คือหลายแสนแถว
+            ⇒ ค่าอื่น **ตีกลับ 400** ไม่ใช่เมินเงียบ (เมินเงียบ = ปุ่มหลอก)
+         ⚠️ **ชนเพดานต้องตีกลับ ห้ามตัดเงียบ** — ส่ง 200 พร้อมข้อมูลที่ขาดกลางทาง
+            คือสิ่งที่ไฟล์นี้ไล่ตัดมาตลอด (บรรทัดสรุปถูก ตารางไม่ครบ = อันตรายกว่าเลขผิดตรง ๆ) */
+      const seriesRaw = String(url.searchParams.get("series") ?? "").trim().toLowerCase();
+      if (seriesRaw && !["day", "month"].includes(seriesRaw)) {
+        return json({ error: `series รับได้เฉพาะ day | month (ได้มา "${seriesRaw.slice(0, 20)}")` }, 400);
+      }
+      if (seriesRaw && !byCategory) {
+        return json({ error: "series= ใช้ได้กับ by=category เท่านั้น — รายสินค้า × รายวันคือหลายแสนแถว" }, 400);
+      }
+      /* เพดานแถว: ขอบจาก **ขนาดคำตอบ** ไม่ใช่เลขที่ชอบ — 1 ปีรายวัน × ~35 หมวด ≈ 12,800 แถว
+         แถวละ ~60 ไบต์ ⇒ ~770KB ซึ่งยังส่งได้ · ตั้งเพดานที่ 20,000 แล้ว **วัดเวลาจริงหลัง deploy**
+         ⚠️ เลขนี้เป็นค่าชั่วคราวที่ประกาศไว้ ไม่ใช่ค่าที่วัดแล้ว — เขียนกำกับไว้ให้คนรอบหน้ารู้ */
+      const เพดานแถวกราฟ = 20000;
       /* sort= — เรียงตามยอดเงินหรือจำนวน (ฝั่งจอขอ 16 ต.ค. 2569)
          เหตุ: ตาราง "สินค้าขายดีย้อนหลัง" ในจอ /Warehouse/Details ของ ZORT **เรียงตามยอดขาย**
          (อ่านจอ 16 ต.ค.: 13,135 > 13,000 > 6,601) ส่วนเส้นนี้เรียงตามจำนวนมาตลอด
@@ -2898,6 +2920,34 @@ async function route(req, context) {
          คราวนั้นเหตุคือไม่มี OFFSET · คราวนี้คือ ORDER BY ไม่ unique ⇒ อาการเดียวกัน คนละต้นเหตุ */
       const เรียงรายสินค้า = `${sortRaw === "amount" ? "amount" : "qty"} DESC, oi.sku`;
       const เรียงรายหมวด = `${sortRaw === "qty" ? "qty" : "amount"} DESC, category`;
+      /* 📈 กราฟเส้นต่อหมวดตามช่วงเวลา — คิวรีเดียว จัดกลุ่ม (ช่วงเวลา × หมวด)
+         ⚠️ **ตัวตัดสินเสมอกันต้องมีทั้งสองชั้น** (period, category) ไม่งั้นสองหมวดที่ยอดเท่ากัน
+            สลับที่ไปมาระหว่างคำขอ ⇒ เส้นในกราฟสลับสีกันเอง (SQLite ไม่รับประกันลำดับ)
+         ⚠️ ดึง `เพดานแถวกราฟ + 1` เพื่อ **รู้ว่าชนเพดาน** แล้วตีกลับ ไม่ใช่ตัดเงียบ */
+      const seriesRows = seriesRaw
+        ? await coreQuery(
+            `SELECT ${seriesRaw === "day" ? "o.order_date" : "substr(o.order_date,1,7)"} AS period,
+                    COALESCE(NULLIF(p.category,''),'(ยังไม่ได้จัดหมวดใน ZORT)') AS category,
+                    SUM(oi.qty) AS qty, ROUND(COALESCE(SUM(oi.amount),0),2) AS amount
+             FROM order_items oi JOIN orders o ON o.id = oi.order_id
+             LEFT JOIN products p ON p.sku = oi.sku
+             WHERE o.order_date >= ? AND o.order_date <= ?
+               AND o.status NOT LIKE '%cancel%' AND o.status NOT LIKE '%void%' AND o.status NOT LIKE '%ยกเลิก%'
+               ${filter}
+             GROUP BY 1,2 ORDER BY period, category
+             LIMIT ${เพดานแถวกราฟ + 1}`,
+            params
+          )
+        : null;
+      if (seriesRows && seriesRows.length > เพดานแถวกราฟ) {
+        return json({
+          error: `ช่วงนี้ได้เกิน ${เพดานแถวกราฟ} แถว (ช่วงเวลา × หมวด) — ขอแคบช่วงลง หรือใช้ series=month`,
+          seriesCap: เพดานแถวกราฟ,
+          /* 🔑 บอกทางออกที่ทำได้จริง ไม่ใช่แค่บอกว่าผิด — จอจะสลับเองได้ทันทีโดยไม่ต้องถามคน */
+          hint: seriesRaw === "day" ? "ลอง series=month กับช่วงเดิม" : "แคบช่วงวันลง",
+        }, 400);
+      }
+
       const items = byMonth
         ? await coreQuery(
             /* 🔴 **แยก "ที่ได้เงินแล้ว" ออกจาก "ยังไม่จ่าย" ในคิวรีเดียว** (6 ก.ย. 2569)
@@ -2978,7 +3028,19 @@ async function route(req, context) {
         ok: true,
         from,
         to,
-        applied: { sku: sku || null, category: category || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store, sort: sortRaw || null },
+        applied: { sku: sku || null, category: category || null, series: seriesRaw || null, limit, offset, by: byRaw || null, warehouse: warehouse || null, store, sort: sortRaw || null },
+        /* 📈 กราฟเส้นต่อหมวดตามช่วงเวลา — **รูปเดียวกับเส้นยอดซื้อ** ⇒ จอใช้ตัววาดตัวเดียวสองหน้า
+           ⚠️ ไม่ขอ series ⇒ **ไม่มีคีย์เลย** (ไม่ใช่ [] ซึ่งอ่านได้ว่า "ขอแล้วไม่มีข้อมูล") */
+        ...(seriesRows ? { series: seriesRows.map((r) => ({
+          period: r.period, category: r.category, qty: num2(r.qty), amount: num2(r.amount),
+        })) } : {}),
+        ...(seriesRows ? { seriesScope:
+          `หนึ่งแถว = (ช่วงเวลา × หมวด) · period = ${seriesRaw === "day" ? "YYYY-MM-DD" : "YYYY-MM"} · ` +
+          "**ช่วงเวลาที่ไม่มียอดจะไม่มีแถว** ⇒ จอต้องเติมช่องว่างเอง (กติกาเดียวกับเส้น daily) · " +
+          "amount = ยอดบรรทัด ตัดใบยกเลิกออกแล้ว **แต่ยังรวมใบค้างจ่ายและยังไม่หักใบคืนรายบรรทัด** ⇒ " +
+          "🔴 **เส้นของเราจะไม่ติดลบเหมือนจอ ZORT** (ZORT หักใบคืนลงวันนั้น) " +
+          "ห้ามอ่านความไม่ติดลบว่า 'ช่วงนั้นไม่มีใบคืน' · เหตุ: กระจกเก็บใบคืนแค่หัวใบ ไม่มีบรรทัดสินค้า (ใบ t_mvb743co) · " +
+          `เพดาน ${เพดานแถวกราฟ} แถว · ชนเพดาน ⇒ **ตีกลับ 400 ไม่ตัดเงียบ**` } : {}),
         /* 🔑 บอก **ลำดับที่ใช้จริง** ไม่ใช่แค่สะท้อนค่าที่ส่งมา — ไม่ส่ง sort ก็ยังต้องรู้ว่าเรียงด้วยอะไร
            (จอต้องเขียนบนหัวตารางว่า "เรียงตาม…" และเขียนผิดเมื่อไหร่คนอ่านตัดสินใจผิดตาม) */
         sortApplied: byMonth ? "month" : byCategory ? (sortRaw === "qty" ? "qty" : "amount") : (sortRaw === "amount" ? "amount" : "qty"),
