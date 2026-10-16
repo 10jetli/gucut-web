@@ -17,7 +17,7 @@ import { รวมแถว, เลขหรือไม่รู้ } from "./�
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
-import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
+import { thaiDayFromUtc, วันไทยย้อน, วันไทยจากMs } from "./thaiday.mjs";
 import { markSync, freshnessOf } from "./core-freshness.mjs";
 import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
@@ -1626,7 +1626,7 @@ export async function syncReturnOrders(opt = {}) {
    (ZORT รายงานวันแบบไทยอยู่แล้ว ⇒ ห้ามแปลงเขตเวลาอีกชั้น จะเลื่อนไปหนึ่งวัน)
    ⚠️ `days` กับ `from/to` ใช้พร้อมกันไม่ได้ — ต้องตีกลับ ไม่ใช่เลือกอันหนึ่งเงียบ ๆ
       (ฟิลด์ที่ตอบคำถามเดียวกันสองทาง ถ้าเมินอันหนึ่ง ผู้เรียกจะเชื่อว่าใช้ค่าที่ตัวเองส่ง) */
-export function returnDateRange({ from, to, days } = {}) {
+export function returnDateRange({ from, to, days, now = Date.now() } = {}) {
   /* 🔴 **เดิมเช็คแค่รูปแบบตัวเลข ⇒ `2026-99-99` ผ่านด่าน** (แก้ 19 ก.ย. 2569)
       เจอด้วยด่าน `check-filters-work.mjs` รอบ "ค่าผิดรูปต้องตีกลับ":
       ส่ง `to=2026-99-99` ⇒ **ไม่ error และไม่กรองอะไรเลย** (693 เท่าเดิม)
@@ -1645,8 +1645,14 @@ export function returnDateRange({ from, to, days } = {}) {
     return { error: "days ต้องเป็นจำนวนเต็ม 1-400" };
   if (d !== null && (f || t)) return { error: "ใช้ days หรือ from/to อย่างใดอย่างหนึ่ง ไม่ใช่ทั้งคู่" };
   if (d !== null) {
-    const today = new Date(Date.now() + 7 * 3600e3).toISOString().slice(0, 10);
-    const start = new Date(Date.now() + 7 * 3600e3 - (d - 1) * 864e5).toISOString().slice(0, 10);
+    /* 🔴 **เดิมอ่าน `Date.now()` สองครั้ง และเทสอ่านเป็นครั้งที่สาม** ⇒ เทสวูบได้จริง
+       📏 เทส "วันสุดท้ายของช่วงคือวันไทยวันนี้" คิดวันไทยใหม่หลังเรียกฟังก์ชัน
+          ⇒ ถ้าวันไทยข้ามเส้น (17:00 UTC = 00:00 ไทย) ระหว่างสองจุด ค่าต่างกันหนึ่งวัน ⇒ แดง
+          ⇒ ชุดเทสใช้เวลา ~2 นาที ⇒ รอบที่เริ่มราว 23:58 คร่อมเที่ยงคืนพอดี
+       ⇒ แก้สามชั้น: **อ่านนาฬิกาครั้งเดียว** · **รับเวลาฉีดเข้าได้** (`now`) เพื่อให้เทสตรึงได้
+         · ใช้ตัวกลางแทนการบวก 7 ชม. ด้วยมือ (ลดหนี้ที่ด่านเฝ้าอยู่อีก 2 จุด) */
+    const today = วันไทยจากMs(now);
+    const start = วันไทยย้อน(d - 1, now);
     return { from: start, to: today, days: d };
   }
   return { from: f, to: t, days: null };
