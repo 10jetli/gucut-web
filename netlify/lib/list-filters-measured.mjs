@@ -93,8 +93,19 @@ export const ตัวกรองที่วัดแล้ว = {
     "วัดเมื่อ": "2026-10-17"
   },
   "files": {
-    "กรองจริง": null,
-    "เหตุที่ยังไม่รู้": "ตอบ 400 · ไม่รู้จัก list=files",
+    "กรองจริง": [
+      "q"
+    ],
+    "ตีกลับ": [],
+    "เมิน": [
+      "store",
+      "status",
+      "from",
+      "to",
+      "days",
+      "source"
+    ],
+    "แถวฐาน": 200,
     "วัดเมื่อ": "2026-10-17"
   },
   "logistics": {
@@ -247,6 +258,7 @@ export const ตัวกรองที่วัดแล้ว = {
       "channel(channel ต้องเป็นหนึ่งใน shopee / lazada / tiktok / gucut / none)"
     ],
     "เมิน": [
+      "store",
       "status",
       "from",
       "to",
