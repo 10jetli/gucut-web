@@ -2553,6 +2553,24 @@ async function route(req, context) {
         storeScope: `เฉพาะร้าน ${st.source}${st.defaulted ? " (ไม่ได้ระบุร้าน ⇒ z1)" : ""}`,
       });
     }
+    /* 🗂 GET ?list=files[&limit=&offset=&q=] — รายการไฟล์แนบทั้งถังให้จอไฟล์แบบ ZORT /FileUpload/list
+       ⇒ {ok, total, totalAll, count, offset, limit, nextOffset, files:[{fileid, docno, docType,
+          filename, kind, bytes, archivedAt, uploadedAt, uploadedBy}], metaFailed, applied, *Scope, note}
+       🔑 `uploadedAt`/`uploadedBy` เป็น **null เสมอ** — ZORT ไม่มีสองช่องนี้ (ดู fieldScope)
+          และ `archivedAt` = วันที่เราดึงเก็บ **ห้ามโชว์ใต้หัว "วันที่อัปโหลด"**
+       ⚠️ อ่านไม่ได้ ⇒ 503 + unknown:true **ห้ามตอบ 200 ว่าไม่มีไฟล์** (สามสถานะ: ไม่มี / อ่านไม่ได้ / มี) */
+    if (url.searchParams.get("list") === "files") {
+      const { listArchivedFiles } = await import("../lib/slip-archive.mjs");
+      const r = await listArchivedFiles({
+        limit: url.searchParams.get("limit") ?? undefined,
+        offset: url.searchParams.get("offset") ?? undefined,
+        q: url.searchParams.get("q") ?? undefined,
+      });
+      /* 🔴 รหัสตอบต้องมาจากช่องที่ฟังก์ชัน **คืนจริง** (บทเรียน productlabels 502 · 16 ต.ค. 2569)
+         listArchivedFiles คืน ok · unknown — ไม่มี `สรุป` ⇒ ห้ามลอกตรรกะจากเส้นอื่นมาทั้งก้อน */
+      if (!r.ok) return json({ ...r, supportedFilters: ["q", "limit", "offset"] }, r.unknown ? 503 : 400);
+      return okJson({ ...r, supportedFilters: ["q", "limit", "offset"] });
+    }
     // สต็อกการ์ดรายสินค้า — ตารางการเคลื่อนไหวในหน้ารายละเอียดสินค้า
     if (url.searchParams.get("list") === "stockcard") {
       return okJson({
