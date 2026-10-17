@@ -492,8 +492,27 @@ export default function PartsView({ doc, model }: { doc: PartsDoc; model: PartsM
               </ul>
             );
           })()}
+          {/* 🔢 **เรียงตามลำดับที่ร้านจัดเอง** — ท่านประธานสั่ง 17 ต.ค. 2569
+              ร้านจัดลำดับที่หน้าจับคู่ แล้วเก็บไว้ในตารางเดียวกันที่คีย์ `<รหัส>#R`
+              ⚠️ เรียงเฉพาะ **ภายในกลุ่ม** — กลุ่มต้องอยู่ตามคู่มือเสมอ
+                 เพราะลูกค้าเทียบกับหนังสือคู่มือตัวจริง
+              ⚠️ แถวที่ยังไม่มีลำดับ ⇒ **ต่อท้ายแถวที่มีลำดับ ไม่ใช่ลอยขึ้นบนสุด**
+                 (ค่าว่างถูกตีเป็น 0 แล้วแซงทุกตัว — กับดักคลาสสิกของการเรียงด้วยเลข) */}
           <ul className="mx-3 mt-3 space-y-2">
-            {g.อะไหล่.map((row, i) => (
+            {[...g.อะไหล่]
+              .map((row, i) => ({ row, i }))
+              .sort((a, b) => {
+                const ลำดับ = (รหัส: string | null | undefined) => {
+                  const v = Number(String(map[`${คีย์อะไหล่(รหัส)}#R`] || "").replace(/\D/g, ""));
+                  return Number.isFinite(v) && v > 0 ? v : null;
+                };
+                const la = ลำดับ(a.row.รหัส), lb = ลำดับ(b.row.รหัส);
+                if (la !== null && lb !== null) return la - lb;
+                if (la !== null) return -1;
+                if (lb !== null) return 1;
+                return a.i - b.i;
+              })
+              .map(({ row, i }) => (
               <li key={`${row.รหัส}-${i}`}>
                 <การ์ดอะไหล่
                   row={row}
