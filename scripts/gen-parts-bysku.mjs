@@ -27,7 +27,7 @@ const ไฟล์ออก = path.join(process.cwd(), "src/data/parts-bysku.jso
  */
 export function เป็นคีย์ภายใน(รหัส) {
   const k = String(รหัส ?? "");
-  return /^\+[A-Za-z]+\d+T$/.test(k) || /#R$/.test(k);
+  return /^\+[A-Za-z]+\d+[A-Za-z]$/.test(k) || /#R$/.test(k);
 }
 
 const ดึง = async (u) => {
