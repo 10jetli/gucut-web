@@ -329,6 +329,49 @@ export default async function handler(req, context) {
       return feedNote ? { warn: true, note: base } : { note: base };
     }),
 
+    // ---------- คัดลอกคลิป Facebook → YouTube ----------
+    // ท่านประธานสั่ง 18 ต.ค. 2569 — แทน repurpose.io ที่จ่ายรายเดือนอยู่
+    // 🔴 **ระบบนี้ตายเงียบง่ายที่สุดในร้าน** — กุญแจหมดอายุแล้วไม่มีคลิปขึ้น
+    //    ซึ่งหน้าตาเหมือน "ช่วงนี้เพจยังไม่ลงคลิปใหม่" ทุกประการ
+    //    (ของจริงที่เห็นมาแล้ว: repurpose.io เองก็มีช่อง Instagram ที่ token ตายค้างอยู่)
+    // ⚠️ แยกสามสถานะให้ขาด ยุบรวมเมื่อไหร่ช่องนี้จะหลอกตา:
+    //    ยังไม่เชื่อม (off) ≠ เชื่อมแล้วกุญแจพัง (แดง) ≠ ใช้ได้ (เขียว)
+    check("คัดลอกคลิป Facebook → YouTube", async () => {
+      const s2 = getStore({ name: "gucut-coupon", consistency: "strong" });
+      const [refresh, ช่อง] = await Promise.all([
+        s2.get("yt/refresh", { type: "text" }).catch(() => null),
+        s2.get("yt/ช่อง", { type: "json" }).catch(() => null),
+      ]);
+      if (!refresh) {
+        return { off: true, note: "ยังไม่ได้เชื่อมช่อง YouTube — ระบบยังไม่เริ่มทำงาน" };
+      }
+      if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
+        return { ok: false, note: "เชื่อมช่องไว้แล้วแต่ไม่มี GOOGLE_CLIENT_ID/SECRET ⇒ ขอ token ไม่ได้" };
+      }
+      /* 🔑 **ยิงของจริง** — ไม่ใช่ดูว่ามีค่าเก็บไว้ไหม
+         โทเคนที่ตายแล้วก็ยังเป็นข้อความ ดูจากที่เก็บแยกไม่ออก */
+      const r = await fetch("https://oauth2.googleapis.com/token", {
+        method: "POST",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+        body: new URLSearchParams({
+          client_id: env.GOOGLE_CLIENT_ID, client_secret: env.GOOGLE_CLIENT_SECRET,
+          refresh_token: refresh, grant_type: "refresh_token",
+        }),
+      }).catch(() => null);
+      const d = r ? await r.json().catch(() => ({})) : {};
+      if (!r || !d.access_token) {
+        const เหตุ = d.error || "ต่อ oauth2.googleapis.com ไม่ได้";
+        return {
+          ok: false,
+          note: เหตุ === "invalid_grant"
+            ? "🔴 กุญแจ YouTube หมดอายุ/ถูกถอน — คลิปใหม่จะไม่ขึ้นช่องอีกเลยจนกว่าจะเชื่อมใหม่"
+            : `ขอ token ไม่ได้: ${เหตุ}`,
+        };
+      }
+      const ชื่อช่อง = ช่อง?.ชื่อ || ช่อง?.handle || "(ไม่รู้ชื่อช่อง)";
+      return { note: `กุญแจใช้ได้ · ปลายทาง ${ชื่อช่อง}` };
+    }),
+
     // ---------- รับรีวิวใหม่จากมาร์เก็ตเพลส ----------
     // เจ้าของร้านสั่ง 31 ส.ค. 2569 "ดึงรีวิวใหม่ ๆ แต่ไม่ซ้ำ จาก lazada tiktok shopee ทุกคืน"
     // ⚠️ ต้องแยก "ท่อพร้อมรับ" ออกจาก "มีรีวิวไหลเข้าจริง" ให้ขาด
