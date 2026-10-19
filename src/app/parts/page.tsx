@@ -56,6 +56,12 @@ export default function Page() {
               )}
               <div className="border-t border-steel-600 px-3 py-2.5">
                 <p className="text-[15px] font-extrabold text-carbon">{m.ชื่อ}</p>
+                {/* 🔖 รุ่นเทียบ — ท่านประธานเขียนกำกับบนภาพมา 19 ต.ค. 2569
+                    ลูกค้าหลายคนรู้จักเครื่องในชื่อ Husqvarna/STIHL ไม่ใช่ชื่อที่ร้านตั้ง
+                    ⚠️ รุ่นไหนไม่มีข้อมูลก็ไม่โชว์บรรทัดนี้ — ห้ามเดาใส่ */}
+                {m.เทียบรุ่น && (
+                  <p className="mt-0.5 text-[11.5px] font-medium text-safety">ใช้แทน {m.เทียบรุ่น}</p>
+                )}
                 <p className="mt-0.5 text-[11.5px] tabular-nums text-steel-300">
                   {m.ข้อมูล?.กลุ่ม} กลุ่ม · {m.ข้อมูล?.ชิ้น.toLocaleString("th-TH")} รายการ
                 </p>
