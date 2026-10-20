@@ -295,6 +295,16 @@ export async function listStock(o = {}) {
   };
   const sortRaw = String(o.sort ?? "").trim().slice(0, 20);
   const sort = SORTS[sortRaw] || "p.onhand ASC";
+  /* 🔑 **ต่อท้ายด้วย `cur.sku` เสมอ ⇒ ลำดับนิ่ง (stable)**
+     ทุกค่าใน SORTS เรียงด้วยช่องที่ **ค่าซ้ำกันได้เยอะมาก** (onhand 0 มี 564 แถว · sold30 0 ยิ่งเยอะกว่า)
+     SQLite ไม่รับประกันลำดับของแถวที่ค่าเท่ากัน ⇒ ไล่หน้าแล้ว **ข้าม/ซ้ำแถว** โดยไม่มีอะไรฟ้อง
+     🔴 วัดของจริง 20 ต.ค. 2569 (`sort=sold` · หน้า1+หน้า2 เทียบกับยิงทีเดียว 100 แถว):
+        ตรงกันเป๊ะ ซ้ำ 0 หาย 0 ⇒ **ตอนนี้ถูกอยู่** แต่ถูกเพราะ D1 เลือกแผนเดิมให้ ไม่ใช่เพราะเราสั่ง
+        (คลาส [[correct-by-accident]] — "ยังไม่พัง" ไม่ใช่ "ไม่ต้องแก้")
+        แผนเปลี่ยนเมื่อไหร่ (ข้อมูลโต · เพิ่ม index · D1 อัปเกรด) อาการจะโผล่ตอนนั้นโดยซอร์สไม่เปลี่ยนสักตัวอักษร
+     ⚠️ `cur.sku` เป็นคีย์ของ CTE `cur` ⇒ ไม่ซ้ำ ⇒ พอเป็นตัวตัดสินสุดท้ายได้จริง
+        (ช่องอื่นเช่น name ซ้ำได้ ⇒ ต่อท้ายด้วย name ไม่ได้แก้อะไร) */
+  const sortSql = sort === SORTS.sku ? sort : `${sort}, cur.sku ASC`;
   const sortApplied = SORTS[sortRaw] ? sortRaw : "qty";
   const sortIgnored = sortRaw && !SORTS[sortRaw] ? sortRaw : null;
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
@@ -437,7 +447,7 @@ export async function listStock(o = {}) {
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
-     ORDER BY ${sort} ${channel ? "" : `LIMIT ${limit} OFFSET ${offset}`}`,
+     ORDER BY ${sortSql} ${channel ? "" : `LIMIT ${limit} OFFSET ${offset}`}`,
     [sinceMod, ...fParams]
   ),
     /* จำนวนที่ ZORT มีจริง — คนละแหล่งกับฐานเรา (Netlify Blobs) จึงยิงคู่กันไปเลย

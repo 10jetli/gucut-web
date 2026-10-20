@@ -19,6 +19,7 @@ import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
 import { thaiDayFromUtc, วันไทยย้อน, วันไทยจากMs } from "./thaiday.mjs";
 import { markSync, freshnessOf } from "./core-freshness.mjs";
+import { ตีความการเรียง } from "./list-sort.mjs";
 import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
@@ -323,10 +324,24 @@ export async function listPurchases(o = {}) {
   const byStatus = await coreQuery(
     `SELECT status, COUNT(*) AS c FROM purchase_orders_v2 WHERE 1=1 ${filter} GROUP BY status ORDER BY c DESC`
   );
+  /* 🔀 `sort=`/`dir=` (20 ต.ค. 2569) — เดิมเส้นนี้ **ไม่รับ `sort=` เลย** เรียงตายตัววันที่ใบซื้อ
+     ⇒ จอ ZORT กดเรียงจากหัวคอลัมน์ได้ แต่ของเราลำดับไม่ขยับและไม่มีอะไรบอก = ปุ่มหลอก
+     ⚠️ ชื่อช่องต้องตรงกับที่ SELECT ส่งกลับ ไม่งั้นจอเรียงช่องที่ตัวเองไม่ได้แสดง
+     🔑 ค่าตั้งต้นต้องเป็น ORDER BY เดิม **เป๊ะ** ⇒ จอที่ไม่ส่ง sort มาได้ลำดับเดิมทุกแถว
+        (เปลี่ยนค่าตั้งต้นพร้อมกับเพิ่มปุ่ม = จอเก่าเห็นชุดใหม่โดยไม่มีใครสั่ง) */
+  const เรียงได้ = {
+    date: "po_date", number: "number", vendor: "vendor",
+    status: "status", amount: "amount", payment: "payment_status", warehouse: "warehouse",
+  };
+  const การเรียง = ตีความการเรียง(o, เรียงได้, {
+    sql: "ORDER BY po_date DESC, number DESC", sort: "date", dir: "desc",
+  });
+  if (การเรียง.error) return { store, error: การเรียง.error };
+
   const rows = await coreQuery(
     `SELECT id, number, vendor, po_date, status, amount, payment_status, warehouse
      FROM purchase_orders_v2 WHERE 1=1 ${filter}
-     ORDER BY po_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
+     ${การเรียง.sql} LIMIT ${limit} OFFSET ${offset}`
   );
   /* 🕘 ฝั่งจอขอ 19 ก.ย. 2569 เพื่อ **แคชตัวนับแท็บได้โดยไม่ต้องเดาเวลาหมดอายุ**
      เทียบ changedAtUtc กับค่าที่ถืออยู่: เท่าเดิม = ใช้ของในมือต่อ · ต่าง = ยิงใหม่
@@ -363,7 +378,7 @@ export async function listPurchases(o = {}) {
     },
     truncated: แถวทั้งหมด > rows.length + offset,
     dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
-    applied: { q: q || null, limit, offset, from, to },
+    applied: { q: q || null, limit, offset, from, to, ...การเรียง.applied },
     freshness,
   };
 }
