@@ -379,6 +379,7 @@ export async function listPurchases(o = {}) {
     truncated: แถวทั้งหมด > rows.length + offset,
     dateScope: from || to ? `วันที่ใบซื้อ ${from ?? "…"} ถึง ${to ?? "…"}` : "ทุกวันที่ (ไม่ได้กรองช่วงวัน)",
     applied: { q: q || null, limit, offset, from, to, ...การเรียง.applied },
+    sortsSupported: การเรียง.sortsSupported,
     freshness,
   };
 }
@@ -863,6 +864,7 @@ export async function listTransfers(o = {}) {
         ⚠️ ของเดิมไม่มีคีย์นี้เลย ⇒ จอส่งตัวกรองไปแล้วท่อเมิน โดยไม่มีอะไรฟ้อง
            ฝั่งจอเป็นคนจับได้ด้วยการยิงเทียบ total (เท่าเดิมทุกครั้ง) */
     applied: { q: q || null, store, status: status || null, from, to, ...การเรียงโอน.applied },
+    sortsSupported: การเรียงโอน.sortsSupported,
     ignored: { days: o.days ?? null, page: o.page ?? null },
     supportedFilters: ["q", "store", "status", "from", "to", "limit", "offset", "sort", "dir"],
     supportedStatus: สถานะที่มีจริง,
@@ -974,6 +976,7 @@ export async function listQuotations(limit = 50, page = 1, store = "z1", opts = 
        🔑 ฝั่งจอส่ง `limit`/`page` มาแล้ว **ยังไม่รู้ว่าท่อพิจารณาไหม** ⇒ ถ้าท่อเมินเงียบ
           จอจะโชว์หน้าที่ "ดูเหมือนเลื่อนแล้ว" ทั้งที่ได้ชุดเดิม (คลาสที่เคยเจอกับ page จริง ๆ) */
     applied: { limit: n, page: p, store, type: opts.type ?? null, q: opts.q ?? null, ...การเรียงQT.applied },
+    sortsSupported: การเรียงQT.sortsSupported,
     /* 🔴 **ต้องบอก limit ที่ใช้จริงออกไป** (เพิ่ม 19 ก.ย. 2569)
        ไม่บอก ⇒ ตัวช่วยไล่หน้า (`paging-hint.mjs`) ไม่มีข้อมูลพอ **จึงไม่เติม nextOffset/nextPage เลย**
        ⇒ ปลายทางเห็นคำตอบที่ไม่มีคีย์ไล่หน้า ซึ่ง **แยกไม่ออกจาก "ท่อรุ่นเก่าไม่รองรับ"** ⇒ ต้องเดา

@@ -259,6 +259,7 @@ export async function listContacts(o = {}) {
     limit,
     offset,
     applied: { q: q || null, withPhone, withEmail, ...การเรียง.applied },
+    sortsSupported: การเรียง.sortsSupported,
     byType: byType ? byType.map((r) => ({ type: r.type, count: num(r.c) })) : null,
     // recentAtUtc = ซิงก์หน้าแรก ๆ ล่าสุด (รายใหม่) · fullSweepAtUtc = กวาดครบทั้งฐานรอบล่าสุด (การแก้ของรายเก่า) · null = ยังไม่เคย/ไม่รู้
     sync: meta

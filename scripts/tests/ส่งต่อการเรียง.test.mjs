@@ -222,6 +222,7 @@ test('list=stock: sort=sku&dir=desc ต้องไม่ได้ ORDER BY ท�
 
 // ───────── ⑤ list=orders — เส้นที่ใหญ่สุดและเพิ่งได้ sort= รอบนี้ ─────────
 const { listOrders } = await import('../../netlify/lib/core-orders.mjs')
+const { listContacts } = await import('../../netlify/lib/core-contacts.mjs')
 const sqlแถวออเดอร์ = () => เห็น.find((x) => x.includes('SELECT id, source, number, channel')) || ''
 
 test('list=orders: ไม่ส่ง sort ⇒ ลำดับตั้งต้นเดิมเป๊ะ (จอที่ deploy อยู่ต้องไม่เห็นชุดใหม่)', async () => {
@@ -263,4 +264,33 @@ test('list=orders: ชื่อช่องไม่รู้จัก ⇒ ต�
   assert.match(String(r.error), /ไม่รู้จักช่องเรียง/)
   for (const ช่อง of ['date', 'number', 'customer', 'channel', 'shipDate', 'amount', 'status', 'payStatus'])
     assert.ok(String(r.error).includes(ช่อง), `ข้อความตีกลับไม่ได้บอกว่าเรียงได้ด้วย ${ช่อง}`)
+})
+
+// ───────── ⑥ `sortsSupported` — จอใช้ตัดสินว่าหัวคอลัมน์เป็นปุ่มหรือตัวหนังสือ ─────────
+test('ทุกเส้นที่เรียงได้ ต้องประกาศ sortsSupported ออกไปด้วย (คุณส้มขอ 21 ต.ค. 2569)', async () => {
+  /* 🔑 ก่อนนี้ฝั่งจอต้อง **ยิงลองทีละช่อง** เพื่อรู้ว่าเส้นไหนเรียงอะไรได้
+     ⇒ ประกาศออกไปให้จอ **ตัดสินเองได้** ว่าหัวคอลัมน์ไหนควรเป็นปุ่ม
+     ⚠️ ส่งผิด = จอมีปุ่มที่กดแล้ว error หรือมีช่องที่กดได้แต่ไม่โชว์ปุ่ม */
+  const เส้น = [
+    ['contacts', await listContacts({}), ['id', 'name', 'type', 'phone', 'email', 'code']],
+    ['purchases', await listPurchases({}), ['date', 'number', 'vendor', 'status', 'amount', 'payment', 'warehouse']],
+    ['orders', await listOrders({ limit: '1' }), ['date', 'number', 'customer', 'channel', 'shipDate', 'amount', 'status', 'payStatus']],
+  ]
+  เส้น.forEach(([ชื่อ, ผล, คาด]) => {
+    assert.ok(Array.isArray(ผล.sortsSupported), `${ชื่อ}: ไม่ได้ส่ง sortsSupported`)
+    assert.deepEqual([...ผล.sortsSupported].sort(), [...คาด].sort(),
+      `${ชื่อ}: รายชื่อช่องที่เรียงได้ไม่ตรงกับที่ประกาศไว้`)
+  })
+})
+
+test('sortsSupported มาจาก allowlist เดียวกับที่ใช้ตัดสินจริง ไม่ใช่รายชื่อที่พิมพ์ซ้ำ', async () => {
+  /* 🔴 ถ้าสองที่ ⇒ วันหนึ่งจอจะเห็นปุ่มที่ท่อตีกลับ (หรือมองไม่เห็นช่องที่เรียงได้)
+     ⇒ ทดสอบด้วยการเอาทุกชื่อใน sortsSupported ไปยิงจริง **ต้องไม่มีตัวไหนตีกลับ** */
+  const ผล = await listContacts({})
+  const ตีกลับ = []
+  for (const ช่อง of ผล.sortsSupported) {
+    const r = await listContacts({ sort: ช่อง })
+    if (r.error) ตีกลับ.push(`${ช่อง}: ${r.error}`)
+  }
+  assert.deepEqual(ตีกลับ, [], 'ช่องที่ประกาศว่าเรียงได้ แต่ยิงจริงถูกตีกลับ')
 })

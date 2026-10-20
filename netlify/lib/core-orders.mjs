@@ -947,6 +947,8 @@ export async function listOrders(o = {}) {
       ...การเรียง.applied,
       advancedFilters: "ดูคีย์ advancedFilters — ตัวกรองขั้นสูงอยู่ที่นั่น (null = ไม่ได้กรอง)",
     },
+    /* 📣 ระดับบนสุด — รูปเดียวกับ `list=stock` ที่จอใช้อยู่แล้ว (ห้ามซ่อนใน applied) */
+    sortsSupported: การเรียง.sortsSupported,
     /* 🔴 **ชื่อใน `applied` ไม่ใช่ชื่อพารามิเตอร์ที่ท่อรับ — สองจุด** (เพิ่ม 19 ก.ย. 2569)
         เจอด้วยด่านใหม่ `check-filters-work.mjs`: ส่ง `includeCancelled=1` แล้วยอดไม่ขยับ (868)
         แต่ส่ง `cancelled=1` ได้ 902 ⇒ **ตัวกรองทำงาน แค่ชื่อที่สะท้อนกลับไม่ใช่ชื่อที่รับ**

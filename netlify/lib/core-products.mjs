@@ -647,6 +647,7 @@ export async function listBundles(o = {}) {
        ⚠️ `total`/`active`/`inactive` เป็นยอด **ทั้งกอง ไม่ถูกกรองด้วย only** โดยตั้งใจ
           (จอต้องโชว์ได้ว่า "กรองแล้วเหลือกี่แถว จากทั้งหมดเท่าไร") ⇒ เขียนกำกับไว้ไม่ให้เข้าใจผิด */
     applied: { only: onlyRaw || null, q: q || null, ...การเรียง.applied },
+    sortsSupported: การเรียง.sortsSupported,
     appliedScope: "only กรองเฉพาะรายการที่ส่งกลับ (rows) — total/active/inactive เป็นยอดทั้งกอง ไม่ถูกกรอง",
     recipeAt,
     ...(await (async () => {
