@@ -35,7 +35,7 @@
 import { บีบเลข, ก้อนการบีบ } from "./บีบค่า.mjs";   // บีบค่าแล้วบอกเหตุ (ฝั่งจอขอ 28 ก.ย. 2569)
 import { licensedStock } from "./licensed-stock.mjs";   // ทะเบียนทับ ZORT โดยตั้งใจ (30 รหัส)
 import { coreQuery, coreReady } from "./coredb.mjs";
-import { freshnessOf } from "./core-freshness.mjs";
+import { freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { contains } from "./sql-contains.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -281,20 +281,60 @@ export async function listStock(o = {}) {
         ไม่ตรง = D1 ตอบ error ทั้งคำขอ ไม่ใช่เรียงผิดเงียบ ๆ (ตรวจแล้วด้วยการยิงจริงทุกค่า)
      ⚠️ ค่าที่ไม่รู้จัก **ยังคงไม่ตีกลับเป็น error** เพราะจอเก่าอาจส่งค่าที่เลิกใช้มา
         แต่ต้องรายงานผ่าน `sortIgnored` ⇒ จอเขียนบอกได้ว่าปุ่มนั้นยังไม่รองรับ */
-  const SORTS = {
-    qty: "p.onhand ASC",
-    qtydesc: "p.onhand DESC",
-    sold: "sold30 DESC",
-    sku: "cur.sku ASC",
-    name: "name ASC",
-    price: "cur.price DESC",
-    pricelow: "cur.price ASC",
-    buy: "buy DESC",
-    available: "avail DESC",
-    availablelow: "avail ASC",
+  /* 🔀 **เส้นนี้รับการเรียงได้สองรูปพร้อมกัน** (คุณส้มขอ 20 ต.ค. 2569 16:02 · "ชื่อเดิมยังใช้ได้")
+       ① รูปเดิมของเส้นนี้ — ชื่อที่ **ฝังทิศไว้ในชื่อ** (`qtydesc` · `pricelow` · `availablelow`)
+       ② รูปที่เส้นอื่นใช้ — `sort=<ช่อง>` + `dir=asc|desc`
+     🔴 **กฎที่ขาดไม่ได้: `sort=<ชื่อ>` โดยไม่ส่ง `dir` ⇒ ต้องได้พฤติกรรมเดิมเป๊ะทุกตัวอักษร**
+        เพราะชื่อเดิมบางตัว **ไม่ได้หมายถึง asc**: `sort=price` เดิมคือ **DESC**
+        ถ้าเผลอให้รูปใหม่มีผลเมื่อไม่ส่ง dir ⇒ จอที่ deploy อยู่ "เรียงราคา" จะ**พลิกทิศเงียบ ๆ**
+        โดยไม่มีใครสั่งและไม่มีอะไรฟ้อง ⇒ รูปใหม่มีผล **เฉพาะเมื่อส่ง `dir` มา** เท่านั้น
+     🔑 **แหล่งเดียว** — ตาราง SORTS เดิมถูก **คิดจาก** สองตารางล่างนี้ ไม่ได้พิมพ์ซ้ำ
+        (พิมพ์สองที่ = วันหนึ่งสองที่ตอบคนละทิศ · กฎ one-threshold-one-source)
+        มีด่านตรึงผลลัพธ์ของ 10 ชื่อเดิมไว้ใน `scripts/tests/ส่งต่อการเรียง.test.mjs` */
+  const ช่องเรียง = {
+    qty: "p.onhand", sold: "sold30", sku: "cur.sku",
+    name: "name", price: "cur.price", buy: "buy", available: "avail",
   };
+  // ทิศที่ชื่อนั้นหมายถึงเมื่อ **ไม่ส่ง dir** — ค่าเดิมของเส้นนี้ ห้ามขยับ
+  const ทิศเดิมของชื่อ = {
+    qty: "asc", sold: "desc", sku: "asc", name: "asc", price: "desc", buy: "desc", available: "desc",
+  };
+  // ชื่อเดิมที่ฝังทิศไว้ในชื่อ ⇒ เป็นแค่ชื่อเล่นของ (ช่อง, ทิศ)
+  const ชื่อฝังทิศ = { qtydesc: ["qty", "desc"], pricelow: ["price", "asc"], availablelow: ["available", "asc"] };
+  const เป็นSQL = (ช่อง, ทิศ) => `${ช่องเรียง[ช่อง]} ${ทิศ === "desc" ? "DESC" : "ASC"}`;
+  const SORTS = Object.fromEntries([
+    ...Object.keys(ช่องเรียง).map((k) => [k, เป็นSQL(k, ทิศเดิมของชื่อ[k])]),
+    ...Object.entries(ชื่อฝังทิศ).map(([ชื่อ, [ช่อง, ทิศ]]) => [ชื่อ, เป็นSQL(ช่อง, ทิศ)]),
+  ]);
+
   const sortRaw = String(o.sort ?? "").trim().slice(0, 20);
-  const sort = SORTS[sortRaw] || "p.onhand ASC";
+  const dirRaw = String(o.dir ?? "").trim().toLowerCase().slice(0, 10);
+  /* `dir` เป็นของใหม่ของเส้นนี้ ⇒ ไม่มีจอไหนส่งมาก่อน ⇒ ตีกลับค่าผิดได้ปลอดภัย
+     (ต่างจาก `sort` ที่ค่าไม่รู้จักยังต้องไม่ตีกลับ เพราะจอเก่าอาจส่งชื่อที่เลิกใช้ ดูคอมเมนต์ข้างบน) */
+  if (dirRaw && !["asc", "desc"].includes(dirRaw))
+    return { error: `dir ต้องเป็น asc หรือ desc (ได้มา "${dirRaw}")` };
+  /* ชื่อที่ฝังทิศไว้แล้ว + dir = คำขอที่ขัดกันเอง ⇒ **ห้ามเดาว่าฝ่ายไหนชนะ**
+     ตีกลับพร้อมบอกรูปที่ถูก ดีกว่าเลือกข้างเงียบ ๆ แล้วจอโชว์ลูกศรผิดทาง */
+  if (dirRaw && ชื่อฝังทิศ[sortRaw])
+    return { error: `sort="${sortRaw}" ฝังทิศไว้ในชื่อแล้ว ใช้คู่กับ dir ไม่ได้ — ใช้ sort=${ชื่อฝังทิศ[sortRaw][0]}&dir=${dirRaw} แทน` };
+
+  const ชื่อตรง = ช่องเรียง[sortRaw] ? sortRaw : null;          // ชื่อที่คุมทิศได้
+  const ทิศใช้ = dirRaw || (ชื่อฝังทิศ[sortRaw]?.[1]) || ทิศเดิมของชื่อ[sortRaw] || "asc";
+  const sort = ชื่อตรง && dirRaw ? เป็นSQL(ชื่อตรง, dirRaw)      // รูปใหม่: มีผลเฉพาะเมื่อส่ง dir
+    : SORTS[sortRaw] || "p.onhand ASC";                        // รูปเดิม: เหมือนก่อนทุกตัวอักษร
+  /* 🔑 **ต่อท้ายด้วย `cur.sku` เสมอ ⇒ ลำดับนิ่ง (stable)**
+     ทุกค่าใน SORTS เรียงด้วยช่องที่ **ค่าซ้ำกันได้เยอะมาก** (onhand 0 มี 564 แถว · sold30 0 ยิ่งเยอะกว่า)
+     SQLite ไม่รับประกันลำดับของแถวที่ค่าเท่ากัน ⇒ ไล่หน้าแล้ว **ข้าม/ซ้ำแถว** โดยไม่มีอะไรฟ้อง
+     🔴 วัดของจริง 20 ต.ค. 2569 (`sort=sold` · หน้า1+หน้า2 เทียบกับยิงทีเดียว 100 แถว):
+        ตรงกันเป๊ะ ซ้ำ 0 หาย 0 ⇒ **ตอนนี้ถูกอยู่** แต่ถูกเพราะ D1 เลือกแผนเดิมให้ ไม่ใช่เพราะเราสั่ง
+        (คลาส [[correct-by-accident]] — "ยังไม่พัง" ไม่ใช่ "ไม่ต้องแก้")
+        แผนเปลี่ยนเมื่อไหร่ (ข้อมูลโต · เพิ่ม index · D1 อัปเกรด) อาการจะโผล่ตอนนั้นโดยซอร์สไม่เปลี่ยนสักตัวอักษร
+     ⚠️ `cur.sku` เป็นคีย์ของ CTE `cur` ⇒ ไม่ซ้ำ ⇒ พอเป็นตัวตัดสินสุดท้ายได้จริง
+        (ช่องอื่นเช่น name ซ้ำได้ ⇒ ต่อท้ายด้วย name ไม่ได้แก้อะไร) */
+  /* ⚠️ เทียบที่ **ชื่อคอลัมน์** ไม่ใช่ทั้งนิพจน์ — `sort=sku&dir=desc` ให้ `cur.sku DESC`
+       ซึ่งไม่เท่ากับ `SORTS.sku` (`cur.sku ASC`) ⇒ เทียบทั้งนิพจน์จะต่อท้ายได้
+       `ORDER BY cur.sku DESC, cur.sku ASC` (SQLite ยอม แต่เป็นคำสั่งที่ขัดกันเองในสายตาคนอ่าน) */
+  const sortSql = sort.startsWith(`${ช่องเรียง.sku} `) ? sort : `${sort}, cur.sku ASC`;
   const sortApplied = SORTS[sortRaw] ? sortRaw : "qty";
   const sortIgnored = sortRaw && !SORTS[sortRaw] ? sortRaw : null;
   // แท็บ "ของหมด / เหลือน้อย" — ต้องกรอง **ทั้งคลัง** ไม่ใช่กรองเฉพาะหน้าที่กำลังดู
@@ -437,7 +477,7 @@ export async function listStock(o = {}) {
                      (SELECT name FROM order_items WHERE sku = cur.sku AND name <> '' LIMIT 1)) AS name
      FROM cur LEFT JOIN sold ON sold.sku = cur.sku ${JOIN}
      WHERE 1=1 ${only ? `AND ${only}` : ""} ${kind ? `AND ${kind}` : ""} ${filter}
-     ORDER BY ${sort} ${channel ? "" : `LIMIT ${limit} OFFSET ${offset}`}`,
+     ORDER BY ${sortSql} ${channel ? "" : `LIMIT ${limit} OFFSET ${offset}`}`,
     [sinceMod, ...fParams]
   ),
     /* จำนวนที่ ZORT มีจริง — คนละแหล่งกับฐานเรา (Netlify Blobs) จึงยิงคู่กันไปเลย
@@ -560,10 +600,21 @@ export async function listStock(o = {}) {
     freshnessOf(coreQuery, { table: "products", metaKey: "sync_products" }),
     freshnessOf(coreQuery, { table: "stock_snapshots", dayCol: "day" }),
   ]);
+  /* 🕘 **รอบที่คาดหวังของ qty/available** (เพิ่ม 20 ต.ค. 2569 · คุณส้มทักว่าเส้นนี้ไม่ประกาศรอบ)
+     ก่อนหน้านี้เส้นนี้ส่งแต่ "ซิงก์ล่าสุดเมื่อไหร่" ไม่ได้ส่ง "ควรซิงก์ทุกกี่ชั่วโมง"
+     ⇒ จอ **แยก "เก่าโดยออกแบบ" ออกจาก "ตัวซิงก์ตาย" ไม่ได้** ⇒ ต้องมาถามคนทุกครั้ง
+     ⚠️ `syncProducts()` อยู่ใน core-sync ที่ cron รายชั่วโมง แต่ถูกขังให้ทำวันละครั้ง
+        ⇒ ส่ง `ขังไว้รายวัน` เพื่อไม่ให้ได้เกณฑ์ 1 ชม. ซึ่งจะเตือนลวงทุกชั่วโมง */
+  const รอบสต็อก = await รอบที่คาดหวัง("core-sync", "stock", {
+    ขังไว้รายวัน: true,
+    ที่อยู่ในโค้ด: "netlify/functions/core-sync.mjs (เงื่อนไข utcH === 18 && utcM < 30)",
+    เหตุ: "ชื่อ/ราคา/สต็อกของทะเบียนสินค้าเปลี่ยนช้า — ยิงถี่กว่านี้ไปกินงบเวลาของลูปที่มีเพดาน 26 วิ",
+  });
   return {
     day,
     soldDays,
     freshness,
+    ...รอบสต็อก,
     snapshotFreshness,
     stockSources: {
       qty: "products.onhand",
@@ -587,6 +638,14 @@ export async function listStock(o = {}) {
       buyMax,
       category: category || null,
       sort: sortApplied,
+      /* 🔴 **เพิ่ม 20 ต.ค. 2569 — ฝั่งจอเปิดปุ่มเรียงที่หัวคอลัมน์เมื่อ `sortDefaulted === false`**
+          (คุณส้มแจ้งกติกานี้ 16:02) ⇒ เส้นนี้ไม่มีสองคีย์นี้มาก่อน ⇒ เธอจะอ่าน
+          `undefined !== false` แล้ว **หัวคอลัมน์จอสินค้าเป็นตัวหนังสือธรรมดาตลอดกาล**
+          โดยไม่มีอะไรฟ้อง (คลาสเดิมของทีม: จออ่านคีย์ที่ท่อไม่เคยส่ง ⇒ ด่านที่ไม่เคยร้อง)
+         ⚠️ `dir` คือทิศ **ที่ใช้จริง** ไม่ใช่ค่าที่ส่งมา ⇒ ไม่ส่ง dir มาก็ยังรู้ว่าลูกศรต้องชี้ทางไหน
+            (ชื่อเดิมหลายตัวหมายถึง desc เช่น price · sold · buy · available) */
+      dir: ทิศใช้,
+      sortDefaulted: !sortRaw,
       only: only ? String(o.only) : null,
       kind: kindRaw || null,
       channel: channel || null,

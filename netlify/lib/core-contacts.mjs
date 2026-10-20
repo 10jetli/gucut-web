@@ -1,3 +1,4 @@
+import { ตีความการเรียง } from "./list-sort.mjs";
 // 👯 ฝาแฝด: netlify/lib/core-purchases.mjs — ตัวไล่หน้าที่ **คืน `nextPage` ให้ผู้เรียกไล่ต่อ**
 //    แก้คลาสไหนในลูปนั้นต้องเปิดดูคู่ (ด่าน scripts/check-code-twins.mjs)
 //    ⚠️ ไฟล์นี้คือฝั่งที่ **ถูกแก้ไปแล้ว 15 ก.ย. 2569** (ล้าง `nextPage` ตอนครบ)
@@ -184,6 +185,13 @@ export async function syncContacts(opt = {}) {
  *  ⚠️ **เลขประจำตัวส่งไปแบบปิดบางส่วนเสมอ** เห็นเต็มไม่ได้จากจอรายการ
  *     จอรายการมีไว้ "หาให้เจอ" ไม่ใช่ "อ่านข้อมูลทุกคน" */
 export async function listContacts(o = {}) {
+  /* 🔀 `sort=`/`dir=` (เพิ่ม 20 ต.ค. 2569) — ZORT เรียงผู้ติดต่อตั้งต้นต่างจากเรา
+     (ZORT: C20892 แล้วตามด้วยรายล่าสุด · ของเรา: เรียงชื่อ ⇒ ชื่อขยะอย่าง $urasak ขึ้นก่อน)
+     ⇒ จอต้องสั่งเรียงได้ ไม่งั้นตารางเป็นคนละชุดกับ ZORT ตั้งแต่แถวแรก */
+  const การเรียง = ตีความการเรียง(o, {
+    id: "id", name: "name", type: "type", phone: "phone", email: "email",
+  }, { sql: "ORDER BY name, id", sort: "name", dir: "asc" });
+  if (การเรียง.error) return { error: การเรียง.error };
   if (!coreReady()) return { skip: "ยังไม่ได้ตั้ง CLOUDFLARE_D1_TOKEN" };
   await ensure();
   const limit = Math.max(1, Math.min(100, num(o.limit) || 50));
@@ -224,7 +232,7 @@ export async function listContacts(o = {}) {
   );
   const rows = await coreQuery(
     `SELECT id, type, name, code, phone, email, branch_name AS branchName, tax_id AS taxId, address
-     FROM contacts WHERE 1=1 ${filter} ORDER BY name, id LIMIT ${limit} OFFSET ${offset}`
+     FROM contacts WHERE 1=1 ${filter} ${การเรียง.sql} LIMIT ${limit} OFFSET ${offset}`
   );
   // นับชนิดของทั้งฐาน (ไม่ผูกตัวกรอง) — ใช้ตัดสินว่าตัวกรองชนิดมีประโยชน์ไหม · เป็นตัวเลขนับ ไม่มีข้อมูลรายคน
   const byType = await coreQuery(`SELECT COALESCE(type,'') AS type, COUNT(*) AS c FROM contacts GROUP BY 1 ORDER BY c DESC`).catch(() => null);
@@ -245,7 +253,7 @@ export async function listContacts(o = {}) {
     withTax: num(sum?.with_tax),
     limit,
     offset,
-    applied: { q: q || null, withPhone, withEmail },
+    applied: { q: q || null, withPhone, withEmail, ...การเรียง.applied },
     byType: byType ? byType.map((r) => ({ type: r.type, count: num(r.c) })) : null,
     // recentAtUtc = ซิงก์หน้าแรก ๆ ล่าสุด (รายใหม่) · fullSweepAtUtc = กวาดครบทั้งฐานรอบล่าสุด (การแก้ของรายเก่า) · null = ยังไม่เคย/ไม่รู้
     sync: meta

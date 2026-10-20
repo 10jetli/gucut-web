@@ -22,6 +22,12 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
 } })
 mock.module('../../netlify/lib/core-freshness.mjs', { namedExports: {
   freshnessOf: async () => ({ syncedAtUtc: '2026-10-15 12:00:00', syncedAtKnown: true, changedAtUtc: '2026-10-15 12:00:00' }),
+  /* 🔑 เพิ่ม 20 ต.ค. 2569 — `list=stock` เริ่มประกาศรอบที่คาดหวังของ qty/available
+     ⚠️ **ตัวสวมโมดูลต้องมี export ครบตามที่โมดูลจริงต้องใช้** ไม่งั้นได้ SyntaxError
+        "does not provide an export named …" ซึ่ง **อ่านเหมือนโมดูลจริงไม่มี export นั้น**
+        ทั้งที่มันมี — เสียเวลาไล่ผิดที่ (เจอจริงตอนเพิ่มของชิ้นนี้) */
+  รอบที่คาดหวัง: async () => ({ stockExpectedEveryHours: 24, stockExpectedCron: '13 * * * *',
+                                stockExpectedNote: '(ค่าสวมในเทส)' }),
 } })
 mock.module('../../netlify/lib/licensed-stock.mjs', { namedExports: { licensedStock: () => null } })
 

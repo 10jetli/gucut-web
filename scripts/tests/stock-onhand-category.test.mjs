@@ -13,7 +13,13 @@ test('qty ของ list=stock มาจาก products.onhand ไม่ใช�
   assert.match(src, /qty:\s*r\.qty === null \|\| r\.qty === undefined \? null : num\(r\.qty\)/)
   assert.match(src, /available:\s*r\.avail === null \|\| r\.avail === undefined \? null : num\(r\.avail\)/)
   assert.match(src, /out:\s*"p\.onhand <= 0"/)
-  assert.match(src, /qty:\s*"p\.onhand ASC"/)
+  /* ⚠️ 20 ต.ค. 2569 — ตาราง SORTS ถูกเปลี่ยนเป็น "คิดจาก `ช่องเรียง` + ทิศ" (รับ sort+dir)
+     ⇒ ตัวหนังสือ `qty: "p.onhand ASC"` ไม่มีอยู่แล้ว **แต่คำถามของด่านนี้ไม่เปลี่ยน**:
+       "ค่าเรียง qty ต้องชี้ที่ products.onhand ไม่ใช่ snapshot qty หรือ available"
+     🔑 ยอมรับทั้งสองรูป (มี/ไม่มีทิศต่อท้าย) ⇒ ด่านไม่พังอีกถ้าใครเติมทิศกลับ
+     📎 ทิศของทุกชื่อถูกตรึงเป็นค่าจริงไว้ที่ `scripts/tests/ส่งต่อการเรียง.test.mjs`
+        (ด่านนี้อ่านซอร์ส · ใบนั้นวัดพฤติกรรม — คนละหน้าที่ ห้ามยุบรวม) */
+  assert.match(src, /qty:\s*"p\.onhand(\s+ASC)?"/)
 })
 
 test('แถวส่ง category ชื่อตรงตัวจาก products และไม่เดาจากชื่อสินค้า', () => {

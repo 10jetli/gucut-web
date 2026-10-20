@@ -2281,6 +2281,13 @@ async function route(req, context) {
       return okJson({
         ...(await listBundles({
           q: url.searchParams.get("q"),
+          /* 🔀 ส่ง sort/dir ต่อให้ตัวอ่าน (20 ต.ค. 2569)
+             🔴 **รอบแรกผมลืมบรรทัดนี้** — เขียนตัวแปลการเรียงในตัวอ่านครบ เทสเขียว 8/8
+                แต่เทสเรียก `list…()` ตรง ๆ ⇒ **ไม่ผ่านเส้นนี้** ⇒ ของจริงยังเมิน sort เหมือนเดิม
+                (คลาส [[test-must-hit-the-path]] — ผลถูกไม่ได้แปลว่าบรรทัดนั้นถูกเรียก)
+                ⇒ มีด่านอ่านซอร์สใน `scripts/tests/ส่งต่อการเรียง.test.mjs` กันลืมซ้ำแล้ว */
+          sort: url.searchParams.get("sort"),
+          dir: url.searchParams.get("dir"),
           only: url.searchParams.get("only"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
@@ -2318,6 +2325,13 @@ async function route(req, context) {
       return okJson({
         ...(await listPurchases({
           q: url.searchParams.get("q"),
+          /* 🔀 ส่ง sort/dir ต่อให้ตัวอ่าน (20 ต.ค. 2569)
+             🔴 **รอบแรกผมลืมบรรทัดนี้** — เขียนตัวแปลการเรียงในตัวอ่านครบ เทสเขียว 8/8
+                แต่เทสเรียก `list…()` ตรง ๆ ⇒ **ไม่ผ่านเส้นนี้** ⇒ ของจริงยังเมิน sort เหมือนเดิม
+                (คลาส [[test-must-hit-the-path]] — ผลถูกไม่ได้แปลว่าบรรทัดนั้นถูกเรียก)
+                ⇒ มีด่านอ่านซอร์สใน `scripts/tests/ส่งต่อการเรียง.test.mjs` กันลืมซ้ำแล้ว */
+          sort: url.searchParams.get("sort"),
+          dir: url.searchParams.get("dir"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           store: listStore.store,
@@ -2469,6 +2483,13 @@ async function route(req, context) {
       return okJson({
         ...(await listContacts({
           q: url.searchParams.get("q"),
+          /* 🔀 ส่ง sort/dir ต่อให้ตัวอ่าน (20 ต.ค. 2569)
+             🔴 **รอบแรกผมลืมบรรทัดนี้** — เขียนตัวแปลการเรียงในตัวอ่านครบ เทสเขียว 8/8
+                แต่เทสเรียก `list…()` ตรง ๆ ⇒ **ไม่ผ่านเส้นนี้** ⇒ ของจริงยังเมิน sort เหมือนเดิม
+                (คลาส [[test-must-hit-the-path]] — ผลถูกไม่ได้แปลว่าบรรทัดนั้นถูกเรียก)
+                ⇒ มีด่านอ่านซอร์สใน `scripts/tests/ส่งต่อการเรียง.test.mjs` กันลืมซ้ำแล้ว */
+          sort: url.searchParams.get("sort"),
+          dir: url.searchParams.get("dir"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),
           // ตัวกรอง 15 ก.ย. 2569 — ไม่นับเป็นคำค้น (ด่านกันกวาดทั้งฐานยังบังคับ)
@@ -5218,6 +5239,7 @@ async function route(req, context) {
           only: p.get("only"),
           kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),
+          dir: p.get("dir"),   // 🔀 รูปใหม่ของเส้นนี้ (20 ต.ค. 2569) — ชื่อเดิมยังใช้ได้โดยไม่ส่ง dir
           limit: p.get("limit"),
           offset: p.get("offset"),
           soldDays: p.get("soldDays"),
