@@ -1196,6 +1196,26 @@ export async function getQuotationDetail(id, raw = false) {
     status: String(q.status ?? ""),
     date: String(q.quotationdateString ?? q.quotationdate ?? "").slice(0, 10),
     customer: String(q.customername ?? ""),
+    /* 📇 กล่องลูกค้าของจอ ZORT `/Quotation/Details` มี 5 แถว — คุณส้มขอมา 20 ต.ค. 2569 22:05
+       📏 **วัดจาก ZORT จริงก่อนเพิ่ม** (ใบ id 974090 · โหมด `raw=1`): หัวใบมี 46 ช่อง
+          และสี่ช่องนี้ **มีจริงทั้งหมด** ⇒ ส่งต่อได้ ไม่ได้เดาชื่อช่อง
+       🔴 **แต่บนใบทดสอบทั้ง 3 ใบของร้าน ค่ายังว่างทุกช่อง**
+          `createusername` = null (`createuserid` = 0 · `createdby` = null)
+          `customerphone` / `customeremail` / `customeraddress` = "" (สตริงว่าง)
+          ⇒ เดาว่าเพราะใบพวกนั้นถูกสร้างผ่าน API ไม่ใช่คนกดในจอ ZORT — **ยังไม่ยืนยัน**
+       ⚠️ ดังนั้นจอต้องแยก **"ZORT ไม่มีค่า"** ออกจาก **"ท่อไม่ส่ง"**
+          ⇒ ส่ง `null` เมื่อ ZORT ส่ง null และส่ง `""` เมื่อ ZORT ส่งสตริงว่าง — **ไม่ยุบสองอย่างนี้เป็นค่าเดียว**
+          (ถ้ายุบ จอจะแยกไม่ออกว่า "ยังไม่มีข้อมูล" หรือ "ท่อรุ่นเก่ายังไม่ส่ง") */
+    createUserName: q.createusername ?? null,
+    customerPhone: q.customerphone ?? null,
+    customerEmail: q.customeremail ?? null,
+    customerAddress: q.customeraddress ?? null,
+    /* ของแถมที่เจอตอนวัด — ZORT ส่งมาด้วยและจออาจใช้ได้ (ไม่ได้ขอ แต่มีให้แล้ว) */
+    customerCode: q.customercode ?? null,
+    customerBranchName: q.customerbranchname ?? null,
+    customerBranchNo: q.customerbranchno ?? null,
+    customerTaxId: q.customeridnumber ?? null,
+    createdAt: q.createdatetimeString ?? q.createdatetime ?? null,
     amount: num(q.amount),
     vatAmount: num(q.vatamount),
     discountAmount: num(q.discountamount),
