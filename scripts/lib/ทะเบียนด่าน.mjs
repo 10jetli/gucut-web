@@ -231,6 +231,18 @@ export const ทะเบียน = [
     ที่มา: "19 ก.ย. 2569 — `*/` ในคอมเมนต์ปิดคอมเมนต์กลางทาง ⇒ ไฟล์พังทั้งไฟล์",
   },
   {
+    ด่าน: "check-dynamic-imports",
+    ไฟล์: "netlify/lib/marketplace-listings.mjs",
+    /* 🔑 **เงื่อนไขของเป้า** — ต้องเป็นไฟล์ใน `netlify/` ที่ถูก bundle จริง
+       ปลูกที่ `scripts/` จะไม่ได้ผล เพราะด่านนี้สแกนแค่ `netlify/` โดยตั้งใจ
+       (สคริปต์ build รันในเครื่อง ไม่ได้ถูก bundle ⇒ ไม่มีปัญหานี้) */
+    เงื่อนไขเป้า: "ต้องเป็นไฟล์ `.mjs` ใต้ `netlify/` — ของใน `scripts/` ด่านไม่สแกน ⇒ ปลูกที่นั่นจะไม่แดงและดูเหมือนด่านพัง",
+    แก้: (s) => s + '\nconst เส้นทางปลูก = "./shopee.mjs";\nawait import(เส้นทางปลูก);\n',
+    คำสั่ง: ["node", "scripts/check-dynamic-imports.mjs"],
+    ต้องเอ่ยถึง: "marketplace-listings.mjs",
+    ที่มา: "20 ต.ค. 2569 — บั๊ก production รอบที่สองของคลาสนี้: `await import(mod)` ⇒ Netlify ไม่แพ็กโมดูลไปด้วย ⇒ `list=stock&marketplaces=1` คืน Cannot find module ครบสามเจ้า · รอบแรกคือ token-refresh.mjs (แก้แล้ว แต่ไฟล์อื่นไม่มีใครตาม ⇒ ต้องเป็นด่าน ไม่ใช่คอมเมนต์)",
+  },
+  {
     ด่าน: "check-shell-varnames",
     ไฟล์: "public/r2-setup.sh",
     /* 🔑 **เงื่อนไขของเป้า** — ฝั่งจอสรุป 20 ก.ย. 2569: ตัวสูตรอ่านออกจากโค้ดได้

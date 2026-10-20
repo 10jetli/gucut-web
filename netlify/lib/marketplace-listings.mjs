@@ -232,14 +232,28 @@ async function _marketplaceListings({ fresh = false } = {}) {
         คืน `null` = ไม่มี token เก็บไว้ (ยังไม่เคยเชื่อม) · **โยน** = อ่าน/ต่ออายุไม่ได้
      ⚠️ ถามสถานะทั้งสามเจ้า **พร้อมกัน** — ไล่ทีละเจ้าเพิ่มเวลาก่อนถึงลูปหลัก
         ซึ่งไฟล์นี้เตือนเรื่องเพดาน 26 วินาทีไว้ข้างล่าง */
+  /* 🔴 **บั๊ก production 20 ต.ค. 2569 23:0x — ห้ามเขียน `import(<ตัวแปร>)` ในไฟล์ที่ถูก bundle**
+     อาการบนเว็บจริง: `list=stock&marketplaces=1` คืน `marketplacesFailed` ครบสามเจ้า
+       `Cannot find module '/var/task/netlify/functions/shopee.mjs'
+        imported from /var/task/netlify/functions/core.mjs`
+     ⇒ `checkedMarketplaces` เหลือ `["gucut"]` · คอลัมน์ Marketplace ของจอขึ้น "อัปเดตไม่ได้" ทั้งหมด
+     🔑 **สองความผิดทับกัน และตัวแปรเป็นต้นเหตุของทั้งคู่**
+       ① esbuild **ตามรอย `import()` ที่เป็นตัวแปรไม่ได้** ⇒ ไม่แพ็กไฟล์ปลายทางไปด้วย
+       ② มันจึงเหลือเป็น import ตอนรันจริง ⇒ พาธ `./shopee.mjs` ถูกคิดจากที่ตั้งของ
+          **ไฟล์ผลลัพธ์ที่ถูกรวมแล้ว** (`netlify/functions/core.mjs`) ไม่ใช่จาก `netlify/lib/`
+          ⇒ ไปหาที่ `functions/shopee.mjs` ซึ่งเป็นไฟล์ฟังก์ชันคนละตัว (มีอยู่จริงในซอร์ส แต่คนละของ)
+     ⇒ เขียนเป็น **สตริงตรงตัวในฟังก์ชันโหลด** ⇒ bundler เห็น เอาไปรวมให้ และไม่มีการคิดพาธตอนรัน
+     🚫 ห้ามเปลี่ยนกลับเป็นตัวแปร แม้จะดู "ซ้ำสามบรรทัด" — ความซ้ำสามบรรทัดนี้คือสิ่งที่ทำให้มันทำงาน
+     ⚠️ อาการนี้ **ไม่มีใครจับได้จาก build** — `npm run build` ผ่าน · เทสผ่าน ·
+        เพราะตอนรันในเครื่องพาธ relative ถูกต้องอยู่แล้ว **มันพังเฉพาะหลังถูก bundle** */
   const เจ้าที่ต้องเชื่อม = [
-    ["shopee", "./shopee.mjs", shopeeSkus, "/api/shopee/auth", "Shopee"],
-    ["tiktok", "./tiktok.mjs", tiktokSkus, "/api/tiktok/auth", "TikTok Shop"],
-    ["lazada", "./lazada.mjs", lazadaSkus, "/api/lazada/auth", "Lazada"],
+    ["shopee", () => import("./shopee.mjs"), shopeeSkus, "/api/shopee/auth", "Shopee"],
+    ["tiktok", () => import("./tiktok.mjs"), tiktokSkus, "/api/tiktok/auth", "TikTok Shop"],
+    ["lazada", () => import("./lazada.mjs"), lazadaSkus, "/api/lazada/auth", "Lazada"],
   ];
-  const สถานะเชื่อม = await Promise.all(เจ้าที่ต้องเชื่อม.map(async ([tag, mod, fn, authPath, ชื่อ]) => {
+  const สถานะเชื่อม = await Promise.all(เจ้าที่ต้องเชื่อม.map(async ([tag, โหลด, fn, authPath, ชื่อ]) => {
     try {
-      const t = await (await import(mod)).validToken();
+      const t = await (await โหลด()).validToken();
       return { tag, fn, ชื่อ, authPath, เชื่อมอยู่: !!t };
     } catch (e) {
       return { tag, fn, ชื่อ, authPath, ตรวจไม่ได้: String(e?.message || e).slice(0, 120) };
