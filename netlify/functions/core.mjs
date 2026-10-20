@@ -2504,7 +2504,9 @@ async function route(req, context) {
       return okJson({ ...(await listQuotations(url.searchParams.get("limit"), url.searchParams.get("page"), listStore.store,
         /* ส่ง q ต่อไปด้วย **เพื่อให้ท่อประกาศว่าเมิน** ไม่ใช่เพื่อกรอง (เส้นนี้ยังกรอง q ไม่ได้)
            ไม่ส่งต่อ = ผู้เรียกส่ง q มาแล้วเงียบหาย ไม่มีทางรู้ว่าถูกเมิน */
-        { type: url.searchParams.get("type"), q: url.searchParams.get("q") })), ...listStore });
+        { type: url.searchParams.get("type"), q: url.searchParams.get("q"),
+          /* 🔀 ส่ง sort/dir ต่อ (21 ต.ค. 2569) — เส้นนี้รับผ่าน `opts` ไม่ใช่พารามิเตอร์ตำแหน่ง */
+          sort: url.searchParams.get("sort"), dir: url.searchParams.get("dir") })), ...listStore });
     }
     /* ใบคืนของ (CN-) — ดึงสดจาก ZORT · จอ "รายการขาย → รับคืนสินค้า"
        ⚠️ **คนละฐานกับจอ /returns เดิมของหลังร้าน** ซึ่งคำนวณของคืนจากออเดอร์
@@ -2695,6 +2697,8 @@ async function route(req, context) {
          ⇒ จอที่เช็ค ok ก่อนจะอ่านว่าสำเร็จ แล้วโชว์ตารางว่างเปล่าเหมือน "ไม่มีข้อมูล"
          🔑 คลาสเดียวกับที่ไล่กันทั้งวัน: **ความพังต้องถูกตัดสินก่อนการอนุมาน** */
       const ผล = await listTransfers({
+          sort: url.searchParams.get("sort"),
+          dir: url.searchParams.get("dir"),
           q: url.searchParams.get("q"),
           limit: url.searchParams.get("limit"),
           offset: url.searchParams.get("offset"),

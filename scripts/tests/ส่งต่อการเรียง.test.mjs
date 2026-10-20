@@ -10,21 +10,35 @@
  */
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
-import { readFileSync } from 'node:fs'
+import { ซอร์สไม่เอาคอมเมนต์ } from './_src.mjs'
 
 // ───────── ① เส้นทางส่งต่อ: core.mjs ต้องส่ง sort+dir ให้ตัวอ่านทุกตัวที่รองรับ ─────────
 test('core.mjs ส่ง sort/dir ต่อให้ตัวอ่านทุกเส้นที่รองรับการเรียง', () => {
-  const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8')
-  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock', 'listOrders']) {
+  /* 🔑 **ตัดคอมเมนต์ก่อนค้น** — core.mjs มีคอมเมนต์ที่เอ่ยถึง `listTransfers(...)`
+     ⇒ ด่านรุ่นก่อนไปเจอคอมเมนต์นั้นก่อนจุดเรียกจริง แล้วฟ้องว่า "ไม่ได้ส่ง sort ต่อ"
+     = **แดงลวงรอบที่สี่ของไฟล์นี้** · ใช้ตัวถอดคอมเมนต์กลางของรีโป ไม่เขียน regex เอง */
+  const src = ซอร์สไม่เอาคอมเมนต์('netlify/functions/core.mjs')
+  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock', 'listOrders', 'listTransfers', 'listQuotations']) {
     /* ⚠️ **ห้ามตรึงคำว่า `await`** — `listOrders({` ถูกเรียกใน `Promise.all` จึงไม่มี await นำหน้า
        ⇒ ด่านรุ่นแรกหาไม่เจอแล้วฟ้องว่า "ไม่มีจุดเรียก" ซึ่งเป็น **แดงลวง** (ของจริงส่งครบ)
        🔑 ครั้งที่สองของคลาสเดียวกันในไฟล์นี้ (ครั้งแรก: ตรึง `url.searchParams.get` จน `p.get` ไม่ผ่าน)
           ⇒ ด่านอ่านซอร์สต้องถาม **"พารามิเตอร์ถูกส่งต่อไหม"** ไม่ใช่ "เขียนด้วยสำนวนไหน" */
-    const i = src.indexOf(`${ตัวอ่าน}({`)
+    const i = src.indexOf(`${ตัวอ่าน}(`)
     assert.ok(i > 0, `หาจุดเรียก ${ตัวอ่าน} ใน core.mjs ไม่เจอ`)
-    /* ตัดเอาเฉพาะก้อนพารามิเตอร์ของจุดเรียกนั้น — ห้ามค้นทั้งไฟล์
-       ไม่งั้นคำว่า sort ของเส้นอื่น (deadstock · stockcard) จะทำให้ผ่านฟรี */
-    const ก้อน = src.slice(i, src.indexOf('})', i))
+    /* ตัดเอาเฉพาะก้อนอาร์กิวเมนต์ของจุดเรียกนั้น — ห้ามค้นทั้งไฟล์
+       ไม่งั้นคำว่า sort ของเส้นอื่น (deadstock · stockcard) จะทำให้ผ่านฟรี
+       🔑 **นับวงเล็บเอง ไม่ผูกกับรูปการเรียก** — `listQuotations(` ใช้อาร์กิวเมนต์
+          **ตามตำแหน่ง** (limit, page, store, opts) ไม่ใช่ `fn({…})` ⇒ ด่านรุ่นก่อนหา `fn({`
+          ไม่เจอแล้วฟ้องว่า "ไม่มีจุดเรียก" = **แดงลวงรอบที่สามของไฟล์นี้**
+          (รอบ ① ตรึง `url.searchParams.get` · รอบ ② ตรึงคำว่า `await`)
+       ⇒ บทเรียนเดิมอีกครั้ง: ด่านอ่านซอร์สต้องถาม "ค่าถูกส่งต่อไหม" ไม่ใช่ "เขียนรูปไหน" */
+    const เริ่มวงเล็บ = src.indexOf('(', i)
+    let ลึก = 0, จบ = เริ่มวงเล็บ
+    for (let k = เริ่มวงเล็บ; k < src.length; k++) {
+      if (src[k] === '(') ลึก++
+      else if (src[k] === ')') { ลึก--; if (ลึก === 0) { จบ = k; break } }
+    }
+    const ก้อน = src.slice(เริ่มวงเล็บ, จบ)
     /* ⚠️ **ห้ามตรึงชื่อตัวอ่าน query** — จุดเรียกในไฟล์นี้ใช้ทั้ง `url.searchParams.get(...)`
        และตัวย่อ `p.get(...)` ⇒ ตรึงรูปใดรูปหนึ่งได้ **แดงลวง** (เจอจริงตอนเพิ่ม listStock:
        ด่านฟ้องว่าไม่ส่ง dir ทั้งที่ส่งครบ ⇒ เกือบไปแก้โค้ดที่ยังดี)

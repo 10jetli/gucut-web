@@ -19,7 +19,7 @@ import { contains, containsLit } from "./sql-contains.mjs";
 import { storeCreds } from "./zort-store-doc-counts.mjs";
 import { thaiDayFromUtc, วันไทยย้อน, วันไทยจากMs } from "./thaiday.mjs";
 import { markSync, freshnessOf } from "./core-freshness.mjs";
-import { ตีความการเรียง } from "./list-sort.mjs";
+import { ตีความการเรียง, ตัวเทียบ } from "./list-sort.mjs";
 import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
 
 const esc = (s) => `'${String(s ?? "").replace(/'/g, "''")}'`;
@@ -789,6 +789,14 @@ export async function listTransfers(o = {}) {
   const limit = Math.max(1, Math.min(200, num(o.limit) || 50));
   const offset = Math.max(0, num(o.offset));
   const q = String(o.q ?? "").trim().slice(0, 60);
+  /* 🔀 `sort=`/`dir=` ของจอใบโอน (คุณส้มขอ 21 ต.ค. 2569 00:22 · ZORT เรียงได้ 3 ช่อง)
+     ชื่อช่องของ ZORT: actiondate · number · status ⇒ ฝั่งเราชี้ไปคอลัมน์ในกระจก
+     ⚠️ เส้นนี้อ่านจาก **กระจก D1** (ไม่ใช่ ZORT สด) ⇒ เรียงใน SQL ได้ ⇒ เรียง **ก่อน** ตัดหน้า
+     ⚠️ ค่าตั้งต้นต้องเป็น ORDER BY เดิมเป๊ะ ⇒ จอที่ไม่ส่ง sort ได้ลำดับเดิม */
+  const การเรียงโอน = ตีความการเรียง(o, {
+    date: "transfer_date", number: "number", status: "status",
+  }, { sql: "ORDER BY transfer_date DESC, number DESC", sort: "date", dir: "desc" });
+  if (การเรียงโอน.error) return { error: การเรียงโอน.error };
   /* 🔎 ตัวกรองสถานะ + ช่วงวัน — ฝั่งจอขอ 18 ก.ย. 2569 พร้อมหลักฐานว่าของเดิม **เมินเงียบ**
      (ยิง from/to/days/page/status แล้ว total เท่าเดิม 12,005 ทุกครั้ง · applied เป็น null)
      🔴 เหตุผลที่ status มาก่อน from/to: `byStatus` บอกว่ามีใบยกเลิก 28 ใบ
@@ -835,7 +843,7 @@ export async function listTransfers(o = {}) {
     coreQuery(
       `SELECT id, number, kind, from_wh, to_wh, status, transfer_date, reference, note
        FROM transfers WHERE 1=1 ${filterแถว}
-       ORDER BY transfer_date DESC, number DESC LIMIT ${limit} OFFSET ${offset}`
+       ${การเรียงโอน.sql} LIMIT ${limit} OFFSET ${offset}`
     ),
   ]);
   const sum = sumRows[0];
@@ -854,9 +862,9 @@ export async function listTransfers(o = {}) {
     /* 🤝 สัญญากับจอ: บอกว่า **ใช้ค่าอะไรไปจริง** ไม่ใช่แค่รับมา
         ⚠️ ของเดิมไม่มีคีย์นี้เลย ⇒ จอส่งตัวกรองไปแล้วท่อเมิน โดยไม่มีอะไรฟ้อง
            ฝั่งจอเป็นคนจับได้ด้วยการยิงเทียบ total (เท่าเดิมทุกครั้ง) */
-    applied: { q: q || null, store, status: status || null, from, to },
+    applied: { q: q || null, store, status: status || null, from, to, ...การเรียงโอน.applied },
     ignored: { days: o.days ?? null, page: o.page ?? null },
-    supportedFilters: ["q", "store", "status", "from", "to", "limit", "offset"],
+    supportedFilters: ["q", "store", "status", "from", "to", "limit", "offset", "sort", "dir"],
     supportedStatus: สถานะที่มีจริง,
     "⚠️ ขอบเขตตัวกรอง":
       "status/from/to กรองที่กระจก ไม่ได้ยิง ZORT ใหม่ · from/to เทียบกับ transfer_date (วันที่เอกสาร) " +
@@ -932,12 +940,40 @@ export async function listQuotations(limit = 50, page = 1, store = "z1", opts = 
         ถ้าตอนนั้นท่อยังเมินเงียบ ๆ จะกลายเป็นช่องค้นหาที่คืนทั้งชุดโดยไม่มีอะไรฟ้อง
       🔑 ประกาศว่าเมิน ≠ รองรับ — จอต้องเช็ค ignored ก่อนเขียนว่า "กรองแล้ว" */
   const qRaw = String(opts.q ?? "").trim().slice(0, 60);
+
+  /* 🔀 `sort=`/`dir=` ของจอใบเสนอราคา (คุณส้มขอ 21 ต.ค. 2569 00:22 · ZORT เรียงได้ 6 ช่อง)
+     🔴 **เส้นนี้อ่านสดจาก ZORT ไม่ใช่กระจก** ⇒ เรียงใน SQL ไม่ได้ ⇒ ต้องเรียงในหน่วยความจำ
+        ⚠️ และนั่นคือจุดที่กลายเป็น **ปุ่มหลอกได้ง่ายที่สุด**: ถ้าเรียงเฉพาะหน้าที่ดึงมา
+          จอจะเห็นลำดับเปลี่ยน (ดูเหมือนทำงาน) แต่ใบที่อยู่หน้าอื่นไม่เคยถูกเอามาเทียบเลย
+     ✅ ⇒ เรียง **ก่อนส่ง** และประกาศขอบเขตด้วย `sortScope` + `sortWholeSet`
+        ZORT ส่ง `count` (ยอดทั้งชุด) มาด้วย ⇒ เรารู้ได้ว่าชุดที่ถืออยู่ครบหรือไม่ **ไม่ต้องเดา**
+     🚫 ห้ามทำเงียบ ๆ ว่า "เรียงแล้ว" เมื่อชุดไม่ครบ — จอต้องอ่าน `sortWholeSet` ก่อนเชื่อลำดับ
+     ⚠️ ชื่อช่องฝั่งจอ ↔ ชื่อช่องดิบของ ZORT (ตามที่คุณส้มส่งมาจาก mysort ของจอ ZORT) */
+  const การเรียงQT = ตีความการเรียง(opts, {
+    date: "transactiondate", number: "number", customer: "customername",
+    channel: "saleschannel", amount: "amount", status: "status",
+  }, { sql: "(ลำดับที่ ZORT ส่งมา)", sort: "zort", dir: "desc" });
+  if (การเรียงQT.error) return { error: การเรียงQT.error };
+  /* เรียงในหน่วยความจำ **ก่อน** ส่งออก · ไม่ส่ง sort มา ⇒ คงลำดับที่ ZORT ส่งมาเป๊ะ */
+  const เรียงแล้ว = การเรียงQT.applied.sortDefaulted
+    ? list
+    : [...list].sort(ตัวเทียบ(การเรียงQT.คอลัมน์, การเรียงQT.ทิศ));
+  const ครบทั้งชุด = p === 1 && list.length >= num(data?.count);
+
   return {
     store,
+    /* 🔀 ขอบเขตของการเรียง — จอต้องอ่านก่อนเชื่อลำดับ */
+    sortWholeSet: ครบทั้งชุด,
+    sortScope: การเรียงQT.applied.sortDefaulted
+      ? "ไม่ได้สั่งเรียง — ลำดับนี้คือลำดับที่ ZORT ส่งมา"
+      : ครบทั้งชุด
+        ? `เรียงจากทั้งชุด (${list.length} ใบ = ทั้งหมดที่ ZORT มี) ⇒ ลำดับเชื่อได้`
+        : `⚠️ **เรียงจากแค่หน้านี้ ${list.length} ใบ จากทั้งหมด ${num(data?.count)} ใบ** `
+          + "⇒ ใบที่อยู่หน้าอื่นไม่ได้ถูกเอามาเทียบ · ขอ limit ให้ครอบทั้งชุดก่อนถึงจะเชื่อลำดับได้",
     /* 📣 **`applied`** (เพิ่ม 28 ก.ย. 2569) — ค่าที่เส้นนี้ใช้จริงหลังบีบขอบ
        🔑 ฝั่งจอส่ง `limit`/`page` มาแล้ว **ยังไม่รู้ว่าท่อพิจารณาไหม** ⇒ ถ้าท่อเมินเงียบ
           จอจะโชว์หน้าที่ "ดูเหมือนเลื่อนแล้ว" ทั้งที่ได้ชุดเดิม (คลาสที่เคยเจอกับ page จริง ๆ) */
-    applied: { limit: n, page: p, store, type: opts.type ?? null, q: opts.q ?? null },
+    applied: { limit: n, page: p, store, type: opts.type ?? null, q: opts.q ?? null, ...การเรียงQT.applied },
     /* 🔴 **ต้องบอก limit ที่ใช้จริงออกไป** (เพิ่ม 19 ก.ย. 2569)
        ไม่บอก ⇒ ตัวช่วยไล่หน้า (`paging-hint.mjs`) ไม่มีข้อมูลพอ **จึงไม่เติม nextOffset/nextPage เลย**
        ⇒ ปลายทางเห็นคำตอบที่ไม่มีคีย์ไล่หน้า ซึ่ง **แยกไม่ออกจาก "ท่อรุ่นเก่าไม่รองรับ"** ⇒ ต้องเดา
@@ -949,7 +985,7 @@ export async function listQuotations(limit = 50, page = 1, store = "z1", opts = 
     total: num(data?.count),
     live: true, // ดึงสดจาก ZORT ไม่ใช่กระจก — จอเขียนบอกได้ว่าเป็นข้อมูลสด
     /* 🔎 ตัวกรองที่เส้นนี้อ่านจริงมีแค่นี้ — ส่งไปให้จอตรวจเองได้ว่าที่ส่งไปถูกใช้ไหม */
-    supportedFilters: ["limit", "page", "store"],
+    supportedFilters: ["limit", "page", "store", "sort", "dir"],
     ...(typeRaw || qRaw ? {
       ignored: { ...(typeRaw ? { type: typeRaw } : {}), ...(qRaw ? { q: qRaw } : {}) },
       ignoredNote:
@@ -986,7 +1022,7 @@ export async function listQuotations(limit = 50, page = 1, store = "z1", opts = 
           : {}),
       };
     })(),
-    rows: list.map((q) => ({
+    rows: เรียงแล้ว.map((q) => ({
       /* ⚠️ **เลขที่ใบ (`number`) กับ id ในระบบ ZORT เป็นคนละตัว**
           เส้นดึงรายละเอียดรายใบรับ **id เท่านั้น** ส่งเลขที่ใบไปได้ค่าว่างเงียบ ๆ
           (เจอจริง 6 ก.ย. 2569 — ส่ง "QT-202609001" ไปแล้วดึงไม่ได้ ทั้งที่เส้นมีอยู่จริง)
