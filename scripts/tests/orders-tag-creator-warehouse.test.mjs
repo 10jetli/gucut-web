@@ -94,7 +94,13 @@ test('list=orders / orderfacets กรอง tag · ผู้สร้าง · 
 
 test('core.mjs ส่งพารามิเตอร์ tag · createuser · warehouse ทั้ง orders และ orderfacets', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8');
-  for (const [name, start] of [['orderfacets', '...(await listOrderFacets({'], ['orders', 'listOrders({\n          from: p.get("from")']]) {
+  /* ⚠️ **จุดยึดห้ามผูกกับลำดับบรรทัดในจุดเรียก** (แก้ 20 ต.ค. 2569 23:4x)
+     ของเดิมยึด `'listOrders({\n          from: p.get("from")'` ⇒ วันที่มีคนแทรกพารามิเตอร์
+     ตัวใหม่ไว้ **ก่อน** `from` (รอบนี้คือ `sort`/`dir` ของจอรายการขาย) ด่านนี้หาไม่เจอแล้วฟ้องว่า
+     "orders" ⇒ **แดงลวง** ทั้งที่สามช่องที่มันตรวจยังส่งครบ
+     🔑 คำถามของด่านนี้คือ "core.mjs ส่ง tag/createuser/warehouse ให้ listOrders ไหม"
+        ไม่ใช่ "พารามิเตอร์เรียงลำดับไหน" ⇒ ยึดแค่ชื่อฟังก์ชัน แล้วตัดก้อนถึง includeCancelled เหมือนเดิม */
+  for (const [name, start] of [['orderfacets', '...(await listOrderFacets({'], ['orders', 'listOrders({']]) {
     const i = src.indexOf(start); assert.ok(i > 0, name);
     const blk = src.slice(i, src.indexOf('includeCancelled', i));
     for (const k of ['tag: p.get("tag")', 'createUser: p.get("createuser")', 'warehouse: p.get("warehouse")']) assert.ok(blk.includes(k), `${name} ขาด ${k}`);

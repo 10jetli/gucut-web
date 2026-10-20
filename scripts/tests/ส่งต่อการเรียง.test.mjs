@@ -15,8 +15,12 @@ import { readFileSync } from 'node:fs'
 // ───────── ① เส้นทางส่งต่อ: core.mjs ต้องส่ง sort+dir ให้ตัวอ่านทุกตัวที่รองรับ ─────────
 test('core.mjs ส่ง sort/dir ต่อให้ตัวอ่านทุกเส้นที่รองรับการเรียง', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8')
-  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock']) {
-    const i = src.indexOf(`await ${ตัวอ่าน}({`)
+  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock', 'listOrders']) {
+    /* ⚠️ **ห้ามตรึงคำว่า `await`** — `listOrders({` ถูกเรียกใน `Promise.all` จึงไม่มี await นำหน้า
+       ⇒ ด่านรุ่นแรกหาไม่เจอแล้วฟ้องว่า "ไม่มีจุดเรียก" ซึ่งเป็น **แดงลวง** (ของจริงส่งครบ)
+       🔑 ครั้งที่สองของคลาสเดียวกันในไฟล์นี้ (ครั้งแรก: ตรึง `url.searchParams.get` จน `p.get` ไม่ผ่าน)
+          ⇒ ด่านอ่านซอร์สต้องถาม **"พารามิเตอร์ถูกส่งต่อไหม"** ไม่ใช่ "เขียนด้วยสำนวนไหน" */
+    const i = src.indexOf(`${ตัวอ่าน}({`)
     assert.ok(i > 0, `หาจุดเรียก ${ตัวอ่าน} ใน core.mjs ไม่เจอ`)
     /* ตัดเอาเฉพาะก้อนพารามิเตอร์ของจุดเรียกนั้น — ห้ามค้นทั้งไฟล์
        ไม่งั้นคำว่า sort ของเส้นอื่น (deadstock · stockcard) จะทำให้ผ่านฟรี */
@@ -200,4 +204,49 @@ test('list=stock: sort=sku&dir=desc ต้องไม่ได้ ORDER BY ท�
   const ส่วนเรียง = sql.slice(sql.indexOf('ORDER BY'))
   assert.equal((ส่วนเรียง.match(/cur\.sku/g) || []).length, 1,
     `ได้ ORDER BY ที่ขัดกันเอง: ${ส่วนเรียง.slice(0, 60)}`)
+})
+
+// ───────── ⑤ list=orders — เส้นที่ใหญ่สุดและเพิ่งได้ sort= รอบนี้ ─────────
+const { listOrders } = await import('../../netlify/lib/core-orders.mjs')
+const sqlแถวออเดอร์ = () => เห็น.find((x) => x.includes('SELECT id, source, number, channel')) || ''
+
+test('list=orders: ไม่ส่ง sort ⇒ ลำดับตั้งต้นเดิมเป๊ะ (จอที่ deploy อยู่ต้องไม่เห็นชุดใหม่)', async () => {
+  เห็น.length = 0
+  const r = await listOrders({ limit: '5' })
+  const sql = sqlแถวออเดอร์()
+  assert.ok(sql.includes('ORDER BY order_date DESC, number DESC'),
+    `ลำดับตั้งต้นเปลี่ยนไป: ${sql.slice(sql.indexOf('ORDER BY'), sql.indexOf('ORDER BY') + 70)}`)
+  assert.equal(r.applied.sortDefaulted, true)
+  assert.equal(r.applied.sort, 'date')
+})
+
+test('list=orders: sort ไปถึง ORDER BY จริง + ต่อท้ายลำดับตั้งต้น ⇒ ลำดับนิ่ง', async () => {
+  เห็น.length = 0
+  const r = await listOrders({ sort: 'amount', dir: 'desc', limit: '5' })
+  const sql = sqlแถวออเดอร์()
+  assert.ok(sql.includes('ORDER BY amount DESC, order_date DESC, number DESC'),
+    `คาด amount DESC แล้วต่อท้ายลำดับตั้งต้น ได้: ${sql.slice(sql.indexOf('ORDER BY'), sql.indexOf('ORDER BY') + 80)}`)
+  assert.equal(r.applied.sort, 'amount')
+  assert.equal(r.applied.dir, 'desc')
+  assert.equal(r.applied.sortDefaulted, false)
+})
+
+test('list=orders: เรียงได้ครบ 8 ช่องตามหัวคอลัมน์ของจอ ZORT /Sell/list', async () => {
+  /* 🔑 จอ ZORT กดเรียงได้ 8 ช่อง — เปิดไม่ครบ = จอมีปุ่มที่กดไม่ได้ (ปุ่มหลอกกลับด้าน) */
+  for (const [ช่อง, คอลัมน์] of [['date', 'order_date'], ['number', 'number'], ['customer', 'customer'],
+                                  ['channel', 'channel'], ['shipDate', 'ship_date'], ['amount', 'amount'],
+                                  ['status', 'status'], ['payStatus', 'pay_status']]) {
+    เห็น.length = 0
+    const r = await listOrders({ sort: ช่อง, dir: 'asc', limit: '5' })
+    assert.equal(r.applied?.sort, ช่อง, `sort=${ช่อง} ไม่ถูกรับ`)
+    assert.ok(sqlแถวออเดอร์().includes(`ORDER BY ${คอลัมน์} ASC`),
+      `sort=${ช่อง} ต้องเรียงด้วยคอลัมน์ ${คอลัมน์}`)
+  }
+})
+
+test('list=orders: ชื่อช่องไม่รู้จัก ⇒ ตีกลับพร้อมรายชื่อที่เรียงได้ ไม่ใช่เมินเงียบ', async () => {
+  const r = await listOrders({ sort: 'ไม่มีช่องนี้', limit: '5' })
+  assert.match(String(r.error), /ไม่รู้จักช่องเรียง/)
+  for (const ช่อง of ['date', 'number', 'customer', 'channel', 'shipDate', 'amount', 'status', 'payStatus'])
+    assert.ok(String(r.error).includes(ช่อง), `ข้อความตีกลับไม่ได้บอกว่าเรียงได้ด้วย ${ช่อง}`)
 })

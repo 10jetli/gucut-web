@@ -12,6 +12,7 @@ import { coreQuery, coreReady } from "./coredb.mjs";
 import { contains, containsLit } from "./sql-contains.mjs";
 import { readStatus, groupsFromCounts, groupKeyOf } from "./order-status.mjs";
 import { isRealDay, CANCEL_WORDS, เพดานช่วงวันของรายการขาย } from "./param-guard.mjs";
+import { ตีความการเรียง } from "./list-sort.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -661,6 +662,19 @@ export async function listOrders(o = {}) {
      🔑 และคอมเมนต์ที่ผมเขียนไว้เองว่า "ไม่มีวัน ไม่มีคำค้น" เป็น **เจตนา** ส่วนโค้ดใส่วันให้เองโดยไม่มีใครสั่ง
         ⇒ คอมเมนต์ประกาศเจตนา ไม่ใช่หลักฐานว่าโค้ดทำตามนั้น (กฎเดียวกับที่เจอใน byStatus วันเดียวกัน) */
   const wStore = buildWhere({ from: "0001-01-01", to: "9999-12-31", includeCancelled: true, source });
+  /* 🔀 `sort=`/`dir=` ของจอรายการขาย (คุณส้มขอ 20 ต.ค. 2569 23:23 · วัดมาแล้วว่าเส้นนี้เมินเงียบ)
+     📏 ยืนยันเองก่อนทำ: ยิง `sort=amount` กับไม่ใส่ sort ได้แถวแรกเดียวกัน (`SO-202610033`)
+        และ `applied` **ไม่มีคีย์ sort เลย** ⇒ จอแยกไม่ออกระหว่าง "ท่อเรียงให้แล้ว" กับ "ท่อเมิน"
+        = ปุ่มหลอกตัวที่สี่ของระบบ (หลัง bundles · contacts · purchases)
+     🔑 จอ ZORT `/Sell/list` กดเรียงได้ 8 ช่อง ⇒ เปิดครบ 8 ช่อง **ตามคอลัมน์ที่ SELECT มีจริง**
+        ไม่เปิดช่องที่ SELECT ไม่มี เพราะจะได้ปุ่มที่ทำให้ทั้งคำขอ error (D1 ตอบ error ทั้งก้อน)
+     ⚠️ ค่าตั้งต้นต้องเป็น ORDER BY เดิม **เป๊ะ** ⇒ จอที่ไม่ส่ง sort ได้ลำดับเดิมทุกแถว */
+  const การเรียง = ตีความการเรียง(o, {
+    date: "order_date", number: "number", customer: "customer", channel: "channel",
+    shipDate: "ship_date", amount: "amount", status: "status", payStatus: "pay_status",
+  }, { sql: "ORDER BY order_date DESC, number DESC", sort: "date", dir: "desc" });
+  if (การเรียง.error) return { error: การเรียง.error };
+
   const [
     sumRows, rows, chanStats, statusCountsRaw, ช่องทางดิบ, storeRows, tabGrid, statusesAllRows, payStatusesAllRows, payRowsFiltered,
     beatRows, chgRows, rngRows, retRows, retOrphanRows, retBeatRows,
@@ -675,7 +689,7 @@ export async function listOrders(o = {}) {
     coreQuery(
       `SELECT id, source, number, channel, status, amount, customer, order_date, tracking_no, ship_channel, ship_name, ship_date, is_cod, pay_status, integration_status AS integrationStatus, tag, create_user, warehouse_code
        FROM orders WHERE ${w.sql}
-       ORDER BY order_date DESC, number DESC
+       ${การเรียง.sql}
        LIMIT ${limit} OFFSET ${offset}`,
       w.params
     ),
@@ -930,6 +944,7 @@ export async function listOrders(o = {}) {
     applied: {
       q, channel, status: statuses, store: source, from, to, dateType, limit, offset,
       includeCancelled,
+      ...การเรียง.applied,
       advancedFilters: "ดูคีย์ advancedFilters — ตัวกรองขั้นสูงอยู่ที่นั่น (null = ไม่ได้กรอง)",
     },
     /* 🔴 **ชื่อใน `applied` ไม่ใช่ชื่อพารามิเตอร์ที่ท่อรับ — สองจุด** (เพิ่ม 19 ก.ย. 2569)

@@ -5391,6 +5391,10 @@ async function route(req, context) {
           มันไม่ต้องรอผลของ listOrders เลยสักช่อง */
       const [orders, channels] = await Promise.all([
         listOrders({
+          /* 🔀 ส่ง sort/dir ต่อ — ด่าน `ส่งต่อการเรียง.test.mjs` บังคับข้อนี้
+             (รอบก่อนผมลืมส่งต่อให้ bundles/contacts แล้วเทสเขียวทั้งที่ของจริงเมิน) */
+          sort: p.get("sort"),
+          dir: p.get("dir"),
           from: p.get("from"),
           to: p.get("to"),
           channel: p.get("channel"),
