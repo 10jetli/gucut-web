@@ -35,7 +35,7 @@
 import { บีบเลข, ก้อนการบีบ } from "./บีบค่า.mjs";   // บีบค่าแล้วบอกเหตุ (ฝั่งจอขอ 28 ก.ย. 2569)
 import { licensedStock } from "./licensed-stock.mjs";   // ทะเบียนทับ ZORT โดยตั้งใจ (30 รหัส)
 import { coreQuery, coreReady } from "./coredb.mjs";
-import { freshnessOf } from "./core-freshness.mjs";
+import { freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { contains } from "./sql-contains.mjs";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -560,10 +560,21 @@ export async function listStock(o = {}) {
     freshnessOf(coreQuery, { table: "products", metaKey: "sync_products" }),
     freshnessOf(coreQuery, { table: "stock_snapshots", dayCol: "day" }),
   ]);
+  /* 🕘 **รอบที่คาดหวังของ qty/available** (เพิ่ม 20 ต.ค. 2569 · คุณส้มทักว่าเส้นนี้ไม่ประกาศรอบ)
+     ก่อนหน้านี้เส้นนี้ส่งแต่ "ซิงก์ล่าสุดเมื่อไหร่" ไม่ได้ส่ง "ควรซิงก์ทุกกี่ชั่วโมง"
+     ⇒ จอ **แยก "เก่าโดยออกแบบ" ออกจาก "ตัวซิงก์ตาย" ไม่ได้** ⇒ ต้องมาถามคนทุกครั้ง
+     ⚠️ `syncProducts()` อยู่ใน core-sync ที่ cron รายชั่วโมง แต่ถูกขังให้ทำวันละครั้ง
+        ⇒ ส่ง `ขังไว้รายวัน` เพื่อไม่ให้ได้เกณฑ์ 1 ชม. ซึ่งจะเตือนลวงทุกชั่วโมง */
+  const รอบสต็อก = await รอบที่คาดหวัง("core-sync", "stock", {
+    ขังไว้รายวัน: true,
+    ที่อยู่ในโค้ด: "netlify/functions/core-sync.mjs (เงื่อนไข utcH === 18 && utcM < 30)",
+    เหตุ: "ชื่อ/ราคา/สต็อกของทะเบียนสินค้าเปลี่ยนช้า — ยิงถี่กว่านี้ไปกินงบเวลาของลูปที่มีเพดาน 26 วิ",
+  });
   return {
     day,
     soldDays,
     freshness,
+    ...รอบสต็อก,
     snapshotFreshness,
     stockSources: {
       qty: "products.onhand",

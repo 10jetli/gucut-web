@@ -10,6 +10,7 @@
 //    และวันนั้นต้องมีหน้าจอแก้ชื่อ/ราคาเอง (ยังไม่มี — จดไว้ในแผน)
 import { coreQuery, coreReady } from "./coredb.mjs";
 import { containsLit } from "./sql-contains.mjs";
+import { ตีความการเรียง } from "./list-sort.mjs";
 import { markSync, freshnessOf, รอบที่คาดหวัง } from "./core-freshness.mjs";
 import { thaiDayFromUtc, วันไทยย้อน } from "./thaiday.mjs";
 import { อ่านหน้าZort, ตรวจชนเพดาน } from "./zort-pages.mjs";
@@ -497,6 +498,14 @@ export async function listBundles(o = {}) {
         และ `rowsReturned` = จำนวนแถวในหน้านี้ (ใช้ชื่อเดียวกับ list=stock ห้ามคิดคำใหม่)
       ⚠️ `total` ยังคงความหมายเดิม (ทั้งคลังหลังกรองคำค้น ข้ามตัวกรอง only) เพราะ
         แท็บต้องเห็นของทุกกอง — ห้าม "แก้" ให้ total เดินตาม only ไม่งั้นแท็บอื่นขึ้น 0 */
+  /* 🔀 `sort=`/`dir=` (เพิ่ม 20 ต.ค. 2569 · คุณส้มวัดมาว่าท่อเมินเงียบ ๆ)
+     🔒 ชื่อช่อง → นิพจน์คอลัมน์ **ตรึงไว้ที่นี่** ⇒ ค่าของผู้ใช้ไม่เคยถูกต่อเข้า SQL */
+  const การเรียง = ตีความการเรียง(o, {
+    sku: "sku", name: "name", sellprice: "sellprice",
+    onhand: "onhand", available: "available", active: "active", unit: "unit",
+  }, { sql: "ORDER BY sku", sort: "sku", dir: "asc" });
+  if (การเรียง.error) return { error: การเรียง.error };
+
   const [[sum], [ตรงตัวกรอง], rows] = await Promise.all([
     coreQuery(
       `SELECT COUNT(*) AS c,
@@ -509,7 +518,7 @@ export async function listBundles(o = {}) {
     coreQuery(
       `SELECT sku, name, sellprice, onhand, available, active, unit
        FROM bundles WHERE 1=1 ${filter} ${only}
-       ORDER BY sku LIMIT ${limit} OFFSET ${offset}`
+       ${การเรียง.sql} LIMIT ${limit} OFFSET ${offset}`
     ),
   ]);
 
@@ -637,7 +646,7 @@ export async function listBundles(o = {}) {
        (ฝั่งจอขอไว้ 18 ก.ย. 2569 · ท่าเดียวกับ `applied` ของเส้นอื่นในไฟล์นี้)
        ⚠️ `total`/`active`/`inactive` เป็นยอด **ทั้งกอง ไม่ถูกกรองด้วย only** โดยตั้งใจ
           (จอต้องโชว์ได้ว่า "กรองแล้วเหลือกี่แถว จากทั้งหมดเท่าไร") ⇒ เขียนกำกับไว้ไม่ให้เข้าใจผิด */
-    applied: { only: onlyRaw || null, q: q || null },
+    applied: { only: onlyRaw || null, q: q || null, ...การเรียง.applied },
     appliedScope: "only กรองเฉพาะรายการที่ส่งกลับ (rows) — total/active/inactive เป็นยอดทั้งกอง ไม่ถูกกรอง",
     recipeAt,
     ...(await (async () => {

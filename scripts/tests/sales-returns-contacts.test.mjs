@@ -61,7 +61,11 @@ test('อ่านตารางใบคืนไม่ได้ ⇒ returnedA
 test('ตัวกรองผู้ติดต่อลง SQL · ไม่นับเป็นคำค้น — offset ลึกไม่มี q ยังถูกกัน', async () => {
   sqls = [];
   const r = await listContacts({ withPhone: '1', withEmail: '1', limit: 50 });
-  assert.deepEqual(r.applied, { q: null, withPhone: true, withEmail: true });
+  /* 🔀 20 ต.ค. 2569 — `applied` มีช่องเรียงเพิ่ม (ท่อเริ่มรับ sort=/dir=)
+     ⚠️ เทสนี้เทียบแบบ deepEqual โดยตั้งใจ ⇒ ท่อเพิ่มช่องใน `applied` เมื่อไหร่ **ต้องมาแก้ที่นี่**
+        ซึ่งถูกแล้ว: `applied` เป็นสัญญาที่ฝั่งจออ่าน การเพิ่มช่องเงียบ ๆ ไม่ควรผ่านด่าน */
+  assert.deepEqual(r.applied, { q: null, withPhone: true, withEmail: true,
+                                sort: 'name', dir: 'asc', sortDefaulted: true });
   /* ⚠️ ตรวจที่ส่วน WHERE ของคำสั่งดึงแถวเท่านั้น — ข้อความ COALESCE(phone,'') <> '' มีอยู่แล้วใน SUM(CASE…) ของตัวนับ
       ตรวจทั้งคำสั่งแบบรุ่นแรก = เขียวเสมอแม้ถอดตัวกรองทิ้ง (กลายพันธุ์ M3 จับได้ 15 ก.ย. 2569) */
   const rowSql = sqls.find((s) => /SELECT id, type, name, code, phone, email/.test(s));
@@ -122,4 +126,37 @@ test('เลขที่ใบคืนซ้ำแต่ id ต่าง ⇒ �
   } finally {
     globalThis.fetch = saved;
   }
+});
+
+test('🔀 sort= ต้องลงไปถึง SQL จริง และสะท้อนกลับใน applied — ไม่ใช่ปุ่มหลอก', async () => {
+  /* 🔑 เหตุที่ต้องมีเทสนี้: คุณส้มวัดมา 19 ต.ค. 2569 ว่าท่อ **เมิน sort= เงียบ ๆ**
+     ยิง sort=-sku · sort=sku&dir=desc · order=desc ได้แถวแรกเดิมทุกท่า และ applied ไม่สะท้อน
+     ⇒ จอแยกไม่ออกว่า "ท่อเรียงแล้ว" กับ "ท่อเมิน" ⇒ ตารางเป็นคนละชุดกับ ZORT ตั้งแต่แถวแรก */
+  sqls = [];
+  const r = await listContacts({ sort: 'id', dir: 'desc', limit: 10 });
+  assert.equal(r.applied.sort, 'id');
+  assert.equal(r.applied.dir, 'desc');
+  assert.equal(r.applied.sortDefaulted, false);
+  const rowSql = sqls.find((s) => /SELECT id, type, name, code, phone, email/.test(s));
+  assert.ok(rowSql, 'ต้องมีคำสั่งดึงแถว');
+  assert.match(rowSql, /ORDER BY id DESC/, 'sort ต้องไปอยู่ใน ORDER BY ของคำสั่งจริง');
+  /* ⚠️ ต้องต่อท้ายด้วยคอลัมน์ตั้งต้น ⇒ ลำดับนิ่ง · ไม่งั้นแถวค่าเท่ากันสลับที่ทุกคำขอ
+     แล้วการไล่หน้าจะข้าม/ซ้ำแถวแบบหาสาเหตุไม่เจอ */
+  assert.match(rowSql, /ORDER BY id DESC, name, id/, 'ต้องต่อท้ายด้วยคอลัมน์ตั้งต้นเพื่อให้ลำดับนิ่ง');
+});
+
+test('🔑 ชื่อช่องเรียงที่ไม่รู้จักต้องตีกลับ พร้อมบอกว่าเรียงได้อะไร — ห้ามเมินเงียบ ๆ', async () => {
+  const r = await listContacts({ sort: 'ไม่มีช่องนี้', limit: 10 });
+  assert.ok(r.error, 'ต้องคืน error ให้เส้นแปลงเป็น 400');
+  assert.match(r.error, /ไม่รู้จักช่องเรียง/);
+  assert.match(r.error, /id/, 'ต้องบอกรายชื่อช่องที่เรียงได้');
+  const r2 = await listContacts({ sort: 'id', dir: 'ลง', limit: 10 });
+  assert.ok(r2.error, 'dir ที่ไม่ใช่ asc/desc ต้องตีกลับ ไม่ใช่ปรับให้เป็น asc เงียบ ๆ');
+  assert.match(r2.error, /asc/);
+});
+
+test('รูปย่อ sort=-id (ขีดหน้า = ลง) ต้องรับได้ — จอลองใช้รูปนี้มาแล้ว', async () => {
+  const r = await listContacts({ sort: '-id', limit: 10 });
+  assert.equal(r.applied.sort, 'id');
+  assert.equal(r.applied.dir, 'desc');
 });
