@@ -628,9 +628,30 @@ export async function resetTransfers() {
  *
  *  ✅ **ยิงของจริงแล้ว 18 ก.ย. 2569** — `?transfer=40522718` ⇒ TF-202609004 · status Success
  *     · from NEW · to "" (ใบปรับยอด ไม่ได้โอนออกไปคลังอื่น) · 1 บรรทัด {sku 03505 · qty 57}
- *     ช่องที่ ZORT คืนจริง 22 ช่อง: createdatetime(String) · description · fromWarehouse ·
- *     fromwarehousecode/id · id · list · number · properties · reference · status · tag ·
- *     toWarehouse · towarehousecode/id · transferType · transferdate(String) · uniquenumber · updatedatetime(String)
+ *     ช่องที่ ZORT คืนจริง 22 ช่อง — **กางเต็ม ห้ามย่อ** (เหตุผลอยู่ท้ายย่อหน้านี้):
+ *       id · number · transferType · status · reference · description ·
+ *       transferdate · transferdateString ·
+ *       createdatetime · createdatetimeString · updatedatetime · updatedatetimeString ·
+ *       fromwarehousecode · fromwarehouseid · fromWarehouse ·
+ *       towarehousecode · towarehouseid · toWarehouse ·
+ *       list · tag · uniquenumber · properties
+ *  📏 **ยิงวัดซ้ำ 21 ต.ค. 2569** (`?zortlist=transfers&limit=5` · ร้านมีใบโอน 12,047 ใบ)
+ *     ⇒ ยูเนียนจาก 5 แถว = **22 ช่องเดิมพอดี ทุกแถวรูปเดียวกัน ไม่ขาดไม่เกิน**
+ *     🔑 และวัดได้ **ชนิดของค่า** ซึ่งรายชื่อช่องบอกไม่ได้ — สำคัญกับฝั่งจอมากกว่าชื่อ:
+ *       `fromWarehouse`/`toWarehouse` = **ออบเจกต์ซ้อน** `{id,name,code,address,
+ *         streetAddress,subdistrict,district,province,postcode}` **หรือ null** (ไม่ใช่สตริง)
+ *       `fromwarehousecode`/`towarehousecode` = สตริง **หรือ null** (ใบปรับยอดไม่มีต้นทาง)
+ *       `tag` · `uniquenumber` · `properties` = **null** (ไม่ใช่ `[]`/สตริง)
+ *       `list[]` = **7 ช่อง** `id · productid · sku · name · number · unittext · vat_status`
+ *         (เอกสาร V4 บอกแค่ 5 — ขาด `id` กับ `vat_status`)
+ *  🔴 **ทำไมห้ามย่อ — คลาสนี้กัดจริงแล้ว 21 ต.ค. 2569 (ฝั่งท่อเอง)**
+ *     ของเดิมเขียนย่อว่า `createdatetime(String)` (= สองช่อง) กับ `fromwarehousecode/id`
+ *     (= สองช่อง) ⇒ **อ่านเป็นช่องเดียว** ⇒ นับได้ 19 ⇒ สรุปว่าสามช่อง `*String`
+ *     "เอกสารสัญญาแต่ ZORT ไม่ส่ง" ⇒ เอาไปออกแบบของปลูกในตัวทดสอบ **และบอกฝั่งจอ
+ *     ว่าอย่ารอค่านั้น** · วัดจริงแล้วผิดทั้งหมด — ของจริงส่งมาครบ
+ *     🔑 **สัญกรณ์ย่อทำให้ "ไม่เห็นชื่อ" ถูกอ่านเป็น "ไม่มีช่อง"** แล้วข้อสรุปเชิงลบนั้นแพร่ต่อ
+ *     🔑 เลข `22` ที่เขียนกำกับไว้ **คือตัวตรวจทานของผู้อ่าน** — เลขไม่ตรงกับที่แยกได้ = หยุด
+ *        แล้วสงสัยการอ่านของตัวเองก่อนสงสัยคนเขียน (รอบนั้นผมโทษคนเขียนไปก่อน ซึ่งผิด)
  *  🔴 **ไม่มีช่องเลขพัสดุเลย** ⇒ คำถามเดิม "มีเลขพัสดุให้จอใช้ไหม" ตอบแล้วว่า **ไม่มี**
  *     `tracking` ที่ท่อส่งออกไปจึงว่างเสมอสำหรับใบโอน — จอห้ามรอค่านี้
  *  ⚠️ ยังคืน `fields` (ชื่อช่องที่เจอจริง) กลับไปด้วยเสมอ **ห้ามลบทิ้ง** — ZORT เพิ่มช่องได้ตลอด
