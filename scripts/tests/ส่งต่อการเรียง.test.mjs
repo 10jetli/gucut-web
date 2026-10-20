@@ -18,7 +18,7 @@ test('core.mjs ส่ง sort/dir ต่อให้ตัวอ่านทุ�
      ⇒ ด่านรุ่นก่อนไปเจอคอมเมนต์นั้นก่อนจุดเรียกจริง แล้วฟ้องว่า "ไม่ได้ส่ง sort ต่อ"
      = **แดงลวงรอบที่สี่ของไฟล์นี้** · ใช้ตัวถอดคอมเมนต์กลางของรีโป ไม่เขียน regex เอง */
   const src = ซอร์สไม่เอาคอมเมนต์('netlify/functions/core.mjs')
-  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock', 'listOrders', 'listTransfers', 'listQuotations']) {
+  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock', 'listOrders', 'listTransfers', 'listQuotations', 'listDeadStock']) {
     /* ⚠️ **ห้ามตรึงคำว่า `await`** — `listOrders({` ถูกเรียกใน `Promise.all` จึงไม่มี await นำหน้า
        ⇒ ด่านรุ่นแรกหาไม่เจอแล้วฟ้องว่า "ไม่มีจุดเรียก" ซึ่งเป็น **แดงลวง** (ของจริงส่งครบ)
        🔑 ครั้งที่สองของคลาสเดียวกันในไฟล์นี้ (ครั้งแรก: ตรึง `url.searchParams.get` จน `p.get` ไม่ผ่าน)
@@ -61,6 +61,11 @@ mock.module('../../netlify/lib/coredb.mjs', { namedExports: {
       day: '2026-10-20', skus: 1, out_of_stock: 0, low: 0, negative: 0, value: 1, value_cost: 1, no_cost: 0,
     }]
     if (s.includes('SELECT SUM(CASE WHEN COALESCE(p.product_type,0) = 1')) return [{ services: 0, inactive: 0 }]
+    /* 🔑 `listDeadStock` ต้องรู้ "วันภาพถ่ายล่าสุด" กับ "ช่วงวันของออเดอร์" ก่อนถึงจะยิงแถวได้
+       ⇒ ไม่สวมสองตัวนี้ มันจะคืนแค่ { note } แล้วเทสจะอ่านว่า "SQL ไม่มี ORDER BY"
+         ซึ่ง **แยกไม่ออกจาก "เรียงไม่ทำงาน"** (ตัวเทสต้องแตะ path ที่ตั้งใจจริง) */
+    if (s === 'SELECT MAX(day) AS d FROM stock_snapshots') return [{ d: '2026-10-20' }]
+    if (s.startsWith('SELECT MIN(order_date) AS f')) return [{ f: '2024-01-01', t: '2026-10-20' }]
     if (s.includes('SELECT cur.sku AS sku')) return [{ sku: 'A', name: 'ก', qty: 0, snapshot_qty: 0, price: 1,
       sold30: 0, buy: 1, avail: 0, category: '', unit: '', ptype: 0, active: 1, weight: null, imagePath: '', imageFile: null }]
     // ใบซื้อ: สรุป · แท็บสถานะ · แถว
@@ -291,6 +296,77 @@ test('sortsSupported มาจาก allowlist เดียวกับที่
   for (const ช่อง of ผล.sortsSupported) {
     const r = await listContacts({ sort: ช่อง })
     if (r.error) ตีกลับ.push(`${ช่อง}: ${r.error}`)
+  }
+  assert.deepEqual(ตีกลับ, [], 'ช่องที่ประกาศว่าเรียงได้ แต่ยิงจริงถูกตีกลับ')
+})
+
+// ───────── ⑦ list=deadstock — รับทั้งชื่อเดิมและรูป sort+dir ─────────
+const { listDeadStock } = await import('../../netlify/lib/core-stock.mjs')
+const sqlจม = () => เห็น.find((x) => x.includes('SELECT cur.sku AS sku, COALESCE(NULLIF(p.name')) || ''
+
+/* 🧊 **ตรึงความหมายของชื่อเดิมสองตัว** — เดิมทั้งคู่หมายถึง DESC
+   ถ้าเพี้ยน จอ "สินค้าจม" ที่ deploy อยู่จะเรียงกลับทิศ (เอาของที่ขายล่าสุดขึ้นก่อน = ตรงข้ามกับโจทย์) */
+test('list=deadstock: ชื่อเดิม value/lastsold (ไม่ส่ง dir) ต้องยังเป็น DESC เหมือนเดิม', async () => {
+  เห็น.length = 0
+  await listDeadStock({ sort: 'value', limit: '5' })
+  assert.ok(sqlจม().includes('(cur.qty * cur.price) DESC, cur.sku'),
+    `sort=value เปลี่ยนความหมาย: ${sqlจม().slice(sqlจม().indexOf('ORDER BY'), sqlจม().indexOf('ORDER BY') + 70)}`)
+  เห็น.length = 0
+  await listDeadStock({ sort: 'lastsold', limit: '5' })
+  assert.ok(sqlจม().includes('s.last_sold IS NULL, s.last_sold DESC, cur.sku'),
+    'sort=lastsold ต้องเอาค่าว่างไปท้าย แล้วเรียงลง และต่อท้ายด้วย sku')
+})
+
+test('list=deadstock: ไม่ส่ง sort ⇒ ค่าตั้งต้นเดิม (value DESC) + applied บอกครบ', async () => {
+  เห็น.length = 0
+  const r = await listDeadStock({ limit: '5' })
+  assert.ok(sqlจม().includes('(cur.qty * cur.price) DESC'))
+  assert.equal(r.applied.sortDefaulted, true)
+  assert.equal(r.applied.sort, 'value')
+  assert.equal(r.applied.dir, 'desc')
+})
+
+test('list=deadstock: รูปใหม่ sort+dir คุมทิศได้ · ช่องใหม่ 3 ช่องใช้ได้', async () => {
+  for (const [ช่อง, ทิศ, คาด] of [
+    ['value', 'asc', '(cur.qty * cur.price) ASC'],
+    ['qty', 'desc', 'cur.qty DESC'],
+    ['sku', 'asc', 'cur.sku ASC'],
+    ['name', 'desc', 'name DESC'],
+    ['lastsold', 'asc', 's.last_sold IS NULL, s.last_sold ASC'],
+  ]) {
+    เห็น.length = 0
+    const r = await listDeadStock({ sort: ช่อง, dir: ทิศ, limit: '5' })
+    assert.ok(sqlจม().includes(คาด), `sort=${ช่อง}&dir=${ทิศ}: คาด "${คาด}" ได้ "${sqlจม().slice(sqlจม().indexOf('ORDER BY'), sqlจม().indexOf('ORDER BY') + 80)}"`)
+    assert.equal(r.applied.dir, ทิศ)
+    assert.equal(r.applied.sortDefaulted, false)
+  }
+})
+
+test('list=deadstock: ค่าว่างของ lastsold ไปท้ายเสมอ **ทั้งสองทิศ**', async () => {
+  /* 🔑 ถ้าไม่มี IS NULL นำหน้า เรียงขึ้นจะได้สินค้าที่ไม่เคยขายเลยขึ้นมาเป็นพรวน
+     ⇒ คนอ่านว่า "ข้อมูลวันที่ขายล่าสุดหาย" ทั้งที่เป็นสินค้าที่ไม่เคยขายจริง ๆ */
+  for (const ทิศ of ['asc', 'desc']) {
+    เห็น.length = 0
+    await listDeadStock({ sort: 'lastsold', dir: ทิศ, limit: '5' })
+    assert.ok(sqlจม().includes('s.last_sold IS NULL,'), `dir=${ทิศ} ไม่ได้เอาค่าว่างไปท้าย`)
+  }
+})
+
+test('list=deadstock: ชื่อช่อง/dir มั่ว ⇒ ตีกลับพร้อม sortsSupported', async () => {
+  const ผิดช่อง = await listDeadStock({ sort: 'ไม่มีช่องนี้' })
+  assert.match(String(ผิดช่อง.error), /sort รับได้เฉพาะ/)
+  assert.deepEqual([...ผิดช่อง.sortsSupported].sort(), ['lastsold', 'name', 'qty', 'sku', 'value'])
+  const ผิดทิศ = await listDeadStock({ sort: 'value', dir: 'ขึ้น' })
+  assert.match(String(ผิดทิศ.error), /dir ต้องเป็น asc หรือ desc/)
+})
+
+test('list=deadstock: ประกาศ sortsSupported ระดับบนสุด และทุกชื่อใช้ได้จริง', async () => {
+  const r = await listDeadStock({ limit: '1' })
+  assert.deepEqual([...r.sortsSupported].sort(), ['lastsold', 'name', 'qty', 'sku', 'value'])
+  const ตีกลับ = []
+  for (const ช่อง of r.sortsSupported) {
+    const x = await listDeadStock({ sort: ช่อง, limit: '1' })
+    if (x.error) ตีกลับ.push(`${ช่อง}: ${x.error}`)
   }
   assert.deepEqual(ตีกลับ, [], 'ช่องที่ประกาศว่าเรียงได้ แต่ยิงจริงถูกตีกลับ')
 })

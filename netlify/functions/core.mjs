@@ -2652,6 +2652,7 @@ async function route(req, context) {
         months: url.searchParams.get("months"),
         before: url.searchParams.get("before"),
         sort: url.searchParams.get("sort"),
+        dir: url.searchParams.get("dir"),
         limit: url.searchParams.get("limit"),
         offset: url.searchParams.get("offset"),
       });

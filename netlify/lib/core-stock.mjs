@@ -924,11 +924,39 @@ export async function listDeadStock(o = {}) {
      ⚠️ ของที่ไม่เคยมีใบขายเลย (last_sold IS NULL) ไว้ท้ายสุดเสมอ **และเขียนกำกับ**
         ไม่งั้นจอจะเห็นแถวว่างกองบนสุดแล้วคิดว่าข้อมูลพัง
      ⚠️ ทุกแบบต้องมีตัวตัดสินเสมอกัน (sku) ไม่งั้นแบ่งหน้าแล้วได้แถวซ้ำ/หายโดยยอดรวมยังดูปกติ */
-  const เรียงได้ = { value: "(cur.qty * cur.price) DESC, cur.sku", lastsold: "s.last_sold IS NULL, s.last_sold DESC, cur.sku" };
+  /* 🔀 **รับทั้งชื่อเดิมและรูป `sort`+`dir`** (คุณส้มขอ 21 ต.ค. 2569 02:51)
+       จอ ZORT `/Dashboard/ProductReport` เรียงได้ 5 หัว (`changeTableSortWithDelay`):
+       `code` `name` `maxdate` `number` `amount` ⇒ ฝั่งเราใช้ชื่อ `sku` `name` `lastsold` `qty` `value`
+     🔴 **ชื่อเดิมสองตัวฝังทิศไว้** — `value` และ `lastsold` เดิมหมายถึง **DESC**
+        ⇒ ถ้าปล่อยให้รูปใหม่มีผลตอนไม่ส่ง `dir` จอที่ deploy อยู่จะ**พลิกทิศเงียบ ๆ**
+        ⇒ รูปใหม่มีผล **เฉพาะเมื่อส่ง `dir` มา** (กติกาเดียวกับ `list=stock` ที่พิสูจน์แล้ว)
+     ⚠️ `lastsold` ต้องเอา **ค่าว่างไปท้ายเสมอ** ทั้งสองทิศ (`IS NULL` นำหน้า)
+        ไม่งั้นเรียงขึ้นแล้วแถวบนเป็นสินค้าที่ "ไม่เคยขายเลย" เป็นพรวน ซึ่งอ่านว่าข้อมูลหาย
+     ⚠️ ต่อท้าย `cur.sku` เสมอ ⇒ ลำดับนิ่ง (เส้นนี้แบ่งหน้าที่ท่อ ⇒ ลำดับไม่นิ่ง = ไล่หน้าข้ามแถว)
+     🔑 `sortsSupported` อ่านจาก `ช่องเรียง` ตัวเดียว ⇒ ไม่มีรายชื่อพิมพ์ซ้ำ */
+  const ช่องเรียงจม = {
+    sku: "cur.sku", name: "name", lastsold: "s.last_sold",
+    qty: "cur.qty", value: "(cur.qty * cur.price)",
+  };
+  // ทิศที่ชื่อนั้นหมายถึงเมื่อ **ไม่ส่ง dir** — สองตัวแรกเป็นของเดิม ห้ามขยับ
+  const ทิศเดิมของชื่อจม = { value: "desc", lastsold: "desc", sku: "asc", name: "asc", qty: "asc" };
   const sortRaw = String(o.sort ?? "").trim().toLowerCase();
-  if (sortRaw && !Object.hasOwn(เรียงได้, sortRaw)) {
-    return { error: `sort รับได้เฉพาะ ${Object.keys(เรียงได้).join(" | ")} (ได้มา "${sortRaw.slice(0, 20)}")` };
+  const dirRaw = String(o.dir ?? "").trim().toLowerCase().slice(0, 10);
+  if (sortRaw && !Object.hasOwn(ช่องเรียงจม, sortRaw)) {
+    return { error: `sort รับได้เฉพาะ ${Object.keys(ช่องเรียงจม).join(" | ")} (ได้มา "${sortRaw.slice(0, 20)}")`,
+             sortsSupported: Object.keys(ช่องเรียงจม) };
   }
+  /* `dir` เป็นของใหม่ของเส้นนี้ ⇒ ไม่มีจอไหนส่งมาก่อน ⇒ ตีกลับค่าผิดได้ปลอดภัย */
+  if (dirRaw && !["asc", "desc"].includes(dirRaw)) {
+    return { error: `dir ต้องเป็น asc หรือ desc (ได้มา "${dirRaw}")`,
+             sortsSupported: Object.keys(ช่องเรียงจม) };
+  }
+  const เรียงได้ = Object.fromEntries(Object.entries(ช่องเรียงจม).map(([ชื่อ, คอลัมน์]) => {
+    const ทิศ = (dirRaw || ทิศเดิมของชื่อจม[ชื่อ]) === "desc" ? "DESC" : "ASC";
+    const ค่าว่างท้าย = ชื่อ === "lastsold" ? "s.last_sold IS NULL, " : "";
+    const ตัวตัดสิน = คอลัมน์ === "cur.sku" ? "" : ", cur.sku";
+    return [ชื่อ, `${ค่าว่างท้าย}${คอลัมน์} ${ทิศ}${ตัวตัดสิน}`];
+  }));
   const sort = sortRaw || "value";
 
   const where = `cur.qty > 0 AND COALESCE(p.product_type,'') <> 'Service'`;
@@ -1012,7 +1040,11 @@ export async function listDeadStock(o = {}) {
           ⇒ ถ้าท่อเมินเงียบ จอจะโชว์ผลที่ "ดูเหมือนกรองแล้ว" ทั้งที่ไม่ได้กรอง (เจอกับ q ของเส้นนี้มาแล้ว)
        🔑 ต่างจาก `supportedFilters` ที่บอกว่า **รับอะไรได้** — `applied` บอกว่า **รอบนี้ใช้ค่าอะไรจริง**
           ⇒ ค่าที่ส่งคือค่า **หลังบีบขอบแล้ว** (days/limit ถูก clamp) ⇒ จอเห็นว่าค่าที่ขอถูกปรับหรือไม่ */
-    applied: { days, limit, offset },    ...(การบีบ ?? {}),    day,
+    applied: { days, limit, offset,
+      sort: sortRaw || "value", dir: dirRaw || ทิศเดิมของชื่อจม[sortRaw || "value"],
+      sortDefaulted: !sortRaw },    ...(การบีบ ?? {}),    day,
+    /* 📣 ระดับบนสุด — รูปเดียวกับอีก 7 เส้น (ห้ามซ่อนใน applied) */
+    sortsSupported: Object.keys(ช่องเรียงจม),
     days,
     cut, // ขายครั้งสุดท้ายก่อนวันนี้ = ถือว่าจม
     cutFrom, // ⚠️ จอต้องอ่านช่องนี้ ไม่ใช่เดาว่าค่าที่ส่งไปถูกใช้
