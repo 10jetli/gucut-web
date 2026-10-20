@@ -5239,6 +5239,7 @@ async function route(req, context) {
           only: p.get("only"),
           kind: p.get("kind"), // goods = ตัดบริการออก · service = เอาเฉพาะบริการ
           sort: p.get("sort"),
+          dir: p.get("dir"),   // 🔀 รูปใหม่ของเส้นนี้ (20 ต.ค. 2569) — ชื่อเดิมยังใช้ได้โดยไม่ส่ง dir
           limit: p.get("limit"),
           offset: p.get("offset"),
           soldDays: p.get("soldDays"),

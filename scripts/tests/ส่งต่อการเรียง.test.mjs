@@ -15,16 +15,20 @@ import { readFileSync } from 'node:fs'
 // ───────── ① เส้นทางส่งต่อ: core.mjs ต้องส่ง sort+dir ให้ตัวอ่านทุกตัวที่รองรับ ─────────
 test('core.mjs ส่ง sort/dir ต่อให้ตัวอ่านทุกเส้นที่รองรับการเรียง', () => {
   const src = readFileSync(new URL('../../netlify/functions/core.mjs', import.meta.url), 'utf8')
-  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases']) {
+  for (const ตัวอ่าน of ['listBundles', 'listContacts', 'listPurchases', 'listStock']) {
     const i = src.indexOf(`await ${ตัวอ่าน}({`)
     assert.ok(i > 0, `หาจุดเรียก ${ตัวอ่าน} ใน core.mjs ไม่เจอ`)
     /* ตัดเอาเฉพาะก้อนพารามิเตอร์ของจุดเรียกนั้น — ห้ามค้นทั้งไฟล์
        ไม่งั้นคำว่า sort ของเส้นอื่น (deadstock · stockcard) จะทำให้ผ่านฟรี */
     const ก้อน = src.slice(i, src.indexOf('})', i))
-    assert.match(ก้อน, /sort:\s*url\.searchParams\.get\("sort"\)/,
-      `${ตัวอ่าน}: core.mjs ไม่ได้ส่ง sort ต่อ ⇒ จอกดเรียงแล้วลำดับไม่ขยับ (ปุ่มหลอก)`)
-    assert.match(ก้อน, /dir:\s*url\.searchParams\.get\("dir"\)/,
-      `${ตัวอ่าน}: core.mjs ไม่ได้ส่ง dir ต่อ ⇒ เรียงได้ทางเดียว`)
+    /* ⚠️ **ห้ามตรึงชื่อตัวอ่าน query** — จุดเรียกในไฟล์นี้ใช้ทั้ง `url.searchParams.get(...)`
+       และตัวย่อ `p.get(...)` ⇒ ตรึงรูปใดรูปหนึ่งได้ **แดงลวง** (เจอจริงตอนเพิ่ม listStock:
+       ด่านฟ้องว่าไม่ส่ง dir ทั้งที่ส่งครบ ⇒ เกือบไปแก้โค้ดที่ยังดี)
+       🔑 คำถามที่ด่านนี้ต้องถามคือ "พารามิเตอร์ถูกส่งต่อไหม" ไม่ใช่ "เขียนด้วยสำนวนไหน" */
+    for (const ช่อง of ['sort', 'dir']) {
+      assert.match(ก้อน, new RegExp(`${ช่อง}:\\s*[\\w.]*\\bget\\("${ช่อง}"\\)`),
+        `${ตัวอ่าน}: core.mjs ไม่ได้ส่ง ${ช่อง} ต่อ ⇒ จอกดเรียงแล้วลำดับไม่ขยับ (ปุ่มหลอก)`)
+    }
   }
 })
 
@@ -126,4 +130,74 @@ test('list=purchases: รับรูปย่อ sort=-amount (ขีดหน�
   assert.equal(r.applied.sort, 'amount')
   assert.equal(r.applied.dir, 'desc')
   assert.ok(แถวSQL('SELECT id, number, vendor, po_date').includes('ORDER BY amount DESC'))
+})
+
+// ───────── ④ list=stock รับการเรียงสองรูปพร้อมกัน (คุณส้มขอ 20 ต.ค. 2569 16:02) ─────────
+
+/* 🧊 **ตรึงผลของชื่อเดิมทั้ง 10 ตัวไว้เป็นตัวหนังสือ** — ลอกมาจากตาราง SORTS ก่อนรีแฟคเตอร์
+   🔑 นี่คือด่านที่สำคัญที่สุดของใบนี้: ตอนนี้ SORTS ถูก **คิด** จากสองตาราง ไม่ได้พิมพ์ไว้
+      ⇒ ถ้าสูตรเพี้ยน ทิศของจอที่ deploy อยู่จะพลิกเงียบ ๆ โดย build ยังผ่าน
+      (`sort=price` เดิมคือ **DESC** ไม่ใช่ asc — ตัวที่พลาดง่ายที่สุด) */
+const ลำดับเดิมที่ตรึงไว้ = {
+  qty: 'p.onhand ASC', qtydesc: 'p.onhand DESC', sold: 'sold30 DESC',
+  sku: 'cur.sku ASC', name: 'name ASC', price: 'cur.price DESC', pricelow: 'cur.price ASC',
+  buy: 'buy DESC', available: 'avail DESC', availablelow: 'avail ASC',
+}
+
+test('list=stock: ชื่อเดิมทั้ง 10 ตัว (ไม่ส่ง dir) ต้องให้ ORDER BY เดิมเป๊ะทุกตัวอักษร', async () => {
+  for (const [ชื่อ, คาด] of Object.entries(ลำดับเดิมที่ตรึงไว้)) {
+    เห็น.length = 0
+    await listStock({ sort: ชื่อ, limit: '5' })
+    const sql = แถวSQL('SELECT cur.sku AS sku')
+    const ส่วนเรียง = sql.slice(sql.indexOf('ORDER BY') + 'ORDER BY '.length)
+    const คาดเต็ม = คาด === 'cur.sku ASC' ? คาด : `${คาด}, cur.sku ASC`
+    assert.ok(ส่วนเรียง.startsWith(คาดเต็ม),
+      `sort=${ชื่อ} เปลี่ยนความหมายไป — คาด "${คาดเต็ม}" ได้ "${ส่วนเรียง.slice(0, 50)}"`)
+  }
+})
+
+test('list=stock: รูปใหม่ sort+dir คุมทิศได้ และไม่แตะความหมายของชื่อเดิม', async () => {
+  for (const [ช่อง, ทิศ, คาด] of [
+    ['price', 'asc', 'cur.price ASC'], ['price', 'desc', 'cur.price DESC'],
+    ['qty', 'desc', 'p.onhand DESC'], ['available', 'asc', 'avail ASC'],
+    ['name', 'desc', 'name DESC'], ['sold', 'asc', 'sold30 ASC'], ['buy', 'asc', 'buy ASC'],
+  ]) {
+    เห็น.length = 0
+    const r = await listStock({ sort: ช่อง, dir: ทิศ, limit: '5' })
+    const sql = แถวSQL('SELECT cur.sku AS sku')
+    assert.ok(sql.includes(`ORDER BY ${คาด}`), `sort=${ช่อง}&dir=${ทิศ}: คาด "${คาด}" ได้ "${sql.slice(sql.indexOf('ORDER BY'), sql.indexOf('ORDER BY') + 50)}"`)
+    assert.equal(r.applied.dir, ทิศ)
+    assert.equal(r.applied.sortDefaulted, false)
+  }
+})
+
+test('list=stock: applied ต้องมี dir + sortDefaulted (จอเปิดปุ่มจากสองคีย์นี้)', async () => {
+  const ไม่ส่ง = await listStock({ limit: '5' })
+  assert.equal(ไม่ส่ง.applied.sortDefaulted, true, 'ไม่ส่ง sort ⇒ sortDefaulted ต้องเป็น true')
+  assert.equal(ไม่ส่ง.applied.dir, 'asc', 'ลำดับตั้งต้นของเส้นนี้คือ onhand ASC')
+  /* ⚠️ ชื่อเดิมที่หมายถึง desc ต้องรายงาน dir=desc ⇒ จอชี้ลูกศรถูกแม้ไม่ได้ส่ง dir มา */
+  for (const [ชื่อ, ทิศ] of [['price', 'desc'], ['sold', 'desc'], ['buy', 'desc'],
+                             ['available', 'desc'], ['qty', 'asc'], ['name', 'asc'],
+                             ['pricelow', 'asc'], ['qtydesc', 'desc'], ['availablelow', 'asc']]) {
+    const r = await listStock({ sort: ชื่อ, limit: '5' })
+    assert.equal(r.applied.dir, ทิศ, `sort=${ชื่อ} ต้องรายงาน dir=${ทิศ}`)
+    assert.equal(r.applied.sortDefaulted, false)
+  }
+})
+
+test('list=stock: คำขอที่ขัดกันเอง/dir มั่ว ⇒ ตีกลับ ไม่ใช่เดาว่าฝ่ายไหนชนะ', async () => {
+  const ขัดกัน = await listStock({ sort: 'qtydesc', dir: 'asc' })
+  assert.match(String(ขัดกัน.error), /ฝังทิศไว้ในชื่อแล้ว/)
+  assert.match(String(ขัดกัน.error), /sort=qty&dir=asc/, 'ต้องบอกรูปที่ถูกให้ด้วย ไม่ใช่แค่ปฏิเสธ')
+  const ทิศมั่ว = await listStock({ sort: 'qty', dir: 'ขึ้น' })
+  assert.match(String(ทิศมั่ว.error), /dir ต้องเป็น asc หรือ desc/)
+})
+
+test('list=stock: sort=sku&dir=desc ต้องไม่ได้ ORDER BY ที่ขัดกันเอง', async () => {
+  เห็น.length = 0
+  await listStock({ sort: 'sku', dir: 'desc', limit: '5' })
+  const sql = แถวSQL('SELECT cur.sku AS sku')
+  const ส่วนเรียง = sql.slice(sql.indexOf('ORDER BY'))
+  assert.equal((ส่วนเรียง.match(/cur\.sku/g) || []).length, 1,
+    `ได้ ORDER BY ที่ขัดกันเอง: ${ส่วนเรียง.slice(0, 60)}`)
 })
