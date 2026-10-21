@@ -18,6 +18,24 @@
 //    ข้อความที่แช่ไว้จะกลายเป็นคำโกหกเงียบ ๆ ในวันที่สถานะจริงเปลี่ยน และไม่มีอะไรฟ้อง
 import { getStore } from "@netlify/blobs";
 
+/* 🔴 **static import โดยตั้งใจ — ห้ามเปลี่ยนกลับเป็น `await import()`** (21 ต.ค. 2569)
+   ของเดิมใช้ `await import("./shopee.mjs")` ซึ่ง **เป็นสตริงตรงตัวแล้ว** แต่ **ยังพังบน production**
+   📏 วัดของจริงหลัง deploy: `?list=stock&marketplaces=1` ตอบ
+      `Cannot find module '/var/task/netlify/functions/shopee.mjs'` ครบสามเจ้า
+   🔑 เหตุ: esbuild **ปล่อย `import()` ไว้เป็น external ไม่เอาไฟล์ไปรวม** ⇒ ตอนรัน
+      สเปคพาธ `./shopee.mjs` ไปเทียบกับที่อยู่ของ **ไฟล์ที่ bundle แล้ว** คือ
+      `/var/task/netlify/functions/` ⇒ ได้ `functions/shopee.mjs` ซึ่งเป็นไฟล์ฟังก์ชันคนละตัว
+   ⇒ **"เป็นสตริงตรงตัว" เป็นเงื่อนไขจำเป็นแต่ไม่พอ** — คำถามที่ถูกคือ
+      **"bundler เอาไปรวมให้จริงไหม"** · static import คือท่าเดียวที่รับประกันข้อนั้น
+   ✅ ปลอดภัยที่จะ static เพราะทั้งห้าโมดูลนี้ **ไม่ทำอะไรตอนโหลด** — ระดับโมดูลมีแต่ค่าคงที่
+      กับ arrow function · อ่าน env อยู่ข้างใน lambda · ไม่มี throw/await ระดับบนสุด (ตรวจแล้ว)
+      ⚠️ ถ้าวันหน้าโมดูลไหนเริ่ม throw ตอนโหลด **จะลาก core.mjs ตายทั้งตัว** ⇒ ตรวจก่อนเพิ่มชื่อ */
+import { validToken as shopeeValidToken } from "./shopee.mjs";
+import { validToken as tiktokValidToken, shopCall, ensureShop } from "./tiktok.mjs";
+import { validToken as lazadaValidToken, listedSkus as lazadaListedSkus } from "./lazada.mjs";
+import { shopeeListedSkus } from "./shopee-stock.mjs";
+import { SITE_URL } from "./site.mjs";
+
 /* ⚠️ **ช่องทางที่ "ถามได้ แต่คำตอบยังเชื่อไม่ได้"** — คนละอย่างกับ failed/notConnected
     failed = ถามแล้วล้ม · notConnected = ยังไม่ได้เชื่อม · **unreliable = ได้คำตอบมาแต่รู้ว่าผิด**
     อันที่สามอันตรายที่สุด เพราะจอวาดโลโก้ตามปกติทุกประการ
@@ -50,13 +68,11 @@ const MAX_STALE_MS = 6 * 3600e3;
 
 /** รหัสที่กำลังลงขายบน Shopee */
 async function shopeeSkus() {
-  const { shopeeListedSkus } = await import("./shopee-stock.mjs");
   return await shopeeListedSkus();
 }
 
 /** รหัสที่กำลังลงขายบน TikTok Shop */
 async function tiktokSkus() {
-  const { shopCall, ensureShop } = await import("./tiktok.mjs");
   await ensureShop();
   const out = new Set();
   let token = "";
@@ -88,7 +104,6 @@ async function tiktokSkus() {
    เดิมเป็นฟังก์ชันภายใน ⇒ ตัวทดสอบต้องเรียกผ่าน marketplaceListings ซึ่งยิงออกนอก
    แล้วจบลงที่ "ข้ามข้อนี้" = เขียวที่แปลว่ายังไม่ได้ทดสอบ ไม่ใช่ผ่าน */
 export async function webSkus() {
-  const { SITE_URL } = await import("./site.mjs");
   const r = await fetch(`${SITE_URL}/feed-base.json`, { signal: AbortSignal.timeout(8000) });
   if (!r.ok) throw new Error(`ฟีดเว็บตอบ ${r.status}`);
   const base = await r.json();
@@ -111,8 +126,7 @@ export async function webSkus() {
 
 /** รหัสที่กำลังลงขายบน Lazada */
 async function lazadaSkus() {
-  const { listedSkus } = await import("./lazada.mjs");
-  return await listedSkus();
+  return await lazadaListedSkus();
 }
 
 /** map รหัส → รายชื่อช่องทางที่กำลังลงขาย + บอกว่ารอบนี้ถามใครได้บ้าง
@@ -247,13 +261,13 @@ async function _marketplaceListings({ fresh = false } = {}) {
      ⚠️ อาการนี้ **ไม่มีใครจับได้จาก build** — `npm run build` ผ่าน · เทสผ่าน ·
         เพราะตอนรันในเครื่องพาธ relative ถูกต้องอยู่แล้ว **มันพังเฉพาะหลังถูก bundle** */
   const เจ้าที่ต้องเชื่อม = [
-    ["shopee", () => import("./shopee.mjs"), shopeeSkus, "/api/shopee/auth", "Shopee"],
-    ["tiktok", () => import("./tiktok.mjs"), tiktokSkus, "/api/tiktok/auth", "TikTok Shop"],
-    ["lazada", () => import("./lazada.mjs"), lazadaSkus, "/api/lazada/auth", "Lazada"],
+    ["shopee", shopeeValidToken, shopeeSkus, "/api/shopee/auth", "Shopee"],
+    ["tiktok", tiktokValidToken, tiktokSkus, "/api/tiktok/auth", "TikTok Shop"],
+    ["lazada", lazadaValidToken, lazadaSkus, "/api/lazada/auth", "Lazada"],
   ];
-  const สถานะเชื่อม = await Promise.all(เจ้าที่ต้องเชื่อม.map(async ([tag, โหลด, fn, authPath, ชื่อ]) => {
+  const สถานะเชื่อม = await Promise.all(เจ้าที่ต้องเชื่อม.map(async ([tag, ตรวจตั๋ว, fn, authPath, ชื่อ]) => {
     try {
-      const t = await (await โหลด()).validToken();
+      const t = await ตรวจตั๋ว();
       return { tag, fn, ชื่อ, authPath, เชื่อมอยู่: !!t };
     } catch (e) {
       return { tag, fn, ชื่อ, authPath, ตรวจไม่ได้: String(e?.message || e).slice(0, 120) };
