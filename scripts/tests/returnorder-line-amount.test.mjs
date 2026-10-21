@@ -71,3 +71,74 @@ test('④ ตัวควบคุมลบ: ใบที่ไม่มีบ�
   assert.ok(Array.isArray(d.lines), 'ใบไม่มีของ ⇒ ต้องเป็นอาเรย์ว่าง');
   assert.equal(d.lines.length, 0);
 });
+
+// ══ ⑤–⑦ หัวใบ: ห้าช่องที่ฝั่งจอขอ + ชื่อคีย์วันที่ที่เคยผิด ══════════════════════
+// 🔴 ทั้งห้าช่องอยู่ใน `fields` (= ZORT ส่งมา) อยู่แล้ว แต่ท่อไม่ส่งต่อสักตัว
+//    ⇒ จอใบรับคืนขึ้น "ยังไม่รู้" ที่สถานะชำระเงิน **ทั้งที่ ZORT บอกว่าชำระครบ**
+//    🔑 คลาสเดียวกับช่อง amount ของบรรทัด: ค่ามีอยู่แต่ไม่ถูกตั้งชื่อส่งต่อ
+//       ⇒ ปลายทางแยก "ไม่มีค่า" จาก "ท่อไม่ส่ง" ไม่ได้
+
+test('⑤ ส่งต่อห้าช่องหัวใบที่จอขอ และเป็น null เมื่อ ZORT ไม่ส่ง (ไม่ใช่สตริงว่าง)', async () => {
+  ก้อนจากZORT = {
+    resCode: '200', id: 1, number: 'CN-TEST-2', status: 'Success',
+    paymentstatus: 'Paid', saleschannel: 'Shopee', createusername: 'cashier01',
+    customerphone: '0810000000', customeraddress: '— ทดสอบ',
+    list: [{ sku: 'A', number: 1, totalprice: 10 }],
+  };
+  const d = await getReturnOrderDetail('1');
+  assert.equal(d.paymentstatus, 'Paid');
+  assert.equal(d.saleschannel, 'Shopee');
+  assert.equal(d.createusername, 'cashier01');
+  assert.equal(d.customerphone, '0810000000');
+  assert.equal(d.customeraddress, '— ทดสอบ');
+
+  // ZORT ไม่ส่งช่องเลย ⇒ null · **ห้ามเป็นสตริงว่าง** (สตริงว่าง = ZORT ส่งมาว่าง คนละเรื่อง)
+  ก้อนจากZORT = { resCode: '200', id: 1, number: 'CN-TEST-3', status: 'Success', list: [] };
+  const e = await getReturnOrderDetail('1');
+  for (const k of ['paymentstatus', 'saleschannel', 'createusername',
+                   'customerphone', 'customeraddress']) {
+    assert.equal(e[k], null, `${k} ต้องเป็น null ไม่ใช่ ${JSON.stringify(e[k])}`);
+  }
+});
+
+test('⑥ ZORT ส่งมาเป็นสตริงว่าง ⇒ ต้องได้สตริงว่าง ไม่ใช่ null', async () => {
+  // 🔑 สามสถานะ: "" = ZORT ส่งมาว่าง · null = ZORT ไม่ส่งช่อง · มีค่า = ค่าจริง
+  ก้อนจากZORT = { resCode: '200', id: 1, number: 'CN-4', status: 'Success',
+                  paymentstatus: '', list: [] };
+  const d = await getReturnOrderDetail('1');
+  assert.equal(d.paymentstatus, '', 'ZORT ส่งว่าง ⇒ ต้องเป็น "" ไม่ใช่ null');
+  assert.notEqual(d.paymentstatus, null);
+});
+
+test('⑦ วันที่ต้องมาจาก returnorderdate* ไม่ใช่วันสร้างเอกสาร', async () => {
+  // 🔴 ของเดิมอ่าน r.returndateString / r.returndate ซึ่ง **ไม่มีใน 68 คีย์ของ ZORT**
+  //    ⇒ ตกไปใช้ createdatetimeString = วันสร้างเอกสาร โดยไม่มีอะไรฟ้อง
+  ก้อนจากZORT = {
+    resCode: '200', id: 1, number: 'CN-5', status: 'Success',
+    returnorderdateString: '2026-10-19', createdatetimeString: '2026-10-03 09:00',
+    list: [],
+  };
+  const d = await getReturnOrderDetail('1');
+  assert.equal(d.date, '2026-10-19', 'date ต้องเป็นวันคืนของ');
+  assert.notEqual(d.date, '2026-10-03', 'ต้องไม่ใช่วันสร้างเอกสาร');
+  assert.equal(d.createdAt, '2026-10-03 09:00', 'ส่งวันสร้างแยกไว้ให้เทียบเองได้');
+});
+
+test('⑧ ไม่มี returnorderdate* ⇒ date = null **ห้ามถอยไปใช้วันสร้างเอกสาร**', async () => {
+  // 🔴 เคสนี้คือตัวที่จับบั๊กเดิมได้จริง และข้อ ⑦ จับไม่ได้
+  //    ข้อ ⑦ ใส่ returnorderdateString ไว้ ⇒ กิ่งแรกชนะ ตัวถอยกลับไม่เคยทำงาน
+  //    ⇒ **ปลูกบั๊ก "เติม ?? createdatetimeString กลับเข้าไป" แล้วข้อ ⑦ ยังเขียว**
+  //    🔑 บทเรียน: เทสที่พิสูจน์ว่า "ค่าถูก" ไม่ได้พิสูจน์ว่า "ไม่มีทางถอยไปค่าผิด"
+  //       ต้องมีเคสที่ **ทางที่ถูกหายไป** ถึงจะเห็นว่าโค้ดถอยไปไหน
+  //    ⚠️ ถอยไปใช้วันสร้างเอกสารแล้วจอจะโชว์วันผิดแบบดูปกติ (สองค่านี้มักตรงกัน)
+  //       ⇒ null คือคำตอบที่ถูก เพราะ "ไม่รู้วันคืนของ" ≠ "วันคืนของคือวันที่สร้าง"
+  ก้อนจากZORT = {
+    resCode: '200', id: 1, number: 'CN-6', status: 'Success',
+    createdatetimeString: '2026-10-03 09:00',
+    list: [],
+  };
+  const d = await getReturnOrderDetail('1');
+  assert.equal(d.date, null, 'ไม่มีวันคืนของ ⇒ null');
+  assert.notEqual(d.date, '2026-10-03', 'ห้ามถอยไปใช้วันสร้างเอกสาร');
+  assert.equal(d.createdAt, '2026-10-03 09:00', 'วันสร้างยังส่งแยกไว้ตามเดิม');
+});

@@ -2128,9 +2128,31 @@ export async function getReturnOrderDetail(id) {
     live: true,
     number: String(r.number ?? ""),
     status: String(r.status ?? ""),
-    date: String(r.returndateString ?? r.returndate ?? r.createdatetimeString ?? "").slice(0, 10),
+    /* 🔴 **แก้ชื่อคีย์วันที่ 22 ต.ค. 2569 — ของเดิมอ่านชื่อที่ ZORT ไม่มี**
+        เดิม: `r.returndateString ?? r.returndate ?? r.createdatetimeString`
+        📏 ยิงของจริงแล้ว `fields` ของเส้นนี้มี 68 คีย์ และ **ไม่มี `returndate`/`returndateString`
+           อยู่ในนั้นเลย** ของจริงชื่อ **`returnorderdate` / `returnorderdateString`**
+        ⇒ ของเดิมจึงตกไปใช้ `createdatetimeString` = **วันที่สร้างเอกสาร ไม่ใช่วันคืนของ**
+           ทุกใบ โดยไม่มีอะไรฟ้อง (สองค่านี้มักตรงกัน ⇒ ดูเหมือนถูกตลอด)
+        ⚠️ **นี่คือการเปลี่ยนค่าที่จอใช้อยู่ ⇒ ประกาศ ไม่เปลี่ยนเงียบ ๆ**
+           ใบที่สร้างคนละวันกับวันคืน ตัวเลขบนจอจะขยับ — ขยับไปทางถูก
+        ⇒ ส่ง `createdAt` แยกไว้ด้วย ปลายทางจะได้เทียบเองว่าสองวันนี้ต่างกันไหม */
+    date: String(r.returnorderdateString ?? r.returnorderdate ?? "").slice(0, 10) || null,
+    createdAt: String(r.createdatetimeString ?? r.createdatetime ?? "").slice(0, 16) || null,
     customer: String(r.customername ?? ""),
     reference: String(r.reference ?? ""),
+    /* 📨 **ห้าช่องหัวใบที่ฝั่งจอขอ (เรียงความคุ้มข้อ ① · 22 ต.ค. 2569)**
+        `fields` ประกาศอยู่แล้วว่า ZORT ส่งทั้งห้าช่องนี้มา แต่ท่อไม่ส่งต่อสักตัว
+        ⇒ จอใบรับคืนขึ้น "ยังไม่รู้" ที่สถานะชำระเงิน **ทั้งที่ ZORT บอกว่าชำระครบ**
+        🔑 คลาสเดียวกับช่อง `amount` ของบรรทัดเมื่อคืน: **ค่ามีอยู่ใน `fields` แล้ว
+           แต่ไม่ถูกส่งต่อเป็นชื่อ ⇒ ปลายทางแยก "ไม่มีค่า" จาก "ท่อไม่ส่ง" ไม่ได้**
+        ⚠️ **ไม่มีช่อง ⇒ `null` ไม่ใช่สตริงว่าง** — สตริงว่างแปลว่า "ZORT ส่งมาว่าง"
+           ซึ่งเป็นข้อเท็จจริงคนละอันกับ "ZORT ไม่ส่งช่องนี้" (สามสถานะ ห้ามยุบเป็นสอง) */
+    paymentstatus: r.paymentstatus == null ? null : String(r.paymentstatus),
+    saleschannel: r.saleschannel == null ? null : String(r.saleschannel),
+    createusername: r.createusername == null ? null : String(r.createusername),
+    customerphone: r.customerphone == null ? null : String(r.customerphone),
+    customeraddress: r.customeraddress == null ? null : String(r.customeraddress),
     /* ⚠️ ยังไม่ยืนยันว่าช่องไหนคือยอดใบของเส้นนี้ ⇒ **ส่งทุกช่องเงินไปให้ดูเอง ห้ามเดา**
         (เดาผิดคือยอดคืนผิดทั้งร้าน) · เห็นของจริงเมื่อไหร่ค่อยตั้งชื่อช่องให้ */
     "เงินที่ ZORT เก็บไว้": Object.fromEntries(
