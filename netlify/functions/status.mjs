@@ -140,6 +140,51 @@ export default async function handler(req, context) {
       return {};
     }),
 
+    // ---------- การเชื่อมต่อมาร์เก็ตเพลส ----------
+    /* 🔴 ที่มา 22 ต.ค. 2569: Lazada หลุดการเชื่อมต่อมา **16 วัน** (access token หมด 5 ต.ค. ·
+        refresh_token หมดตามไปด้วย ⇒ กู้เองไม่ได้ ต้องให้ร้านกดอนุญาตใหม่)
+        แต่หน้านี้ **ไม่มีช่องไหนพูดถึง Lazada เลยสักช่อง** ⇒ หน้าที่มีไว้บอกว่าอะไรพังอยู่
+        ขึ้นเขียวตลอด 16 วัน ขณะที่สต็อกไม่ได้ส่งขึ้น Lazada เลย
+       ⚠️ **อ่านอย่างเดียว ห้ามเรียก validToken()** — ตัวนั้นต่ออายุให้เองเมื่อใกล้หมด
+          ⇒ ตัวตรวจจะเปลี่ยนสิ่งที่มันตรวจ (refresh_token หมุนตัวใหม่) และช้าขึ้นเป็นวินาที
+          ใช้ `loadToken()` ซึ่งอ่านระเบียนดิบเท่านั้น
+       ⚠️ **ห้ามใช้ `connected` เป็นเกณฑ์** — ฟิลด์นั้นตอบว่า "เรามีระเบียน token"
+          ไม่ใช่ "ใช้งานได้" (ของจริง 22 ต.ค.: lazada `connected:true` พร้อม `ok:false`)
+       ⚠️ เจ้าที่ยังไม่ได้เชื่อม **ไม่ถ่วงให้แดง** ไม่งั้นร้านที่ใช้เจ้าเดียวจะแดงตลอดกาล
+       🔑 กติกาหน่วยเวลาต่างกันรายเจ้า อยู่ใน `lib/token-health.mjs` พร้อมเทสที่ปลูกบั๊กแล้ว */
+    check("การเชื่อมต่อมาร์เก็ตเพลส (Shopee · Lazada · TikTok)", async () => {
+      const { ประเมินToken, รวมผลToken } = await import("../lib/token-health.mjs");
+      /* 🔴 **เส้นทางต้องเป็นข้อความคงที่ ห้ามเก็บไว้ในตัวแปรแล้ววน** (ผมเพิ่งเหยียบเองรอบนี้)
+          ตัวรวมไฟล์อ่านได้แค่ import ที่เป็นข้อความตรง ๆ ⇒ ใส่ตัวแปร = โมดูลไม่ถูกเอาไปด้วย
+          ⇒ ขึ้นจริงแล้วตอบ "Cannot find module .../lib/lazada.mjs" ทั้งสามเจ้า
+          (คลาสเดียวกับ `marketplace-listings.mjs` 21 ต.ค. และ `token-refresh.mjs` 4 ก.ย.) */
+      const โหลด = [
+        ["shopee", () => import("../lib/shopee.mjs")],
+        ["lazada", () => import("../lib/lazada.mjs")],
+        ["tiktok", () => import("../lib/tiktok.mjs")],
+      ];
+      const ผล = [];
+      for (const [ชื่อ, เปิด] of โหลด) {
+        /* อ่านไม่ได้ ≠ ไม่มีของ ⇒ ปล่อยเป็น unknown ให้ขึ้นเหลือง ไม่ใช่แดง และไม่ใช่เขียว */
+        try {
+          const m = await เปิด();
+          if (typeof m.loadToken !== "function") {
+            ผล.push({ เจ้า: ชื่อ, state: "unknown", hoursLeft: null, why: "โมดูลไม่มี loadToken" });
+            continue;
+          }
+          ผล.push(ประเมินToken(ชื่อ, await m.loadToken()));
+        } catch (e) {
+          ผล.push({ เจ้า: ชื่อ, state: "unknown", hoursLeft: null,
+            why: `อ่านระเบียน token ไม่ได้: ${String(e?.message || e).slice(0, 80)}` });
+        }
+      }
+      const รวม = รวมผลToken(ผล);
+      if (รวม.state === "off") return { off: true, note: รวม.note };
+      if (รวม.state === "down") throw new Error(รวม.note);
+      if (รวม.state === "warn") return { warn: true, note: รวม.note, unknown: !!รวม.unknown };
+      return { note: รวม.note };
+    }),
+
     // ---------- สต็อก/ราคาสดจาก ZORT ----------
     check("สต็อกและราคาจาก ZORT", async () => {
       const { ZORT_STORENAME: st, ZORT_APIKEY: k, ZORT_APISECRET: sec } = env;
