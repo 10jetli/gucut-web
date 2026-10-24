@@ -35,6 +35,14 @@ mock.module('../../netlify/lib/lazada.mjs', {
       return โทเคน === 'มี' ? { accessToken: 'a', expiresAt: Date.now() + 9e8 } : null;
     },
     shopCall: async () => ({}),
+    /* 🔴 24 ต.ค. 2569 — ตัวจำลองขาดชิ้นนี้ ⇒ `marketplace-listings.mjs` โหลดไม่ขึ้นทั้งไฟล์
+       (SyntaxError: does not provide an export named listedSkus) ⇒ เทสตกทั้งใบ
+       **ของจริงไม่ได้พัง** — lazada.mjs ส่งออก listedSkus อยู่แล้ว (บรรทัด 240)
+       เหตุ: โค้ดจริงเพิ่มการนำเข้า listedSkus หลังเทสนี้ถูกเขียน ⇒ ตัวจำลองเก่าไป
+       🔑 บทเรียน: ตัวจำลองโมดูลที่ระบุ namedExports แบบ "ใส่เท่าที่ใช้"
+          จะพังทุกครั้งที่โค้ดจริงนำเข้าชื่อใหม่ — และพังแบบ **ตกทั้งไฟล์ ไม่ใช่ตกข้อเดียว**
+          ⇒ เพิ่มการนำเข้าใน marketplace-listings.mjs เมื่อไหร่ ต้องมาเติมที่นี่ด้วย */
+    listedSkus: async () => new Set(),
   },
 });
 // ช่องทางอื่นให้ตอบของจริงนิดหน่อย เพื่อไม่ให้รอบนี้ล้มทั้งใบ
