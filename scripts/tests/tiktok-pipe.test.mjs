@@ -50,6 +50,7 @@ const ใบดี = (n = 1) => ({
   เมื่อ: '2026-10-24T11:50:00.000Z',
   บัญชี: 'ajtcut_8',
   โหมด: 'อัปจริง',
+  เพดานต่อรอบ: 5,
   รายการ: Array.from({ length: n }, (_, i) => ({
     fbid: `99000543745057${i}`,
     ชื่อ: 'อ.ธง · 17 ต.ค. 2569',
@@ -199,4 +200,22 @@ test('เขียน/ลบคลังล้ม ⇒ 503 ห้ามตอบ 
   reset();
   assert.equal((await ยิง('POST', 'https://x/api/tiktok-pipe', { อะไรไม่รู้: 1 })).status, 400);
   assert.equal((await ยิง('DELETE', 'https://x/api/tiktok-pipe')).status, 405);
+});
+
+test('เพดานต่อรอบมาจาก g1 เท่านั้น — ค่าที่อ่านไม่ได้ ⇒ null ห้ามใส่ค่าเริ่มต้นแทน', async () => {
+  reset();
+  await ยิง('POST', 'https://x/api/tiktok-pipe', { ดัน: ใบดี(1) });
+  assert.equal((await ยิง('GET', 'https://x/api/tiktok-pipe')).body['เพดานต่อรอบ'], 5);
+
+  /* 🔴 จอห้ามพิมพ์เลขนี้ไว้เอง (ด่าน "เลขค้างบนจอ" ของฝั่งจอจับคลาสนี้)
+     ⇒ ท่ออ่านค่าไม่ได้ต้องตอบ null เพื่อให้จอ **ไม่โชว์บรรทัดนั้น**
+        ใส่ค่าเริ่มต้นแทน = จอโชว์เลขที่ไม่มีใครวัด ซึ่งแย่กว่าไม่โชว์ */
+  for (const เสีย of [undefined, null, 0, -3, 'ห้าใบ', {}]) {
+    reset();
+    const ใบ = { ...ใบดี(1), เพดานต่อรอบ: เสีย };
+    const r = await ยิง('POST', 'https://x/api/tiktok-pipe', { ดัน: ใบ });
+    assert.equal(r.status, 200, `เพดาน ${JSON.stringify(เสีย)} ต้องไม่ทำให้ก้อนถูกตีกลับ`);
+    assert.equal((await ยิง('GET', 'https://x/api/tiktok-pipe')).body['เพดานต่อรอบ'], null,
+      `เพดาน ${JSON.stringify(เสีย)} ต้องกลายเป็น null`);
+  }
 });
