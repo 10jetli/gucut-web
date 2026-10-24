@@ -23,8 +23,20 @@ import { adminGate } from "../lib/admin-gate.mjs";
 
 const CH = "@AJT8888-o9e";                     // ช่องปลายทางที่ท่านประธานระบุ 18 ต.ค. 2569
 const STATE_TTL = 10 * 60 * 1000;
+/* ขอบเขตที่ขอ
+   · youtube.upload    = อัปคลิปขึ้นช่อง (ท่อ Facebook → YouTube)
+   · youtube.readonly  = อ่านรายชื่อคลิป/ยอดดู
+   · youtube.force-ssl = **แก้คลิปที่มีอยู่** (เปลี่ยนการมองเห็น / ลบ)
+     🔴 เพิ่ม 24 ต.ค. 2569 เพื่อเก็บกวาดคลิปซ้ำ 454 ใบที่ repurpose.io ลงซ้ำไว้
+        (ท่านประธานสั่ง "คลิปซ้ำเยอะมากช่วยลบที" · ยืนยันซ้ำจากเฟรมของตัวคลิปจริง
+         ไม่ใช่จากชื่อ — ทุกใบในช่องชื่อ "อ.ธง" เหมือนกันหมด ชื่อจึงใช้ยืนยันไม่ได้)
+     ⚠️ ขอบเขตนี้ **ลบคลิปได้** ⇒ โค้ดที่ใช้มันต้องแยก "ขั้นดู" กับ "ขั้นลงมือ" เสมอ
+        และต้องให้ท่านอนุมัติรายชื่อก่อนลงมือทุกครั้ง ห้ามไล่ลบเองจากผลการจับคู่
+   ⚠️ **เพิ่มขอบเขตแล้วกุญแจเดิมไม่ได้สิทธิ์ใหม่เอง** — ต้องให้ท่านกดลิงก์ยินยอมอีกครั้ง
+      ไม่งั้นจะได้ 403 insufficientPermissions ทั้งที่หน้าจอดูเหมือนเชื่อมอยู่ปกติ */
 const SCOPE = "https://www.googleapis.com/auth/youtube.upload " +
-              "https://www.googleapis.com/auth/youtube.readonly";
+              "https://www.googleapis.com/auth/youtube.readonly " +
+              "https://www.googleapis.com/auth/youtube.force-ssl";
 
 const store = () => getStore({ name: "gucut-coupon", consistency: "strong" });
 const คีย์กุญแจ = "yt/refresh";
