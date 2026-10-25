@@ -28,7 +28,7 @@
 //   POST /api/permit-doc {stage}             ลูกค้ากดบอกเองว่าทำขั้นนั้นแล้ว
 //   POST /api/permit-doc {images:[...]}      ส่งรูปใบ ลซ.๒
 // ฝั่งร้าน (ต้องมีรหัสหลังร้าน)
-//   GET  /api/permit-doc                     รายการทุกเรื่อง
+//   GET  /api/permit-doc                     รายการทุกเรื่อง (+ `เวลาเซิร์ฟเวอร์` ให้จอนับวัน)
 //   GET  /api/permit-doc?phone=xxx           เปิดเรื่องเดียว + รูป
 //   GET  /api/permit-doc?stat=1              นับเรื่องที่รอร้านทำ (ทำ badge)
 //   PATCH /api/permit-doc {phone, stage}
@@ -552,7 +552,12 @@ export default async function handler(req, context) {
       return json({ waiting: items.filter((x) => x.stage === "lz2").length, unreadable });
     }
 
-    return json(await readAll());
+    /* 🔑 **ส่งนาฬิกาของเซิร์ฟเวอร์ไปด้วย** (เพิ่ม 25 ต.ค. 2569 · ใบสั่ง CEO ข้อ [ข])
+       จอ /web/permits นับ "ค้างมากี่วัน" กับ "ใบเหลือกี่วัน" จากเวลานี้
+       ⇒ ถ้าให้จอใช้ `Date.now()` ของเครื่องที่เปิดหลังร้าน เครื่องที่ตั้งเวลาเพี้ยน
+         จะทำให้ตัวเลขวันผิดทั้งจอโดยไม่มีอะไรฟ้อง (และทดสอบไม่ได้ด้วย)
+       ⚠️ เพิ่มช่องอย่างเดียว ไม่เปลี่ยนรูปเดิม ⇒ จอรุ่นเก่าไม่พัง */
+    return json({ ...(await readAll()), "เวลาเซิร์ฟเวอร์": nowIso() });
   }
 
   /* 🗑 ร้านลบเรื่องที่บันทึกผิด (5 ต.ค. 2569)
