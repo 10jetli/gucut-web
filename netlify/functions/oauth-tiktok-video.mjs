@@ -38,8 +38,14 @@ const STATE_TTL = 30 * 60 * 1000;
    · video.publish      = ลงคลิปขึ้นบัญชีเลย (Direct Post)
    · video.upload       = ทางถอย: ส่งเข้ากล่องร่างให้คนกดลงเอง ถ้า publish ใช้ไม่ได้
    · user.info.basic    = open_id (ใช้เป็นกุญแจระบุบัญชีในภายหลัง)
-   · user.info.profile  = **username** ⇒ จำเป็นต่อด่าน ③ ขาดตัวนี้ด่านทำงานไม่ได้ */
-const SCOPE = "user.info.basic,user.info.profile,video.publish,video.upload";
+   · user.info.profile  = **username** ⇒ จำเป็นต่อด่าน ③ ขาดตัวนี้ด่านทำงานไม่ได้
+   · video.list         = อ่านรายชื่อคลิปที่เคยลงบนบัญชี ⇒ **กันซ้ำชั้นที่สอง**
+     🔴 เพิ่ม 26 ต.ค. 2569 — ขาดตัวนี้ `กันซ้ำtiktok.py` ตอบ `scope_not_authorized`
+        ⇒ ด่านกันซ้ำไม่ผ่านตลอดกาล ⇒ ท่อ TikTok หยุดสนิทตั้งแต่ 24 ต.ค.
+        โดยไม่มีอะไรฟ้องว่าสาเหตุคือขอบเขตที่ไม่ได้ขอ
+     🔑 กันซ้ำด้วยบันทึกของตัวเองชั้นเดียวไม่พอ — เคยส่งคลิปซ้ำมาแล้ว
+        ต้อง **ถามปลายทาง** ว่ามีอะไรอยู่แล้วบ้าง */
+const SCOPE = "user.info.basic,user.info.profile,video.publish,video.upload,video.list";
 const AUTH = "https://www.tiktok.com/v2/auth/authorize/";
 const TOKEN = "https://open.tiktokapis.com/v2/oauth/token/";
 const USERINFO = "https://open.tiktokapis.com/v2/user/info/";
