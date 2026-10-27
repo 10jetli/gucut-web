@@ -11,6 +11,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 /* 🔴 **เคยมี `import "…/warn-keys.mjs"` เฉย ๆ ตรงนี้ — เอาออกแล้ว 19 ก.ย. 2569 ค่ำ**
  * ผมใส่มันเพื่อ "ให้ coverage เห็นไฟล์จริง" ⇒ แต่นั่นคือ **การทำให้ตัวเลขสวยขึ้นโดยไม่ได้ทดสอบอะไรเพิ่ม**
  * 🔑 ฝั่งจอเจอ artifact ทิศนี้ก่อน (`ตัดคอมเมนต์.mjs` โผล่ในรายงานเพราะมี import ตายในเทสหมุด

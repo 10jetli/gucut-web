@@ -114,6 +114,7 @@ import { execFileSync } from "node:child_process";
 import { writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 
 /** 🔑 **กติกา ⑤ ชั้น ②** (ตกลงกับฝั่งจอ 28 ก.ย. 2569): สูตรปลูกต้องพิสูจน์ว่า **ผลลัพธ์** ต่าง

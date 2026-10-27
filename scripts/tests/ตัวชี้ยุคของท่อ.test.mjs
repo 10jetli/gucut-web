@@ -22,6 +22,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { ตัดคอมเมนต์ } from "../_strip-comments.mjs";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 /* 🔴 **ต้องตัดคอมเมนต์ก่อนตรวจ — ผมเหยียบเองทันทีในรอบเดียวกัน** (20 ก.ย. 2569)
    ผมเขียน **คำเตือน** ใน `gen-arch.mjs` ว่า *"ห้ามใช้ `เขียนถ้าเนื้อเปลี่ยน` กับไฟล์นี้"*

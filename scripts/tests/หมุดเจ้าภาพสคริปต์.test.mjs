@@ -14,6 +14,7 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync } from 'node:fs';
 import { homedir, tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { วัดสคริปต์ยิงapi, ไฟล์ประกาศเจ้าภาพ, ชื่อหมุด } from '../lib/วัดสคริปต์ยิงapi.mjs';
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 const ยิงจริง = 'curl -s https://gucut.com/api/core?x=1';
 

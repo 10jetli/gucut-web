@@ -12,6 +12,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 // lib/parts.ts เป็น TypeScript — แปลงด้วย tsc ตัวในเครื่องแล้ว import ของจริง
 // (ห้ามคัดลอกตรรกะมาเขียนซ้ำในเทส ไม่งั้นเทสยืนยันสำเนา ไม่ได้ยืนยันของที่รันจริง)

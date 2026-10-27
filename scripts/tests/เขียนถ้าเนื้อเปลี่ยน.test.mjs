@@ -10,6 +10,7 @@ import { readFileSync, writeFileSync, rmSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { เขียนถ้าเนื้อเปลี่ยน } from "../lib/เขียนถ้าเนื้อเปลี่ยน.mjs";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 const ที่ทำงาน = mkdtempSync(join(tmpdir(), "wnc-"));
 const ไฟล์ = (ชื่อ) => join(ที่ทำงาน, ชื่อ);

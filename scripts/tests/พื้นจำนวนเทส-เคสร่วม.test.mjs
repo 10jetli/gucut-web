@@ -14,6 +14,7 @@ import { readFileSync, writeFileSync, statSync, mkdtempSync, existsSync } from "
 import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 /* 🔴 **เครื่อง build ไม่มี /home/jetli** ⇒ พาธเต็มของไฟล์เคสร่วมอ่านไม่ได้ ⇒ ENOENT ⇒ เทสตก
  *    ⇒ prebuild เรียก `npm test` ⇒ **build ล้ม** (ฝั่งจอจับได้ด้วยการก๊อปเทสออกไปนอกรีโป

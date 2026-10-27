@@ -14,6 +14,7 @@ import { mkdtempSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { การกำหนดค่า, ลบเนื้อในสตริง } from "../_sh-varnames.mjs";
+import "./_ล็อกปลูก.mjs";   // 🔒 ปลูกลงไฟล์จริงต้องทำทีละราย
 
 const จับไหม = (บรรทัด) => การกำหนดค่า.test(ลบเนื้อในสตริง(บรรทัด));
 
