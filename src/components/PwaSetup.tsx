@@ -17,6 +17,9 @@ export default function PwaSetup() {
     // นับ "กดติดตั้งแอป" — เบราว์เซอร์ยิง appinstalled ตอนติดตั้งสำเร็จ (Android/คอม
     // เท่านั้น iPhone ไม่มี event นี้ — ฝั่ง iPhone วัดจากการเปิดใช้จริงใน LiveBeacon แทน)
     const onInstalled = () => {
+      // ปิดตามตัวนับหลัก (ท่านสั่ง 28 ต.ค. 2569) — ยิงนาน ๆ ครั้งก็จริง
+      // แต่ปล่อยไว้ = ปลายทางยังถูกเรียก และตัวเลขจะมาไม่ครบจนอ่านแล้วสับสน
+      if (process.env.NEXT_PUBLIC_LIVE !== "1") return;
       try {
         const vid = sessionStorage.getItem("gu_vid") || "";
         const body = JSON.stringify({ vid: vid || `pwa-${Date.now().toString(36)}`, path: "/", install: 1 });
