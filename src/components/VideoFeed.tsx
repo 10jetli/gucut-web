@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { BRAND } from "@/lib/shop";
 import Link from "next/link";
+import { คลิปใหม่กว่าที่build } from "@/lib/feed-live";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import { formatPrice } from "@/lib/types";
 import { prefetchDepth, prefetchVideo, usingHls, videoPoster, videoSrc, VIDEO_HOST, type FeedItem } from "@/lib/videos";
@@ -259,9 +260,16 @@ export default function VideoFeed({ first, total, warm = 0 }: { first: FeedItem[
     loading.current = true;
     fetch("/feed.json")
       .then((r) => r.json())
-      .then((raw: FeedItem[]) => {
+      .then(async (raw: FeedItem[]) => {
         const all = raw.filter((x) => !hiddenRef.current.has(x.v.v));
-        setItems(all); setShown((n) => Math.min(n + CHUNK, all.length));
+        // เติมคลิปที่เข้ามาหลัง build (โหลดจาก R2 ไม่แตะ Netlify)
+        // ⚠️ ต่อท้ายเท่านั้น ห้ามแทนที่ — ของที่ฝังมากับ build คือตัวจริง
+        //    ล้มเหลวคืนลิสต์ว่าง ⇒ ฟีดเท่าเดิม ไม่มีทางว่าง
+        const มีแล้ว = new Set(all.map((x) => x.v.v));
+        const เพิ่ม = (await คลิปใหม่กว่าที่build(มีแล้ว))
+          .filter((x) => !hiddenRef.current.has(x.v.v));
+        const รวม = เพิ่ม.length ? [...all, ...เพิ่ม] : all;
+        setItems(รวม); setShown((n) => Math.min(n + CHUNK, รวม.length));
       })
       .catch(() => { loading.current = false; });   // เน็ตสะดุด ครั้งหน้าค่อยลองใหม่
   }, [active, shown, items.length, total]);
