@@ -61,6 +61,32 @@ export default async function handler(req, context) {
     return json({ mode: isTest() ? "test" : "live", redirect, link: authLink(redirect) });
   }
 
+  // ── แจกกุญแจชั่วคราวให้ท่อส่งคลิปบน g1 (ท่านประธานสั่ง 29 ต.ค. 2569 "โพสคลิป Shopee ออโต้") ──
+  //
+  // ทำไมต้องแจกจากตรงนี้: access_token ของ Shopee อายุแค่ 4 ชม. และตอนต่ออายุ
+  // refresh_token จะเปลี่ยนตัวใหม่ด้วย ⇒ ถ้า g1 ถือสำเนาเอง สองฝั่งจะแย่งต่ออายุ
+  // แล้วตัวใดตัวหนึ่งถือ refresh ที่ตายแล้ว = การเชื่อมหลุดทั้งระบบแบบงง ๆ
+  // ⇒ เจ้าของ token มีที่เดียว (Blobs ฝั่งนี้) · g1 มาขอ "ของสด" ทุกครั้งก่อนใช้
+  //    (ท่าเดียวกับที่ท่อ TikTok ขอ token ผ่าน /api/oauth/tiktok-video?token=1)
+  //
+  // ⚠️ อยู่หลัง adminGate แล้ว — คนนอกไม่มีรหัสหลังร้านขอไม่ได้
+  // ⚠️ PARTNER_KEY ติดไปด้วยเพราะ g1 ต้องใช้เซ็นลายเซ็นคำขอเอง (คู่กับ partner_id)
+  //    ห้าม log ห้ามเก็บลงไฟล์ฝั่งไหนทั้งสิ้น — ใช้แล้วทิ้งในหน่วยความจำ
+  if (step === "creds") {
+    const t = await validToken();   // ต่ออายุให้เองถ้าใกล้หมด — ของที่แจกจึงสดเสมอ
+    if (!t) return json({ error: "ยังไม่ได้เชื่อมร้าน Shopee" }, 400);
+    return json({
+      ok: true,
+      mode: isTest() ? "test" : "live",
+      partnerId: Number(process.env.SHOPEE_PARTNER_ID),
+      partnerKey: process.env.SHOPEE_PARTNER_KEY || "",
+      accessToken: t.accessToken,
+      shopId: t.shopId,
+      // บอกอายุที่เหลือ ให้ฝั่งโน้นรู้ว่าต้องรีบใช้แค่ไหน (ไม่ใช่เก็บไว้ข้ามวัน)
+      tokenLeftMinutes: Math.round((t.expireAt - Math.floor(Date.now() / 1000)) / 60),
+    });
+  }
+
   if (step === "status") {
     const t = await loadToken();
     if (!t) return json({ connected: false, mode: isTest() ? "test" : "live" });
