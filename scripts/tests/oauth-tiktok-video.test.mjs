@@ -4,9 +4,17 @@
  *    ยินยอมผิดบัญชี ⇒ คลิปของร้านขึ้นบัญชีคนอื่น แล้ว **กู้คืนยาก** (ต้องให้เจ้าของไปกดลบ)
  *    และวันนี้ทีมเพิ่งเสียเวลาทั้งวันกับคลิปซ้ำบนช่อง YouTube ⇒ ไม่ซ้ำรอยอีก
  *
- * ⚠️ กับดักที่ตัวทดสอบนี้มีไว้จับโดยเฉพาะ: **เทียบ `display_name` แทน `username`**
- *    `display_name` ของบัญชีเป้าหมายคือ "อ.ธง" ซึ่งเป็นชื่อเดียวกับเพจ FB และช่อง YouTube
- *    ⇒ ไม่ unique และเจ้าของเปลี่ยนเองได้ ⇒ ด่านที่เทียบชื่อที่แสดงคือด่านหลอก
+ * 🔴 **แก้สมมติฐาน 11 พ.ย. 2569** — เดิมเทสนี้บังคับให้เทียบ `username`
+ *    และจดไว้ว่า "ด่านที่เทียบ display_name คือด่านหลอก" (ถูกต้องในวันนั้น)
+ *    แต่ `username` อ่านได้ต้องมีขอบเขต `user.info.profile` ซึ่ง **แอปนี้ไม่มีสิทธิ์**
+ *    (อยู่ในสินค้าที่ยังไม่ได้เพิ่ม ⇒ ต้องยื่นรีวิวใหม่) ⇒ ขอไปแล้วหน้ายินยอมตีกลับทั้งใบ
+ *    ⇒ ด่านย้ายหลักฐานไปใช้ **open_id** ซึ่ง `user.info.basic` ให้ และเปลี่ยนเองไม่ได้
+ *
+ * ⚠️ กับดักที่ตัวทดสอบนี้มีไว้จับ **ตอนนี้**:
+ *    ① ขอขอบเขตที่แอปไม่มี ⇒ ยินยอมไม่ได้เลยแต่หน้าตาเหมือนตั้งค่าครบ
+ *    ② ปล่อยให้ `display_name` ตัดสินตอนที่ **มี open_id ปักไว้แล้ว**
+ *       (ชื่อที่แสดงซ้ำกับเพจ FB/ช่อง YouTube ⇒ ไม่ unique ⇒ ใช้ชี้ขาดไม่ได้)
+ *       ชื่อที่แสดงใช้ได้เฉพาะ "ครั้งแรก" ที่ยังไม่มีอะไรปัก และมีคนถือรหัสหลังร้านเปิดลิงก์อยู่
  */
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
@@ -73,45 +81,64 @@ test('ขั้น ① ต้องมีรหัสหลังร้านถ
   ผ่านด่านรหัส = true
 })
 
-test('ขั้น ① ลิงก์ยินยอมต้องขอ scope ครบ รวม user.info.profile ที่ด่านตรวจบัญชีต้องใช้', async () => {
+test('🔴 ขั้น ① ต้องขอเฉพาะขอบเขตที่แอปมีสิทธิ์จริง — ขอเกินแม้ตัวเดียว ยินยอมไม่ได้ทั้งใบ', async () => {
   ที่เก็บ.clear()
   const r = await เส้น(new Request('https://gucut.com/api/oauth/tiktok-video'))
   const d = await r.json()
   const q = new URL(d.ลิงก์).searchParams
   const scopes = (q.get('scope') || '').split(',')
-  for (const s of ['video.publish', 'video.upload', 'user.info.basic', 'user.info.profile']) {
+  for (const s of ['video.publish', 'video.upload', 'user.info.basic']) {
     assert.ok(scopes.includes(s), `ลิงก์ไม่ได้ขอ scope ${s}`)
   }
-  /* 🔑 ข้อนี้สำคัญกว่าที่ดู: ขาด user.info.profile ⇒ อ่าน username ไม่ได้
-     ⇒ ด่านตรวจบัญชี **ทำงานไม่ได้ทั้งด่าน** โดยที่ทุกอย่างอื่นดูเหมือนสำเร็จ */
+  /* 🔑 ข้อนี้คือบทเรียนของวันที่ 11 พ.ย. 2569:
+     TikTok ตีกลับ **ทั้งคำขอ** ถ้ามีขอบเขตที่แอปไม่มีสิทธิ์ติดไปแม้ตัวเดียว
+     ⇒ ขอ "เผื่อไว้" ไม่ใช่ของฟรี มันทำให้เชื่อมบัญชีไม่ได้เลย
+     และอาการที่เห็นคือหน้ายินยอมขึ้นคำว่า scope ลอย ๆ ซึ่งชี้สาเหตุไม่ได้ */
+  for (const s of ['user.info.profile', 'video.list']) {
+    assert.ok(!scopes.includes(s),
+      `ยังขอ ${s} อยู่ — แอปไม่มีสิทธิ์นี้ ⇒ หน้ายินยอมจะตีกลับทุกครั้ง`)
+  }
   assert.equal(q.get('response_type'), 'code')
   assert.equal(q.get('redirect_uri'), 'https://gucut.com/api/oauth/tiktok-video/callback')
   assert.ok((q.get('state') || '').length >= 24, 'state ต้องยาวพอที่จะเดาไม่ได้')
 })
 
-test('ขั้น ③ บัญชีไม่ตรง ⇒ ไม่เก็บกุญแจเลย และบอกชื่อที่ได้มา', async () => {
+test('ขั้น ③ ครั้งแรก ชื่อที่แสดงไม่ตรง ⇒ ไม่เก็บกุญแจเลย และบอกชื่อที่ได้มา', async () => {
   const state = await ติดอาวุธ()
   สวมFetch({ โทเคน: โทเคนดี,
-    ผู้ใช้: { data: { user: { open_id: 'x', username: 'คนอื่น_99', display_name: 'อ.ธง' } }, error: { code: 'ok' } } })
+    ผู้ใช้: { data: { user: { open_id: 'x', display_name: 'ร้านคนอื่น_99' } }, error: { code: 'ok' } } })
   const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
   const html = await r.text()
   assert.match(html, /content="บัญชีไม่ตรง"/)
-  assert.match(html, /คนอื่น_99/, 'ต้องบอกว่าได้บัญชีไหนมา ไม่ใช่ปฏิเสธเปล่า ๆ')
+  assert.match(html, /ร้านคนอื่น_99/, 'ต้องบอกว่าได้บัญชีไหนมา ไม่ใช่ปฏิเสธเปล่า ๆ')
   assert.equal(ที่เก็บ.has('tt/refresh'), false, '🔴 เก็บกุญแจของบัญชีผิด = คลิปขึ้นบัญชีคนอื่น')
 })
 
-test('🔴 ด่านต้องเทียบ username ไม่ใช่ display_name — บัญชีปลอมที่ตั้งชื่อแสดงว่า "อ.ธง" ต้องไม่ผ่าน', async () => {
+test('🔴 มี open_id ปักไว้แล้ว ⇒ open_id ต้องชนะชื่อที่แสดง — บัญชีปลอมที่ตั้งชื่อว่า "อ.ธง" ต้องไม่ผ่าน', async () => {
   const state = await ติดอาวุธ()
-  /* บัญชีนี้ตั้ง display_name ตรงกับของจริงเป๊ะ แต่ username เป็นของคนอื่น
-     ⇒ ด่านที่เทียบชื่อที่แสดงจะ **ปล่อยผ่าน** และนั่นคือบั๊กที่เทสนี้มีไว้จับ */
-  สวมFetch({ โทเคน: โทเคนดี,
-    ผู้ใช้: { data: { user: { open_id: 'x', username: 'ajtcut_8_fake', display_name: 'อ.ธง' } }, error: { code: 'ok' } } })
+  /* ปักบัญชีจริงไว้ก่อน (เหมือนที่เคยยินยอมสำเร็จมาแล้วรอบหนึ่ง) */
+  ที่เก็บ.set('tt/refresh', { refresh_token: 'rt-เดิม', open_id: 'open-1', username: 'ajtcut_8' })
+  /* บัญชีนี้ตั้ง display_name ตรงกับของจริงเป๊ะ แต่เป็น open_id ของคนอื่น
+     ⇒ ด่านที่ตัดสินด้วยชื่อที่แสดงจะ **ปล่อยผ่าน** นั่นคือบั๊กที่เทสนี้มีไว้จับ */
+  สวมFetch({ โทเคน: { ...โทเคนดี, open_id: 'open-ปลอม' },
+    ผู้ใช้: { data: { user: { open_id: 'open-ปลอม', display_name: 'อ.ธง' } }, error: { code: 'ok' } } })
   const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
   assert.match(await r.text(), /content="บัญชีไม่ตรง"/)
-  assert.equal(ที่เก็บ.has('tt/refresh'), false)
+  assert.equal(ที่เก็บ.get('tt/refresh').refresh_token, 'rt-เดิม',
+    '🔴 ทับกุญแจเดิมด้วยบัญชีอื่น = คลิปของร้านขึ้นบัญชีคนอื่น และกู้คืนยาก')
 })
 
-test('ขั้น ③ บัญชีตรง ⇒ เก็บกุญแจ + จด username/open_id', async () => {
+test('🔴 ไม่ได้ open_id มาเลย ⇒ ห้ามเก็บ — ไม่มีหลักฐานว่าเป็นบัญชีไหน', async () => {
+  const state = await ติดอาวุธ()
+  สวมFetch({ โทเคน: { access_token: 'at1', refresh_token: 'rt1' },
+    ผู้ใช้: { data: { user: { display_name: 'อ.ธง' } }, error: { code: 'ok' } } })
+  const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
+  assert.match(await r.text(), /content="ยืนยันบัญชีไม่ได้"/)
+  assert.equal(ที่เก็บ.has('tt/refresh'), false,
+    '🔴 เก็บโดยไม่มี open_id = ครั้งต่อไปไม่มีอะไรให้เทียบ ด่านตายเงียบ')
+})
+
+test('ขั้น ③ บัญชีตรง ⇒ เก็บกุญแจ + ปัก open_id ไว้ให้รอบต่อไปเทียบได้', async () => {
   const state = await ติดอาวุธ()
   สวมFetch({ โทเคน: โทเคนดี, ผู้ใช้: ผู้ใช้ถูกบัญชี })
   const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
@@ -122,12 +149,12 @@ test('ขั้น ③ บัญชีตรง ⇒ เก็บกุญแจ 
   assert.equal(เก็บ.open_id, 'open-1')
 })
 
-test('ตัวพิมพ์ใหญ่/@ นำหน้า ต้องไม่ทำให้บัญชีที่ถูกกลายเป็นผิด', async () => {
+test('ช่องว่างหน้า-หลังชื่อที่แสดง ต้องไม่ทำให้บัญชีที่ถูกกลายเป็นผิด', async () => {
   const state = await ติดอาวุธ()
   สวมFetch({ โทเคน: โทเคนดี,
-    ผู้ใช้: { data: { user: { open_id: 'open-1', username: '@AJTcut_8', display_name: 'อ.ธง' } }, error: { code: 'ok' } } })
+    ผู้ใช้: { data: { user: { open_id: 'open-1', display_name: '  อ.ธง ' } }, error: { code: 'ok' } } })
   const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
-  assert.match(await r.text(), /content="สำเร็จ"/, 'TikTok คืนตัวพิมพ์ต่างกันได้ ⇒ เทียบต้องลดรูปก่อน')
+  assert.match(await r.text(), /content="สำเร็จ"/, 'ชื่อที่แสดงมีช่องว่างติดมาได้ ⇒ ต้อง trim ก่อนเทียบ')
 })
 
 test('ไม่มี refresh_token ⇒ ห้ามเก็บแล้วบอกว่าสำเร็จ', async () => {
@@ -138,14 +165,14 @@ test('ไม่มี refresh_token ⇒ ห้ามเก็บแล้วบ�
   assert.equal(ที่เก็บ.has('tt/refresh'), false)
 })
 
-test('อ่าน username ไม่ได้ ⇒ ไม่เก็บกุญแจ และต้องบอกให้ไปเพิ่ม user.info.profile', async () => {
+test('ถามไม่ได้ว่าเป็นบัญชีไหน ⇒ ไม่เก็บกุญแจ และต้องชี้ว่าใช้ขอบเขตไหนอยู่', async () => {
   const state = await ติดอาวุธ()
   สวมFetch({ โทเคน: โทเคนดี,
     ผู้ใช้: { error: { code: 'scope_not_authorized', message: 'scope not authorized' } } })
   const r = await เส้น(เรียกกลับ(`code=c1&state=${state}`))
   const html = await r.text()
   assert.match(html, /content="อ่านบัญชีไม่ได้"/)
-  assert.match(html, /user\.info\.profile/, 'ต้องชี้ทางแก้ ไม่ใช่บอกแค่ว่าอ่านไม่ได้')
+  assert.match(html, /user\.info\.basic/, 'ต้องชี้ว่าด่านพึ่งขอบเขตไหน ไม่ใช่บอกแค่ว่าอ่านไม่ได้')
   assert.equal(ที่เก็บ.has('tt/refresh'), false)
 })
 
