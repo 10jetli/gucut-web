@@ -29,7 +29,9 @@ interface Row {
   สถานะตอนส่ง?: string;
   สถานะล่าสุด?: string;
   ทาง?: string;
-  เมื่อ?: string;
+  ถามเมื่อ?: string;
+  เหตุถามไม่ได้?: string;
+  ขึ้นบัญชีแล้ว?: string | null;
   ลิงก์fb?: string;
 }
 
@@ -144,7 +146,7 @@ export default function AdminTikTok() {
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-xl font-bold">ท่อคลิป TikTok</h1>
-        <Link href="/admin/" className="text-sm text-brand underline">← หลังร้าน</Link>
+        <Link href="/admin/" className="text-sm text-safety underline">← หลังร้าน</Link>
       </div>
 
       {err && (
@@ -161,7 +163,7 @@ export default function AdminTikTok() {
         </p>
         <button
           onClick={เชื่อมบัญชี}
-          className="mt-3 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white"
+          className="mt-3 rounded-lg bg-safety px-4 py-2 text-sm font-semibold text-white hover:bg-safety-dark"
         >
           เชื่อมบัญชี TikTok
         </button>
@@ -180,7 +182,7 @@ export default function AdminTikTok() {
         <button
           onClick={ส่งเดี๋ยวนี้}
           disabled={busy}
-          className="mt-3 rounded-lg bg-brand px-4 py-2 text-sm font-semibold text-white disabled:opacity-50"
+          className="mt-3 rounded-lg bg-safety px-4 py-2 text-sm font-semibold text-white hover:bg-safety-dark disabled:opacity-50"
         >
           ส่งคลิปขึ้น TikTok เดี๋ยวนี้
         </button>
@@ -225,7 +227,15 @@ export default function AdminTikTok() {
                     <span className="text-gray-400">({ดิบ || "—"})</span>
                     {x.ทาง && <> · ทาง {x.ทาง}</>}
                   </div>
-                  <div className="text-xs text-gray-400">ส่งเมื่อ {เวลาไทย(x.เมื่อ)}</div>
+                  <div className="text-xs text-gray-400">
+                    ตรวจสถานะล่าสุดเมื่อ {เวลาไทย(x.ถามเมื่อ)}
+                  </div>
+                  {x.เหตุถามไม่ได้ && (
+                    /* 🔴 "ถามสถานะไม่ได้" ≠ "ไม่มีสถานะ" — ต้องเห็น ไม่ใช่กลืนหาย */
+                    <div className="text-xs text-amber-700">
+                      ถามสถานะล่าสุดไม่ได้: {x.เหตุถามไม่ได้}
+                    </div>
+                  )}
                 </li>
               );
             })}
