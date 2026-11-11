@@ -141,6 +141,10 @@ export default function AdminHome() {
     { href: "/admin/marketing/", title: "พิกเซลการตลาด", note: "ใส่รหัส Meta · TikTok · Google · LINE", badge: 0, icon: "tag" as const },
     { href: "/admin/ads/", title: "ค่าโฆษณา vs ยอดขาย", note: "จ่ายโฆษณาไปเท่าไหร่ ได้กลับมาเท่าไหร่", badge: 0, icon: "tag" as const },
     { href: "/admin/clips/", title: "สถิติคลิป", note: "คลิปไหนคนดูเยอะ · ดูจนจบกี่ %", badge: 0, icon: "video" as const },
+    /* 🎬 ท่อคลิป TikTok — เพิ่ม 11 พ.ย. 2569 ตามใบสั่งท่านประธาน "ทำไงให้คุณลงให้ผม"
+       หน้านี้อยู่บน gucut.com (ไม่ใช่ admin.gucut.com) **โดยเจตนา** เพราะ TikTok บังคับว่า
+       โดเมนในวิดีโอสาธิตตอนยื่นรีวิวต้องตรงกับ URL ที่จดไว้ในแอป ซึ่งคือ https://gucut.com */
+    { href: "/admin/tiktok/", title: "ท่อคลิป TikTok", note: "เชื่อมบัญชี · ส่งคลิปขึ้น TikTok · ดูสถานะ", badge: 0, icon: "video" as const },
     { href: "/admin/permits/", title: "ขอทะเบียนเลื่อยยนต์", note: "ลูกค้าแต่ละคนเดินมาถึงขั้นไหน · ใบ ลซ.๒ ที่ส่งมา", badge: newPermits, icon: "order" as const },
     { href: "/admin/attendance/", title: "ลงเวลาพนักงาน", note: "เข้า-ออกงาน · มาสาย · ชั่วโมงรวม", badge: 0, icon: "clock" as const },
     { href: "/admin/legacy/", title: "ประวัติลูกค้าเก่า", note: "เคยซื้ออะไรสมัยยังอยู่ Shopify", badge: 0, icon: "order" as const },
